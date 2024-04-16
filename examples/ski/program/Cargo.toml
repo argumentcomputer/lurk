@@ -1,0 +1,10 @@
+[workspace]
+[package]
+version = "0.1.0"
+name = "ski-program"
+edition = "2021"
+
+[dependencies]
+wp1-zkvm = { git = "ssh://git@github.com/wormhole-foundation/wp1.git", branch = "memoset" }
+ski = { path = "../ski" }
+

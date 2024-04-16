@@ -1,0 +1,12 @@
+[workspace]
+[package]
+version = "0.1.0"
+name = "ski-script"
+edition = "2021"
+
+[dependencies]
+wp1-sdk = { path = "../../../sdk" }
+ski = { path = "../ski" }
+
+[build-dependencies]
+wp1-helper = { path = "../../../helper" }
