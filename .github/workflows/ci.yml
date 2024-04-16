@@ -1,0 +1,48 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Change to warp-ubuntu-latest-x64-16x for a more powerful runner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: lurk-lab/ci-workflows
+      - uses: ./.github/actions/ci-env
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux Tests
+        run: |
+          cargo nextest run --profile ci --cargo-profile dev-ci --workspace
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: lurk-lab/ci-workflows
+      - uses: ./.github/actions/ci-env
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check Rustfmt Code Style
+        run: cargo fmt --all --check
+      - name: check *everything* compiles
+        run: cargo check --all-targets --all-features --workspace --examples --tests --benches
+      # See '.cargo/config' for list of enabled/disabled clippy lints
+      - name: Check clippy warnings
+        run: cargo xclippy -D warnings
+      - name: Doctests
+        run: cargo test --doc --workspace
