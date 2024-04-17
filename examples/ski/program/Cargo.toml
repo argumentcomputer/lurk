@@ -6,7 +6,7 @@ edition = "2021"
 
 [dependencies]
 wp1-zkvm = { git = "ssh://git@github.com/wormhole-foundation/wp1.git", branch = "memoset" }
-ski = { path = "../ski" }
+ski = { path = "../ski", features = ["inzkvm"] }
 
 [patch."https://github.com/Plonky3/Plonky3.git"]
 p3-air = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
