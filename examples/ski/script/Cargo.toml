@@ -5,8 +5,32 @@ name = "ski-script"
 edition = "2021"
 
 [dependencies]
-wp1-sdk = { path = "../../../sdk" }
+wp1-sdk = { git = "ssh://git@github.com/wormhole-foundation/wp1.git", branch = "memoset" }
 ski = { path = "../ski" }
 
 [build-dependencies]
-wp1-helper = { path = "../../../helper" }
+
+wp1-helper = { git = "ssh://git@github.com/wormhole-foundation/wp1.git", branch = "memoset" }
+
+[patch."https://github.com/Plonky3/Plonky3.git"]
+p3-air = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-field = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-commit = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-matrix = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-baby-bear = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-util = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-challenger = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-dft = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-fri = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-goldilocks = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-keccak = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-keccak-air = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-blake3 = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-mds = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-merkle-tree = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-poseidon2 = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-symmetric = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-uni-stark = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-maybe-rayon = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+p3-bn254-fr = { git = "ssh://git@github.com/Plonky3/Plonky3.git", rev = "2871dfe257a49583c763c94a879785188716f006" }
+
