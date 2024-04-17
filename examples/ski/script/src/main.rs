@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 const ELF: &[u8] = include_bytes!("../../program/elf/riscv32im-succinct-zkvm-elf");
 
-use wp1_sdk::{utils, SP1Prover, SP1Stdin, SP1Verifier};
+use wp1_sdk::{utils, ProverClient, SP1Stdin};
 
 use ski::SKI;
 
@@ -16,15 +16,16 @@ fn main() {
     let ski = SKI::from_str(&"(S(K(SI))K)KI").unwrap();
     stdin.write(&ski);
 
-    let mut proof = SP1Prover::prove(ELF, stdin).expect("proving failed");
+    let client = ProverClient::new();
+    let mut proof = client.prove(ELF, stdin).expect("proving failed");
 
     // Read output.
-    let evaled = proof.stdout.read::<SKI>();
+    let evaled = proof.public_values.read::<SKI>();
     assert_eq!("K", evaled.to_string());
     println!("{ski} evaled to {evaled}");
 
     // Verify proof.
-    SP1Verifier::verify(ELF, &proof).expect("verification failed");
+    client.verify(ELF, &proof).expect("verification failed");
 
     // Save proof.
     proof
