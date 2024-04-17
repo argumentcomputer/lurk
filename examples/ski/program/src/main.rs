@@ -3,9 +3,9 @@
 #![no_main]
 wp1_zkvm::entrypoint!(main);
 
-use ski::{Term, Mem, SKI};
+use ski::{Mem, Term, SKI};
 
-//  INFO summary: cycles=254197, e2e=4552, khz=55.84, proofSize=1.24 MiB
+// INFO summary: cycles=191892, e2e=3704, khz=51.81, proofSize=1.16 MiB
 // (S(K(SI))K)KI evaled to K
 #[allow(dead_code)]
 pub fn main() {
