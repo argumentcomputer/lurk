@@ -78,7 +78,19 @@ pub enum Op {
     Eval(Term),
 }
 
-#[derive(Debug)]
+impl Op {
+    fn is_eval1(&self) -> bool {
+        matches!(self, Self::Eval1(_))
+    }
+    fn is_apply(&self) -> bool {
+        matches!(self, Self::Apply(_, _))
+    }
+    fn is_eval(&self) -> bool {
+        matches!(self, Self::Eval(_))
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Step {
     op: Op,
     out: Term,
@@ -474,6 +486,30 @@ impl Mem {
 
     pub fn output(&self) -> Term {
         self.steps[0].out.clone()
+    }
+
+    pub fn eval_steps(&self) -> Vec<Step> {
+        self.steps
+            .iter()
+            .filter(|step| step.op.is_eval())
+            .cloned()
+            .collect()
+    }
+
+    pub fn eval1_steps(&self) -> Vec<Step> {
+        self.steps
+            .iter()
+            .filter(|step| step.op.is_eval1())
+            .cloned()
+            .collect()
+    }
+
+    pub fn apply_steps(&self) -> Vec<Step> {
+        self.steps
+            .iter()
+            .filter(|step| step.op.is_apply())
+            .cloned()
+            .collect()
     }
 
     pub fn borrow_term(&self, addr: Addr) -> &Term {
