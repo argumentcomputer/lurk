@@ -14,6 +14,23 @@ pub struct SKI {
 #[derive(Debug)]
 pub struct ParseTermError;
 
+#[derive(Clone, Debug)]
+pub struct WithMultiplicity<T: Clone>(T, usize);
+
+impl<T: Clone> WithMultiplicity<T> {
+    pub fn new(thing: T) -> Self {
+        Self(thing, 1)
+    }
+
+    pub fn query_value(&mut self) -> T {
+        self.1 += 1;
+        self.0.clone()
+    }
+    pub fn multiplicity(&self) -> usize {
+        self.1
+    }
+}
+
 impl FromStr for SKI {
     type Err = ParseTermError;
 
@@ -123,9 +140,15 @@ const I_ADDR: usize = 2;
 const NIL_ADDR: usize = 3;
 
 fn setup(op: Op, mem: &mut Mem, depth: usize) -> (usize, Option<Term>) {
-    if let Some(found) = mem.memo.get(&op) {
+    let mut existing = None;
+    mem.memo.entry(op.clone()).and_modify(|e| {
+        // `query_value` increments multiplicity.
+        existing = Some(e.query_value());
+    });
+
+    if let Some(found) = existing {
         return (depth, Some(found.clone()));
-    }
+    };
 
     let step = Step {
         op,
@@ -139,7 +162,7 @@ fn setup(op: Op, mem: &mut Mem, depth: usize) -> (usize, Option<Term>) {
 
 fn finalize(op: Op, step_index: usize, mem: &mut Mem, result: Term) {
     mem.steps[step_index].out = result.clone();
-    mem.memo.insert(op, result);
+    mem.memo.insert(op, WithMultiplicity(result, 1));
 }
 
 macro_rules! with_memo {
@@ -407,9 +430,9 @@ impl Term {
 
 #[derive(Debug, Default)]
 pub struct Mem {
-    terms: Vec<Term>,
+    terms: Vec<WithMultiplicity<Term>>,
     steps: Vec<Step>,
-    memo: HashMap<Op, Term>,
+    memo: HashMap<Op, WithMultiplicity<Term>>,
     s1: HashMap<Addr, Addr>,
     s2: HashMap<(Addr, Addr), Addr>,
     s3: HashMap<(Addr, Addr, Addr), Addr>,
@@ -422,9 +445,14 @@ pub struct Mem {
 impl Mem {
     pub fn new() -> Self {
         let mut mem = Mem::default();
-        mem.terms = vec![Term::S(S_ADDR), Term::K(K_ADDR), Term::I(I_ADDR), Term::Nil];
+        mem.terms = vec![
+            WithMultiplicity::new(Term::S(S_ADDR)),
+            WithMultiplicity::new(Term::K(K_ADDR)),
+            WithMultiplicity::new(Term::I(I_ADDR)),
+            WithMultiplicity::new(Term::Nil),
+        ];
 
-        for (i, term) in mem.terms.iter().enumerate() {
+        for (i, WithMultiplicity(term, _)) in mem.terms.iter().enumerate() {
             assert_eq!(i, term.addr());
         }
 
@@ -443,88 +471,88 @@ impl Mem {
     }
 
     pub fn borrow_term(&self, addr: Addr) -> &Term {
-        &self.terms[addr]
+        &self.terms[addr].0
     }
 
-    pub fn get_term(&self, addr: Addr) -> Term {
-        self.terms[addr].clone()
+    pub fn get_term(&mut self, addr: Addr) -> Term {
+        self.terms[addr].query_value()
     }
 
     // NOTE: The clones are shallow.
     pub fn S(&mut self) -> Term {
-        self.terms[0].clone()
+        self.terms[0].query_value().clone()
     }
     pub fn K(&mut self) -> Term {
-        self.terms[1].clone()
+        self.terms[1].query_value().clone()
     }
     pub fn I(&mut self) -> Term {
-        self.terms[2].clone()
+        self.terms[2].query_value().clone()
     }
 
     pub fn S1(&mut self, x_addr: Addr) -> Term {
         if let Some(found) = self.s1.get(&x_addr) {
-            self.terms[*found].clone()
+            self.terms[*found].query_value().clone()
         } else {
             let addr = self.terms.len();
-            let new = Term::S1(addr, x_addr);
+            let new = WithMultiplicity::new(Term::S1(addr, x_addr));
             self.s1.insert(x_addr, addr);
             self.terms.push(new.clone());
-            new
+            new.0
         }
     }
     pub fn S2(&mut self, x_addr: Addr, y_addr: Addr) -> Term {
         if let Some(found) = self.s2.get(&(x_addr, y_addr)) {
-            self.terms[*found].clone()
+            self.terms[*found].query_value().clone()
         } else {
             let addr = self.terms.len();
-            let new = Term::S2(addr, x_addr, y_addr);
+            let new = WithMultiplicity::new(Term::S2(addr, x_addr, y_addr));
             self.s2.insert((x_addr, y_addr), addr);
             self.terms.push(new.clone());
-            new
+            new.0
         }
     }
     pub fn S3(&mut self, x_addr: Addr, y_addr: Addr, z_addr: Addr) -> Term {
         if let Some(found) = self.s3.get(&(x_addr, y_addr, z_addr)) {
-            self.terms[*found].clone()
+            self.terms[*found].query_value().clone()
         } else {
             let addr = self.terms.len();
-            let new = Term::S3(addr, x_addr, y_addr, z_addr);
+            let new = WithMultiplicity::new(Term::S3(addr, x_addr, y_addr, z_addr));
             self.s3.insert((x_addr, y_addr, z_addr), addr);
             self.terms.push(new.clone());
-            new
+            new.0
         }
     }
     pub fn K1(&mut self, x_addr: Addr) -> Term {
         if let Some(found) = self.k1.get(&x_addr) {
-            self.terms[*found].clone()
+            self.terms[*found].query_value().clone()
         } else {
             let addr = self.terms.len();
-            let new = Term::K1(addr, x_addr);
+            let new = WithMultiplicity::new(Term::K1(addr, x_addr));
             self.k1.insert(x_addr, addr);
             self.terms.push(new.clone());
-            new
+            new.0
         }
     }
     pub fn K2(&mut self, x_addr: Addr, y_addr: Addr) -> Term {
         if let Some(found) = self.k2.get(&(x_addr, y_addr)) {
-            self.terms[*found].clone()
+            self.terms[*found].query_value().clone()
         } else {
             let addr = self.terms.len();
-            let new = Term::K2(addr, x_addr, y_addr);
+            let new = WithMultiplicity::new(Term::K2(addr, x_addr, y_addr));
             self.k2.insert((x_addr, y_addr), addr);
             self.terms.push(new.clone());
-            new
+            new.0
         }
     }
     pub fn I1(&mut self, x_addr: Addr) -> Term {
         if let Some(found) = self.i1.get(&x_addr) {
-            self.terms[*found].clone()
+            self.terms[*found].query_value().clone()
         } else {
             let addr = self.terms.len();
-            let new = Term::I1(addr, x_addr);
+            let new = WithMultiplicity::new(Term::I1(addr, x_addr));
             self.i1.insert(x_addr, addr);
             self.terms.push(new.clone());
-            new
+            new.0
         }
     }
     pub fn list(&mut self, addrs: &[Addr]) -> Term {
@@ -535,30 +563,30 @@ impl Mem {
         let rest = self.list(&addrs[1..]);
 
         if let Some(found) = self.conses.get(&(first_addr, rest.addr())) {
-            self.terms[*found].clone()
+            self.terms[*found].query_value().clone()
         } else {
             let addr = self.terms.len();
             if addrs.len() > 1 {
                 self.conses.insert((first_addr, rest.addr()), addr);
-                let new = Term::Cons(addr, addrs[0], rest.addr());
+                let new = WithMultiplicity::new(Term::Cons(addr, addrs[0], rest.addr()));
                 self.terms.push(new.clone());
-                new
+                new.0
             } else {
-                let new = Term::Cons(addr, addrs[0], NIL_ADDR);
+                let new = WithMultiplicity::new(Term::Cons(addr, addrs[0], NIL_ADDR));
                 self.terms.push(new.clone());
-                new
+                new.0
             }
         }
     }
 
     pub fn cons(&mut self, first: Term, rest: Term) -> Term {
         if let Some(found) = self.conses.get(&(first.addr(), rest.addr())) {
-            self.terms[*found].clone()
+            self.terms[*found].query_value().clone()
         } else {
             let addr = self.terms.len();
-            let new = Term::Cons(addr, first.addr(), rest.addr());
+            let new = WithMultiplicity::new(Term::Cons(addr, first.addr(), rest.addr()));
             self.terms.push(new.clone());
-            new
+            new.0
         }
     }
 }
