@@ -122,6 +122,41 @@ const K_ADDR: usize = 1;
 const I_ADDR: usize = 2;
 const NIL_ADDR: usize = 3;
 
+fn setup(op: Op, mem: &mut Mem, depth: usize) -> (usize, Option<Term>) {
+    if let Some(found) = mem.memo.get(&op) {
+        return (depth, Some(found.clone()));
+    }
+
+    let step = Step {
+        op,
+        // Placeholder: this will be updated when output is known.
+        out: mem.I(),
+        depth,
+    };
+    mem.steps.push(step);
+    (mem.steps.len() - 1, None)
+}
+
+fn finalize(op: Op, step_index: usize, mem: &mut Mem, result: Term) {
+    mem.steps[step_index].out = result.clone();
+    mem.memo.insert(op, result);
+}
+
+macro_rules! with_memo {
+    ($op:expr,
+     ($mem:ident, $depth:ident, $result:ident),
+     $body:expr) => {{
+        let op = $op;
+        let (step_index, found) = setup(op.clone(), $mem, $depth);
+        if let Some(found) = found {
+            return found;
+        };
+        let $result = $body;
+        finalize(op, step_index, $mem, $result.clone());
+        $result
+    }};
+}
+
 impl Term {
     pub fn is_s(&self) -> bool {
         matches!(
@@ -197,7 +232,7 @@ impl Term {
                         inner = Vec::new();
                     }
                     ')' => {
-                        let term = mem.seq(&inner);
+                        let term = mem.list(&inner);
                         inner = stack.pop().ok_or(ParseTermError)?;
                         inner.push(term.addr());
                     }
@@ -207,10 +242,11 @@ impl Term {
             if inner.len() == 1 {
                 Ok(mem.get_term(inner[0]))
             } else {
-                Ok(mem.seq(&inner))
+                Ok(mem.list(&inner))
             }
         }
     }
+
     pub fn fmt_to_string(&self, mem: &Mem) -> String {
         let mut out = Vec::new();
         self.fmt(mem, &mut out).unwrap();
@@ -287,132 +323,85 @@ impl Term {
     }
 
     fn eval1(self, mem: &mut Mem, depth: usize) -> Self {
-        let op = Op::Eval1(self.clone());
-
-        if let Some(found) = mem.memo.get(&op) {
-            return found.clone();
-        }
-
-        let step = Step {
-            op: op.clone(),
-            // Placeholder: this will be updated when output is known.
-            out: self.clone(),
-            depth: depth,
-        };
-        mem.steps.push(step);
-        let step_index = mem.steps.len() - 1;
-
-        let result = match self {
-            Self::S3(_, x, y, z) => {
-                let ix = mem.get_term(x);
-                let iy = mem.get_term(y);
-                let iz = mem.get_term(z);
-                let xz = ix
-                    .apply(mem, iz.clone(), 1 + depth)
-                    .eval1(mem, 1 + depth)
-                    .clone();
-                let yz = iy.apply(mem, iz, depth + 1).eval1(mem, depth + 1).clone();
-                xz.apply(mem, yz, depth + 1)
-            }
-            Self::K2(_, x, _) => mem.get_term(x),
-            Self::I1(_, x) => mem.get_term(x),
-            Self::Cons(_, first, rest) => {
-                let first = mem.get_term(first);
-                let first_evaled = first.clone().eval(mem, depth + 1);
-                if mem.get_term(rest) == Term::Nil {
-                    if first_evaled == first {
-                        first_evaled
+        with_memo!(Op::Eval1(self.clone()), (mem, depth, result), {
+            match self {
+                Self::S3(_, x, y, z) => {
+                    let ix = mem.get_term(x);
+                    let iy = mem.get_term(y);
+                    let iz = mem.get_term(z);
+                    let xz = ix
+                        .apply(mem, iz.clone(), 1 + depth)
+                        .eval1(mem, 1 + depth)
+                        .clone();
+                    let yz = iy.apply(mem, iz, depth + 1).eval1(mem, depth + 1).clone();
+                    xz.apply(mem, yz, depth + 1)
+                }
+                Self::K2(_, x, _) => mem.get_term(x),
+                Self::I1(_, x) => mem.get_term(x),
+                Self::Cons(_, first, rest) => {
+                    let first = mem.get_term(first);
+                    let first_evaled = first.clone().eval(mem, depth + 1);
+                    if mem.get_term(rest) == Term::Nil {
+                        if first_evaled == first {
+                            first_evaled
+                        } else {
+                            mem.cons(first_evaled, Self::Nil)
+                        }
                     } else {
-                        mem.cons(first_evaled, Self::Nil)
-                    }
-                } else {
-                    let rest = mem.get_term(rest);
-                    let (second, tail) = rest.first(mem);
-                    let second_evaled = second.clone().eval(mem, depth + 1);
-                    let applied = first_evaled.clone().apply(mem, second_evaled, depth + 1);
+                        let rest = mem.get_term(rest);
+                        let (second, tail) = rest.first(mem);
+                        let second_evaled = second.clone().eval(mem, depth + 1);
+                        let applied = first_evaled.clone().apply(mem, second_evaled, depth + 1);
 
-                    if let Some(tail) = tail {
-                        mem.cons(applied, tail)
-                    } else {
-                        mem.cons(applied, Self::Nil)
+                        if let Some(tail) = tail {
+                            mem.cons(applied, tail)
+                        } else {
+                            mem.cons(applied, Self::Nil)
+                        }
                     }
                 }
+                Self::Nil => unreachable!(),
+                _ => self,
             }
-            Self::Nil => unreachable!(),
-            _ => self,
-        };
-
-        mem.steps[step_index].out = result.clone();
-        mem.memo.insert(op, result.clone());
-        result
+        })
     }
 
     pub fn eval(self, mem: &mut Mem, depth: usize) -> Self {
-        let op = Op::Eval(self.clone());
-        let step = Step {
-            op: op.clone(),
-            out: self.clone(),
-            depth,
-        };
-        mem.steps.push(step);
-        let step_index = mem.steps.len() - 1;
+        with_memo!(Op::Eval(self.clone()), (mem, depth, result), {
+            let mut prev_addr;
+            let mut term = self.clone();
 
-        if let Some(found) = mem.memo.get(&op) {
-            return found.clone();
-        }
+            loop {
+                prev_addr = term.addr();
+                term = term.eval1(mem, depth + 1);
 
-        let mut prev_addr;
-        let mut term = self.clone();
-
-        loop {
-            prev_addr = term.addr();
-            term = term.eval1(mem, depth + 1);
-
-            if term.addr() == prev_addr {
-                break;
-            };
-        }
-        mem.steps[step_index].out = term.clone();
-        mem.memo.insert(op, term.clone());
-
-        term
+                if term.addr() == prev_addr {
+                    break;
+                };
+            }
+            term
+        })
     }
 
     fn apply(self, mem: &mut Mem, a: Self, depth: usize) -> Self {
-        let op = Op::Apply(self.clone(), a.clone());
-        let step = Step {
-            op: op.clone(),
-            out: self.clone(),
-            depth,
-        };
-        mem.steps.push(step);
-        let step_index = mem.steps.len() - 1;
-
-        if let Some(found) = mem.memo.get(&op) {
-            return found.clone();
-        }
-
-        let result = match self {
-            Self::S(_) => mem.S1(a.addr()),
-            Self::S1(_, x) => mem.S2(x, a.addr()),
-            Self::S2(_, x, y) => mem.S3(x, y, a.addr()),
-            Self::K(_) => mem.K1(a.addr()),
-            Self::K1(_, x) => mem.K2(x, a.addr()),
-            Self::I(_) => mem.I1(a.addr()),
-            Self::I1(_, x) => mem.get_term(x).apply(mem, a, depth + 1),
-            Self::Cons(_, _, _) => {
-                let applied = self.clone().eval(mem, depth + 1).apply(mem, a, depth + 1);
-                applied
+        with_memo!(
+            Op::Apply(self.clone(), a.clone()),
+            (mem, depth, result),
+            match self {
+                Self::S(_) => mem.S1(a.addr()),
+                Self::S1(_, x) => mem.S2(x, a.addr()),
+                Self::S2(_, x, y) => mem.S3(x, y, a.addr()),
+                Self::K(_) => mem.K1(a.addr()),
+                Self::K1(_, x) => mem.K2(x, a.addr()),
+                Self::I(_) => mem.I1(a.addr()),
+                Self::I1(_, x) => mem.get_term(x).apply(mem, a, depth + 1),
+                Self::Cons(_, _, _) => {
+                    let applied = self.clone().eval(mem, depth + 1).apply(mem, a, depth + 1);
+                    applied
+                }
+                _ => unreachable!(),
             }
-            _ => unreachable!(),
-        };
-        if let Some(found) = mem.memo.get(&op) {
-            assert_eq!(found, &result);
-        }
-
-        mem.steps[step_index].out = result.clone();
-        mem.memo.insert(op, result.clone());
-        result
+        )
     }
 }
 
@@ -427,7 +416,7 @@ pub struct Mem {
     k1: HashMap<Addr, Addr>,
     k2: HashMap<(Addr, Addr), Addr>,
     i1: HashMap<Addr, Addr>,
-    seqs: HashMap<(Addr, Addr), Addr>,
+    conses: HashMap<(Addr, Addr), Addr>,
 }
 
 impl Mem {
@@ -538,20 +527,20 @@ impl Mem {
             new
         }
     }
-    pub fn seq(&mut self, addrs: &[Addr]) -> Term {
+    pub fn list(&mut self, addrs: &[Addr]) -> Term {
         if addrs.is_empty() {
             return Term::Nil;
         }
         let first_addr = addrs[0];
-        let rest_seqs = self.seq(&addrs[1..]);
+        let rest = self.list(&addrs[1..]);
 
-        if let Some(found) = self.seqs.get(&(first_addr, rest_seqs.addr())) {
+        if let Some(found) = self.conses.get(&(first_addr, rest.addr())) {
             self.terms[*found].clone()
         } else {
             let addr = self.terms.len();
             if addrs.len() > 1 {
-                self.seqs.insert((first_addr, rest_seqs.addr()), addr);
-                let new = Term::Cons(addr, addrs[0], rest_seqs.addr());
+                self.conses.insert((first_addr, rest.addr()), addr);
+                let new = Term::Cons(addr, addrs[0], rest.addr());
                 self.terms.push(new.clone());
                 new
             } else {
@@ -563,7 +552,7 @@ impl Mem {
     }
 
     pub fn cons(&mut self, first: Term, rest: Term) -> Term {
-        if let Some(found) = self.seqs.get(&(first.addr(), rest.addr())) {
+        if let Some(found) = self.conses.get(&(first.addr(), rest.addr())) {
             self.terms[*found].clone()
         } else {
             let addr = self.terms.len();
