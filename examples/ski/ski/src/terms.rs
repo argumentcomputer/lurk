@@ -6,7 +6,10 @@ use std::collections::HashMap;
 use std::fmt::Formatter;
 use std::hash::Hash;
 use std::io;
+
 use std::str::FromStr;
+
+use crate::multiset::MultiSet;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct SKI {
@@ -78,6 +81,7 @@ pub enum Op {
     Reduce(Term),
     Apply(Term, Term),
     Eval(Term),
+    Get(Addr),
 }
 
 impl Op {
@@ -89,6 +93,9 @@ impl Op {
     }
     fn is_eval(&self) -> bool {
         matches!(self, Self::Eval(_))
+    }
+    fn is_get(&self) -> bool {
+        matches!(self, Self::Get(_))
     }
 }
 
@@ -123,8 +130,23 @@ impl Op {
                 right.fmt(mem, w)?;
                 write!(w, "] ")
             }
+            Op::Get(addr) => {
+                write!(w, "Get {addr}")
+            }
         }
     }
+}
+
+macro_rules! query_require {
+    ($op:expr, $result:ident, $verification:ident) => {
+        let Some($result) = $verification.mem.query($op) else {
+            // panic!("debugging: query missing in honest verification");
+            return false;
+        };
+        $verification
+            .memoset
+            .require($op, $result.clone(), $verification.mem);
+    };
 }
 
 impl Step {
@@ -152,7 +174,7 @@ impl Step {
     ) -> Result<(), io::Error> {
         for step in steps {
             step.borrow().fmt(mem, w)?;
-            write!(w, "\n")?;
+            writeln!(w)?;
         }
         Ok(())
     }
@@ -164,6 +186,305 @@ impl Step {
         let mut out = Vec::new();
         Self::fmt_steps(steps, mem, &mut out).unwrap();
         String::from_utf8(out).unwrap()
+    }
+
+    pub fn verify(&self, verification: &mut Verification<'_>) -> bool {
+        let Self { op, out, .. } = self;
+        let result = out.addr();
+        //        let mem = verification.mem;
+
+        // let msg = format!(
+        //     "Verifying {}=>{}",
+        //     &op.fmt_to_string(mem),
+        //     &out.fmt_to_string(mem)
+        // );
+        // dbg!(&msg);
+
+        let is_verified = match op {
+            Op::Eval(term) => {
+                query_require!(Op::Reduce(term.clone()), reduced, verification);
+
+                if reduced == *term {
+                    reduced == *out
+                } else {
+                    query_require!(Op::Eval(reduced.clone()), evaled, verification);
+
+                    evaled.addr() == result
+                }
+            }
+            Op::Reduce(term) => match term {
+                Term::S3(_, x, y, z) => {
+                    query_require!(Op::Get(*y), y_term, verification);
+                    query_require!(Op::Eval(y_term.clone()), evaled_y, verification);
+
+                    query_require!(Op::Get(*z), z_term, verification);
+                    query_require!(Op::Eval(z_term.clone()), evaled_z, verification);
+
+                    query_require!(Op::Get(*x), x_term, verification);
+                    query_require!(
+                        Op::Apply(x_term.clone(), evaled_z.clone()),
+                        xz,
+                        verification
+                    );
+                    query_require!(Op::Eval(xz.clone()), evaled_xz, verification);
+                    query_require!(
+                        Op::Apply(evaled_y.clone(), evaled_z.clone()),
+                        yz,
+                        verification
+                    );
+                    query_require!(Op::Eval(yz.clone()), evaled_yz, verification);
+                    query_require!(
+                        Op::Apply(evaled_xz.clone(), evaled_yz.clone()),
+                        reduced,
+                        verification
+                    );
+
+                    reduced.addr() == result
+                }
+                Term::K2(_, x, _) | Term::I1(_, x) => *x == result,
+                Term::Cons(_, first, rest) => {
+                    query_require!(Op::Get(*first), first_term, verification);
+                    query_require!(Op::Eval(first_term.clone()), first_evaled, verification);
+
+                    query_require!(Op::Get(*rest), rest_term, verification);
+
+                    if rest_term == Term::Nil {
+                        if first_evaled == first_term {
+                            *out == first_evaled
+                        } else {
+                            matches!(out, Term::Cons(addr, _first_evaled, NIL_ADDR) if *addr == out.addr())
+                        }
+                    } else {
+                        let (second, tail) = match rest_term {
+                            Term::Cons(_, first, rest) => {
+                                query_require!(Op::Get(rest), rest_term, verification);
+                                let tail = match rest_term {
+                                    Term::Nil => None,
+                                    _ => Some(rest_term),
+                                };
+                                query_require!(Op::Get(first), first_term, verification);
+                                assert!(first_term != Term::Nil);
+                                (first_term, tail)
+                            }
+                            _ => {
+                                panic!("first called on non-cons")
+                            }
+                        };
+
+                        query_require!(Op::Eval(second.clone()), second_evaled, verification);
+                        query_require!(
+                            Op::Apply(first_evaled.clone(), second_evaled.clone()),
+                            applied,
+                            verification
+                        );
+
+                        *out == Term::Cons(
+                            out.addr(),
+                            applied.addr(),
+                            tail.map(|term| term.addr()).unwrap_or(NIL_ADDR),
+                        )
+                    }
+                }
+                Term::Nil => false,
+                term => term.addr() == result,
+            },
+            Op::Apply(a, b) => match a {
+                Term::S(_addr) => {
+                    matches!(out, Term::S1(out_addr, x) if *x == b.addr() && *out_addr == out.addr())
+                }
+                Term::S1(_addr, _addr1) => {
+                    matches!(out, Term::S2(out_addr, _addr1, x) if *x == b.addr()  && *out_addr == out.addr())
+                }
+                Term::S2(_addr, _addr1, _addr2) => {
+                    matches!(out, Term::S3(out_addr, _addr1, _addr2, x) if *x == b.addr()  && *out_addr == out.addr())
+                }
+                Term::K(_addr) => {
+                    matches!(out, Term::K1(out_addr, x) if *x == b.addr() && *out_addr == out.addr())
+                }
+                Term::K1(_addr, _addr1) => {
+                    matches!(out, Term::K2(out_addr, _addr1, x) if *x == b.addr() && *out_addr == out.addr())
+                }
+                Term::I(_addr) => {
+                    matches!(out, Term::I1(out_addr, x) if *x == b.addr() && *out_addr == out.addr())
+                }
+                Term::I1(_addr, _addr1) => {
+                    query_require!(Op::Eval(b.clone()), applied, verification);
+                    *out == applied
+                }
+                Term::Cons(_, _, _) => {
+                    query_require!(Op::Eval(a.clone()), evaled, verification);
+                    query_require!(Op::Apply(evaled.clone(), b.clone()), applied, verification);
+
+                    *out == applied
+                }
+                _ => false,
+            },
+            Op::Get(addr) => *out == verification.mem.terms[*addr].0.clone(),
+        };
+
+        if is_verified {
+            if let Some(WithMultiplicity(term, m)) = verification.mem.memo.get(op) {
+                if term.addr() == result {
+                    if verification
+                        .memoset
+                        .provided
+                        .get(&(op.clone(), term.clone()))
+                        .is_none()
+                    {
+                        // let msg = format!(
+                        //     "providing {}=>{}",
+                        //     &op.fmt_to_string(mem),
+                        //     &term.fmt_to_string(mem)
+                        // );
+                        // dbg!(msg);
+
+                        verification
+                            .memoset
+                            .provide(WithMultiplicity((op.clone(), term.clone()), *m))
+                    }
+                } else {
+                    unreachable!("each op must be provided only once");
+                }
+            }
+        }
+        is_verified
+    }
+}
+
+pub type Transition = (Op, Term);
+
+#[derive(Default)]
+pub struct MemoSet<T: Hash + Eq> {
+    required: MultiSet<T>,
+    provided: MultiSet<T>,
+}
+
+pub struct Verification<'a> {
+    memoset: MemoSet<Transition>,
+    // Mem is not generic, but it may become. Until then, `Verification` isn't either.
+    mem: &'a Mem,
+}
+
+impl<'a> Verification<'a> {
+    pub fn new(mem: &'a Mem) -> Self {
+        Self {
+            memoset: MemoSet::new(),
+            mem,
+        }
+    }
+
+    /// `verify` returns true iff `Mem` is valid.
+    /// This means that:
+    /// - its `input` evaluates to its `output`
+    /// - every step required to prove this evaluation is present
+    /// - every present step is correct
+    ///
+    /// Since the correctness of steps depends on the contents of the allocated memory,
+    /// this process implicitly verifies the memory itself, in relation to the steps.
+    ///
+    /// `verify` does not certify that either the steps or the memory are minimal:
+    /// there may be unused allocations, or unnecessary steps included.
+    pub fn verify(&mut self) -> bool {
+        let mem = self.mem;
+
+        mem.assert_memo_steps_consistency();
+        println!("-----------------------------------");
+        println!("In verify(); contents of mem.memo ({}):\n", mem.memo.len());
+        for (op, wm) in mem.memo.iter() {
+            println!(
+                "{} => {} : {}",
+                op.fmt_to_string(mem),
+                wm.0.fmt_to_string(mem),
+                wm.1
+            );
+        }
+        println!("-----------------------------------\n");
+
+        let memoset = &mut MemoSet::new();
+        let steps_to_verify = mem.memo.iter().map(|(op, m)| {
+            let out = m.0.clone();
+            Step {
+                op: op.clone(),
+                out,
+                depth: 0,
+            }
+        });
+
+        println!("-----------------------------------");
+        println!(
+            "In verify(); contents of mem.memo as steps to verify ({}):\n",
+            steps_to_verify.len()
+        );
+
+        let verify_steps = steps_to_verify.enumerate().all(|(i, step)| {
+            println!("step {i}: {}", step.fmt_to_string(mem));
+            let verified = step.verify(self);
+            assert!(verified);
+            verified
+        });
+        println!("-----------------------------------\n");
+
+        let input = mem.input().unwrap();
+        let output = mem.output().unwrap();
+
+        query_require!(Op::Eval(input.clone()), evaled_input, self);
+
+        let verify_io = evaled_input == output;
+
+        println!("-----------------------------------");
+        println!(
+            "In verify(); contents of mem.steps ({}):\n",
+            mem.steps.len()
+        );
+        let _ = Step::fmt_steps(&mem.steps, mem, &mut io::stdout());
+        println!("-----------------------------------\n");
+
+        let verify_memoset_is_consistent = memoset.is_consistent(mem);
+
+        dbg!(&verify_io, &verify_steps, &verify_memoset_is_consistent);
+        verify_io && verify_steps && verify_memoset_is_consistent
+    }
+}
+
+impl MemoSet<Transition> {
+    fn new() -> Self {
+        Self {
+            required: MultiSet::new(),
+            provided: MultiSet::new(),
+        }
+    }
+
+    fn require(&mut self, op: Op, result: Term, _mem: &Mem) -> bool {
+        // let msg = format!(
+        //     "Requiring {}=>{} in context: {context}",
+        //     &op.fmt_to_string(mem),
+        //     &result.fmt_to_string(mem)
+        // );
+        // dbg!(msg);
+        self.required.add((op.clone(), result.clone()));
+        true
+    }
+
+    fn provide(&mut self, m: WithMultiplicity<Transition>) {
+        self.provided.add_n(m.0.clone(), m.1);
+    }
+
+    fn is_consistent(&self, mem: &Mem) -> bool {
+        // TODO: implement iter for required?
+        for (required, required_multiplicity) in self.required.map.iter() {
+            let provided_multiplicity = self.provided.get(required);
+            let msg = format!(
+                "{}->{}",
+                &required.0.fmt_to_string(mem),
+                &required.1.fmt_to_string(mem)
+            );
+            dbg!(&provided_multiplicity, required_multiplicity, msg);
+            if provided_multiplicity != Some(*required_multiplicity) {
+                return false;
+            }
+        }
+
+        true
     }
 }
 
@@ -200,23 +521,23 @@ fn finalize(op: Op, step_index: usize, mem: &mut Mem, result: Term) {
             // `query_value` increments multiplicity.
             assert_eq!(result, e.query_value());
 
-            unreachable!("This should never happen.");
+            //            unreachable!("This should never happen.");
         })
         .or_insert_with(|| WithMultiplicity::first_access(result));
 }
 
 macro_rules! with_memo {
     ($op:expr,
-     ($mem:ident, $depth:ident, $result:ident),
+     ($mem:ident, $depth:expr),
      $body:expr) => {{
         let op = $op;
         let (step_index, found) = setup(op.clone(), $mem, $depth);
         if let Some(found) = found {
             found
         } else {
-            let $result = $body;
-            finalize(op, step_index, $mem, $result.clone());
-            $result
+            let result = $body;
+            finalize(op, step_index, $mem, result.clone());
+            result
         }
     }};
 }
@@ -261,7 +582,7 @@ impl Term {
         }
     }
 
-    fn first(&self, mem: &Mem) -> (Self, Option<Self>) {
+    fn first(&self, mem: &mut Mem) -> (Self, Option<Self>) {
         match self {
             Self::Cons(_, first, rest) => {
                 let rest_term = mem.get_term(*rest);
@@ -366,7 +687,7 @@ impl Term {
                 write!(w, "(")?;
                 mem.borrow_term(*first).fmt(mem, w)?;
 
-                let mut tail = rest.clone();
+                let mut tail = *rest;
                 loop {
                     match mem.borrow_term(tail) {
                         Term::Cons(_, first, rest) => {
@@ -387,7 +708,7 @@ impl Term {
     }
 
     fn reduce(self, mem: &mut Mem, depth: usize) -> Self {
-        with_memo!(Op::Reduce(self.clone()), (mem, depth, result), {
+        with_memo!(Op::Reduce(self.clone()), (mem, depth), {
             match self {
                 Self::S3(_, x, y, z) => {
                     // Q: Do we need to eval x too?
@@ -437,7 +758,7 @@ impl Term {
     }
 
     pub fn eval(self, mem: &mut Mem, depth: usize) -> Self {
-        with_memo!(Op::Eval(self.clone()), (mem, depth, result), {
+        with_memo!(Op::Eval(self.clone()), (mem, depth), {
             let reduced = self.clone().reduce(mem, depth + 1);
 
             if reduced == self {
@@ -451,7 +772,7 @@ impl Term {
     fn apply(self, mem: &mut Mem, a: Self, depth: usize) -> Self {
         with_memo!(
             Op::Apply(self.clone(), a.clone()),
-            (mem, depth, result),
+            (mem, depth),
             match self {
                 Self::S(_) => mem.S1(a.addr()),
                 Self::S1(_, x) => mem.S2(x, a.addr()),
@@ -461,8 +782,7 @@ impl Term {
                 Self::I(_) => mem.I1(a.addr()),
                 Self::I1(_, x) => mem.get_term(x).apply(mem, a, depth + 1),
                 Self::Cons(_, _, _) => {
-                    let applied = self.clone().eval(mem, depth + 1).apply(mem, a, depth + 1);
-                    applied
+                    self.clone().eval(mem, depth + 1).apply(mem, a, depth + 1)
                 }
                 _ => unreachable!(),
             }
@@ -475,6 +795,7 @@ pub struct Mem {
     terms: Vec<WithMultiplicity<Term>>,
     steps: Vec<Step>,
     memo: HashMap<Op, WithMultiplicity<Term>>,
+    io: Option<Step>,
     s1: HashMap<Addr, Addr>,
     s2: HashMap<(Addr, Addr), Addr>,
     s3: HashMap<(Addr, Addr, Addr), Addr>,
@@ -486,13 +807,16 @@ pub struct Mem {
 
 impl Mem {
     pub fn new() -> Self {
-        let mut mem = Mem::default();
-        mem.terms = vec![
-            WithMultiplicity::preallocate(Term::S(S_ADDR)),
-            WithMultiplicity::preallocate(Term::K(K_ADDR)),
-            WithMultiplicity::preallocate(Term::I(I_ADDR)),
-            WithMultiplicity::preallocate(Term::Nil),
-        ];
+        // let mut mem = Mem::default();
+        let mem = Self {
+            terms: vec![
+                WithMultiplicity::preallocate(Term::S(S_ADDR)),
+                WithMultiplicity::preallocate(Term::K(K_ADDR)),
+                WithMultiplicity::preallocate(Term::I(I_ADDR)),
+                WithMultiplicity::preallocate(Term::Nil),
+            ],
+            ..Default::default()
+        };
 
         for (i, WithMultiplicity(term, _)) in mem.terms.iter().enumerate() {
             assert_eq!(i, term.addr());
@@ -501,15 +825,33 @@ impl Mem {
         mem
     }
 
-    pub fn input(&self) -> Term {
-        match &self.steps[0].op {
-            Op::Eval(input) => input.clone(),
-            _ => panic!("Mem does not describe a toplevel evaluation."),
-        }
+    pub fn evaluate(&mut self, input: Term) -> Term {
+        // Mem can only evaluate once.
+        assert!(self.io.is_none());
+
+        let output = input.clone().eval(self, 0);
+
+        self.io = Some(Step {
+            op: Op::Eval(input),
+            out: output.clone(),
+            depth: 0,
+        });
+
+        output
     }
 
-    pub fn output(&self) -> Term {
-        self.steps[0].out.clone()
+    pub fn input(&self) -> Option<Term> {
+        self.io.as_ref().and_then(|step| match &step.op {
+            Op::Eval(input) => Some(input.clone()),
+            _ => None,
+        })
+    }
+
+    pub fn output(&self) -> Option<Term> {
+        self.io.as_ref().and_then(|step| match &step.op {
+            Op::Eval(_input) => Some(step.out.clone()),
+            _ => None,
+        })
     }
 
     pub fn eval_steps(&self) -> Vec<Step> {
@@ -536,21 +878,36 @@ impl Mem {
             .collect()
     }
 
+    pub fn get_steps(&self) -> Vec<Step> {
+        self.steps
+            .iter()
+            .filter(|step| step.op.is_get())
+            .cloned()
+            .collect()
+    }
+
     pub fn borrow_term(&self, addr: Addr) -> &Term {
         &self.terms[addr].0
     }
 
-    pub fn get_term(&self, addr: Addr) -> Term {
-        self.terms[addr].0.clone()
+    pub fn get_term(&mut self, addr: Addr) -> Term {
+        with_memo!(Op::Get(addr), (self, 0), {
+            let term = self.terms[addr].0.clone();
+            self.memo
+                .entry(Op::Get(addr))
+                .and_modify(|e| e.1 += 1)
+                .or_insert_with(|| WithMultiplicity::first_access(term.clone()));
+
+            term
+        })
     }
 
     pub fn query(&self, op: Op) -> Option<Term> {
         // TODO: this should be indexed to avoid the expensive scan.
-        if let Some(found) = self.steps.iter().find(|step| step.op == op) {
-            Some(found.out.clone())
-        } else {
-            None
-        }
+        self.steps
+            .iter()
+            .find(|step| step.op == op)
+            .map(|found| found.out.clone())
     }
 
     pub fn assert_memo_steps_consistency(&self) {
@@ -679,16 +1036,20 @@ mod test {
     fn eval_test(input: &str, expected: &str) {
         let mem = &mut Mem::new();
         let term = Term::from_str(mem, input).unwrap();
-        let evaled = term.clone().eval(mem, 0);
+        let evaled = mem.evaluate(term.clone());
 
         if expected != evaled.fmt_to_string(mem) {
             let _ = dbg!(&input);
             let _ = dbg!(Step::fmt_steps(&mem.steps, mem, &mut io::stdout()));
             // dbg!(&mem);
         }
+
+        let mut verification = Verification::new(mem);
+
         assert_eq!(expected, evaled.fmt_to_string(mem));
-        assert_eq!(term, mem.input());
-        assert_eq!(evaled, mem.output());
+        assert_eq!(term, mem.input().unwrap());
+        assert_eq!(evaled, mem.output().unwrap());
+        assert!(verification.verify());
     }
 
     #[test]
@@ -702,6 +1063,10 @@ mod test {
         eval_test("((((K(SI))K)K)K)", "(K(KK))");
         eval_test(&"K((SII)(SII))", "(K(SII(SII)))");
         eval_test("SIKKI", "(KK)");
+        eval_test("SK(KS)", "(SK(KS))");
+        eval_test("II", "I");
+        eval_test("IK", "K");
+        eval_test("(K)", "K");
     }
 
     #[test]
