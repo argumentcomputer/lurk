@@ -73,14 +73,14 @@ pub enum Term {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Op {
-    Eval1(Term),
+    Reduce(Term),
     Apply(Term, Term),
     Eval(Term),
 }
 
 impl Op {
-    fn is_eval1(&self) -> bool {
-        matches!(self, Self::Eval1(_))
+    fn is_reduce(&self) -> bool {
+        matches!(self, Self::Reduce(_))
     }
     fn is_apply(&self) -> bool {
         matches!(self, Self::Apply(_, _))
@@ -111,8 +111,8 @@ impl Step {
         }
 
         match &self.op {
-            Op::Eval1(term) => {
-                write!(w, "Eval1 ")?;
+            Op::Reduce(term) => {
+                write!(w, "Reduce ")?;
                 term.fmt(mem, w)?;
             }
             Op::Eval(term) => {
@@ -363,18 +363,22 @@ impl Term {
         }
     }
 
-    fn eval1(self, mem: &mut Mem, depth: usize) -> Self {
-        with_memo!(Op::Eval1(self.clone()), (mem, depth, result), {
+    fn reduce(self, mem: &mut Mem, depth: usize) -> Self {
+        with_memo!(Op::Reduce(self.clone()), (mem, depth, result), {
             match self {
                 Self::S3(_, x, y, z) => {
+                    // Some of these `eval`s could probably be just `reduce`s, and that would
+                    // reduce the amount of work performed. However, if we get it wrong that might
+                    // result in some terms not being fully reduced. So for now, we will just conservatively
+                    // fully evaluate all sub-terms before performing the reduction.
                     let ix = mem.get_term(x);
-                    let iy = mem.get_term(y);
-                    let iz = mem.get_term(z);
+                    let iy = mem.get_term(y).eval(mem, depth + 1);
+                    let iz = mem.get_term(z).eval(mem, depth + 1);
                     let xz = ix
-                        .apply(mem, iz.clone(), 1 + depth)
-                        .eval1(mem, 1 + depth)
+                        .apply(mem, iz.clone(), depth + 1)
+                        .eval(mem, 1 + depth)
                         .clone();
-                    let yz = iy.apply(mem, iz, depth + 1).eval1(mem, depth + 1).clone();
+                    let yz = iy.apply(mem, iz, depth + 1).eval(mem, depth + 1).clone();
                     xz.apply(mem, yz, depth + 1)
                 }
                 Self::K2(_, x, _) => mem.get_term(x),
@@ -414,7 +418,7 @@ impl Term {
 
             loop {
                 prev_addr = term.addr();
-                term = term.eval1(mem, depth + 1);
+                term = term.reduce(mem, depth + 1);
 
                 if term.addr() == prev_addr {
                     break;
@@ -496,10 +500,10 @@ impl Mem {
             .collect()
     }
 
-    pub fn eval1_steps(&self) -> Vec<Step> {
+    pub fn reduce_steps(&self) -> Vec<Step> {
         self.steps
             .iter()
-            .filter(|step| step.op.is_eval1())
+            .filter(|step| step.op.is_reduce())
             .cloned()
             .collect()
     }
