@@ -18,7 +18,13 @@ pub struct ParseTermError;
 pub struct WithMultiplicity<T: Clone>(T, usize);
 
 impl<T: Clone> WithMultiplicity<T> {
-    pub fn new(thing: T) -> Self {
+    // When preallocating, there is no corresponding access, so multiplicity starts from 0.
+    pub fn preallocate(thing: T) -> Self {
+        Self(thing, 0)
+    }
+
+    // When creating upon first access, that access counts, so multiplicity starts from 1.
+    pub fn first_access(thing: T) -> Self {
         Self(thing, 1)
     }
 
@@ -162,7 +168,7 @@ fn setup(op: Op, mem: &mut Mem, depth: usize) -> (usize, Option<Term>) {
 
 fn finalize(op: Op, step_index: usize, mem: &mut Mem, result: Term) {
     mem.steps[step_index].out = result.clone();
-    mem.memo.insert(op, WithMultiplicity(result, 1));
+    mem.memo.insert(op, WithMultiplicity::first_access(result));
 }
 
 macro_rules! with_memo {
@@ -233,7 +239,7 @@ impl Term {
                 (first_term, tail)
             }
             _ => {
-                panic!("xxxx")
+                panic!("first called on non-cons")
             }
         }
     }
@@ -446,10 +452,10 @@ impl Mem {
     pub fn new() -> Self {
         let mut mem = Mem::default();
         mem.terms = vec![
-            WithMultiplicity::new(Term::S(S_ADDR)),
-            WithMultiplicity::new(Term::K(K_ADDR)),
-            WithMultiplicity::new(Term::I(I_ADDR)),
-            WithMultiplicity::new(Term::Nil),
+            WithMultiplicity::preallocate(Term::S(S_ADDR)),
+            WithMultiplicity::preallocate(Term::K(K_ADDR)),
+            WithMultiplicity::preallocate(Term::I(I_ADDR)),
+            WithMultiplicity::preallocate(Term::Nil),
         ];
 
         for (i, WithMultiplicity(term, _)) in mem.terms.iter().enumerate() {
@@ -475,7 +481,7 @@ impl Mem {
     }
 
     pub fn get_term(&mut self, addr: Addr) -> Term {
-        self.terms[addr].query_value()
+        self.terms[addr].0.clone()
     }
 
     // NOTE: The clones are shallow.
@@ -494,7 +500,7 @@ impl Mem {
             self.terms[*found].query_value().clone()
         } else {
             let addr = self.terms.len();
-            let new = WithMultiplicity::new(Term::S1(addr, x_addr));
+            let new = WithMultiplicity::first_access(Term::S1(addr, x_addr));
             self.s1.insert(x_addr, addr);
             self.terms.push(new.clone());
             new.0
@@ -505,7 +511,7 @@ impl Mem {
             self.terms[*found].query_value().clone()
         } else {
             let addr = self.terms.len();
-            let new = WithMultiplicity::new(Term::S2(addr, x_addr, y_addr));
+            let new = WithMultiplicity::first_access(Term::S2(addr, x_addr, y_addr));
             self.s2.insert((x_addr, y_addr), addr);
             self.terms.push(new.clone());
             new.0
@@ -516,7 +522,7 @@ impl Mem {
             self.terms[*found].query_value().clone()
         } else {
             let addr = self.terms.len();
-            let new = WithMultiplicity::new(Term::S3(addr, x_addr, y_addr, z_addr));
+            let new = WithMultiplicity::first_access(Term::S3(addr, x_addr, y_addr, z_addr));
             self.s3.insert((x_addr, y_addr, z_addr), addr);
             self.terms.push(new.clone());
             new.0
@@ -527,7 +533,7 @@ impl Mem {
             self.terms[*found].query_value().clone()
         } else {
             let addr = self.terms.len();
-            let new = WithMultiplicity::new(Term::K1(addr, x_addr));
+            let new = WithMultiplicity::first_access(Term::K1(addr, x_addr));
             self.k1.insert(x_addr, addr);
             self.terms.push(new.clone());
             new.0
@@ -538,7 +544,7 @@ impl Mem {
             self.terms[*found].query_value().clone()
         } else {
             let addr = self.terms.len();
-            let new = WithMultiplicity::new(Term::K2(addr, x_addr, y_addr));
+            let new = WithMultiplicity::first_access(Term::K2(addr, x_addr, y_addr));
             self.k2.insert((x_addr, y_addr), addr);
             self.terms.push(new.clone());
             new.0
@@ -549,7 +555,7 @@ impl Mem {
             self.terms[*found].query_value().clone()
         } else {
             let addr = self.terms.len();
-            let new = WithMultiplicity::new(Term::I1(addr, x_addr));
+            let new = WithMultiplicity::first_access(Term::I1(addr, x_addr));
             self.i1.insert(x_addr, addr);
             self.terms.push(new.clone());
             new.0
@@ -568,11 +574,11 @@ impl Mem {
             let addr = self.terms.len();
             if addrs.len() > 1 {
                 self.conses.insert((first_addr, rest.addr()), addr);
-                let new = WithMultiplicity::new(Term::Cons(addr, addrs[0], rest.addr()));
+                let new = WithMultiplicity::first_access(Term::Cons(addr, addrs[0], rest.addr()));
                 self.terms.push(new.clone());
                 new.0
             } else {
-                let new = WithMultiplicity::new(Term::Cons(addr, addrs[0], NIL_ADDR));
+                let new = WithMultiplicity::first_access(Term::Cons(addr, addrs[0], NIL_ADDR));
                 self.terms.push(new.clone());
                 new.0
             }
@@ -584,7 +590,7 @@ impl Mem {
             self.terms[*found].query_value().clone()
         } else {
             let addr = self.terms.len();
-            let new = WithMultiplicity::new(Term::Cons(addr, first.addr(), rest.addr()));
+            let new = WithMultiplicity::first_access(Term::Cons(addr, first.addr(), rest.addr()));
             self.terms.push(new.clone());
             new.0
         }
