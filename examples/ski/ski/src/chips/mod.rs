@@ -1,27 +1,27 @@
-use p3_air::{Air, AirBuilder, BaseAir};
-use p3_field::{AbstractField, Field};
+use p3_air::{Air, BaseAir};
+use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrix;
 use wp1_core::stark::SP1AirBuilder;
 use wp1_derive::AlignedBorrow;
 
 use std::mem::size_of;
 
-struct EvalCols {}
-struct ApplyCols {}
-struct Eval1Cols {}
-struct SCols {}
-struct S1Cols {}
-struct S2Cols {}
-struct S3Cols {}
-struct KCols {}
-struct K1Cols {}
-struct K2Cols {}
-struct ICols {}
-struct I1Cols {}
+// struct EvalCols {}
+// struct ApplyCols {}
+// struct Eval1Cols {}
+// struct SCols {}
+// struct S1Cols {}
+// struct S2Cols {}
+// struct S3Cols {}
+// struct KCols {}
+// struct K1Cols {}
+// struct K2Cols {}
+// struct ICols {}
+// struct I1Cols {}
 
 #[derive(AlignedBorrow)]
 struct CpuCols<T> {
-    x: T,
+    _x: T,
 }
 
 struct CpuChip {}
@@ -42,7 +42,7 @@ impl CpuChip {
 }
 
 impl<AB: SP1AirBuilder> Air<AB> for CpuChip {
-    fn eval(&self, builder: &mut AB) {
+    fn eval(&self, _builder: &mut AB) {
         todo!()
     }
 }
@@ -50,7 +50,7 @@ impl<AB: SP1AirBuilder> Air<AB> for CpuChip {
 #[cfg(test)]
 mod tests {
     use p3_baby_bear::BabyBear;
-    use p3_field::{AbstractField, Field};
+    use p3_field::AbstractField;
     use p3_matrix::dense::RowMajorMatrix;
     use wp1_core::{
         stark::StarkGenericConfig,
@@ -59,11 +59,12 @@ mod tests {
 
     use super::*;
 
+    #[allow(dead_code)]
     fn prove_trace() {
         let config = BabyBearPoseidon2::new();
         let mut challenger = config.challenger();
 
-        let f = BabyBear::from_canonical_usize;
+        let _f = BabyBear::from_canonical_usize;
 
         let trace: RowMajorMatrix<BabyBear> = CpuChip::generate_trace();
 

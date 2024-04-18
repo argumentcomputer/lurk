@@ -63,12 +63,13 @@ pub trait ConsBuilder: BaseAirBuilder {
     ) where
         E: Into<Self::Expr>,
     {
-        todo!("add cons domain");
         self.send(AirInteraction::new(
             chain!(a.into_exprs(), b.into_exprs(), c.into_exprs()).collect(),
             is_cons.into(),
             InteractionKind::MemoSet,
         ));
+
+        todo!("add cons domain");
     }
 
     /// Receives a byte operation to be processed.
@@ -81,12 +82,13 @@ pub trait ConsBuilder: BaseAirBuilder {
     ) where
         E: Into<Self::Expr>,
     {
-        todo!("add cons domain");
         self.receive(AirInteraction::new(
             chain!(a.into_exprs(), b.into_exprs(), c.into_exprs()).collect(),
             multiplicity.into(),
             InteractionKind::MemoSet,
         ));
+
+        todo!("add cons domain");
     }
 }
 
@@ -102,12 +104,12 @@ pub trait RelationBuilder: BaseAirBuilder {
         Etag: Into<Self::Expr>,
         EReal: Into<Self::Expr>,
     {
-        todo!("add relation domain");
         self.send(AirInteraction::new(
             chain!(a.into_exprs(), b.into_exprs(), [tag.into()]).collect(),
             is_real.into(),
             InteractionKind::MemoSet,
         ));
+        todo!("add relation domain");
     }
 
     /// Receives a byte operation to be processed.
@@ -121,11 +123,11 @@ pub trait RelationBuilder: BaseAirBuilder {
         Etag: Into<Self::Expr>,
         EMult: Into<Self::Expr>,
     {
-        todo!("add relation domain");
         self.receive(AirInteraction::new(
             chain!(a.into_exprs(), b.into_exprs(), [tag.into()]).collect(),
             multiplicity.into(),
             InteractionKind::MemoSet,
         ));
+        todo!("add relation domain");
     }
 }
