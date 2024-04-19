@@ -12,6 +12,9 @@ elsa = { version = "1.9.0", git = "https://github.com/lurk-lab/elsa", branch = "
 indexmap = { version = "2.2.6", features = ["rayon"] }
 rayon = "1.10.0"
 
+[workspace]
+members = ["examples/calculator"]
+
 [profile.dev-ci]
 inherits = "dev"
 # By compiling dependencies with optimizations, performing tests gets much faster.
