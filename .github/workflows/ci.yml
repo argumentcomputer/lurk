@@ -15,6 +15,10 @@ jobs:
     # Change to warp-ubuntu-latest-x64-16x for a more powerful runner
     runs-on: ubuntu-latest
     steps:
+      - name: Set up git private repo access
+        run: |
+          git config --global url."https://${{ secrets.REPO_TOKEN }}@github.com/".insteadOf ssh://git@github.com
+          git config --global url."https://${{ secrets.REPO_TOKEN }}@github.com".insteadOf https://github.com
       - uses: actions/checkout@v4
         with:
           repository: lurk-lab/ci-workflows
@@ -30,6 +34,10 @@ jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
+      - name: Set up git private repo access
+        run: |
+          git config --global url."https://${{ secrets.REPO_TOKEN }}@github.com/".insteadOf ssh://git@github.com
+          git config --global url."https://${{ secrets.REPO_TOKEN }}@github.com".insteadOf https://github.com
       - uses: actions/checkout@v4
         with:
           repository: lurk-lab/ci-workflows
