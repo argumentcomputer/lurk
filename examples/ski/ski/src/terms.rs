@@ -19,10 +19,10 @@ pub struct SKI {
 #[derive(Debug)]
 pub struct ParseTermError;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct WithMultiplicity<T: Clone>(T, usize);
 
-impl<T: Clone> WithMultiplicity<T> {
+impl<T: Copy> WithMultiplicity<T> {
     // When preallocating, there is no corresponding access, so multiplicity starts from 0.
     pub fn preallocate(thing: T) -> Self {
         Self(thing, 0)
@@ -35,7 +35,7 @@ impl<T: Clone> WithMultiplicity<T> {
 
     pub fn query_value(&mut self) -> T {
         self.1 += 1;
-        self.0.clone()
+        self.0
     }
     pub fn multiplicity(&self) -> usize {
         self.1
@@ -58,7 +58,7 @@ impl std::fmt::Display for SKI {
 
 type Addr = usize;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Term {
     S(Addr),
     S1(Addr, Addr),
@@ -76,7 +76,7 @@ pub enum Term {
     Nil,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Op {
     Reduce(Term),
     Apply(Term, Term),
@@ -99,7 +99,7 @@ impl Op {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Step {
     op: Op,
     out: Term,
@@ -145,7 +145,7 @@ macro_rules! query_require {
         };
         $verification
             .memoset
-            .require($op, $result.clone(), $verification.mem);
+            .require($op, $result, $verification.mem);
     };
 }
 
@@ -202,12 +202,12 @@ impl Step {
 
         let is_verified = match op {
             Op::Eval(term) => {
-                query_require!(Op::Reduce(term.clone()), reduced, verification);
+                query_require!(Op::Reduce(*term), reduced, verification);
 
                 if reduced == *term {
                     reduced == *out
                 } else {
-                    query_require!(Op::Eval(reduced.clone()), evaled, verification);
+                    query_require!(Op::Eval(reduced), evaled, verification);
 
                     evaled.addr() == result
                 }
@@ -215,36 +215,24 @@ impl Step {
             Op::Reduce(term) => match term {
                 Term::S3(_, x, y, z) => {
                     query_require!(Op::Get(*y), y_term, verification);
-                    query_require!(Op::Eval(y_term.clone()), evaled_y, verification);
+                    query_require!(Op::Eval(y_term), evaled_y, verification);
 
                     query_require!(Op::Get(*z), z_term, verification);
-                    query_require!(Op::Eval(z_term.clone()), evaled_z, verification);
+                    query_require!(Op::Eval(z_term), evaled_z, verification);
 
                     query_require!(Op::Get(*x), x_term, verification);
-                    query_require!(
-                        Op::Apply(x_term.clone(), evaled_z.clone()),
-                        xz,
-                        verification
-                    );
-                    query_require!(Op::Eval(xz.clone()), evaled_xz, verification);
-                    query_require!(
-                        Op::Apply(evaled_y.clone(), evaled_z.clone()),
-                        yz,
-                        verification
-                    );
-                    query_require!(Op::Eval(yz.clone()), evaled_yz, verification);
-                    query_require!(
-                        Op::Apply(evaled_xz.clone(), evaled_yz.clone()),
-                        reduced,
-                        verification
-                    );
+                    query_require!(Op::Apply(x_term, evaled_z), xz, verification);
+                    query_require!(Op::Eval(xz), evaled_xz, verification);
+                    query_require!(Op::Apply(evaled_y, evaled_z), yz, verification);
+                    query_require!(Op::Eval(yz), evaled_yz, verification);
+                    query_require!(Op::Apply(evaled_xz, evaled_yz), reduced, verification);
 
                     reduced.addr() == result
                 }
                 Term::K2(_, x, _) | Term::I1(_, x) => *x == result,
                 Term::Cons(_, first, rest) => {
                     query_require!(Op::Get(*first), first_term, verification);
-                    query_require!(Op::Eval(first_term.clone()), first_evaled, verification);
+                    query_require!(Op::Eval(first_term), first_evaled, verification);
 
                     query_require!(Op::Get(*rest), rest_term, verification);
 
@@ -271,9 +259,9 @@ impl Step {
                             }
                         };
 
-                        query_require!(Op::Eval(second.clone()), second_evaled, verification);
+                        query_require!(Op::Eval(second), second_evaled, verification);
                         query_require!(
-                            Op::Apply(first_evaled.clone(), second_evaled.clone()),
+                            Op::Apply(first_evaled, second_evaled),
                             applied,
                             verification
                         );
@@ -308,29 +296,24 @@ impl Step {
                     matches!(out, Term::I1(out_addr, x) if *x == b.addr() && *out_addr == out.addr())
                 }
                 Term::I1(_addr, _addr1) => {
-                    query_require!(Op::Eval(b.clone()), applied, verification);
+                    query_require!(Op::Eval(*b), applied, verification);
                     *out == applied
                 }
                 Term::Cons(_, _, _) => {
-                    query_require!(Op::Eval(a.clone()), evaled, verification);
-                    query_require!(Op::Apply(evaled.clone(), b.clone()), applied, verification);
+                    query_require!(Op::Eval(*a), evaled, verification);
+                    query_require!(Op::Apply(evaled, *b), applied, verification);
 
                     *out == applied
                 }
                 _ => false,
             },
-            Op::Get(addr) => *out == verification.mem.terms[*addr].0.clone(),
+            Op::Get(addr) => *out == verification.mem.terms[*addr].0,
         };
 
         if is_verified {
             if let Some(WithMultiplicity(term, m)) = verification.mem.memo.get(op) {
                 if term.addr() == result {
-                    if verification
-                        .memoset
-                        .provided
-                        .get(&(op.clone(), term.clone()))
-                        .is_none()
-                    {
+                    if verification.memoset.provided.get(&(*op, *term)).is_none() {
                         // let msg = format!(
                         //     "providing {}=>{}",
                         //     &op.fmt_to_string(mem),
@@ -340,7 +323,7 @@ impl Step {
 
                         verification
                             .memoset
-                            .provide(WithMultiplicity((op.clone(), term.clone()), *m))
+                            .provide(WithMultiplicity((*op, *term), *m))
                     }
                 } else {
                     unreachable!("each op must be provided only once");
@@ -402,9 +385,9 @@ impl<'a> Verification<'a> {
 
         let memoset = &mut MemoSet::new();
         let steps_to_verify = mem.memo.iter().map(|(op, m)| {
-            let out = m.0.clone();
+            let out = m.0;
             Step {
-                op: op.clone(),
+                op: *op,
                 out,
                 depth: 0,
             }
@@ -427,7 +410,7 @@ impl<'a> Verification<'a> {
         let input = mem.input().unwrap();
         let output = mem.output().unwrap();
 
-        query_require!(Op::Eval(input.clone()), evaled_input, self);
+        query_require!(Op::Eval(input), evaled_input, self);
 
         let verify_io = evaled_input == output;
 
@@ -461,12 +444,12 @@ impl MemoSet<Transition> {
         //     &result.fmt_to_string(mem)
         // );
         // dbg!(msg);
-        self.required.add((op.clone(), result.clone()));
+        self.required.add((op, result));
         true
     }
 
     fn provide(&mut self, m: WithMultiplicity<Transition>) {
-        self.provided.add_n(m.0.clone(), m.1);
+        self.provided.add_n(m.0, m.1);
     }
 
     fn is_consistent(&self, mem: &Mem) -> bool {
@@ -495,15 +478,15 @@ const NIL_ADDR: usize = 3;
 
 fn setup(op: Op, mem: &mut Mem, depth: usize) -> (usize, Option<Term>) {
     let mut found = None;
-    mem.memo.entry(op.clone()).and_modify(|e| {
+    mem.memo.entry(op).and_modify(|e| {
         e.1 += 1;
-        found = Some(e.0.clone());
+        found = Some(e.0);
     });
 
     let step = Step {
         op,
         // Placeholder: this will be updated when output is known.
-        out: found.clone().unwrap_or_else(|| mem.I()),
+        out: found.unwrap_or_else(|| mem.I()),
         depth,
     };
     mem.steps.push(step);
@@ -512,7 +495,7 @@ fn setup(op: Op, mem: &mut Mem, depth: usize) -> (usize, Option<Term>) {
 }
 
 fn finalize(op: Op, step_index: usize, mem: &mut Mem, result: Term) {
-    mem.steps[step_index].out = result.clone();
+    mem.steps[step_index].out = result;
 
     mem.memo
         .entry(op)
@@ -531,12 +514,12 @@ macro_rules! with_memo {
      ($mem:ident, $depth:expr),
      $body:expr) => {{
         let op = $op;
-        let (step_index, found) = setup(op.clone(), $mem, $depth);
+        let (step_index, found) = setup(op, $mem, $depth);
         if let Some(found) = found {
             found
         } else {
             let result = $body;
-            finalize(op, step_index, $mem, result.clone());
+            finalize(op, step_index, $mem, result);
             result
         }
     }};
@@ -708,7 +691,7 @@ impl Term {
     }
 
     fn reduce(self, mem: &mut Mem, depth: usize) -> Self {
-        with_memo!(Op::Reduce(self.clone()), (mem, depth), {
+        with_memo!(Op::Reduce(self), (mem, depth), {
             match self {
                 Self::S3(_, x, y, z) => {
                     // Q: Do we need to eval x too?
@@ -720,21 +703,17 @@ impl Term {
                     let ix = mem.get_term(x);
                     let evaled_y = mem.get_term(y).eval(mem, depth + 1);
                     let evaled_z = mem.get_term(z).eval(mem, depth + 1);
-                    let xz = ix
-                        .apply(mem, evaled_z.clone(), depth + 1)
-                        .eval(mem, 1 + depth)
-                        .clone();
+                    let xz = ix.apply(mem, evaled_z, depth + 1).eval(mem, 1 + depth);
                     let yz = evaled_y
                         .apply(mem, evaled_z, depth + 1)
-                        .eval(mem, depth + 1)
-                        .clone();
+                        .eval(mem, depth + 1);
                     xz.apply(mem, yz, depth + 1)
                 }
                 Self::K2(_, x, _) => mem.get_term(x),
                 Self::I1(_, x) => mem.get_term(x),
                 Self::Cons(_, first, rest) => {
                     let first = mem.get_term(first);
-                    let first_evaled = first.clone().eval(mem, depth + 1);
+                    let first_evaled = first.eval(mem, depth + 1);
                     let rest = mem.get_term(rest);
 
                     if rest == Term::Nil {
@@ -745,8 +724,8 @@ impl Term {
                         }
                     } else {
                         let (second, tail) = rest.first(mem);
-                        let second_evaled = second.clone().eval(mem, depth + 1);
-                        let applied = first_evaled.clone().apply(mem, second_evaled, depth + 1);
+                        let second_evaled = second.eval(mem, depth + 1);
+                        let applied = first_evaled.apply(mem, second_evaled, depth + 1);
 
                         mem.cons(applied, tail.unwrap_or(Self::Nil))
                     }
@@ -758,8 +737,8 @@ impl Term {
     }
 
     pub fn eval(self, mem: &mut Mem, depth: usize) -> Self {
-        with_memo!(Op::Eval(self.clone()), (mem, depth), {
-            let reduced = self.clone().reduce(mem, depth + 1);
+        with_memo!(Op::Eval(self), (mem, depth), {
+            let reduced = self.reduce(mem, depth + 1);
 
             if reduced == self {
                 reduced
@@ -771,7 +750,7 @@ impl Term {
 
     fn apply(self, mem: &mut Mem, a: Self, depth: usize) -> Self {
         with_memo!(
-            Op::Apply(self.clone(), a.clone()),
+            Op::Apply(self, a),
             (mem, depth),
             match self {
                 Self::S(_) => mem.S1(a.addr()),
@@ -782,7 +761,7 @@ impl Term {
                 Self::I(_) => mem.I1(a.addr()),
                 Self::I1(_, x) => mem.get_term(x).apply(mem, a, depth + 1),
                 Self::Cons(_, _, _) => {
-                    self.clone().eval(mem, depth + 1).apply(mem, a, depth + 1)
+                    self.eval(mem, depth + 1).apply(mem, a, depth + 1)
                 }
                 _ => unreachable!(),
             }
@@ -829,11 +808,11 @@ impl Mem {
         // Mem can only evaluate once.
         assert!(self.io.is_none());
 
-        let output = input.clone().eval(self, 0);
+        let output = input.eval(self, 0);
 
         self.io = Some(Step {
             op: Op::Eval(input),
-            out: output.clone(),
+            out: output,
             depth: 0,
         });
 
@@ -842,14 +821,14 @@ impl Mem {
 
     pub fn input(&self) -> Option<Term> {
         self.io.as_ref().and_then(|step| match &step.op {
-            Op::Eval(input) => Some(input.clone()),
+            Op::Eval(input) => Some(*input),
             _ => None,
         })
     }
 
     pub fn output(&self) -> Option<Term> {
         self.io.as_ref().and_then(|step| match &step.op {
-            Op::Eval(_input) => Some(step.out.clone()),
+            Op::Eval(_input) => Some(step.out),
             _ => None,
         })
     }
@@ -892,11 +871,11 @@ impl Mem {
 
     pub fn get_term(&mut self, addr: Addr) -> Term {
         with_memo!(Op::Get(addr), (self, 0), {
-            let term = self.terms[addr].0.clone();
+            let term = self.terms[addr].0;
             self.memo
                 .entry(Op::Get(addr))
                 .and_modify(|e| e.1 += 1)
-                .or_insert_with(|| WithMultiplicity::first_access(term.clone()));
+                .or_insert_with(|| WithMultiplicity::first_access(term));
 
             term
         })
@@ -907,7 +886,7 @@ impl Mem {
         self.steps
             .iter()
             .find(|step| step.op == op)
-            .map(|found| found.out.clone())
+            .map(|found| found.out)
     }
 
     pub fn assert_memo_steps_consistency(&self) {
@@ -916,80 +895,79 @@ impl Mem {
         }
     }
 
-    // NOTE: The clones are shallow.
     pub fn S(&mut self) -> Term {
-        self.terms[0].query_value().clone()
+        self.terms[0].query_value()
     }
     pub fn K(&mut self) -> Term {
-        self.terms[1].query_value().clone()
+        self.terms[1].query_value()
     }
     pub fn I(&mut self) -> Term {
-        self.terms[2].query_value().clone()
+        self.terms[2].query_value()
     }
 
     pub fn S1(&mut self, x_addr: Addr) -> Term {
         if let Some(found) = self.s1.get(&x_addr) {
-            self.terms[*found].query_value().clone()
+            self.terms[*found].query_value()
         } else {
             let addr = self.terms.len();
             let new = WithMultiplicity::first_access(Term::S1(addr, x_addr));
             self.s1.insert(x_addr, addr);
-            self.terms.push(new.clone());
+            self.terms.push(new);
             new.0
         }
     }
     pub fn S2(&mut self, x_addr: Addr, y_addr: Addr) -> Term {
         if let Some(found) = self.s2.get(&(x_addr, y_addr)) {
-            self.terms[*found].query_value().clone()
+            self.terms[*found].query_value()
         } else {
             let addr = self.terms.len();
             let new = WithMultiplicity::first_access(Term::S2(addr, x_addr, y_addr));
             self.s2.insert((x_addr, y_addr), addr);
-            self.terms.push(new.clone());
+            self.terms.push(new);
             new.0
         }
     }
     pub fn S3(&mut self, x_addr: Addr, y_addr: Addr, z_addr: Addr) -> Term {
         if let Some(found) = self.s3.get(&(x_addr, y_addr, z_addr)) {
-            self.terms[*found].query_value().clone()
+            self.terms[*found].query_value()
         } else {
             let addr = self.terms.len();
             let new = WithMultiplicity::first_access(Term::S3(addr, x_addr, y_addr, z_addr));
             self.s3.insert((x_addr, y_addr, z_addr), addr);
-            self.terms.push(new.clone());
+            self.terms.push(new);
             new.0
         }
     }
     pub fn K1(&mut self, x_addr: Addr) -> Term {
         if let Some(found) = self.k1.get(&x_addr) {
-            self.terms[*found].query_value().clone()
+            self.terms[*found].query_value()
         } else {
             let addr = self.terms.len();
             let new = WithMultiplicity::first_access(Term::K1(addr, x_addr));
             self.k1.insert(x_addr, addr);
-            self.terms.push(new.clone());
+            self.terms.push(new);
             new.0
         }
     }
     pub fn K2(&mut self, x_addr: Addr, y_addr: Addr) -> Term {
         if let Some(found) = self.k2.get(&(x_addr, y_addr)) {
-            self.terms[*found].query_value().clone()
+            self.terms[*found].query_value()
         } else {
             let addr = self.terms.len();
             let new = WithMultiplicity::first_access(Term::K2(addr, x_addr, y_addr));
             self.k2.insert((x_addr, y_addr), addr);
-            self.terms.push(new.clone());
+            self.terms.push(new);
             new.0
         }
     }
     pub fn I1(&mut self, x_addr: Addr) -> Term {
         if let Some(found) = self.i1.get(&x_addr) {
-            self.terms[*found].query_value().clone()
+            self.terms[*found].query_value()
         } else {
             let addr = self.terms.len();
             let new = WithMultiplicity::first_access(Term::I1(addr, x_addr));
             self.i1.insert(x_addr, addr);
-            self.terms.push(new.clone());
+            self.terms.push(new);
             new.0
         }
     }
@@ -1001,17 +979,17 @@ impl Mem {
         let rest = self.list(&addrs[1..]);
 
         if let Some(found) = self.conses.get(&(first_addr, rest.addr())) {
-            self.terms[*found].query_value().clone()
+            self.terms[*found].query_value()
         } else {
             let addr = self.terms.len();
             if addrs.len() > 1 {
                 self.conses.insert((first_addr, rest.addr()), addr);
                 let new = WithMultiplicity::first_access(Term::Cons(addr, addrs[0], rest.addr()));
-                self.terms.push(new.clone());
+                self.terms.push(new);
                 new.0
             } else {
                 let new = WithMultiplicity::first_access(Term::Cons(addr, addrs[0], NIL_ADDR));
-                self.terms.push(new.clone());
+                self.terms.push(new);
                 new.0
             }
         }
@@ -1019,11 +997,11 @@ impl Mem {
 
     pub fn cons(&mut self, first: Term, rest: Term) -> Term {
         if let Some(found) = self.conses.get(&(first.addr(), rest.addr())) {
-            self.terms[*found].query_value().clone()
+            self.terms[*found].query_value()
         } else {
             let addr = self.terms.len();
             let new = WithMultiplicity::first_access(Term::Cons(addr, first.addr(), rest.addr()));
-            self.terms.push(new.clone());
+            self.terms.push(new);
             new.0
         }
     }
@@ -1036,7 +1014,7 @@ mod test {
     fn eval_test(input: &str, expected: &str) {
         let mem = &mut Mem::new();
         let term = Term::from_str(mem, input).unwrap();
-        let evaled = mem.evaluate(term.clone());
+        let evaled = mem.evaluate(term);
 
         if expected != evaled.fmt_to_string(mem) {
             let _ = dbg!(&input);
