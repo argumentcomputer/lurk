@@ -240,7 +240,7 @@ impl Step {
                         if first_evaled == first_term {
                             *out == first_evaled
                         } else {
-                            matches!(out, Term::Cons(addr, _first_evaled, NIL_ADDR) if *addr == out.addr())
+                            *out == Term::Cons(out.addr(), first_evaled.addr(), NIL_ADDR)
                         }
                     } else {
                         let (second, tail) = match rest_term {
@@ -277,26 +277,18 @@ impl Step {
                 term => term.addr() == result,
             },
             Op::Apply(a, b) => match a {
-                Term::S(_addr) => {
-                    matches!(out, Term::S1(out_addr, x) if *x == b.addr() && *out_addr == out.addr())
+                Term::S(_addr) => *out == Term::S1(out.addr(), b.addr()),
+                Term::S1(_addr, addr1) => *out == Term::S2(out.addr(), *addr1, b.addr()),
+                Term::S2(_addr, addr1, addr2) => {
+                    *out == Term::S3(out.addr(), *addr1, *addr2, b.addr())
                 }
-                Term::S1(_addr, _addr1) => {
-                    matches!(out, Term::S2(out_addr, _addr1, x) if *x == b.addr()  && *out_addr == out.addr())
-                }
-                Term::S2(_addr, _addr1, _addr2) => {
-                    matches!(out, Term::S3(out_addr, _addr1, _addr2, x) if *x == b.addr()  && *out_addr == out.addr())
-                }
-                Term::K(_addr) => {
-                    matches!(out, Term::K1(out_addr, x) if *x == b.addr() && *out_addr == out.addr())
-                }
-                Term::K1(_addr, _addr1) => {
-                    matches!(out, Term::K2(out_addr, _addr1, x) if *x == b.addr() && *out_addr == out.addr())
-                }
-                Term::I(_addr) => {
-                    matches!(out, Term::I1(out_addr, x) if *x == b.addr() && *out_addr == out.addr())
-                }
-                Term::I1(_addr, _addr1) => {
-                    query_require!(Op::Eval(*b), applied, verification);
+
+                Term::K(_addr) => *out == Term::K1(out.addr(), b.addr()),
+                Term::K1(_addr, addr1) => *out == Term::K2(out.addr(), *addr1, b.addr()),
+                Term::I(_addr) => *out == Term::I1(out.addr(), b.addr()),
+                Term::I1(_addr, addr1) => {
+                    query_require!(Op::Get(*addr1), x, verification);
+                    query_require!(Op::Apply(x, *b), applied, verification);
                     *out == applied
                 }
                 Term::Cons(_, _, _) => {
