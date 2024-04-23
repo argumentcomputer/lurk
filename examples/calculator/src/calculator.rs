@@ -1,8 +1,8 @@
 use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues, BaseAir};
-use p3_field::AbstractField;
+use p3_field::{AbstractField, Field};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use std::{marker::PhantomData, mem::size_of};
+use std::mem::size_of;
 
 use loam::pointers::GPtr;
 
@@ -46,7 +46,7 @@ pub(crate) struct GFrame<Ptr, Bool, Slot> {
     new_stack_op_add: Ptr,
 }
 
-type VarFrame<T> = GFrame<GPtr<T, T>, T, DummyHasher<T>>;
+type VarFrame<T> = GFrame<GPtr<T, T>, T, ([T; 4], T)>;
 
 const NUM_COLS: usize = size_of::<VarFrame<u8>>();
 
@@ -60,18 +60,107 @@ impl<T> VarFrame<T> {
         let (_, shorts, _) = unsafe { slice.align_to::<VarFrame<T>>() };
         &shorts[0]
     }
+
+    #[inline]
+    fn into_array(self) -> [T; NUM_COLS]
+    where
+        T: Copy + Default + AbstractField,
+    {
+        let Self {
+            entry,
+            stack,
+            o_entry,
+            o_stack,
+            slot0,
+            slot1,
+            slot2,
+            slot3,
+            entry_tag_is_nil,
+            entry_tag_is_cons,
+            entry_head,
+            entry_tail,
+            entry_head_tag_is_num,
+            new_stack_push,
+            entry_head_tag_is_op_add,
+            first_num,
+            stack_tail_1,
+            second_num,
+            stack_tail_2,
+            sum,
+            new_stack_op_add,
+        } = self;
+        let mut array = [T::default(); NUM_COLS];
+        let mut idx = 0;
+        let populate_with_atom = |a, array: &mut [T; NUM_COLS], idx: &mut usize| {
+            array[*idx] = a;
+            *idx += 1;
+        };
+        let populate_with_ptr = |ptr: GPtr<T, T>, array: &mut [T; NUM_COLS], idx: &mut usize| {
+            let (tag, val) = ptr.into_parts();
+            populate_with_atom(tag, array, idx);
+            populate_with_atom(val, array, idx);
+        };
+        let populate_with_slot = |slot, array: &mut [T; NUM_COLS], idx: &mut usize| {
+            let (preimg, img) = slot;
+            for x in preimg {
+                populate_with_atom(x, array, idx);
+            }
+            populate_with_atom(img, array, idx);
+        };
+        populate_with_ptr(entry, &mut array, &mut idx);
+        populate_with_ptr(stack, &mut array, &mut idx);
+        populate_with_ptr(o_entry, &mut array, &mut idx);
+        populate_with_ptr(o_stack, &mut array, &mut idx);
+        populate_with_slot(slot0, &mut array, &mut idx);
+        populate_with_slot(slot1, &mut array, &mut idx);
+        populate_with_slot(slot2, &mut array, &mut idx);
+        populate_with_slot(slot3, &mut array, &mut idx);
+        populate_with_atom(entry_tag_is_nil, &mut array, &mut idx);
+        populate_with_atom(entry_tag_is_cons, &mut array, &mut idx);
+        populate_with_ptr(entry_head, &mut array, &mut idx);
+        populate_with_ptr(entry_tail, &mut array, &mut idx);
+        populate_with_atom(entry_head_tag_is_num, &mut array, &mut idx);
+        populate_with_ptr(new_stack_push, &mut array, &mut idx);
+        populate_with_atom(entry_head_tag_is_op_add, &mut array, &mut idx);
+        populate_with_ptr(first_num, &mut array, &mut idx);
+        populate_with_ptr(stack_tail_1, &mut array, &mut idx);
+        populate_with_ptr(second_num, &mut array, &mut idx);
+        populate_with_ptr(stack_tail_2, &mut array, &mut idx);
+        populate_with_ptr(sum, &mut array, &mut idx);
+        populate_with_ptr(new_stack_op_add, &mut array, &mut idx);
+        array
+    }
 }
 
-pub(crate) type WitnessFrame = GFrame<Ptr, bool, [Ptr; 2]>;
+type WitnessFrame = GFrame<Ptr, bool, [Ptr; 2]>;
 
 #[derive(Default)]
 pub(crate) struct Calculator<F> {
-    _p: PhantomData<F>,
+    _f: F,
 }
 
-impl<F: AbstractField + PartialEq + Eq + std::hash::Hash + Clone + Copy + Send + Sync>
-    Calculator<F>
-{
+struct IterationContext<'a, F: Field> {
+    entry: Ptr,
+    stack: Ptr,
+    store: &'a Store<F>,
+}
+
+impl<'a, F: Field> Iterator for IterationContext<'a, F> {
+    type Item = WitnessFrame;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.entry.tag() == &Tag::Nil {
+            None
+        } else {
+            let frame = Calculator::compute_frame(self.entry, self.stack, self.store);
+            self.entry = frame.o_entry;
+            self.stack = frame.o_stack;
+            Some(frame)
+        }
+    }
+}
+
+impl<F: Field> Calculator<F> {
     /// Initiates a dummy `WitnessFrame` with a given input
     #[inline]
     fn init_frame(entry: Ptr, stack: Ptr, store: &Store<F>) -> WitnessFrame {
@@ -160,78 +249,50 @@ impl<F: AbstractField + PartialEq + Eq + std::hash::Hash + Clone + Copy + Send +
         frame
     }
 
-    pub(crate) fn compute_frames(
-        mut entry: Ptr,
-        mut stack: Ptr,
-        store: &Store<F>,
-    ) -> Vec<WitnessFrame> {
-        let mut frames = vec![];
-        loop {
-            let frame = Self::compute_frame(entry, stack, store);
-            entry = frame.o_entry;
-            stack = frame.o_stack;
-            frames.push(frame);
-            if entry.tag() == &Tag::Nil {
-                break;
-            }
+    #[inline]
+    pub(crate) fn compute_frames(entry: Ptr, stack: Ptr, store: &Store<F>) -> Vec<WitnessFrame> {
+        IterationContext {
+            entry,
+            stack,
+            store,
         }
-        frames
+        .collect()
     }
 
-    /// Computes a trace row from a `WitnessFrame` by following the same order
-    /// that the data should appear in `VarFrame<F>`
-    fn compute_row(frame: &WitnessFrame, store: &Store<F>) -> [F; NUM_COLS] {
-        let extend_with_ptr = |ptr, row: &mut Vec<F>| {
+    fn materialize_var_frame(frame: &WitnessFrame, store: &Store<F>) -> VarFrame<F> {
+        let hash_ptr = |ptr| {
             let (tag, val) = store.core.hash_ptr(ptr).into_parts();
-            row.push(tag.field());
-            row.push(val);
+            GPtr::new(tag.field(), val)
         };
-
-        let extend_with_slot = |slot: &[Ptr; 2], row: &mut Vec<F>| {
-            let (slot_0_tag, slot_0_val) = store.core.hash_ptr(&slot[0]).into_parts();
-            let (slot_1_tag, slot_1_val) = store.core.hash_ptr(&slot[1]).into_parts();
-            row.extend(DummyHasher::compute_row(
-                slot_0_tag.field(),
-                slot_0_val,
-                slot_1_tag.field(),
-                slot_1_val,
-            ));
+        let hash_slot_ptrs = |slot: &[Ptr; 2]| {
+            let (a_tag, a_val) = store.core.hash_ptr(&slot[0]).into_parts();
+            let (b_tag, b_val) = store.core.hash_ptr(&slot[1]).into_parts();
+            let preimg = [a_tag.field(), a_val, b_tag.field(), b_val];
+            (preimg, DummyHasher::hash(preimg))
         };
-
-        let extend_with_bool = |b: bool, row: &mut Vec<F>| row.push(F::from_bool(b));
-
-        let mut row = Vec::with_capacity(NUM_COLS);
-
-        extend_with_ptr(&frame.entry, &mut row);
-        extend_with_ptr(&frame.stack, &mut row);
-        extend_with_ptr(&frame.o_entry, &mut row);
-        extend_with_ptr(&frame.o_stack, &mut row);
-
-        extend_with_slot(&frame.slot0, &mut row);
-        extend_with_slot(&frame.slot1, &mut row);
-        extend_with_slot(&frame.slot2, &mut row);
-        extend_with_slot(&frame.slot3, &mut row);
-
-        extend_with_bool(frame.entry_tag_is_nil, &mut row);
-        extend_with_bool(frame.entry_tag_is_cons, &mut row);
-
-        extend_with_ptr(&frame.entry_head, &mut row);
-        extend_with_ptr(&frame.entry_tail, &mut row);
-
-        extend_with_bool(frame.entry_head_tag_is_num, &mut row);
-
-        extend_with_ptr(&frame.new_stack_push, &mut row);
-
-        extend_with_bool(frame.entry_head_tag_is_op_add, &mut row);
-
-        extend_with_ptr(&frame.first_num, &mut row);
-        extend_with_ptr(&frame.stack_tail_1, &mut row);
-        extend_with_ptr(&frame.second_num, &mut row);
-        extend_with_ptr(&frame.stack_tail_2, &mut row);
-        extend_with_ptr(&frame.sum, &mut row);
-        extend_with_ptr(&frame.new_stack_op_add, &mut row);
-
-        row.try_into().expect("row length mismatch")
+        VarFrame {
+            entry: hash_ptr(&frame.entry),
+            stack: hash_ptr(&frame.stack),
+            o_entry: hash_ptr(&frame.o_entry),
+            o_stack: hash_ptr(&frame.o_stack),
+            slot0: hash_slot_ptrs(&frame.slot0),
+            slot1: hash_slot_ptrs(&frame.slot1),
+            slot2: hash_slot_ptrs(&frame.slot2),
+            slot3: hash_slot_ptrs(&frame.slot3),
+            entry_tag_is_nil: F::from_bool(frame.entry_tag_is_nil),
+            entry_tag_is_cons: F::from_bool(frame.entry_tag_is_cons),
+            entry_head: hash_ptr(&frame.entry_head),
+            entry_tail: hash_ptr(&frame.entry_tail),
+            entry_head_tag_is_num: F::from_bool(frame.entry_head_tag_is_num),
+            new_stack_push: hash_ptr(&frame.new_stack_push),
+            entry_head_tag_is_op_add: F::from_bool(frame.entry_head_tag_is_op_add),
+            first_num: hash_ptr(&frame.first_num),
+            stack_tail_1: hash_ptr(&frame.stack_tail_1),
+            second_num: hash_ptr(&frame.second_num),
+            stack_tail_2: hash_ptr(&frame.stack_tail_2),
+            sum: hash_ptr(&frame.sum),
+            new_stack_op_add: hash_ptr(&frame.new_stack_op_add),
+        }
     }
 
     pub(crate) fn pad_frames(frames: &mut Vec<WitnessFrame>, store: &Store<F>) {
@@ -249,7 +310,7 @@ impl<F: AbstractField + PartialEq + Eq + std::hash::Hash + Clone + Copy + Send +
     pub(crate) fn compute_trace(frames: &[WitnessFrame], store: &Store<F>) -> RowMajorMatrix<F> {
         let values = frames
             .par_iter()
-            .flat_map(|frame| Self::compute_row(frame, store))
+            .flat_map(|frame| Self::materialize_var_frame(frame, store).into_array())
             .collect();
         RowMajorMatrix::new(values, NUM_COLS)
     }
@@ -355,134 +416,63 @@ impl<AB: AirBuilder + AirBuilderWithPublicValues> Air<AB> for Calculator<AB::F> 
         }
 
         {
-            // slot 0 io
-            builder
-                .when(local.entry_tag_is_cons)
-                .assert_eq(local.slot0.pre0, local.entry_head.tag);
-            builder
-                .when(local.entry_tag_is_cons)
-                .assert_eq(local.slot0.pre1, local.entry_head.val);
-            builder
-                .when(local.entry_tag_is_cons)
-                .assert_eq(local.slot0.pre2, local.entry_tail.tag);
-            builder
-                .when(local.entry_tag_is_cons)
-                .assert_eq(local.slot0.pre3, local.entry_tail.val);
-            builder
-                .when(local.entry_tag_is_cons)
-                .assert_eq(local.slot0.img, local.entry.val);
+            // eval slots
+            let mut eval_slot = |slot, is_real| {
+                let (preimg, img) = slot;
+                DummyHasher::eval(builder, preimg, img, is_real);
+            };
+
+            eval_slot(local.slot0, local.entry_tag_is_cons);
+            eval_slot(local.slot1, local.entry_tag_is_cons);
+            eval_slot(local.slot2, local.entry_head_tag_is_op_add);
+            eval_slot(local.slot3, local.entry_head_tag_is_op_add);
         }
 
         {
-            // slot 1 io
-            builder
-                .when(local.entry_head_tag_is_num)
-                .assert_eq(local.slot1.pre0, local.entry_head.tag);
-            builder
-                .when(local.entry_head_tag_is_num)
-                .assert_eq(local.slot1.pre1, local.entry_head.val);
-            builder
-                .when(local.entry_head_tag_is_num)
-                .assert_eq(local.slot1.pre2, local.stack.tag);
-            builder
-                .when(local.entry_head_tag_is_num)
-                .assert_eq(local.slot1.pre3, local.stack.val);
-            builder
-                .when(local.entry_head_tag_is_num)
-                .assert_eq(local.slot1.img, local.new_stack_push.val);
+            // enforce slots io
+            let mut enforce_slot_io = |slot: ([_; 4], _), preimg: [GPtr<_, _>; 2], img, is_real| {
+                let (slot_preimg, slot_img) = slot;
+                let [a, b] = preimg;
+                let builder = &mut builder.when(is_real);
+                builder.assert_eq(slot_preimg[0], a.tag);
+                builder.assert_eq(slot_preimg[1], a.val);
+                builder.assert_eq(slot_preimg[2], b.tag);
+                builder.assert_eq(slot_preimg[3], b.val);
+                builder.assert_eq(slot_img, img);
+            };
 
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.slot1.pre0, local.first_num.tag);
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.slot1.pre1, local.first_num.val);
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.slot1.pre2, local.stack_tail_1.tag);
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.slot1.pre3, local.stack_tail_1.val);
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.slot1.img, local.stack.val);
-        }
-
-        {
-            // slot 2 io
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.slot2.pre0, local.second_num.tag);
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.slot2.pre1, local.second_num.val);
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.slot2.pre2, local.stack_tail_2.tag);
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.slot2.pre3, local.stack_tail_2.val);
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.slot2.img, local.stack_tail_1.val);
-        }
-
-        {
-            // slot 3 io
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.slot3.pre0, local.sum.tag);
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.slot3.pre1, local.sum.val);
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.slot3.pre2, local.stack_tail_2.tag);
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.slot3.pre3, local.stack_tail_2.val);
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.slot3.img, local.new_stack_op_add.val);
-        }
-
-        {
-            // enforcing slots
-            DummyHasher::eval(
-                builder,
+            enforce_slot_io(
+                local.slot0,
+                [local.entry_head, local.entry_tail],
+                local.entry.val,
                 local.entry_tag_is_cons,
-                local.slot0.pre0,
-                local.slot0.pre1,
-                local.slot0.pre2,
-                local.slot0.pre3,
-                local.slot0.img,
             );
-            DummyHasher::eval(
-                builder,
-                local.entry_tag_is_cons,
-                local.slot1.pre0,
-                local.slot1.pre1,
-                local.slot1.pre2,
-                local.slot1.pre3,
-                local.slot1.img,
+
+            enforce_slot_io(
+                local.slot1,
+                [local.entry_head, local.stack],
+                local.new_stack_push.val,
+                local.entry_head_tag_is_num,
             );
-            DummyHasher::eval(
-                builder,
+            enforce_slot_io(
+                local.slot1,
+                [local.first_num, local.stack_tail_1],
+                local.stack.val,
                 local.entry_head_tag_is_op_add,
-                local.slot2.pre0,
-                local.slot2.pre1,
-                local.slot2.pre2,
-                local.slot2.pre3,
-                local.slot2.img,
             );
-            DummyHasher::eval(
-                builder,
+
+            enforce_slot_io(
+                local.slot2,
+                [local.second_num, local.stack_tail_2],
+                local.stack_tail_1.val,
                 local.entry_head_tag_is_op_add,
-                local.slot3.pre0,
-                local.slot3.pre1,
-                local.slot3.pre2,
-                local.slot3.pre3,
-                local.slot3.img,
+            );
+
+            enforce_slot_io(
+                local.slot3,
+                [local.sum, local.stack_tail_2],
+                local.new_stack_op_add.val,
+                local.entry_head_tag_is_op_add,
             );
         }
 
@@ -491,12 +481,14 @@ impl<AB: AirBuilder + AirBuilderWithPublicValues> Air<AB> for Calculator<AB::F> 
             builder
                 .when(local.entry_head_tag_is_num)
                 .assert_eq(local.new_stack_push.tag, Tag::Cons.field::<AB::F>());
+
             builder
                 .when(local.entry_head_tag_is_op_add)
                 .assert_eq(local.sum.tag, Tag::Num.field::<AB::F>());
             builder
                 .when(local.entry_head_tag_is_op_add)
                 .assert_eq(local.sum.val, local.first_num.val + local.second_num.val);
+
             builder
                 .when(local.entry_head_tag_is_op_add)
                 .assert_eq(local.new_stack_op_add.tag, Tag::Cons.field::<AB::F>());
@@ -504,60 +496,35 @@ impl<AB: AirBuilder + AirBuilderWithPublicValues> Air<AB> for Calculator<AB::F> 
 
         {
             // returns
-            builder
-                .when(local.entry_tag_is_nil)
-                .assert_eq(local.o_stack.tag, local.stack.tag);
-            builder
-                .when(local.entry_tag_is_nil)
-                .assert_eq(local.o_stack.val, local.stack.val);
-            builder
-                .when(local.entry_tag_is_nil)
-                .assert_eq(local.o_entry.tag, local.entry.tag);
-            builder
-                .when(local.entry_tag_is_nil)
-                .assert_eq(local.o_entry.val, local.entry.val);
 
-            builder
-                .when(local.entry_head_tag_is_num)
-                .assert_eq(local.o_stack.tag, local.new_stack_push.tag);
-            builder
-                .when(local.entry_head_tag_is_num)
-                .assert_eq(local.o_stack.val, local.new_stack_push.val);
-            builder
-                .when(local.entry_head_tag_is_num)
-                .assert_eq(local.o_entry.tag, local.entry_tail.tag);
-            builder
-                .when(local.entry_head_tag_is_num)
-                .assert_eq(local.o_entry.val, local.entry_tail.val);
+            let mut builder_entry_tag_is_nil = builder.when(local.entry_tag_is_nil);
+            builder_entry_tag_is_nil.assert_eq(local.o_stack.tag, local.stack.tag);
+            builder_entry_tag_is_nil.assert_eq(local.o_stack.val, local.stack.val);
+            builder_entry_tag_is_nil.assert_eq(local.o_entry.tag, local.entry.tag);
+            builder_entry_tag_is_nil.assert_eq(local.o_entry.val, local.entry.val);
 
-            builder
-                .when(local.entry_head_tag_is_op_add)
+            let mut builder_entry_head_tag_is_num = builder.when(local.entry_head_tag_is_num);
+            builder_entry_head_tag_is_num.assert_eq(local.o_stack.tag, local.new_stack_push.tag);
+            builder_entry_head_tag_is_num.assert_eq(local.o_stack.val, local.new_stack_push.val);
+            builder_entry_head_tag_is_num.assert_eq(local.o_entry.tag, local.entry_tail.tag);
+            builder_entry_head_tag_is_num.assert_eq(local.o_entry.val, local.entry_tail.val);
+
+            let mut builder_entry_head_tag_is_op_add = builder.when(local.entry_head_tag_is_op_add);
+            builder_entry_head_tag_is_op_add
                 .assert_eq(local.o_stack.tag, local.new_stack_op_add.tag);
-            builder
-                .when(local.entry_head_tag_is_op_add)
+            builder_entry_head_tag_is_op_add
                 .assert_eq(local.o_stack.val, local.new_stack_op_add.val);
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.o_entry.tag, local.entry_tail.tag);
-            builder
-                .when(local.entry_head_tag_is_op_add)
-                .assert_eq(local.o_entry.val, local.entry_tail.val);
+            builder_entry_head_tag_is_op_add.assert_eq(local.o_entry.tag, local.entry_tail.tag);
+            builder_entry_head_tag_is_op_add.assert_eq(local.o_entry.val, local.entry_tail.val);
         }
 
         {
             // io transitions
-            builder
-                .when_transition()
-                .assert_eq(local.o_stack.tag, next.stack.tag);
-            builder
-                .when_transition()
-                .assert_eq(local.o_stack.val, next.stack.val);
-            builder
-                .when_transition()
-                .assert_eq(local.o_entry.tag, next.entry.tag);
-            builder
-                .when_transition()
-                .assert_eq(local.o_entry.val, next.entry.val);
+            let mut builder_when_transition = builder.when_transition();
+            builder_when_transition.assert_eq(local.o_stack.tag, next.stack.tag);
+            builder_when_transition.assert_eq(local.o_stack.val, next.stack.val);
+            builder_when_transition.assert_eq(local.o_entry.tag, next.entry.tag);
+            builder_when_transition.assert_eq(local.o_entry.val, next.entry.val);
         }
     }
 }

@@ -1,4 +1,4 @@
-use p3_field::AbstractField;
+use p3_field::Field;
 
 use loam::{
     pointers::GPtr,
@@ -10,15 +10,15 @@ use super::{
     pointers::{Ptr, Tag},
 };
 
-impl<F: AbstractField> StoreHasher<Tag, F> for DummyHasher<F> {
+impl<F: Field> StoreHasher<Tag, F> for DummyHasher {
     fn hash_ptrs(&self, ptrs: Vec<GPtr<Tag, F>>) -> F {
         assert_eq!(ptrs.len(), 2);
-        Self::hash(
+        Self::hash([
             ptrs[0].tag().field(),
-            ptrs[0].val.clone(),
+            ptrs[0].val,
             ptrs[1].tag().field(),
-            ptrs[1].val.clone(),
-        )
+            ptrs[1].val,
+        ])
     }
 
     fn hash_compact(&self, _: F, _: Tag, _: F, _: F) -> F {
@@ -31,13 +31,11 @@ impl<F: AbstractField> StoreHasher<Tag, F> for DummyHasher<F> {
 }
 
 #[derive(Default)]
-pub(crate) struct Store<
-    F: AbstractField + PartialEq + Eq + std::hash::Hash + Clone + Copy + Send + Sync,
-> {
-    pub(crate) core: StoreCore<Tag, F, DummyHasher<F>>,
+pub(crate) struct Store<F: Field> {
+    pub(crate) core: StoreCore<Tag, F, DummyHasher>,
 }
 
-impl<F: AbstractField + PartialEq + Eq + std::hash::Hash + Clone + Copy + Send + Sync> Store<F> {
+impl<F: Field> Store<F> {
     #[inline]
     pub(crate) fn nil(&self) -> Ptr {
         self.core.intern_atom(Tag::Nil, F::zero())
