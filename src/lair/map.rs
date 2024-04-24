@@ -3,6 +3,8 @@ use std::slice::Iter;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Map<K, V>(Vec<(K, V)>);
 
+pub type Set<K> = Map<K, ()>;
+
 const LINEAR_SEARCH_MAX: usize = 16;
 
 impl<K: Ord, V> Map<K, V> {
