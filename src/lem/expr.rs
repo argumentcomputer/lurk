@@ -16,6 +16,7 @@ pub enum OpE<F> {
     Sub(Var, Var, Var),
     Mul(Var, Var, Var),
     Div(Var, Var, Var),
+    Call(Vec<Var>, Name, Vec<Var>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

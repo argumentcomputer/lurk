@@ -7,6 +7,8 @@ pub enum Op<F> {
     Sub(usize, usize),
     Mul(usize, usize),
     Div(usize, usize),
+    // index, arguments
+    Call(usize, Vec<usize>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

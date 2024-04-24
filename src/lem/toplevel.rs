@@ -4,15 +4,29 @@ use super::{bytecode::*, expr::*, map::Map, Name};
 
 pub struct Toplevel<F>(Map<Name, Func<F>>);
 
+pub(crate) struct FuncInfo {
+    input_size: usize,
+    output_size: usize,
+}
+
 impl<F: Clone + Ord> Toplevel<F> {
     pub fn new(funcs: &[FuncE<F>]) -> Self {
-        let map = Map::from_vec(
-            funcs
-                .iter()
-                .map(|func| (func.name, func.check_and_link()))
-                .collect(),
-        );
-        Toplevel(map)
+        let info_vec = funcs
+            .iter()
+            .map(|func| {
+                let func_info = FuncInfo {
+                    input_size: func.input_params.len(),
+                    output_size: func.output_size,
+                };
+                (func.name, func_info)
+            })
+            .collect();
+        let info_map = Map::from_vec(info_vec);
+        let map = funcs
+            .iter()
+            .map(|func| (func.name, func.check_and_link(&info_map)))
+            .collect();
+        Toplevel(Map::from_vec(map))
     }
 
     pub fn map(&self) -> &Map<Name, Func<F>> {
@@ -38,13 +52,15 @@ fn use_var(var: &Var, map: &mut BTreeMap<Var, (bool, usize)>) -> usize {
 
 impl<F: Clone + Ord> FuncE<F> {
     /// Checks if a named `Func` is correct, and produces an index-based `Func` by replacing names with indexes
-    pub(crate) fn check_and_link(&self) -> Func<F> {
+    pub(crate) fn check_and_link(&self, info_map: &Map<Name, FuncInfo>) -> Func<F> {
         let map = &mut BTreeMap::new();
         let mut idx = 0;
         self.input_params.iter().for_each(|var| {
             bind(var, &mut idx, map);
         });
-        let body = self.body.check_and_link(self.output_size, map, idx);
+        let body = self
+            .body
+            .check_and_link(self.output_size, map, idx, info_map);
         for (var, (u, _)) in map.iter() {
             let ch = var.0.chars().next().unwrap();
             assert!(
@@ -67,6 +83,7 @@ impl<F: Clone + Ord> BlockE<F> {
         return_size: usize,
         map: &mut BTreeMap<Var, (bool, usize)>,
         mut idx: usize,
+        info_map: &Map<Name, FuncInfo>,
     ) -> Block<F> {
         let mut ops = Vec::new();
         for op in &self.ops {
@@ -99,6 +116,20 @@ impl<F: Clone + Ord> BlockE<F> {
                     bind(tgt, &mut idx, map);
                     ops.push(Op::Div(a, b));
                 }
+                OpE::Call(out, name, inp) => {
+                    let name_idx = info_map
+                        .get_index_of(name)
+                        .unwrap_or_else(|| panic!("Unknown function {name}"));
+                    let FuncInfo {
+                        input_size,
+                        output_size,
+                    } = info_map.get_index(name_idx).unwrap().1;
+                    assert_eq!(inp.len(), input_size);
+                    assert_eq!(out.len(), output_size);
+                    let inp = inp.iter().map(|a| use_var(a, map)).collect();
+                    out.iter().for_each(|t| bind(t, &mut idx, map));
+                    ops.push(Op::Call(name_idx, inp));
+                }
             }
         }
         let ctrl = match &self.ctrl {
@@ -117,22 +148,22 @@ impl<F: Clone + Ord> BlockE<F> {
                 let mut vec = Vec::with_capacity(cases.branches.size());
                 for (f, block) in cases.branches.iter() {
                     let cloned_map = &mut map.clone();
-                    let block = block.check_and_link(return_size, cloned_map, idx);
+                    let block = block.check_and_link(return_size, cloned_map, idx, info_map);
                     vec.push((f.clone(), block))
                 }
                 let branches = Map::from_vec(vec);
                 let default = cases
                     .default
                     .as_ref()
-                    .map(|def| def.check_and_link(return_size, map, idx).into());
+                    .map(|def| def.check_and_link(return_size, map, idx, info_map).into());
                 let cases = Cases { branches, default };
                 Ctrl::Match(t, cases)
             }
             CtrlE::If(b, true_block, false_block) => {
                 let b = use_var(b, map);
                 let cloned_map = &mut map.clone();
-                let true_block = true_block.check_and_link(return_size, cloned_map, idx);
-                let false_block = false_block.check_and_link(return_size, map, idx);
+                let true_block = true_block.check_and_link(return_size, cloned_map, idx, info_map);
+                let false_block = false_block.check_and_link(return_size, map, idx, info_map);
                 Ctrl::If(b, true_block.into(), false_block.into())
             }
         };
