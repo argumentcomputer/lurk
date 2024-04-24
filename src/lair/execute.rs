@@ -80,31 +80,38 @@ impl<F: Field + Ord> Op<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::lair::{expr::*, toplevel::Toplevel, Name};
+    use crate::{func, lair::toplevel::Toplevel};
 
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
 
     #[test]
     fn lair_execute_test() {
-        let ops = vec![
-            OpE::Add(Var("d"), Var("a"), Var("b")),
-            OpE::Mul(Var("x"), Var("c"), Var("d")),
-        ];
-        let ctrl = CtrlE::Return(vec![Var("x")]);
-        let body = BlockE { ops, ctrl };
-        let name = Name("test");
-        let func = FuncE::<F> {
-            name,
-            body,
-            input_params: vec![Var("a"), Var("b"), Var("c")],
-            output_size: 1,
-        };
-        let mut args = (2..=4).map(F::from_canonical_u32).collect();
-        let toplevel = Toplevel::new(&[func]);
+        let is_fifty = func!(
+        fn is_fifty(x): 1 {
+            match x {
+                50 => {
+                    let one = num(1);
+                    return one
+                }
+            };
+            let zero = num(0);
+            return zero
+        });
+        let test_func = func!(
+        fn test(a, b): 1 {
+            let a = add(a, b);
+            let c = num(10);
+            let a = mul(a, c);
+            let x = call(is_fifty, a);
+            return x
+        });
+        let name = test_func.name;
+        let toplevel = Toplevel::new(&[test_func, is_fifty]);
         let func = toplevel.map().get(&name).unwrap();
+        let mut args = (2..=3).map(F::from_canonical_u32).collect();
         let out = func.execute(&mut args, &toplevel);
         assert_eq!(out.len(), 1);
-        assert_eq!(out[0], F::from_canonical_u32(20));
+        assert_eq!(out[0], F::from_canonical_u32(1));
     }
 }
