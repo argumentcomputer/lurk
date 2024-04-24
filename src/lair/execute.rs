@@ -80,37 +80,71 @@ impl<F: Field + Ord> Op<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{func, lair::toplevel::Toplevel};
+    use crate::{
+        func,
+        lair::{toplevel::Toplevel, Name},
+    };
 
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
 
     #[test]
     fn lair_execute_test() {
-        let is_fifty = func!(
-        fn is_fifty(x): 1 {
-            match x {
-                50 => {
-                    let one = num(1);
+        let factorial = func!(
+        fn factorial(n): 1 {
+            let one = num(1);
+            match n {
+                0 => {
                     return one
                 }
             };
-            let zero = num(0);
-            return zero
+            let pred = sub(n, one);
+            let m = call(factorial, pred);
+            let res = mul(n, m);
+            return res
         });
-        let test_func = func!(
-        fn test(a, b): 1 {
-            let a = add(a, b);
-            let c = num(10);
-            let a = mul(a, c);
-            let x = call(is_fifty, a);
-            return x
+        let even = func!(
+        fn even(n): 1 {
+            let one = num(1);
+            match n {
+                0 => {
+                    return one
+                }
+            };
+            let pred = sub(n, one);
+            let res = call(odd, pred);
+            return res
         });
-        let name = test_func.name;
-        let toplevel = Toplevel::new(&[test_func, is_fifty]);
-        let func = toplevel.map().get(&name).unwrap();
-        let mut args = (2..=3).map(F::from_canonical_u32).collect();
-        let out = func.execute(&mut args, &toplevel);
+        let odd = func!(
+        fn odd(n): 1 {
+            let one = num(1);
+            match n {
+                0 => {
+                    let zero = num(0);
+                    return zero
+                }
+            };
+            let pred = sub(n, one);
+            let res = call(even, pred);
+            return res
+        });
+        let toplevel = Toplevel::new(&[even, factorial, odd]);
+
+        let factorial = toplevel.map().get(&Name("factorial")).unwrap();
+        let mut args = vec![F::from_canonical_u32(5)];
+        let out = factorial.execute(&mut args, &toplevel);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0], F::from_canonical_u32(120));
+
+        let even = toplevel.map().get(&Name("even")).unwrap();
+        let mut args = vec![F::from_canonical_u32(7)];
+        let out = even.execute(&mut args, &toplevel);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0], F::from_canonical_u32(0));
+
+        let odd = toplevel.map().get(&Name("odd")).unwrap();
+        let mut args = vec![F::from_canonical_u32(7)];
+        let out = odd.execute(&mut args, &toplevel);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], F::from_canonical_u32(1));
     }
