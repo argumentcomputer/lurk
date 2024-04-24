@@ -2,6 +2,7 @@ pub mod bytecode;
 pub mod execute;
 pub mod expr;
 pub mod map;
+pub mod toplevel;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Name(pub &'static str);
