@@ -1,3 +1,4 @@
+pub mod lem;
 pub mod pointers;
 pub mod store_core;
 
