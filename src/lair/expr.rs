@@ -1,4 +1,4 @@
-use super::{map::Map, Name};
+use super::{map::Map, List, Name};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Var(pub &'static str);
@@ -16,12 +16,12 @@ pub enum OpE<F> {
     Sub(Var, Var, Var),
     Mul(Var, Var, Var),
     Div(Var, Var, Var),
-    Call(Vec<Var>, Name, Vec<Var>),
+    Call(List<Var>, Name, List<Var>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BlockE<F> {
-    pub ops: Vec<OpE<F>>,
+    pub ops: List<OpE<F>>,
     pub ctrl: CtrlE<F>,
 }
 
@@ -29,7 +29,7 @@ pub struct BlockE<F> {
 pub enum CtrlE<F> {
     Match(Var, CasesE<F>),
     If(Var, Box<BlockE<F>>, Box<BlockE<F>>),
-    Return(Vec<Var>),
+    Return(List<Var>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -47,7 +47,7 @@ impl<F: Ord> CasesE<F> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FuncE<F> {
     pub name: Name,
-    pub input_params: Vec<Var>,
+    pub input_params: List<Var>,
     pub output_size: usize,
     pub body: BlockE<F>,
 }

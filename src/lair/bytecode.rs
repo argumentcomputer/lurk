@@ -1,4 +1,4 @@
-use super::{map::Map, Name};
+use super::{map::Map, List, Name};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Op<F> {
@@ -8,12 +8,13 @@ pub enum Op<F> {
     Mul(usize, usize),
     Div(usize, usize),
     // index, arguments
-    Call(usize, Vec<usize>),
+    // u32 is used here to reduce the size of Op<F> on 64 bit machines
+    Call(u32, List<usize>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Block<F> {
-    pub ops: Vec<Op<F>>,
+    pub ops: List<Op<F>>,
     pub ctrl: Ctrl<F>,
 }
 
@@ -21,7 +22,7 @@ pub struct Block<F> {
 pub enum Ctrl<F> {
     Match(usize, Cases<F>),
     If(usize, Box<Block<F>>, Box<Block<F>>),
-    Return(Vec<usize>),
+    Return(List<usize>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
