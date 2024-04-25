@@ -94,18 +94,14 @@ impl<F: Field + Ord> Op<F> {
                     1
                 }
             }
-            Op::Div(a, b) => {
+            Op::Inv(a) => {
                 let a_deg = map[*a];
-                let b_deg = map[*b];
-                if b_deg == 0 {
-                    map.push(a_deg);
+                if a_deg == 0 {
+                    map.push(0);
                     0
-                } else if a_deg == 0 {
-                    map.push(1);
-                    1
                 } else {
                     map.push(1);
-                    2
+                    1
                 }
             }
             Op::Call(f_idx, ..) => {
@@ -131,7 +127,7 @@ impl<F: Field + Ord> Op<F> {
             Op::Mul(..) => {
                 todo!()
             }
-            Op::Div(..) => {
+            Op::Inv(..) => {
                 todo!()
             }
             Op::Call(..) => {

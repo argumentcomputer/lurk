@@ -102,32 +102,39 @@ impl<F: Clone + Ord> BlockE<F> {
         for op in self.ops.iter() {
             match op {
                 OpE::Const(tgt, f) => {
-                    bind(tgt, &mut idx, map);
                     ops.push(Op::Const(f.clone()));
+                    bind(tgt, &mut idx, map);
                 }
                 OpE::Add(tgt, a, b) => {
                     let a = use_var(a, map);
                     let b = use_var(b, map);
-                    bind(tgt, &mut idx, map);
                     ops.push(Op::Add(a, b));
+                    bind(tgt, &mut idx, map);
                 }
                 OpE::Mul(tgt, a, b) => {
                     let a = use_var(a, map);
                     let b = use_var(b, map);
-                    bind(tgt, &mut idx, map);
                     ops.push(Op::Mul(a, b));
+                    bind(tgt, &mut idx, map);
                 }
                 OpE::Sub(tgt, a, b) => {
                     let a = use_var(a, map);
                     let b = use_var(b, map);
-                    bind(tgt, &mut idx, map);
                     ops.push(Op::Sub(a, b));
+                    bind(tgt, &mut idx, map);
                 }
                 OpE::Div(tgt, a, b) => {
                     let a = use_var(a, map);
                     let b = use_var(b, map);
+                    ops.push(Op::Inv(b));
+                    ops.push(Op::Mul(a, idx));
+                    idx += 1;
                     bind(tgt, &mut idx, map);
-                    ops.push(Op::Div(a, b));
+                }
+                OpE::Inv(tgt, a) => {
+                    let a = use_var(a, map);
+                    ops.push(Op::Inv(a));
+                    bind(tgt, &mut idx, map);
                 }
                 OpE::Call(out, name, inp) => {
                     let name_idx = info_map
@@ -141,8 +148,8 @@ impl<F: Clone + Ord> BlockE<F> {
                     assert_eq!(inp.len(), input_size);
                     assert_eq!(out.len(), output_size);
                     let inp = inp.iter().map(|a| use_var(a, map)).collect();
-                    out.iter().for_each(|t| bind(t, &mut idx, map));
                     ops.push(Op::Call(name_idx as u32, inp));
+                    out.iter().for_each(|t| bind(t, &mut idx, map));
                 }
             }
         }

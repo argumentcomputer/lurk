@@ -16,6 +16,7 @@ pub enum OpE<F> {
     Sub(Var, Var, Var),
     Mul(Var, Var, Var),
     Div(Var, Var, Var),
+    Inv(Var, Var),
     Call(List<Var>, Name, List<Var>),
 }
 
