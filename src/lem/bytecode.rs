@@ -6,7 +6,7 @@ pub enum Op<F> {
     Add(usize, usize),
     Sub(usize, usize),
     Mul(usize, usize),
-    Div(usize, usize),
+    Inv(usize),
     // index, arguments
     // u32 is used here to reduce the size of Op<F> on 64 bit machines
     Call(u32, List<usize>),
