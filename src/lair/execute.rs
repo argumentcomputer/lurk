@@ -72,7 +72,7 @@ impl<F: Field + Ord> QueryRecord<F> {
         func_idx: usize,
         args: List<F>,
     ) -> List<F> {
-        let (_, func) = toplevel.map().get_index(func_idx).unwrap();
+        let func = toplevel.get_by_index(func_idx).unwrap();
         if let Some(out) = self.record[func_idx].query(&args) {
             out
         } else {
@@ -233,20 +233,20 @@ mod tests {
 
         let toplevel = Toplevel::new(&[even_e, factorial_e, odd_e]);
 
-        let factorial = toplevel.get_func("factorial").unwrap();
+        let factorial = toplevel.get_by_name("factorial").unwrap();
         let args = &[F::from_canonical_u32(5)];
         let record = &mut QueryRecord::new(&toplevel);
         let out = factorial.execute(args, &toplevel, record);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], F::from_canonical_u32(120));
 
-        let even = toplevel.get_func("even").unwrap();
+        let even = toplevel.get_by_name("even").unwrap();
         let args = &[F::from_canonical_u32(7)];
         let out = even.execute(args, &toplevel, record);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], F::from_canonical_u32(0));
 
-        let odd = toplevel.get_func("odd").unwrap();
+        let odd = toplevel.get_by_name("odd").unwrap();
         let args = &[F::from_canonical_u32(4)];
         let out = odd.execute(args, &toplevel, record);
         assert_eq!(out.len(), 1);

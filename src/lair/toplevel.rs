@@ -32,13 +32,13 @@ impl<F: Clone + Ord> Toplevel<F> {
 
 impl<F> Toplevel<F> {
     #[inline]
-    pub fn map(&self) -> &Map<Name, Func<F>> {
-        &self.0
+    pub fn get_by_index(&self, i: usize) -> Option<&Func<F>> {
+        self.0.get_index(i).map(|(_, func)| func)
     }
 
     #[inline]
-    pub fn get_func(&self, name: &'static str) -> Option<&Func<F>> {
-        self.map().get(&Name(name))
+    pub fn get_by_name(&self, name: &'static str) -> Option<&Func<F>> {
+        self.0.get(&Name(name))
     }
 
     #[inline]
