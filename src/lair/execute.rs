@@ -69,7 +69,7 @@ impl<F: Field + Ord> Op<F> {
                 stack.push(a / b);
             }
             Op::Call(idx, inp) => {
-                let (_, func) = toplevel.map().get_index(*idx).unwrap();
+                let (_, func) = toplevel.map().get_index(*idx as usize).unwrap();
                 let args = &mut inp.iter().map(|a| stack[*a]).collect();
                 let out = func.execute(args, toplevel);
                 stack.extend(out);
