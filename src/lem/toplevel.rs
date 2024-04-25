@@ -32,6 +32,10 @@ impl<F: Clone + Ord> Toplevel<F> {
     pub fn map(&self) -> &Map<Name, Func<F>> {
         &self.0
     }
+
+    pub fn size(&self) -> usize {
+        self.0.size()
+    }
 }
 /// Binds a variable and sets it as "unused"
 #[inline]
