@@ -17,11 +17,14 @@ pub struct QueryResult<F> {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct QueryMap<F>(BTreeMap<List<F>, QueryResult<F>>);
 
-impl<F: Clone + Ord> QueryMap<F> {
+impl<F> QueryMap<F> {
+    #[inline]
     pub fn new() -> Self {
         QueryMap(BTreeMap::new())
     }
+}
 
+impl<F: Clone + Ord> QueryMap<F> {
     #[inline]
     pub fn query(&mut self, input: &[F]) -> Option<List<F>> {
         if let Some(event) = self.0.get_mut(input) {
@@ -46,16 +49,23 @@ pub struct QueryRecord<F> {
     record: Vec<QueryMap<F>>,
 }
 
-impl<F: Field + Ord> QueryRecord<F> {
+impl<F: Clone> QueryRecord<F> {
+    #[inline]
     pub fn new(toplevel: &Toplevel<F>) -> Self {
-        let record = (0..toplevel.size()).map(|_| QueryMap::new()).collect();
-        Self { record }
+        Self {
+            record: vec![QueryMap::new(); toplevel.size()],
+        }
     }
+}
 
+impl<F> QueryRecord<F> {
+    #[inline]
     pub fn record(&self) -> &Vec<QueryMap<F>> {
         &self.record
     }
+}
 
+impl<F: Field + Ord> QueryRecord<F> {
     pub fn record_event(
         &mut self,
         toplevel: &Toplevel<F>,
