@@ -1,78 +1,168 @@
+use std::collections::BTreeMap;
+
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
     toplevel::Toplevel,
+    List,
 };
 
 use p3_field::Field;
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QueryResult<F> {
+    output: List<F>,
+    multiplicity: usize,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct QueryMap<F>(BTreeMap<List<F>, QueryResult<F>>);
+
+impl<F: Clone + Ord> QueryMap<F> {
+    pub fn new() -> Self {
+        QueryMap(BTreeMap::new())
+    }
+
+    #[inline]
+    pub fn query(&mut self, input: &[F]) -> Option<List<F>> {
+        if let Some(event) = self.0.get_mut(input) {
+            event.multiplicity += 1;
+            Some(event.output.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn insert_result(&mut self, input: List<F>, output: List<F>) {
+        let result = QueryResult {
+            output,
+            multiplicity: 1,
+        };
+        assert!(self.0.insert(input, result).is_none());
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QueryRecord<F> {
+    record: Vec<QueryMap<F>>,
+}
+
+impl<F: Field + Ord> QueryRecord<F> {
+    pub fn new(toplevel: &Toplevel<F>) -> Self {
+        let record = (0..toplevel.size()).map(|_| QueryMap::new()).collect();
+        Self { record }
+    }
+
+    pub fn record(&self) -> &Vec<QueryMap<F>> {
+        &self.record
+    }
+
+    pub fn record_event(
+        &mut self,
+        toplevel: &Toplevel<F>,
+        func_idx: usize,
+        args: List<F>,
+    ) -> List<F> {
+        let (_, func) = toplevel.map().get_index(func_idx).unwrap();
+        if let Some(out) = self.record[func_idx].query(&args) {
+            out
+        } else {
+            let out = func.execute(&args, toplevel, self);
+            self.record[func_idx].insert_result(args, out.clone());
+            out
+        }
+    }
+}
+
 impl<F: Field + Ord> Func<F> {
-    pub fn execute(&self, args: &mut Vec<F>, toplevel: &Toplevel<F>) -> Vec<F> {
+    pub fn execute(
+        &self,
+        args: &[F],
+        toplevel: &Toplevel<F>,
+        record: &mut QueryRecord<F>,
+    ) -> List<F> {
+        let stack_frame = &mut args.into();
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
-        self.body().execute(args, toplevel)
+        self.body().execute(stack_frame, toplevel, record)
     }
 }
 
 impl<F: Field + Ord> Block<F> {
-    fn execute(&self, stack: &mut Vec<F>, toplevel: &Toplevel<F>) -> Vec<F> {
-        self.ops.iter().for_each(|op| op.execute(stack, toplevel));
-        self.ctrl.execute(stack, toplevel)
+    fn execute(
+        &self,
+        stack_frame: &mut Vec<F>,
+        toplevel: &Toplevel<F>,
+        record: &mut QueryRecord<F>,
+    ) -> List<F> {
+        self.ops
+            .iter()
+            .for_each(|op| op.execute(stack_frame, toplevel, record));
+        self.ctrl.execute(stack_frame, toplevel, record)
     }
 }
 
 impl<F: Field + Ord> Ctrl<F> {
-    fn execute(&self, stack: &mut Vec<F>, toplevel: &Toplevel<F>) -> Vec<F> {
+    fn execute(
+        &self,
+        stack_frame: &mut Vec<F>,
+        toplevel: &Toplevel<F>,
+        record: &mut QueryRecord<F>,
+    ) -> List<F> {
         match self {
-            Ctrl::Return(vars) => vars.iter().map(|var| stack[*var]).collect(),
+            Ctrl::Return(vars) => vars.iter().map(|var| stack_frame[*var]).collect(),
             Ctrl::If(b, t, f) => {
-                let b = stack[*b];
+                let b = stack_frame[*b];
                 if b.is_zero() {
-                    f.execute(stack, toplevel)
+                    f.execute(stack_frame, toplevel, record)
                 } else {
-                    t.execute(stack, toplevel)
+                    t.execute(stack_frame, toplevel, record)
                 }
             }
             Ctrl::Match(v, cases) => {
-                let v = stack[*v];
+                let v = stack_frame[*v];
                 cases
                     .match_case(&v)
                     .expect("No match")
-                    .execute(stack, toplevel)
+                    .execute(stack_frame, toplevel, record)
             }
         }
     }
 }
 
 impl<F: Field + Ord> Op<F> {
-    fn execute(&self, stack: &mut Vec<F>, toplevel: &Toplevel<F>) {
+    fn execute(
+        &self,
+        stack_frame: &mut Vec<F>,
+        toplevel: &Toplevel<F>,
+        record: &mut QueryRecord<F>,
+    ) {
         match self {
             Op::Const(c) => {
-                stack.push(*c);
+                stack_frame.push(*c);
             }
             Op::Add(a, b) => {
-                let a = stack[*a];
-                let b = stack[*b];
-                stack.push(a + b);
+                let a = stack_frame[*a];
+                let b = stack_frame[*b];
+                stack_frame.push(a + b);
             }
             Op::Sub(a, b) => {
-                let a = stack[*a];
-                let b = stack[*b];
-                stack.push(a - b);
+                let a = stack_frame[*a];
+                let b = stack_frame[*b];
+                stack_frame.push(a - b);
             }
             Op::Mul(a, b) => {
-                let a = stack[*a];
-                let b = stack[*b];
-                stack.push(a * b);
+                let a = stack_frame[*a];
+                let b = stack_frame[*b];
+                stack_frame.push(a * b);
             }
             Op::Div(a, b) => {
-                let a = stack[*a];
-                let b = stack[*b];
-                stack.push(a / b);
+                let a = stack_frame[*a];
+                let b = stack_frame[*b];
+                stack_frame.push(a / b);
             }
             Op::Call(idx, inp) => {
-                let (_, func) = toplevel.map().get_index(*idx as usize).unwrap();
-                let args = &mut inp.iter().map(|a| stack[*a]).collect();
-                let out = func.execute(args, toplevel);
-                stack.extend(out);
+                let args = inp.iter().map(|a| stack_frame[*a]).collect();
+                let out = record.record_event(toplevel, *idx as usize, args);
+                stack_frame.extend(out.iter());
             }
         }
     }
@@ -80,7 +170,10 @@ impl<F: Field + Ord> Op<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{func, lair::toplevel::Toplevel};
+    use crate::{
+        func,
+        lair::{execute::QueryRecord, toplevel::Toplevel},
+    };
 
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
@@ -131,21 +224,22 @@ mod tests {
         let toplevel = Toplevel::new(&[even_e, factorial_e, odd_e]);
 
         let factorial = toplevel.get_func("factorial").unwrap();
-        let mut args = vec![F::from_canonical_u32(5)];
-        let out = factorial.execute(&mut args, &toplevel);
+        let args = &[F::from_canonical_u32(5)];
+        let record = &mut QueryRecord::new(&toplevel);
+        let out = factorial.execute(args, &toplevel, record);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], F::from_canonical_u32(120));
 
         let even = toplevel.get_func("even").unwrap();
-        let mut args = vec![F::from_canonical_u32(7)];
-        let out = even.execute(&mut args, &toplevel);
+        let args = &[F::from_canonical_u32(7)];
+        let out = even.execute(args, &toplevel, record);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], F::from_canonical_u32(0));
 
         let odd = toplevel.get_func("odd").unwrap();
-        let mut args = vec![F::from_canonical_u32(7)];
-        let out = odd.execute(&mut args, &toplevel);
+        let args = &[F::from_canonical_u32(4)];
+        let out = odd.execute(args, &toplevel, record);
         assert_eq!(out.len(), 1);
-        assert_eq!(out[0], F::from_canonical_u32(1));
+        assert_eq!(out[0], F::from_canonical_u32(0));
     }
 }
