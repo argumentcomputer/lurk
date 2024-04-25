@@ -20,3 +20,5 @@ impl std::fmt::Display for Name {
 pub(crate) fn field_from_u32<F: Field>(f: u32) -> F {
     F::from_canonical_u32(f)
 }
+
+pub type List<T> = Box<[T]>;

@@ -3,7 +3,7 @@ macro_rules! func {
     (fn $name:ident($( $in:ident ),*): $size:literal $lem:tt) => {
         $crate::lem::expr::FuncE {
             name: $crate::lem::Name(stringify!($name)),
-            input_params: vec![$($crate::var!($in)),*],
+            input_params: [$($crate::var!($in)),*].into(),
             output_size: $size,
             body: $crate::block!($lem),
         }
@@ -95,8 +95,8 @@ macro_rules! block {
                 $($limbs)*
                 {
                     let func = $crate::lem::Name(stringify!($func));
-                    let out = vec!($($crate::var!($tgt)),*);
-                    let inp = vec!($($crate::var!($arg)),*);
+                    let out = [$($crate::var!($tgt)),*].into();
+                    let inp = [$($crate::var!($arg)),*].into();
                     $crate::lem::expr::OpE::Call(out, func, inp)
                 }
             },
@@ -110,8 +110,8 @@ macro_rules! block {
                 $($limbs)*
                 {
                     let func = $crate::lem::Name(stringify!($func));
-                    let out = vec!($crate::var!($tgt));
-                    let inp = vec!($($crate::var!($arg)),*);
+                    let out = [$crate::var!($tgt)].into();
+                    let inp = [$($crate::var!($arg)),*].into();
                     $crate::lem::expr::OpE::Call(out, func, inp)
                 }
             },
@@ -181,7 +181,7 @@ macro_rules! block {
             {
                 $($limbs)*
             },
-            $crate::lem::expr::CtrlE::Return(vec![$($crate::var!($src)),*])
+            $crate::lem::expr::CtrlE::Return([$($crate::var!($src)),*].into())
         )
     };
     (@seq {$($limbs:expr)*}, return $src:ident $(;)?) => {
@@ -190,12 +190,12 @@ macro_rules! block {
             {
                 $($limbs)*
             },
-            $crate::lem::expr::CtrlE::Return(vec![$crate::var!($src)])
+            $crate::lem::expr::CtrlE::Return([$crate::var!($src)].into())
         )
     };
     (@end {$($limbs:expr)*}, $cont:expr) => {
         {
-            let ops = vec!($($limbs),*);
+            let ops = [$($limbs),*].into();
             let ctrl = $cont;
             $crate::lem::expr::BlockE{ ops, ctrl }
         }
