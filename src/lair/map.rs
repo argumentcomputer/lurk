@@ -59,3 +59,30 @@ impl<K, V> Map<K, V> {
         self.0.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[should_panic]
+    fn test_map_panic() {
+        Map::from_vec(vec![("foo", 1), ("foo", 2)]);
+    }
+
+    #[test]
+    fn test_map_get() {
+        let test_with_len = |len| {
+            let pairs = (0..len).map(|i| (i, i * i)).collect();
+            let map = Map::from_vec(pairs);
+            (0..len).for_each(|key| {
+                assert_eq!(map.get(&key), Some(key * key).as_ref());
+                assert_eq!(map.get_index_of(&key), Some(key));
+                assert_eq!(map.get_index(key), Some((key, key * key)).as_ref());
+            });
+        };
+
+        test_with_len(LINEAR_SEARCH_MAX - 1); // testing linear search
+        test_with_len(LINEAR_SEARCH_MAX); // testing binary search
+    }
+}
