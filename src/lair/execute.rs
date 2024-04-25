@@ -162,12 +162,13 @@ impl<F: Field + Ord> Op<F> {
             Op::Mul(a, b) => {
                 let a = stack_frame[*a];
                 let b = stack_frame[*b];
+                println!("mul: {:?} {:?} {:?}", a, b, a * b);
                 stack_frame.push(a * b);
             }
-            Op::Div(a, b) => {
+            Op::Inv(a) => {
                 let a = stack_frame[*a];
-                let b = stack_frame[*b];
-                stack_frame.push(a / b);
+                println!("inv: {:?} {:?}", a, F::one() / a);
+                stack_frame.push(F::one() / a);
             }
             Op::Call(idx, inp) => {
                 let args = inp.iter().map(|a| stack_frame[*a]).collect();
@@ -251,5 +252,22 @@ mod tests {
         let out = odd.execute(args, &toplevel, record);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], F::from_canonical_u32(0));
+    }
+
+    #[test]
+    fn lem_div_test() {
+        let test_e = func!(
+            fn test(a, b): 1 {
+                let n = div(a, b);
+                return n
+            }
+        );
+        let toplevel = Toplevel::new(&[test_e]);
+        let test = toplevel.get_by_name("test").unwrap();
+        let args = &[F::from_canonical_u32(20), F::from_canonical_u32(4)];
+        let record = &mut QueryRecord::new(&toplevel);
+        let out = test.execute(args, &toplevel, record);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0], F::from_canonical_u32(5));
     }
 }
