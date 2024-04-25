@@ -6,6 +6,7 @@ pub mod expr;
 mod macros;
 pub mod map;
 pub mod toplevel;
+pub mod trace;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Name(pub &'static str);
