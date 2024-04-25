@@ -28,9 +28,22 @@ impl<F: Clone + Ord> Toplevel<F> {
             .collect();
         Toplevel(Map::from_vec(map))
     }
+}
 
+impl<F> Toplevel<F> {
+    #[inline]
     pub fn map(&self) -> &Map<Name, Func<F>> {
         &self.0
+    }
+
+    #[inline]
+    pub fn get_func(&self, name: &'static str) -> Option<&Func<F>> {
+        self.map().get(&Name(name))
+    }
+
+    #[inline]
+    pub fn size(&self) -> usize {
+        self.0.size()
     }
 }
 /// Binds a variable and sets it as "unused"

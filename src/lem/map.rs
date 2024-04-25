@@ -16,10 +16,6 @@ impl<K: Ord, V> Map<K, V> {
         Self(pairs)
     }
 
-    pub fn to_vec(self) -> Vec<(K, V)> {
-        self.0
-    }
-
     pub fn get(&self, f: &K) -> Option<&V> {
         if self.0.len() < LINEAR_SEARCH_MAX {
             self.0.iter().find(|(g, _)| f == g).map(|(_, v)| v)
@@ -27,10 +23,6 @@ impl<K: Ord, V> Map<K, V> {
             let t = self.0.binary_search_by(|(g, _)| g.cmp(f)).ok();
             t.map(|i| &self.0[i].1)
         }
-    }
-
-    pub fn get_index(&self, i: usize) -> Option<&(K, V)> {
-        self.0.get(i)
     }
 
     pub fn get_index_of(&self, f: &K) -> Option<usize> {
@@ -44,11 +36,25 @@ impl<K: Ord, V> Map<K, V> {
             self.0.binary_search_by(|(g, _)| g.cmp(f)).ok()
         }
     }
+}
 
+impl<K, V> Map<K, V> {
+    #[inline]
+    pub fn to_vec(self) -> Vec<(K, V)> {
+        self.0
+    }
+
+    #[inline]
+    pub fn get_index(&self, i: usize) -> Option<&(K, V)> {
+        self.0.get(i)
+    }
+
+    #[inline]
     pub fn iter(&self) -> Iter<'_, (K, V)> {
         self.0.iter()
     }
 
+    #[inline]
     pub fn size(&self) -> usize {
         self.0.len()
     }
