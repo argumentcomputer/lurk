@@ -95,8 +95,8 @@ macro_rules! block {
                 $($limbs)*
                 {
                     let func = $crate::lem::Name(stringify!($func));
-                    let out = vec!($($crate::var!($tgt)),*);
-                    let inp = vec!($($crate::var!($arg)),*);
+                    let out = [$($crate::var!($tgt)),*].into();
+                    let inp = [$($crate::var!($arg)),*].into();
                     $crate::lem::expr::OpE::Call(out, func, inp)
                 }
             },
@@ -110,8 +110,8 @@ macro_rules! block {
                 $($limbs)*
                 {
                     let func = $crate::lem::Name(stringify!($func));
-                    let out = vec!($crate::var!($tgt));
-                    let inp = vec!($($crate::var!($arg)),*);
+                    let out = [$crate::var!($tgt)].into();
+                    let inp = [$($crate::var!($arg)),*].into();
                     $crate::lem::expr::OpE::Call(out, func, inp)
                 }
             },
