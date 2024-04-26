@@ -255,7 +255,7 @@ mod tests {
     }
 
     #[test]
-    fn lem_div_test() {
+    fn lair_div_test() {
         let test_e = func!(
             fn test(a, b): 1 {
                 let n = div(a, b);
