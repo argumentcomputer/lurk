@@ -38,6 +38,13 @@ impl<F: Ord> Cases<F> {
     }
 }
 
+impl<F> Cases<F> {
+    pub fn size(&self) -> usize {
+        let inc = if self.default.is_some() { 1 } else { 0 };
+        self.branches.size() + inc
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Func<F> {
     pub(crate) name: Name,
