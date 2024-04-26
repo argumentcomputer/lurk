@@ -35,6 +35,11 @@ impl<F: Ord> Cases<F> {
     pub fn match_case(&self, f: &F) -> Option<&Block<F>> {
         self.branches.get(f).or(self.default.as_deref())
     }
+
+    pub fn size(&self) -> usize {
+        let inc = if self.default.is_some() { 1 } else { 0 };
+        self.branches.size()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
