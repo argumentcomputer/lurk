@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{btree_map::Iter, BTreeMap};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
@@ -10,17 +10,22 @@ use p3_field::Field;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QueryResult<F> {
-    output: List<F>,
-    multiplicity: usize,
+    pub(crate) output: List<F>,
+    pub(crate) mult: u32,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct QueryMap<F>(BTreeMap<List<F>, QueryResult<F>>);
+pub struct QueryMap<F>(pub(crate) BTreeMap<List<F>, QueryResult<F>>);
 
 impl<F> QueryMap<F> {
     #[inline]
     pub fn new() -> Self {
         QueryMap(BTreeMap::new())
+    }
+
+    #[inline]
+    pub fn size(&self) -> usize {
+        self.0.len()
     }
 }
 
@@ -28,7 +33,7 @@ impl<F: Clone + Ord> QueryMap<F> {
     #[inline]
     pub fn query(&mut self, input: &[F]) -> Option<List<F>> {
         if let Some(event) = self.0.get_mut(input) {
-            event.multiplicity += 1;
+            event.mult += 1;
             Some(event.output.clone())
         } else {
             None
@@ -36,11 +41,16 @@ impl<F: Clone + Ord> QueryMap<F> {
     }
 
     pub fn insert_result(&mut self, input: List<F>, output: List<F>) {
-        let result = QueryResult {
-            output,
-            multiplicity: 1,
-        };
+        let result = QueryResult { output, mult: 1 };
         assert!(self.0.insert(input, result).is_none());
+    }
+
+    pub fn iter(&self) -> Iter<'_, List<F>, QueryResult<F>> {
+        self.0.iter()
+    }
+
+    pub fn get(&self, args: &List<F>) -> Option<&QueryResult<F>> {
+        self.0.get(args)
     }
 }
 
@@ -66,7 +76,15 @@ impl<F> QueryRecord<F> {
 }
 
 impl<F: Field + Ord> QueryRecord<F> {
-    pub fn record_event(
+    pub fn record_event(&mut self, toplevel: &Toplevel<F>, func_idx: usize, args: List<F>) {
+        let func = toplevel.get_by_index(func_idx).unwrap();
+        if self.record[func_idx].query(&args).is_none() {
+            let out = func.execute(&args, toplevel, self);
+            self.record[func_idx].insert_result(args, out);
+        }
+    }
+
+    fn record_event_and_return(
         &mut self,
         toplevel: &Toplevel<F>,
         func_idx: usize,
@@ -176,7 +194,7 @@ impl<F: Field + Ord> Op<F> {
             }
             Op::Call(idx, inp) => {
                 let args = inp.iter().map(|a| stack_frame[*a]).collect();
-                let out = record.record_event(toplevel, *idx as usize, args);
+                let out = record.record_event_and_return(toplevel, *idx as usize, args);
                 stack_frame.extend(out.iter());
             }
         }
@@ -198,15 +216,13 @@ mod tests {
         let factorial_e = func!(
         fn factorial(n): 1 {
             let one = num(1);
-            match n {
-                0 => {
-                    return one
-                }
-            };
-            let pred = sub(n, one);
-            let m = call(factorial, pred);
-            let res = mul(n, m);
-            return res
+            if n {
+                let pred = sub(n, one);
+                let m = call(factorial, pred);
+                let res = mul(n, m);
+                return res
+            }
+            return one
         });
 
         let even_e = func!(

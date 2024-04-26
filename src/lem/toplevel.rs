@@ -24,7 +24,8 @@ impl<F: Clone + Ord> Toplevel<F> {
         let info_map = Map::from_vec(info_vec);
         let map = funcs
             .iter()
-            .map(|func| (func.name, func.check_and_link(&info_map)))
+            .enumerate()
+            .map(|(i, func)| (func.name, func.check_and_link(i, &info_map)))
             .collect();
         Toplevel(Map::from_vec(map))
     }
@@ -71,7 +72,11 @@ fn use_var(var: &Var, map: &mut BindingMap) -> usize {
 impl<F: Clone + Ord> FuncE<F> {
     /// Checks if a named `Func` is correct, and produces an index-based `Func`
     /// by replacing names with indices
-    pub(crate) fn check_and_link(&self, info_map: &Map<Name, FuncInfo>) -> Func<F> {
+    pub(crate) fn check_and_link(
+        &self,
+        func_index: usize,
+        info_map: &Map<Name, FuncInfo>,
+    ) -> Func<F> {
         let map = &mut BTreeMap::new();
         let mut idx = 0;
         self.input_params.iter().for_each(|var| {
@@ -89,6 +94,7 @@ impl<F: Clone + Ord> FuncE<F> {
         }
         Func {
             name: self.name,
+            index: func_index,
             body,
             input_size: self.input_params.len(),
             output_size: self.output_size,

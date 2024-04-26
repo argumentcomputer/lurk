@@ -95,8 +95,8 @@ macro_rules! block {
                 $crate::lem::expr::OpE::Pol(
                     $crate::var!($tgt),
                     [
-                        (crate::lem::field_from_i32($c), [$(crate::var!($v)),*].into()), // the first limb
-                        $((crate::lem::field_from_i32($cs), [$(crate::var!($vs)),*].into())),* // the other limbs
+                        ($crate::lem::field_from_i32($c), [$($crate::var!($v)),*].into()), // the first limb
+                        $(($crate::lem::field_from_i32($cs), [$($crate::var!($vs)),*].into())),* // the other limbs
                     ].into(),
                 )
             },
@@ -186,7 +186,7 @@ macro_rules! block {
                 let x = $crate::var!($x);
                 let true_block = Box::new($crate::block!( @seq {}, $($true_block)+ ));
                 let false_block = Box::new($crate::block!( @seq {}, $($false_block)+ ));
-                $crate::lem::expr::Ctrl::If(x, true_block, false_block)
+                $crate::lem::expr::CtrlE::If(x, true_block, false_block)
             }
         )
     };
@@ -200,7 +200,7 @@ macro_rules! block {
                 let x = $crate::var!($x);
                 let true_block = Box::new($crate::block!( @seq {}, $($true_block)+ ));
                 let false_block = Box::new($crate::block!( @seq {}, $($false_block)+ ));
-                $crate::lem::expr::Ctrl::If(x, false_block, true_block)
+                $crate::lem::expr::CtrlE::If(x, false_block, true_block)
             }
         )
     };
