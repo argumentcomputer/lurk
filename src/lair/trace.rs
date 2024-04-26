@@ -11,38 +11,38 @@ type Degree = u8;
 
 impl<F: Field + Ord> Func<F> {
     pub fn compute_width(&self, toplevel: &Toplevel<F>) -> usize {
-        let args = self.input_size;
-        let map = &mut vec![1; args];
-        args + self.body.compute_width(map, toplevel)
+        let num_args = self.input_size;
+        let degrees = &mut vec![1; num_args];
+        num_args + self.body.compute_width(degrees, toplevel)
     }
 
-    pub fn generate_row(&self, args: &[F], row: &mut Vec<F>, toplevel: &Toplevel<F>) {
+    pub fn populate_row(&self, args: &[F], row: &mut Vec<F>, toplevel: &Toplevel<F>) {
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
         let map = &mut args.to_vec();
         // One column per input
         row.extend(args);
-        self.body.generate_row(map, row, toplevel);
+        self.body.populate_row(map, row, toplevel);
     }
 }
 
 impl<F: Field + Ord> Block<F> {
-    fn compute_width(&self, map: &mut Vec<Degree>, toplevel: &Toplevel<F>) -> usize {
-        let num = self.ctrl.compute_width(map, toplevel);
-        self.ops
-            .iter()
-            .fold(num, |acc, op| acc + op.compute_width(map, toplevel))
+    fn compute_width(&self, degrees: &mut Vec<Degree>, toplevel: &Toplevel<F>) -> usize {
+        let ctrl_width = self.ctrl.compute_width(degrees, toplevel);
+        self.ops.iter().fold(ctrl_width, |acc, op| {
+            acc + op.compute_width(degrees, toplevel)
+        })
     }
 
-    fn generate_row(&self, map: &mut Vec<F>, row: &mut Vec<F>, toplevel: &Toplevel<F>) {
+    fn populate_row(&self, map: &mut Vec<F>, row: &mut Vec<F>, toplevel: &Toplevel<F>) {
         self.ops
             .iter()
-            .for_each(|op| op.generate_row(map, row, toplevel));
-        self.ctrl.generate_row(map, row, toplevel);
+            .for_each(|op| op.populate_row(map, row, toplevel));
+        self.ctrl.populate_row(map, row, toplevel);
     }
 }
 
 impl<F: Field + Ord> Ctrl<F> {
-    fn compute_width(&self, map: &mut Vec<Degree>, toplevel: &Toplevel<F>) -> usize {
+    fn compute_width(&self, degrees: &mut Vec<Degree>, toplevel: &Toplevel<F>) -> usize {
         match self {
             Ctrl::Return(..) => {
                 todo!()
@@ -56,7 +56,7 @@ impl<F: Field + Ord> Ctrl<F> {
         }
     }
 
-    fn generate_row(&self, map: &mut Vec<F>, row: &mut Vec<F>, toplevel: &Toplevel<F>) {
+    fn populate_row(&self, map: &mut Vec<F>, row: &mut Vec<F>, toplevel: &Toplevel<F>) {
         match self {
             Ctrl::Return(..) => {
                 todo!()
@@ -72,48 +72,48 @@ impl<F: Field + Ord> Ctrl<F> {
 }
 
 impl<F: Field + Ord> Op<F> {
-    fn compute_width(&self, map: &mut Vec<Degree>, toplevel: &Toplevel<F>) -> usize {
+    fn compute_width(&self, degrees: &mut Vec<Degree>, toplevel: &Toplevel<F>) -> usize {
         match self {
             Op::Const(..) => {
-                map.push(0);
+                degrees.push(0);
                 0
             }
             Op::Add(a, b) | Op::Sub(a, b) => {
-                let deg = map[*a].max(map[*b]);
-                map.push(deg);
+                let deg = degrees[*a].max(degrees[*b]);
+                degrees.push(deg);
                 0
             }
             Op::Mul(a, b) => {
-                let deg = map[*a] + map[*b];
+                let deg = degrees[*a] + degrees[*b];
                 // degree less than 2 does not need allocation
                 if deg < 2 {
-                    map.push(deg);
+                    degrees.push(deg);
                     0
                 } else {
-                    map.push(1);
+                    degrees.push(1);
                     1
                 }
             }
             Op::Inv(a) => {
-                let a_deg = map[*a];
+                let a_deg = degrees[*a];
                 if a_deg == 0 {
-                    map.push(0);
+                    degrees.push(0);
                     0
                 } else {
-                    map.push(1);
+                    degrees.push(1);
                     1
                 }
             }
             Op::Call(f_idx, ..) => {
                 let func = toplevel.get_by_index(*f_idx as usize).unwrap();
                 let out_size = func.output_size;
-                map.extend(vec![1; out_size]);
+                degrees.extend(vec![1; out_size]);
                 0
             }
         }
     }
 
-    fn generate_row(&self, map: &mut Vec<F>, row: &mut Vec<F>, toplevel: &Toplevel<F>) {
+    fn populate_row(&self, map: &mut Vec<F>, row: &mut Vec<F>, toplevel: &Toplevel<F>) {
         match self {
             Op::Const(..) => {
                 todo!()
