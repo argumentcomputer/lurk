@@ -186,7 +186,7 @@ macro_rules! block {
                 let x = $crate::var!($x);
                 let true_block = Box::new($crate::block!( @seq {}, $($true_block)+ ));
                 let false_block = Box::new($crate::block!( @seq {}, $($false_block)+ ));
-                $crate::lair::expr::Ctrl::If(x, true_block, false_block)
+                $crate::lair::expr::CtrlE::If(x, true_block, false_block)
             }
         )
     };
@@ -200,7 +200,7 @@ macro_rules! block {
                 let x = $crate::var!($x);
                 let true_block = Box::new($crate::block!( @seq {}, $($true_block)+ ));
                 let false_block = Box::new($crate::block!( @seq {}, $($false_block)+ ));
-                $crate::lair::expr::Ctrl::If(x, false_block, true_block)
+                $crate::lair::expr::CtrlE::If(x, false_block, true_block)
             }
         )
     };
