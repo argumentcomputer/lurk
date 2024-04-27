@@ -32,6 +32,7 @@ pub struct Cases<F> {
 }
 
 impl<F: Ord> Cases<F> {
+    #[inline]
     pub fn match_case(&self, f: &F) -> Option<&Block<F>> {
         self.branches.get(f).or(self.default.as_deref())
     }
