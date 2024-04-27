@@ -39,12 +39,6 @@ pub struct CasesE<F> {
     pub default: Option<Box<BlockE<F>>>,
 }
 
-impl<F: Ord> CasesE<F> {
-    pub fn match_case(&self, f: &F) -> Option<&BlockE<F>> {
-        self.branches.get(f).or(self.default.as_deref())
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FuncE<F> {
     pub name: Name,
