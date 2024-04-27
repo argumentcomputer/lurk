@@ -120,7 +120,7 @@ impl<F: Field + Ord> Ctrl<F> {
         match self {
             Ctrl::Return(vars) => vars.iter().map(|var| stack_frame[*var]).collect(),
             Ctrl::If(b, t, f) => {
-                let b = stack_frame[*b];
+                let b = stack_frame.get(*b).unwrap();
                 if b.is_zero() {
                     f.execute(stack_frame, toplevel, record)
                 } else {
@@ -128,9 +128,9 @@ impl<F: Field + Ord> Ctrl<F> {
                 }
             }
             Ctrl::Match(v, cases) => {
-                let v = stack_frame[*v];
+                let v = stack_frame.get(*v).unwrap();
                 cases
-                    .match_case(&v)
+                    .match_case(v)
                     .expect("No match")
                     .execute(stack_frame, toplevel, record)
             }
@@ -162,13 +162,11 @@ impl<F: Field + Ord> Op<F> {
             Op::Mul(a, b) => {
                 let a = stack_frame[*a];
                 let b = stack_frame[*b];
-                println!("mul: {:?} {:?} {:?}", a, b, a * b);
                 stack_frame.push(a * b);
             }
             Op::Inv(a) => {
-                let a = stack_frame[*a];
-                println!("inv: {:?} {:?}", a, F::one() / a);
-                stack_frame.push(F::one() / a);
+                let a = stack_frame.get(*a).unwrap();
+                stack_frame.push(a.inverse());
             }
             Op::Call(idx, inp) => {
                 let args = inp.iter().map(|a| stack_frame[*a]).collect();
@@ -269,5 +267,24 @@ mod tests {
         let out = test.execute(args, &toplevel, record);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], F::from_canonical_u32(5));
+    }
+
+    #[test]
+    fn lem_shadow_test() {
+        let test_e = func!(
+            fn test(x): 1 {
+                let x = add(x, x);
+                let x = add(x, x);
+                let x = add(x, x);
+                return x
+            }
+        );
+        let toplevel = Toplevel::new(&[test_e]);
+        let test = toplevel.get_by_name("test").unwrap();
+        let args = &[F::from_canonical_u32(10)];
+        let record = &mut QueryRecord::new(&toplevel);
+        let out = test.execute(args, &toplevel, record);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0], F::from_canonical_u32(80));
     }
 }

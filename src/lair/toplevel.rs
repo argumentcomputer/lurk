@@ -46,25 +46,31 @@ impl<F> Toplevel<F> {
         self.0.size()
     }
 }
+
+/// A map from variables to pairs containing their stack indices and flags that
+/// tell whether they're used or not
+type BindingMap = BTreeMap<Var, (usize, bool)>;
+
 /// Binds a variable and sets it as "unused"
 #[inline]
-fn bind(var: &Var, idx: &mut usize, map: &mut BTreeMap<Var, (bool, usize)>) {
-    map.insert(*var, (false, *idx));
+fn bind(var: &Var, idx: &mut usize, map: &mut BindingMap) {
+    map.insert(*var, (*idx, false));
     *idx += 1;
 }
 
-/// Check if variable is bound and sets it as "used"
+/// Marks a variable as "used" and returns its stack index
 #[inline]
-fn use_var(var: &Var, map: &mut BTreeMap<Var, (bool, usize)>) -> usize {
-    let (flag, idx) = map
+fn use_var(var: &Var, map: &mut BindingMap) -> usize {
+    let (idx, used) = map
         .get_mut(var)
         .unwrap_or_else(|| panic!("Variable {var} is unbound."));
-    *flag = true;
+    *used = true;
     *idx
 }
 
 impl<F: Clone + Ord> FuncE<F> {
-    /// Checks if a named `Func` is correct, and produces an index-based `Func` by replacing names with indexes
+    /// Checks if a named `Func` is correct, and produces an index-based `Func`
+    /// by replacing names with indices
     pub(crate) fn check_and_link(&self, info_map: &Map<Name, FuncInfo>) -> Func<F> {
         let map = &mut BTreeMap::new();
         let mut idx = 0;
@@ -74,10 +80,10 @@ impl<F: Clone + Ord> FuncE<F> {
         let body = self
             .body
             .check_and_link(self.output_size, map, idx, info_map);
-        for (var, (u, _)) in map.iter() {
+        for (var, (_, used)) in map.iter() {
             let ch = var.0.chars().next().unwrap();
             assert!(
-                *u || ch == '_',
+                *used || ch == '_',
                 "Variable {var} not used. If intended, please prefix it with \"_\""
             );
         }
@@ -94,7 +100,7 @@ impl<F: Clone + Ord> BlockE<F> {
     fn check_and_link(
         &self,
         return_size: usize,
-        map: &mut BTreeMap<Var, (bool, usize)>,
+        map: &mut BindingMap,
         mut idx: usize,
         info_map: &Map<Name, FuncInfo>,
     ) -> Block<F> {
@@ -155,8 +161,9 @@ impl<F: Clone + Ord> BlockE<F> {
         }
         let ctrl = match &self.ctrl {
             CtrlE::Return(return_vars) => {
-                assert!(
-                    return_vars.len() == return_size,
+                assert_eq!(
+                    return_vars.len(),
+                    return_size,
                     "Return size {} different from expected size of return {}",
                     return_vars.len(),
                     return_size
@@ -194,18 +201,22 @@ impl<F: Clone + Ord> BlockE<F> {
 }
 
 impl<F: Ord> Func<F> {
+    #[inline]
     pub fn name(&self) -> Name {
         self.name
     }
 
+    #[inline]
     pub fn body(&self) -> &Block<F> {
         &self.body
     }
 
+    #[inline]
     pub fn input_size(&self) -> usize {
         self.input_size
     }
 
+    #[inline]
     pub fn output_size(&self) -> usize {
         self.output_size
     }
