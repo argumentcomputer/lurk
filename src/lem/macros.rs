@@ -26,7 +26,7 @@ macro_rules! block {
                 $($limbs)*
                 $crate::lem::expr::OpE::Const(
                     $crate::var!($tgt),
-                    $crate::lem::field_from_u32($a),
+                    $crate::lem::field_from_i32($a),
                 )
             },
             $($tail)*
@@ -87,14 +87,17 @@ macro_rules! block {
             $($tail)*
         )
     };
-    (@seq {$($limbs:expr)*}, let $tgt:ident = inv($a:ident) ; $($tail:tt)*) => {
+    (@seq {$($limbs:expr)*}, let $tgt:ident = pol($c:literal $(* $v:ident)* $(+ $cs:literal $(* $vs:ident)*)*) ; $($tail:tt)*) => {
         $crate::block! (
             @seq
             {
                 $($limbs)*
-                $crate::lem::expr::OpE::Inv(
+                $crate::lem::expr::OpE::Pol(
                     $crate::var!($tgt),
-                    $crate::var!($a),
+                    [
+                        (crate::lem::field_from_i32($c), [$(crate::var!($v)),*].into()), // the first limb
+                        $((crate::lem::field_from_i32($cs), [$(crate::var!($vs)),*].into())),* // the other limbs
+                    ].into(),
                 )
             },
             $($tail)*
@@ -155,12 +158,12 @@ macro_rules! block {
                 {
                     $(
                         vec.push((
-                            $crate::lem::field_from_u32($num),
+                            $crate::lem::field_from_i32($num),
                             $crate::block!( $branch )
                         ));
                         $(
                             vec.push((
-                                $crate::lem::field_from_u32($other_num),
+                                $crate::lem::field_from_i32($other_num),
                                 $crate::block!( $branch ),
                             ));
                         )*

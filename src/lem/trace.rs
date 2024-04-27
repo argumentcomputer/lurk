@@ -233,6 +233,9 @@ impl<F> Op<F> {
                     *aux += 1;
                 }
             }
+            Op::Pol(limbs) => {
+                todo!()
+            }
             Op::Call(f_idx, ..) => {
                 let func = toplevel.get_by_index(*f_idx as usize).unwrap();
                 let out_size = func.output_size;
@@ -296,6 +299,9 @@ impl<F: Field + Ord> Op<F> {
                 todo!()
             }
             Op::Inv(..) => {
+                todo!()
+            }
+            Op::Pol(..) => {
                 todo!()
             }
             Op::Call(..) => {
