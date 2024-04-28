@@ -110,6 +110,9 @@ impl<F: Field + Ord> Op<F> {
                 degrees.extend(vec![1; out_size]);
                 0
             }
+            Op::Pol(..) => {
+                todo!()
+            }
         }
     }
 
@@ -128,6 +131,9 @@ impl<F: Field + Ord> Op<F> {
                 todo!()
             }
             Op::Inv(..) => {
+                todo!()
+            }
+            Op::Pol(..) => {
                 todo!()
             }
             Op::Call(..) => {
