@@ -130,6 +130,9 @@ impl<F: Field + Ord> Op<F> {
             Op::Inv(..) => {
                 todo!()
             }
+            Op::Pol(..) => {
+                todo!()
+            }
             Op::Call(..) => {
                 todo!()
             }
