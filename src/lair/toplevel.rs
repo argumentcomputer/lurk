@@ -142,6 +142,17 @@ impl<F: Clone + Ord> BlockE<F> {
                     ops.push(Op::Inv(a));
                     bind(tgt, &mut idx, map);
                 }
+                OpE::Pol(tgt, limbs) => {
+                    let limbs = limbs
+                        .iter()
+                        .map(|(f, vars)| {
+                            let vars = vars.iter().map(|v| use_var(v, map)).collect();
+                            (f.clone(), vars)
+                        })
+                        .collect();
+                    ops.push(Op::Pol(limbs));
+                    bind(tgt, &mut idx, map);
+                }
                 OpE::Call(out, name, inp) => {
                     let name_idx = info_map
                         .get_index_of(name)
