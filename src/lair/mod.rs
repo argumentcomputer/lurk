@@ -1,3 +1,4 @@
+pub mod air;
 pub mod bytecode;
 pub mod execute;
 pub mod expr;
