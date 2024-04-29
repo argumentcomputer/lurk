@@ -11,13 +11,12 @@ use super::{
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct ColumnLayout<T> {
-    input: T,
-    output: T,
-    aux: T,
-    sel: T,
+    pub(crate) input: T,
+    pub(crate) output: T,
+    pub(crate) aux: T,
+    pub(crate) sel: T,
 }
 pub type Columns<T> = ColumnLayout<Vec<T>>;
-pub type ColumnSlice<'a, T> = ColumnLayout<&'a [T]>;
 pub type Width = ColumnLayout<usize>;
 
 impl<T: Clone> Columns<T> {
@@ -65,37 +64,10 @@ impl<T: Clone> Columns<T> {
     }
 }
 
-impl<'a, T> ColumnSlice<'a, T> {
-    pub fn from_slice(slice: &'a [T], width: Width) -> Self {
-        assert_eq!(
-            slice.len(),
-            width.input + width.output + width.aux + width.sel
-        );
-        let mut from = 0;
-        let mut to = width.input;
-        let input = &slice[from..to];
-        from += width.input;
-        to += width.output;
-        let output = &slice[from..to];
-        from += width.output;
-        to += width.aux;
-        let aux = &slice[from..to];
-        from += width.aux;
-        to += width.sel;
-        let sel = &slice[from..to];
-        Self {
-            input,
-            output,
-            aux,
-            sel,
-        }
-    }
-}
-
 pub struct FuncChip<'a, F> {
-    func: &'a Func<F>,
-    toplevel: &'a Toplevel<F>,
-    width: Width,
+    pub(crate) func: &'a Func<F>,
+    pub(crate) toplevel: &'a Toplevel<F>,
+    pub(crate) width: Width,
 }
 
 impl<'a, F> FuncChip<'a, F> {
