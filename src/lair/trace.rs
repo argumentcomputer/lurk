@@ -230,6 +230,7 @@ impl<F> Ctrl<F> {
                 }
                 if let Some(block) = &cases.default {
                     let block_aux = &mut aux.clone();
+                    *block_aux += cases.branches.size();
                     block.compute_width(degrees, toplevel, block_aux, sel);
                     degrees.truncate(degrees_len);
                     max_aux = max_aux.max(*block_aux);
@@ -240,6 +241,8 @@ impl<F> Ctrl<F> {
                 *sel += 2;
                 let degrees_len = degrees.len();
                 let t_aux = &mut aux.clone();
+                // for proof of inequality we need inversion
+                *t_aux += 1;
                 t.compute_width(degrees, toplevel, t_aux, sel);
                 degrees.truncate(degrees_len);
                 let f_aux = &mut aux.clone();
@@ -335,6 +338,11 @@ impl<F: Field + Ord> Ctrl<F> {
                     .unwrap_or_else(|| panic!("No match for value {:?}", t));
                 sels[match_idx] = F::one();
                 row.sel.extend(&sels);
+                if match_idx == cases.default_index() {
+                    for (f, _) in cases.branches.iter() {
+                        row.push_aux((t - *f).inverse());
+                    }
+                }
                 let branch = cases.get_index(match_idx).unwrap();
                 branch.populate_row(map, row, queries);
             }
@@ -343,6 +351,7 @@ impl<F: Field + Ord> Ctrl<F> {
                 if b != F::zero() {
                     row.push_sel(F::one());
                     row.push_sel(F::zero());
+                    row.push_aux(b.inverse());
                     t.populate_row(map, row, queries);
                 } else {
                     row.push_sel(F::zero());
@@ -426,7 +435,7 @@ mod tests {
     use super::FuncChip;
 
     #[test]
-    fn lem_width_test() {
+    fn lair_width_test() {
         let func_e = func!(
         fn factorial(n): 1 {
             let one = num(1);
@@ -445,15 +454,15 @@ mod tests {
         let expected_width = Width {
             input: 1,
             output: 1,
-            aux: 3,
+            aux: 4,
             sel: 3,
         };
         assert_eq!(out, expected_width);
     }
 
     #[test]
-    fn lem_trace_test() {
-        let func_e = func!(
+    fn lair_trace_test() {
+        let factorial_e = func!(
         fn factorial(n): 1 {
             let one = num(1);
             if n {
@@ -464,24 +473,122 @@ mod tests {
             }
             return one
         });
-        let toplevel = Toplevel::<F>::new(&[func_e]);
-
+        let fib_e = func!(
+        fn fib(n): 1 {
+            let one = num(1);
+            match n {
+                0 => {
+                    return one
+                }
+                1 => {
+                    return one
+                }
+            };
+            let n_1 = sub(n, one);
+            let a = call(fib, n_1);
+            let n_2 = sub(n_1, one);
+            let b = call(fib, n_2);
+            let res = add(a, b);
+            return res
+        });
+        let toplevel = Toplevel::<F>::new(&[factorial_e, fib_e]);
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
-        let args = [F::from_canonical_u32(5)].into();
+        let fib_chip = FuncChip::from_name("fib", &toplevel);
         let queries = &mut QueryRecord::new(&toplevel);
+
+        let args = [F::from_canonical_u32(5)].into();
         queries.record_event(&toplevel, factorial_chip.func.index, args);
         let trace = factorial_chip.generate_trace(queries);
         let expected_trace = [
-            // in order: input, output, mult, m, res, and selectors
-            0, 1, 1, 0, 0, 1, 0, 1, //
-            1, 1, 1, 1, 1, 1, 1, 0, //
-            2, 2, 1, 1, 2, 1, 1, 0, //
-            3, 6, 1, 2, 6, 1, 1, 0, //
-            4, 24, 1, 6, 24, 1, 1, 0, //
-            5, 120, 1, 24, 120, 1, 1, 0, //
+            // in order: n, output, mult, 1/n, fact(n-1), n*fact(n-1), and selectors
+            0, 1, 1, 0, 0, 0, 1, 0, 1, //
+            1, 1, 1, 1, 1, 1, 1, 1, 0, //
+            2, 2, 1, 1006632961, 1, 2, 1, 1, 0, //
+            3, 6, 1, 1342177281, 2, 6, 1, 1, 0, //
+            4, 24, 1, 1509949441, 6, 24, 1, 1, 0, //
+            5, 120, 1, 1610612737, 24, 120, 1, 1, 0, //
             // dummy
-            0, 0, 0, 0, 0, 0, 0, 0, //
-            0, 0, 0, 0, 0, 0, 0, 0, //
+            0, 0, 0, 0, 0, 0, 0, 0, 0, //
+            0, 0, 0, 0, 0, 0, 0, 0, 0, //
+        ]
+        .into_iter()
+        .map(field_from_i32)
+        .collect::<Vec<_>>();
+        assert_eq!(trace.values, expected_trace);
+
+        let args = [F::from_canonical_u32(7)].into();
+        queries.record_event(&toplevel, fib_chip.func.index, args);
+        let trace = fib_chip.generate_trace(queries);
+
+        let expected_trace = [
+            // in order: n, output, mult, 1/n, 1/(n-1), fib(n-1), fib(n-2), and selectors
+            0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, //
+            1, 1, 2, 0, 0, 0, 0, 1, 0, 1, 0, //
+            2, 2, 2, 1006632961, 1, 1, 1, 1, 0, 0, 1, //
+            3, 3, 2, 1342177281, 1006632961, 2, 1, 1, 0, 0, 1, //
+            4, 5, 2, 1509949441, 1342177281, 3, 2, 1, 0, 0, 1, //
+            5, 8, 2, 1610612737, 1509949441, 5, 3, 1, 0, 0, 1, //
+            6, 13, 1, 1677721601, 1610612737, 8, 5, 1, 0, 0, 1, //
+            7, 21, 1, 862828252, 1677721601, 13, 8, 1, 0, 0, 1, //
+        ]
+        .into_iter()
+        .map(field_from_i32)
+        .collect::<Vec<_>>();
+        assert_eq!(trace.values, expected_trace);
+    }
+
+    #[test]
+    fn lair_match_trace_test() {
+        let func_e = func!(
+        fn test(n, m): 1 {
+            let one = num(1);
+            match n {
+                0 => {
+                    return one
+                }
+                1 => {
+                    return m
+                }
+                2 => {
+                    let res = mul(m, m);
+                    return res
+                }
+                3 => {
+                    let res = mul(m, m);
+                    let res = mul(res, res);
+                    return res
+                }
+            };
+            let pred = sub(n, one);
+            let res = call(test, pred, m);
+            return res
+        });
+        let toplevel = Toplevel::<F>::new(&[func_e]);
+        let test_chip = FuncChip::from_name("test", &toplevel);
+
+        let expected_width = Width {
+            input: 2,
+            output: 1,
+            aux: 6,
+            sel: 6,
+        };
+        assert_eq!(test_chip.width, expected_width);
+
+        let args = [F::from_canonical_u32(5), F::from_canonical_u32(2)].into();
+        let queries = &mut QueryRecord::new(&toplevel);
+        queries.record_event(&toplevel, test_chip.func.index, args);
+        let trace = test_chip.generate_trace(queries);
+        let expected_trace = [
+            // The big numbers in the trace are the inverted elements, the witnesses of
+            // the inequalities that appear on the default case. Note that the branch
+            // that does not follow the default will reuse the slots for the inverted
+            // elements to minimize the number of columns
+            3, 2, 16, 1, 4, 16, 0, 0, 0, 1, 0, 0, 0, 1, 0, //
+            4, 2, 16, 1, 1509949441, 1342177281, 1006632961, 1, 16, 1, 0, 0, 0, 0, 1, //
+            5, 2, 16, 1, 1610612737, 1509949441, 1342177281, 1006632961, 16, 1, 0, 0, 0, 0,
+            1, //
+            // dummy
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
         ]
         .into_iter()
         .map(field_from_i32)
