@@ -51,6 +51,10 @@ impl<F: Ord> Cases<F> {
             .get_index_of(f)
             .or_else(|| self.default.as_ref().map(|_| self.branches.size()))
     }
+
+    pub fn default_index(&self) -> usize {
+        self.branches.size()
+    }
 }
 
 impl<F> Cases<F> {

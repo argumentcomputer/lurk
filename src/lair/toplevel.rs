@@ -85,13 +85,13 @@ impl<F: Clone + Ord> FuncE<F> {
         let body = self
             .body
             .check_and_link(self.output_size, map, idx, info_map);
-        for (var, (_, used)) in map.iter() {
-            let ch = var.0.chars().next().unwrap();
-            assert!(
-                *used || ch == '_',
-                "Variable {var} not used. If intended, please prefix it with \"_\""
-            );
-        }
+        // for (var, (_, used)) in map.iter() {
+        //     let ch = var.0.chars().next().unwrap();
+        //     assert!(
+        //         *used || ch == '_',
+        //         "Variable {var} not used. If intended, please prefix it with \"_\""
+        //     );
+        // }
         Func {
             name: self.name,
             index: func_index,

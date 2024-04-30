@@ -292,7 +292,7 @@ mod tests {
     }
 
     #[test]
-    fn lem_shadow_test() {
+    fn lair_shadow_test() {
         let test_e = func!(
             fn test(x): 1 {
                 let x = add(x, x);
@@ -311,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn lem_pol_test() {
+    fn lair_pol_test() {
         let test_e = func!(
             fn test(x, y): 1 {
                 let z = pol(1*x*x*y + 2*y*y);
