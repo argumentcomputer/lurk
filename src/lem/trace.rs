@@ -19,6 +19,13 @@ pub struct ColumnLayout<T> {
 pub type Columns<T> = ColumnLayout<Vec<T>>;
 pub type Width = ColumnLayout<usize>;
 
+impl Width {
+    #[inline]
+    fn len(&self) -> usize {
+        self.input + self.output + self.aux + self.sel
+    }
+}
+
 impl<T: Clone> Columns<T> {
     pub fn new_with_capacity(width: &Width) -> Self {
         let input = Vec::with_capacity(width.input);
@@ -91,14 +98,17 @@ impl<'a, F> FuncChip<'a, F> {
         }
     }
 
+    #[inline]
     pub fn width(&self) -> usize {
-        self.width.input + self.width.output + self.width.aux + self.width.sel
+        self.width.len()
     }
 
+    #[inline]
     pub fn func(&self) -> &Func<F> {
         self.func
     }
 
+    #[inline]
     pub fn toplevel(&self) -> &Toplevel<F> {
         self.toplevel
     }
@@ -106,7 +116,7 @@ impl<'a, F> FuncChip<'a, F> {
 
 impl<'a, F: Sync> BaseAir<F> for FuncChip<'a, F> {
     fn width(&self) -> usize {
-        self.width.input + self.width.output + self.width.aux + self.width.sel
+        self.width()
     }
 }
 
