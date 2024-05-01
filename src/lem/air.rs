@@ -191,9 +191,6 @@ impl<F: AbstractField + Field> Op<F> {
                 };
                 map.push(c);
             }
-            Op::Pol(..) => {
-                todo!()
-            }
             Op::Call(idx, _) => {
                 let func = toplevel.get_by_index(*idx as usize).unwrap();
                 for _ in 0..func.output_size {

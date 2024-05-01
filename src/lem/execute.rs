@@ -186,12 +186,6 @@ impl<F: Field + Ord> Op<F> {
                 let a = stack_frame.get(*a).unwrap();
                 stack_frame.push(a.inverse());
             }
-            Op::Pol(limbs) => {
-                let res = limbs.iter().fold(F::zero(), |sum_acc, (c, xs)| {
-                    sum_acc + xs.iter().fold(*c, |mul_acc, x| mul_acc * stack_frame[*x])
-                });
-                stack_frame.push(res);
-            }
             Op::Call(idx, inp) => {
                 let args = inp.iter().map(|a| stack_frame[*a]).collect();
                 let out = record.record_event_and_return(toplevel, *idx as usize, args);
@@ -308,22 +302,5 @@ mod tests {
         let out = test.execute(args, &toplevel, record);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], F::from_canonical_u32(80));
-    }
-
-    #[test]
-    fn lem_pol_test() {
-        let test_e = func!(
-            fn test(x, y): 1 {
-                let z = pol(1*x*x*y + 2*y*y);
-                return z
-            }
-        );
-        let toplevel = Toplevel::new(&[test_e]);
-        let test = toplevel.get_by_name("test").unwrap();
-        let args = &[F::from_canonical_u32(2), F::from_canonical_u32(3)];
-        let record = &mut QueryRecord::new(&toplevel);
-        let out = test.execute(args, &toplevel, record);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0], F::from_canonical_u32(30));
     }
 }

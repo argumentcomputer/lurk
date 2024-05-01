@@ -27,5 +27,3 @@ pub(crate) fn field_from_i32<F: p3_field::AbstractField>(i: i32) -> F {
 }
 
 pub type List<T> = Box<[T]>;
-
-pub type Limb<C, V> = (C, List<V>);

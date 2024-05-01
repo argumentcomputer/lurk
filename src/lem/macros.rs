@@ -87,22 +87,6 @@ macro_rules! block {
             $($tail)*
         )
     };
-    (@seq {$($limbs:expr)*}, let $tgt:ident = pol($c:literal $(* $v:ident)* $(+ $cs:literal $(* $vs:ident)*)*) ; $($tail:tt)*) => {
-        $crate::block! (
-            @seq
-            {
-                $($limbs)*
-                $crate::lem::expr::OpE::Pol(
-                    $crate::var!($tgt),
-                    [
-                        ($crate::lem::field_from_i32($c), [$($crate::var!($v)),*].into()), // the first limb
-                        $(($crate::lem::field_from_i32($cs), [$($crate::var!($vs)),*].into())),* // the other limbs
-                    ].into(),
-                )
-            },
-            $($tail)*
-        )
-    };
     (@seq {$($limbs:expr)*}, let $tgt:ident = div($a:ident, $b:ident) ; $($tail:tt)*) => {
         $crate::block! (
             @seq

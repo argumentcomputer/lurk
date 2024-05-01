@@ -261,9 +261,6 @@ impl<F> Op<F> {
                 *aux += out_size;
                 degrees.extend(vec![1; out_size]);
             }
-            Op::Pol(..) => {
-                todo!()
-            }
         }
     }
 }
@@ -377,9 +374,6 @@ impl<F: Field + Ord> Op<F> {
                     map.push((f, 1));
                     row.push_aux(f);
                 }
-            }
-            Op::Pol(..) => {
-                todo!()
             }
             Op::Call(idx, inp) => {
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();

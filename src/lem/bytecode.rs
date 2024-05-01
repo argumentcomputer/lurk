@@ -1,4 +1,4 @@
-use super::{map::Map, Limb, List, Name};
+use super::{map::Map, List, Name};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Op<F> {
@@ -7,7 +7,6 @@ pub enum Op<F> {
     Sub(usize, usize),
     Mul(usize, usize),
     Inv(usize),
-    Pol(List<Limb<F, usize>>),
     // index, arguments
     // u32 is used here to reduce the size of Op<F> on 64 bit machines
     Call(u32, List<usize>),
