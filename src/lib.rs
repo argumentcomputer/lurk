@@ -1,23 +1,33 @@
 use std::collections::{HashMap, HashSet};
-use std::hash::{BuildHasher, Hash};
+use std::hash::Hash;
 
 pub mod loam;
 pub mod store_core;
+
+trait Attribute: Default + Eq + PartialEq + Hash {}
+trait Type: Eq + Hash {}
+
+impl Attribute for String {}
+impl Type for String {}
 
 pub trait Heading<A, T> {
     fn attributes(&self) -> HashSet<&A>;
     fn attribute_type(&self, attr: &A) -> Option<&T>;
     fn arity(&self) -> usize;
     fn add_attribute(&mut self, attr: A, typ: T);
+    fn common_attributes<'a, 'b>(&'a self, other: &'b impl Heading<A, T>) -> HashSet<&A>
+    where
+        'b: 'a;
 }
 
 #[derive(Default)]
 struct SimpleHeading<A, T>(HashMap<A, T>);
 
-impl<A: Default + Eq + PartialEq + Hash, T: Eq + Hash> Heading<A, T> for SimpleHeading<A, T> {
+impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
+    // TODO: implement iterator
     fn attributes(&self) -> HashSet<&A> {
         // Make this OnceOnly, after heading is frozen.
-        let mut set = HashSet::default();
+        let mut set = HashSet::new();
 
         for key in self.0.keys() {
             set.insert(key);
@@ -32,6 +42,23 @@ impl<A: Default + Eq + PartialEq + Hash, T: Eq + Hash> Heading<A, T> for SimpleH
     }
     fn add_attribute(&mut self, attr: A, typ: T) {
         self.0.insert(attr, typ);
+    }
+    fn common_attributes<'a, 'b>(&'a self, other: &'b impl Heading<A, T>) -> HashSet<&A>
+    where
+        'b: 'a,
+    {
+        let mut common = HashSet::new();
+
+        if self.arity() < other.arity() {
+            for attr in self.attributes() {
+                if other.attribute_type(attr).is_some() {
+                    common.insert(attr);
+                }
+            }
+            common
+        } else {
+            other.common_attributes(self)
+        }
     }
 }
 
