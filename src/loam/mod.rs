@@ -201,10 +201,16 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
             attributes.retain(|k, _v| attrs.contains(k));
         }
 
+        let mut disjunction: BTreeSet<BTreeMap<A, T>> = Default::default();
+        for d in self.disjunction.iter() {
+            let mut a = d.clone();
+            a.retain(|k, _v| attrs.contains(k));
+            disjunction.insert(a);
+        }
         Self {
             attributes,
-            is_negated: self.is_negated(),   //fixme
-            disjunction: Default::default(), //fixme
+            is_negated: self.is_negated(),
+            disjunction,
         }
     }
 }
@@ -215,8 +221,14 @@ mod tests {
 
     #[test]
     fn test_heading() {
+        let mut heading0 = SimpleHeading::<Attr, Typ>::default();
+        assert_eq!(0, heading0.arity());
+
         let mut heading1 = SimpleHeading::<Attr, Typ>::default();
         heading1.add_attribute(1, 100);
+
+        assert!(heading1.project([]).equal(&heading0));
+        assert!(heading1.project([1]).equal(&heading1));
 
         let mut heading2 = SimpleHeading::<Attr, Typ>::default();
         heading2.add_attribute(1, 100);
