@@ -231,54 +231,58 @@ mod tests {
         assert!(heading1.project([1]).equal(&heading1));
 
         let mut heading2 = SimpleHeading::<Attr, Typ>::default();
-        heading2.add_attribute(1, 100);
         heading2.add_attribute(2, 200);
+
+        let mut heading3 = SimpleHeading::<Attr, Typ>::default();
+        heading2.add_attribute(3, 300);
+
+        let mut heading1_2 = SimpleHeading::<Attr, Typ>::default();
+        heading1_2.add_attribute(1, 100);
+        heading1_2.add_attribute(2, 200);
 
         assert_eq!(1, heading1.arity());
         assert_eq!(Some(100), heading1.attribute_type(1).copied());
 
-        assert_eq!(2, heading2.arity());
-        assert_eq!(Some(100), heading2.attribute_type(1).copied());
-        assert_eq!(Some(200), heading2.attribute_type(2).copied());
+        assert_eq!(2, heading1_2.arity());
+        assert_eq!(Some(100), heading1_2.attribute_type(1).copied());
+        assert_eq!(Some(200), heading1_2.attribute_type(2).copied());
 
-        assert_eq!(1, heading1.common_attributes(&heading2).len());
-        assert!(!heading1.equal(&heading2));
+        assert_eq!(1, heading1.common_attributes(&heading1_2).len());
+        assert!(!heading1.equal(&heading1_2));
 
-        let heading3 = heading1.and(&heading2);
-        dbg!(&heading1, &heading2, &heading3);
+        let heading1and2 = heading1.and(&heading1_2);
+        dbg!(&heading1, &heading1_2, &heading1_2);
 
-        assert!(!heading1.equal(&heading3));
-        assert!(heading2.equal(&heading3));
-        assert!(heading2.equal(&heading3));
+        assert!(!heading1.equal(&heading1and2));
+        assert!(heading1_2.equal(&heading1and2));
+        assert!(heading1_2.equal(&heading1and2));
 
-        let heading4 = heading2.and(&heading1.not());
+        let heading1_2and_not1 = heading1_2.and(&heading1.not());
 
-        let mut heading5 = SimpleHeading::<Attr, Typ>::default();
-        heading5.add_attribute(2, 200);
-        dbg!(&heading4, &heading5);
+        dbg!(&heading1_2and_not1, &heading2);
 
-        let heading2or2 = heading2.or(&heading2);
+        let heading1_2or1_2 = heading1_2.or(&heading1_2);
 
-        assert!(heading2or2.equal(&heading2));
-        assert!(!heading2or2.equal(&heading1));
+        assert!(heading1_2or1_2.equal(&heading1_2));
+        assert!(!heading1_2or1_2.equal(&heading1));
 
-        let heading1or5 = heading1.or(&heading5);
-        dbg!(&heading1or5);
-        assert!(!heading1or5.equal(&heading1));
-        assert!(!heading1or5.equal(&heading5));
-        assert!(!heading1or5.equal(&heading2));
+        let heading1or2 = heading1.or(&heading2);
+        dbg!(&heading1or2);
+        assert!(!heading1or2.equal(&heading1));
+        assert!(!heading1or2.equal(&heading2));
+        assert!(!heading1or2.equal(&heading1_2));
 
-        let mut heading6 = SimpleHeading::<Attr, Typ>::default();
-        heading6.add_attribute(1, 100);
-        heading6.add_attribute(2, 200);
-        heading6.add_attribute(3, 300);
+        let mut heading1_2_3 = SimpleHeading::<Attr, Typ>::default();
+        heading1_2_3.add_attribute(1, 100);
+        heading1_2_3.add_attribute(2, 200);
+        heading1_2_3.add_attribute(3, 300);
 
-        let mut heading7 = SimpleHeading::<Attr, Typ>::default();
-        heading7.add_attribute(3, 300);
+        // let mut heading7 = SimpleHeading::<Attr, Typ>::default();
+        // heading7.add_attribute(3, 300);
 
-        let heading8 = heading6.and(&heading1or5.not());
-        dbg!(&heading7, &heading8);
-        assert!(heading8.equal(&heading7));
+        let heading1_2_3and_not1_2 = heading1_2_3.and(&heading1or2.not());
+        dbg!(&heading3, &heading1_2_3and_not1_2);
+        assert!(heading1_2_3and_not1_2.equal(&heading3));
 
         // These panic via unimplemented!().
         //
