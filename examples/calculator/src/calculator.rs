@@ -4,7 +4,7 @@ use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::mem::size_of;
 
-use loam::pointers::GPtr;
+use loam::store_core::pointers::GPtr;
 
 use crate::{
     dummy_hasher::DummyHasher,
