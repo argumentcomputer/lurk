@@ -14,7 +14,6 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
     fn arity(&self) -> usize;
     fn is_negated(&self) -> bool;
     fn add_attribute(&mut self, attr: A, typ: T);
-    fn remove_attribute(&mut self, attr: &A);
     fn common_attributes<'a, 'b>(&'a self, other: &'b impl Heading<A, T>) -> HashSet<&A>
     where
         'b: 'a,
@@ -95,6 +94,7 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
     fn not(&self) -> Self;
     fn disjunction(&self) -> &BTreeSet<BTreeMap<A, T>>;
     fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self;
+    fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self;
 }
 
 pub type Attr = usize;
@@ -146,10 +146,6 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
     }
     fn add_attribute(&mut self, attr: A, typ: T) {
         self.attributes.insert(attr, typ);
-    }
-    fn remove_attribute(&mut self, attr: &A) {
-        unimplemented!();
-        self.attributes.remove(attr);
     }
     fn equal(&self, other: &impl Heading<A, T>) -> bool {
         if self.arity() != other.arity() {
@@ -213,6 +209,25 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
             disjunction,
         }
     }
+    fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
+        let attrs = attrs.into();
+        let mut attributes = self.attributes.clone();
+        if !self.is_negated() {
+            attributes.retain(|k, _v| !attrs.contains(k));
+        }
+
+        let mut disjunction: BTreeSet<BTreeMap<A, T>> = Default::default();
+        for d in self.disjunction.iter() {
+            let mut a = d.clone();
+            a.retain(|k, _v| !attrs.contains(k));
+            disjunction.insert(a);
+        }
+        Self {
+            attributes,
+            is_negated: self.is_negated(),
+            disjunction,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -227,72 +242,77 @@ mod tests {
         let mut heading1 = SimpleHeading::<Attr, Typ>::default();
         heading1.add_attribute(1, 100);
 
-        assert!(heading1.project([]).equal(&heading0));
-        assert!(heading1.project([1]).equal(&heading1));
-
         let mut heading2 = SimpleHeading::<Attr, Typ>::default();
         heading2.add_attribute(2, 200);
 
         let mut heading3 = SimpleHeading::<Attr, Typ>::default();
-        heading2.add_attribute(3, 300);
+        heading3.add_attribute(3, 300);
 
         let mut heading1_2 = SimpleHeading::<Attr, Typ>::default();
         heading1_2.add_attribute(1, 100);
         heading1_2.add_attribute(2, 200);
 
-        assert_eq!(1, heading1.arity());
-        assert_eq!(Some(100), heading1.attribute_type(1).copied());
-
-        assert_eq!(2, heading1_2.arity());
-        assert_eq!(Some(100), heading1_2.attribute_type(1).copied());
-        assert_eq!(Some(200), heading1_2.attribute_type(2).copied());
-
-        assert_eq!(1, heading1.common_attributes(&heading1_2).len());
-        assert!(!heading1.equal(&heading1_2));
-
-        let heading1and2 = heading1.and(&heading1_2);
-        dbg!(&heading1, &heading1_2, &heading1_2);
-
-        assert!(!heading1.equal(&heading1and2));
-        assert!(heading1_2.equal(&heading1and2));
-        assert!(heading1_2.equal(&heading1and2));
-
-        let heading1_2and_not1 = heading1_2.and(&heading1.not());
-
-        dbg!(&heading1_2and_not1, &heading2);
-
-        let heading1_2or1_2 = heading1_2.or(&heading1_2);
-
-        assert!(heading1_2or1_2.equal(&heading1_2));
-        assert!(!heading1_2or1_2.equal(&heading1));
-
-        let heading1or2 = heading1.or(&heading2);
-        dbg!(&heading1or2);
-        assert!(!heading1or2.equal(&heading1));
-        assert!(!heading1or2.equal(&heading2));
-        assert!(!heading1or2.equal(&heading1_2));
+        let mut heading1x_3 = SimpleHeading::<Attr, Typ>::default();
+        heading1x_3.add_attribute(1, 101);
+        heading1x_3.add_attribute(3, 300);
 
         let mut heading1_2_3 = SimpleHeading::<Attr, Typ>::default();
         heading1_2_3.add_attribute(1, 100);
         heading1_2_3.add_attribute(2, 200);
         heading1_2_3.add_attribute(3, 300);
 
-        // let mut heading7 = SimpleHeading::<Attr, Typ>::default();
-        // heading7.add_attribute(3, 300);
-
+        let heading1and2 = heading1.and(&heading1_2);
+        let heading1and2 = heading1.and(&heading1_2);
+        let heading1x_3and1_2 = heading1x_3.and(&heading1_2);
+        let heading1_2and_not1 = heading1_2.and(&heading1.not());
+        let heading1_2or1_2 = heading1_2.or(&heading1_2);
+        let heading1or2 = heading1.or(&heading2);
         let heading1_2_3and_not1_2 = heading1_2_3.and(&heading1or2.not());
-        dbg!(&heading3, &heading1_2_3and_not1_2);
+
+        // unimplemented
+        // let heading1or2and_3 = heading1or2.and(&heading3);
+        // let heading3and_1or2 = heading3.and(&heading1or2);
+
+        // arity
+        assert_eq!(1, heading1.arity());
+        assert_eq!(2, heading1_2.arity());
+        assert_eq!(3, heading1_2_3.arity());
+
+        // project
+        assert!(heading1.project([]).equal(&heading0));
+        assert!(heading1.project([1]).equal(&heading1));
+        assert!(heading1_2_3.project([1, 2]).equal(&heading1_2));
+        // TODO: Should this be an error?
+        assert!(heading1_2_3.project([1, 2, 12345]).equal(&heading1_2));
+
+        // remove
+        assert!(heading1.remove([1]).equal(&heading0));
+        assert!(heading1_2_3.remove([1, 2]).equal(&heading3));
+        assert!(heading1_2_3.remove([1, 2, 12345]).equal(&heading3));
+
+        // attribute_type
+        assert_eq!(Some(100), heading1.attribute_type(1).copied());
+        assert_eq!(Some(100), heading1_2.attribute_type(1).copied());
+        assert_eq!(Some(200), heading1_2.attribute_type(2).copied());
+
+        // common_attributes
+        assert_eq!(1, heading1.common_attributes(&heading1_2).len());
+        assert!(!heading1.equal(&heading1_2));
+        assert_eq!(2, heading1_2_3.common_attributes(&heading1_2).len());
+
+        // and
+        assert!(!heading1.equal(&heading1and2));
+        assert!(heading1_2.equal(&heading1and2));
+        assert!(heading1_2.equal(&heading1and2));
         assert!(heading1_2_3and_not1_2.equal(&heading3));
+        // Type mismatch on common attribute yields empty conjunction.
+        assert!(heading1x_3and1_2.equal(&heading0));
 
-        // These panic via unimplemented!().
-        //
-        // let heading9 = heading1or5.and(&heading7);
-        // let heading10 = heading7.and(&heading1or5);
-        // dbg!(&heading9, &heading10);
-
-        // // This is passing but both values are wrong.
-        // assert!(heading9.equal(&heading10));
-
-        // //assert!(heading9.equal(todo!()));
+        // or
+        assert!(heading1_2or1_2.equal(&heading1_2));
+        assert!(!heading1_2or1_2.equal(&heading1));
+        assert!(!heading1or2.equal(&heading1));
+        assert!(!heading1or2.equal(&heading2));
+        assert!(!heading1or2.equal(&heading1_2));
     }
 }
