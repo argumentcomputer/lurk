@@ -8,7 +8,7 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone + Algebra<A, T> 
     fn attribute_type(&self, attr: A) -> Option<&T>;
     fn attribute_types(&self) -> &BTreeMap<A, T>;
     fn arity(&self) -> usize;
-    fn common_attributes<'a, 'b>(&'a self, other: &'b impl Heading<A, T>) -> HashSet<A>
+    fn common_attributes<'a, 'b>(&'a self, other: &'b Self) -> HashSet<A>
     where
         'b: 'a,
     {
