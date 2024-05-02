@@ -4,8 +4,20 @@ use std::hash::Hash;
 
 pub trait Attribute: Copy + Default + Eq + PartialEq + Hash + Debug + Ord {}
 pub trait Type: Copy + Eq + Hash + Debug + Ord {}
+pub trait AlgebraHeading<A: Attribute, T: Type>: Algebra<A, T> + Heading<A, T> {}
 
-pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
+pub trait Algebra<A: Attribute, T: Type> {
+    fn and(&self, other: &impl AlgebraHeading<A, T>) -> Self;
+    fn or(&self, other: &impl AlgebraHeading<A, T>) -> Self;
+    fn equal(&self, other: &impl AlgebraHeading<A, T>) -> bool;
+    fn not(&self) -> Self;
+    fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self;
+    fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self;
+    fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Self;
+    fn compose(&self, other: &impl AlgebraHeading<A, T>) -> Self;
+}
+
+pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone + Algebra<A, T> {
     fn new(is_negated: bool) -> Self;
     fn attributes(&self) -> BTreeSet<&A>;
     fn attribute_type(&self, attr: A) -> Option<&T>;
@@ -30,19 +42,7 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
             other.common_attributes(self)
         }
     }
-    fn and(&self, other: &impl Heading<A, T>) -> Self;
-    fn or(&self, other: &impl Heading<A, T>) -> Self;
-    fn equal(&self, other: &impl Heading<A, T>) -> bool;
-    fn not(&self) -> Self;
     fn disjunction(&self) -> &BTreeSet<BTreeMap<A, T>>;
-    fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self;
-    fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self;
-    fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Self;
-    fn compose(&self, other: &impl Heading<A, T>) -> Self {
-        let common = self.common_attributes(other);
-
-        self.and(other).remove(common)
-    }
 }
 
 pub type Attr = usize;
@@ -57,6 +57,8 @@ struct SimpleHeading<A, T> {
     is_negated: bool,
     disjunction: BTreeSet<BTreeMap<A, T>>,
 }
+
+impl<A: Attribute, T: Type> AlgebraHeading<A, T> for SimpleHeading<A, T> {}
 
 impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
     fn new(is_negated: bool) -> Self {
@@ -95,7 +97,10 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
     fn add_attribute(&mut self, attr: A, typ: T) {
         self.attributes.insert(attr, typ);
     }
-    fn equal(&self, other: &impl Heading<A, T>) -> bool {
+}
+
+impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
+    fn equal(&self, other: &impl AlgebraHeading<A, T>) -> bool {
         if self.arity() != other.arity() {
             return false;
         };
@@ -118,7 +123,7 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
             disjunction: self.disjunction.clone(),
         }
     }
-    fn and(&self, other: &impl Heading<A, T>) -> Self {
+    fn and(&self, other: &(impl Algebra<A, T> + AlgebraHeading<A, T>)) -> Self {
         if !self.is_negated() && !other.is_negated() {
             if !self.disjunction().is_empty() || !other.disjunction().is_empty() {
                 unimplemented!("conjunction of disjunctions");
@@ -176,7 +181,7 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
             new_heading
         }
     }
-    fn or(&self, other: &impl Heading<A, T>) -> Self {
+    fn or(&self, other: &impl AlgebraHeading<A, T>) -> Self {
         if self.equal(other) {
             // If we can require that constructed headings are frozen, we can avoid this duplication.
             self.clone()
@@ -257,6 +262,11 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
             is_negated: self.is_negated(),
             disjunction,
         }
+    }
+    fn compose(&self, other: &impl AlgebraHeading<A, T>) -> Self {
+        let common = self.common_attributes(other);
+
+        self.and(other).remove(common)
     }
 }
 
