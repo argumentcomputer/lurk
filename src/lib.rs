@@ -35,6 +35,9 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
     }
     fn and(&self, other: &impl Heading<A, T>) -> Self {
         if !self.is_negated() && !other.is_negated() {
+            if !self.disjunction().is_empty() || !other.disjunction().is_empty() {
+                unimplemented!("conjunction of disjunctions");
+            }
             let common = self.common_attributes(other);
             let mut new_heading = Self::new(self.is_negated());
             let compatible = common
@@ -56,18 +59,12 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
             new_heading
         } else if self.is_negated() {
             if other.is_negated() {
-                // DeMorgans
+                // DeMorgan's
                 self.not().or(&other.not()).not()
             } else {
                 todo!("negated heading and non-negated heading");
             }
         } else {
-            dbg!(
-                "!!!",
-                other.disjunction().len(),
-                other.attributes(),
-                self.attributes()
-            );
             let mut new_heading = Self::new(false);
 
             for attr in self.attributes().iter() {
@@ -179,6 +176,11 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
             self.clone()
         } else {
             let mut disjunction = self.disjunction.clone();
+
+            if other.is_negated() {
+                unimplemented!("disjunction with negation");
+            }
+
             disjunction.insert(other.attribute_types().clone());
 
             Self {
@@ -186,8 +188,6 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
                 is_negated: self.is_negated(),
                 disjunction,
             }
-            // DeMorgan's
-            //            self.not().and(&other.not()).not()
         }
     }
 }
@@ -250,5 +250,16 @@ mod tests {
         let heading8 = heading6.and(&heading1or5.not());
         dbg!(&heading7, &heading8);
         assert!(heading8.equal(&heading7));
+
+        // These panic via unimplemented!().
+        //
+        // let heading9 = heading1or5.and(&heading7);
+        // let heading10 = heading7.and(&heading1or5);
+        // dbg!(&heading9, &heading10);
+
+        // // This is passing but both values are wrong.
+        // assert!(heading9.equal(&heading10));
+
+        // //assert!(heading9.equal(todo!()));
     }
 }
