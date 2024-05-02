@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 
-use super::{Algebra, AlgebraHeading, Attribute, Type};
+use crate::loam::{Algebra, AlgebraHeading, Attribute, Type};
 
 pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone + Algebra<A, T> {
-    fn new(is_negated: bool) -> Self;
+    //    fn new(is_negated: bool) -> Self;
     fn attributes(&self) -> BTreeSet<&A>;
     fn attribute_type(&self, attr: A) -> Option<&T>;
     fn attribute_types(&self) -> &BTreeMap<A, T>;
@@ -32,7 +32,7 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone + Algebra<A, T> 
 }
 
 #[derive(Clone, Debug, Default)]
-struct SimpleHeading<A, T> {
+pub struct SimpleHeading<A, T> {
     attributes: BTreeMap<A, T>,
     is_negated: bool,
     disjunction: BTreeSet<BTreeMap<A, T>>,
@@ -40,7 +40,7 @@ struct SimpleHeading<A, T> {
 
 impl<A: Attribute, T: Type> AlgebraHeading<A, T> for SimpleHeading<A, T> {}
 
-impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
+impl<A: Attribute, T: Type> SimpleHeading<A, T> {
     fn new(is_negated: bool) -> Self {
         SimpleHeading {
             attributes: Default::default(),
@@ -48,6 +48,8 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
             disjunction: Default::default(),
         }
     }
+}
+impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
     // TODO: implement iterator
     fn attributes(&self) -> BTreeSet<&A> {
         // Make this OnceOnly, after heading is frozen.
@@ -252,8 +254,8 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{Attr, Typ};
     use super::*;
+    use crate::loam::{Attr, Typ};
 
     #[test]
     fn test_heading() {

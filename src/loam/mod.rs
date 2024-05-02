@@ -6,6 +6,7 @@ use crate::loam::heading::Heading;
 
 mod algebra;
 mod heading;
+mod tuple;
 
 pub trait Attribute: Copy + Default + Eq + PartialEq + Hash + Debug + Ord {}
 pub trait Type: Copy + Eq + Hash + Debug + Ord {}
