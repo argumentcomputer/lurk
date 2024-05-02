@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
 
@@ -94,6 +94,7 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
     fn disjunction(&self) -> &BTreeSet<BTreeMap<A, T>>;
     fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self;
     fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self;
+    fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Self;
     fn compose(&self, other: &impl Heading<A, T>) -> Self {
         let common = self.common_attributes(other);
 
@@ -232,6 +233,30 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
             disjunction,
         }
     }
+    fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Self {
+        let mapping = mapping.into();
+        let mut attributes = BTreeMap::new();
+        for (k, v) in self.attributes.iter() {
+            let new_k = mapping.get(k).unwrap_or(k).clone();
+
+            attributes.insert(new_k, v.clone());
+        }
+        let mut disjunction: BTreeSet<BTreeMap<A, T>> = Default::default();
+        for d in self.disjunction.iter() {
+            let mut a = BTreeMap::new();
+            for (k, v) in d.iter() {
+                let new_k = mapping.get(k).unwrap_or(k).clone();
+
+                a.insert(new_k, v.clone());
+            }
+            disjunction.insert(a);
+        }
+        Self {
+            attributes,
+            is_negated: self.is_negated(),
+            disjunction,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -294,14 +319,23 @@ mod tests {
         assert!(heading1_2_3.remove([1, 2]).equal(&heading3));
         assert!(heading1_2_3.remove([1, 2, 12345]).equal(&heading3));
 
+        // rename
+        let h = heading1_2_3.rename([(1, 9), (2, 10)]);
+        assert_eq!(3, h.arity());
+        assert!(h.project([3]).equal(&heading3));
+        assert!(h.attribute_type(1).is_none());
+        assert!(h.attribute_type(2).is_none());
+        assert_eq!(Some(100), h.attribute_type(9).cloned());
+        assert_eq!(Some(200), h.attribute_type(10).cloned());
+
         // compose
         assert!(heading1.compose(&heading1_2).equal(&heading2));
         assert!(heading3.compose(&heading1_2_3).equal(&heading1_2));
 
         // attribute_type
-        assert_eq!(Some(100), heading1.attribute_type(1).copied());
-        assert_eq!(Some(100), heading1_2.attribute_type(1).copied());
-        assert_eq!(Some(200), heading1_2.attribute_type(2).copied());
+        assert_eq!(Some(100), heading1.attribute_type(1).cloned());
+        assert_eq!(Some(100), heading1_2.attribute_type(1).cloned());
+        assert_eq!(Some(200), heading1_2.attribute_type(2).cloned());
 
         // common_attributes
         assert_eq!(1, heading1.common_attributes(&heading1_2).len());
