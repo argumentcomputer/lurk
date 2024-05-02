@@ -4,13 +4,10 @@ use std::fmt::Debug;
 use crate::loam::{Algebra, AlgebraHeading, Attribute, Type};
 
 pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone + Algebra<A, T> {
-    //    fn new(is_negated: bool) -> Self;
     fn attributes(&self) -> BTreeSet<&A>;
     fn attribute_type(&self, attr: A) -> Option<&T>;
     fn attribute_types(&self) -> &BTreeMap<A, T>;
     fn arity(&self) -> usize;
-    fn is_negated(&self) -> bool;
-    fn add_attribute(&mut self, attr: A, typ: T);
     fn common_attributes<'a, 'b>(&'a self, other: &'b impl Heading<A, T>) -> HashSet<A>
     where
         'b: 'a,
@@ -28,7 +25,6 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone + Algebra<A, T> 
             other.common_attributes(self)
         }
     }
-    fn disjunction(&self) -> &BTreeSet<BTreeMap<A, T>>;
 }
 
 #[derive(Clone, Debug, Default)]
@@ -47,6 +43,10 @@ impl<A: Attribute, T: Type> SimpleHeading<A, T> {
             is_negated,
             disjunction: Default::default(),
         }
+    }
+
+    fn add_attribute(&mut self, attr: A, typ: T) {
+        self.attributes.insert(attr, typ);
     }
 }
 impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
@@ -69,15 +69,6 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
 
     fn arity(&self) -> usize {
         self.attributes.len()
-    }
-    fn is_negated(&self) -> bool {
-        self.is_negated
-    }
-    fn disjunction(&self) -> &BTreeSet<BTreeMap<A, T>> {
-        &self.disjunction
-    }
-    fn add_attribute(&mut self, attr: A, typ: T) {
-        self.attributes.insert(attr, typ);
     }
 }
 
@@ -249,6 +240,12 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
         let common = self.common_attributes(other);
 
         self.and(other).remove(common)
+    }
+    fn is_negated(&self) -> bool {
+        self.is_negated
+    }
+    fn disjunction(&self) -> &BTreeSet<BTreeMap<A, T>> {
+        &self.disjunction
     }
 }
 

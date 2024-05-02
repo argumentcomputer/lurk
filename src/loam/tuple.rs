@@ -22,20 +22,6 @@ impl<A: Attribute, T: Type> Heading<A, T> for Tuple<A, T> {
     fn arity(&self) -> usize {
         self.heading.arity()
     }
-
-    // TODO: Move out of Heading trait.
-    fn add_attribute(&mut self, attr: A, typ: T) {
-        self.heading.add_attribute(attr, typ)
-    }
-
-    // TODO: Move this and disjunction to Algebra.
-    fn is_negated(&self) -> bool {
-        self.heading.is_negated()
-    }
-
-    fn disjunction(&self) -> &BTreeSet<BTreeMap<A, T>> {
-        self.heading.disjunction()
-    }
 }
 
 impl<A: Attribute, T: Type> Algebra<A, T> for Tuple<A, T> {
@@ -61,6 +47,15 @@ impl<A: Attribute, T: Type> Algebra<A, T> for Tuple<A, T> {
         todo!();
     }
     fn compose(&self, other: &impl AlgebraHeading<A, T>) -> Self {
+        todo!();
+    }
+
+    // TODO: Move this and disjunction to Algebra.
+    fn is_negated(&self) -> bool {
+        todo!();
+    }
+
+    fn disjunction(&self) -> &BTreeSet<BTreeMap<A, T>> {
         todo!();
     }
 }

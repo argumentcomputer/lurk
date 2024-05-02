@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use super::{AlgebraHeading, Attribute, Type};
 
@@ -11,4 +11,7 @@ pub trait Algebra<A: Attribute, T: Type> {
     fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self;
     fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Self;
     fn compose(&self, other: &impl AlgebraHeading<A, T>) -> Self;
+
+    fn is_negated(&self) -> bool;
+    fn disjunction(&self) -> &BTreeSet<BTreeMap<A, T>>;
 }
