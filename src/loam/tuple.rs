@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::loam::heading::{Heading, SimpleHeading};
-use crate::loam::{Algebra, AlgebraHeading, Attribute, Type};
+use crate::loam::{Algebra, Attribute, Type};
 
 #[derive(Clone, Debug)]
 struct Tuple<A, T> {
@@ -25,13 +25,13 @@ impl<A: Attribute, T: Type> Heading<A, T> for Tuple<A, T> {
 }
 
 impl<A: Attribute, T: Type> Algebra<A, T> for Tuple<A, T> {
-    fn and(&self, other: &impl AlgebraHeading<A, T>) -> Self {
+    fn and(&self, other: &Self) -> Self {
         todo!();
     }
-    fn or(&self, other: &impl AlgebraHeading<A, T>) -> Self {
+    fn or(&self, other: &Self) -> Self {
         todo!();
     }
-    fn equal(&self, other: &impl AlgebraHeading<A, T>) -> bool {
+    fn equal(&self, other: &Self) -> bool {
         todo!();
     }
     fn not(&self) -> Self {
@@ -46,7 +46,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for Tuple<A, T> {
     fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Self {
         todo!();
     }
-    fn compose(&self, other: &impl AlgebraHeading<A, T>) -> Self {
+    fn compose(&self, other: &Self) -> Self {
         todo!();
     }
 

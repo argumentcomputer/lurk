@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 
-use crate::loam::{Algebra, AlgebraHeading, Attribute, Type};
+use crate::loam::{Algebra, Attribute, Type};
 
 pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone + Algebra<A, T> {
     fn attributes(&self) -> BTreeSet<&A>;
@@ -33,8 +33,6 @@ pub struct SimpleHeading<A, T> {
     is_negated: bool,
     disjunction: BTreeSet<BTreeMap<A, T>>,
 }
-
-impl<A: Attribute, T: Type> AlgebraHeading<A, T> for SimpleHeading<A, T> {}
 
 impl<A: Attribute, T: Type> SimpleHeading<A, T> {
     fn new(is_negated: bool) -> Self {
@@ -73,7 +71,7 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
 }
 
 impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
-    fn equal(&self, other: &impl AlgebraHeading<A, T>) -> bool {
+    fn equal(&self, other: &Self) -> bool {
         if self.arity() != other.arity() {
             return false;
         };
@@ -96,7 +94,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
             disjunction: self.disjunction.clone(),
         }
     }
-    fn and(&self, other: &(impl Algebra<A, T> + AlgebraHeading<A, T>)) -> Self {
+    fn and(&self, other: &Self) -> Self {
         if !self.is_negated() && !other.is_negated() {
             if !self.disjunction().is_empty() || !other.disjunction().is_empty() {
                 unimplemented!("conjunction of disjunctions");
@@ -154,7 +152,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
             new_heading
         }
     }
-    fn or(&self, other: &impl AlgebraHeading<A, T>) -> Self {
+    fn or(&self, other: &Self) -> Self {
         if self.equal(other) {
             // If we can require that constructed headings are frozen, we can avoid this duplication.
             self.clone()
@@ -236,7 +234,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
             disjunction,
         }
     }
-    fn compose(&self, other: &impl AlgebraHeading<A, T>) -> Self {
+    fn compose(&self, other: &Self) -> Self {
         let common = self.common_attributes(other);
 
         self.and(other).remove(common)
