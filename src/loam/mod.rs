@@ -1,21 +1,13 @@
+use crate::loam::algebra::Algebra;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
 
+mod algebra;
+
 pub trait Attribute: Copy + Default + Eq + PartialEq + Hash + Debug + Ord {}
 pub trait Type: Copy + Eq + Hash + Debug + Ord {}
 pub trait AlgebraHeading<A: Attribute, T: Type>: Algebra<A, T> + Heading<A, T> {}
-
-pub trait Algebra<A: Attribute, T: Type> {
-    fn and(&self, other: &impl AlgebraHeading<A, T>) -> Self;
-    fn or(&self, other: &impl AlgebraHeading<A, T>) -> Self;
-    fn equal(&self, other: &impl AlgebraHeading<A, T>) -> bool;
-    fn not(&self) -> Self;
-    fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self;
-    fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self;
-    fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Self;
-    fn compose(&self, other: &impl AlgebraHeading<A, T>) -> Self;
-}
 
 pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone + Algebra<A, T> {
     fn new(is_negated: bool) -> Self;
