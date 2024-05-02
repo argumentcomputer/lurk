@@ -1,5 +1,5 @@
 use p3_air::{Air, AirBuilder};
-use p3_field::{AbstractField, Field};
+use p3_field::Field;
 use p3_matrix::Matrix;
 
 use super::{
@@ -83,7 +83,7 @@ impl<AB: AirBuilder> Val<AB> {
     }
 }
 
-impl<F: AbstractField + Field> Func<F> {
+impl<F: Field> Func<F> {
     fn eval<AB>(&self, builder: &mut AB, toplevel: &Toplevel<F>, width: Width)
     where
         AB: AirBuilder<F = F>,
@@ -109,7 +109,7 @@ impl<F: AbstractField + Field> Func<F> {
     }
 }
 
-impl<F: AbstractField + Field> Block<F> {
+impl<F: Field> Block<F> {
     fn eval<AB>(
         &self,
         builder: &mut AB,
@@ -130,7 +130,7 @@ impl<F: AbstractField + Field> Block<F> {
     }
 }
 
-impl<F: AbstractField + Field> Op<F> {
+impl<F: Field> Op<F> {
     fn eval<AB>(
         &self,
         builder: &mut AB,
@@ -206,7 +206,7 @@ impl<F: AbstractField + Field> Op<F> {
     }
 }
 
-impl<F: AbstractField + Field> Ctrl<F> {
+impl<F: Field> Ctrl<F> {
     fn eval<AB>(
         &self,
         builder: &mut AB,
