@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -14,7 +13,7 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
     fn arity(&self) -> usize;
     fn is_negated(&self) -> bool;
     fn add_attribute(&mut self, attr: A, typ: T);
-    fn common_attributes<'a, 'b>(&'a self, other: &'b impl Heading<A, T>) -> HashSet<&A>
+    fn common_attributes<'a, 'b>(&'a self, other: &'b impl Heading<A, T>) -> HashSet<A>
     where
         'b: 'a,
     {
@@ -23,7 +22,7 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
         if self.arity() <= other.arity() {
             for attr in self.attributes() {
                 if other.attribute_type(*attr).is_some() {
-                    common.insert(attr);
+                    common.insert(*attr);
                 }
             }
             common
@@ -40,7 +39,7 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
             let mut new_heading = Self::new(self.is_negated());
             let compatible = common
                 .iter()
-                .all(|attr| self.attribute_type(**attr) == other.attribute_type(**attr));
+                .all(|attr| self.attribute_type(*attr) == other.attribute_type(*attr));
 
             if !compatible {
                 return new_heading;
@@ -95,6 +94,11 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
     fn disjunction(&self) -> &BTreeSet<BTreeMap<A, T>>;
     fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self;
     fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self;
+    fn compose(&self, other: &impl Heading<A, T>) -> Self {
+        let common = self.common_attributes(other);
+
+        self.and(other).remove(common)
+    }
 }
 
 pub type Attr = usize;
@@ -160,7 +164,7 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
 
         common
             .iter()
-            .all(|attr| self.attribute_type(**attr) == other.attribute_type(**attr))
+            .all(|attr| self.attribute_type(*attr) == other.attribute_type(*attr))
             && &self.disjunction == other.disjunction()
     }
     fn not(&self) -> Self {
@@ -289,6 +293,10 @@ mod tests {
         assert!(heading1.remove([1]).equal(&heading0));
         assert!(heading1_2_3.remove([1, 2]).equal(&heading3));
         assert!(heading1_2_3.remove([1, 2, 12345]).equal(&heading3));
+
+        // compose
+        assert!(heading1.compose(&heading1_2).equal(&heading2));
+        assert!(heading3.compose(&heading1_2_3).equal(&heading1_2));
 
         // attribute_type
         assert_eq!(Some(100), heading1.attribute_type(1).copied());
