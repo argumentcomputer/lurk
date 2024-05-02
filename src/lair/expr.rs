@@ -1,4 +1,4 @@
-use super::{map::Map, Limb, List, Name};
+use super::{map::Map, List, Name};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Var(pub &'static str);
@@ -17,7 +17,6 @@ pub enum OpE<F> {
     Mul(Var, Var, Var),
     Div(Var, Var, Var),
     Inv(Var, Var),
-    Pol(Var, List<Limb<F, Var>>),
     Call(List<Var>, Name, List<Var>),
 }
 
