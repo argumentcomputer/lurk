@@ -30,64 +30,7 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
             other.common_attributes(self)
         }
     }
-    fn and(&self, other: &impl Heading<A, T>) -> Self {
-        if !self.is_negated() && !other.is_negated() {
-            if !self.disjunction().is_empty() || !other.disjunction().is_empty() {
-                unimplemented!("conjunction of disjunctions");
-            }
-            let common = self.common_attributes(other);
-            let mut new_heading = Self::new(self.is_negated());
-            let compatible = common
-                .iter()
-                .all(|attr| self.attribute_type(*attr) == other.attribute_type(*attr));
-
-            if !compatible {
-                return new_heading;
-            };
-
-            for attr in self.attributes().iter() {
-                new_heading.add_attribute(**attr, *self.attribute_type(**attr).unwrap());
-            }
-            for attr in other.attributes().iter() {
-                if common.get(attr).is_none() {
-                    new_heading.add_attribute(**attr, *other.attribute_type(**attr).unwrap());
-                }
-            }
-            new_heading
-        } else if self.is_negated() {
-            if other.is_negated() {
-                // DeMorgan's
-                self.not().or(&other.not()).not()
-            } else {
-                todo!("negated heading and non-negated heading");
-            }
-        } else {
-            let mut new_heading = Self::new(false);
-
-            for attr in self.attributes().iter() {
-                if other.attribute_type(**attr).is_some() {
-                    continue;
-                }
-
-                let mut xxx = true;
-
-                for d in other.disjunction().iter() {
-                    if d.get(*attr).is_some() {
-                        xxx = false;
-                        continue;
-                    }
-                    if !xxx {
-                        continue;
-                    }
-                }
-                if xxx {
-                    new_heading.add_attribute(**attr, *self.attribute_type(**attr).unwrap())
-                }
-            }
-
-            new_heading
-        }
-    }
+    fn and(&self, other: &impl Heading<A, T>) -> Self;
     fn or(&self, other: &impl Heading<A, T>) -> Self;
     fn equal(&self, other: &impl Heading<A, T>) -> bool;
     fn not(&self) -> Self;
@@ -173,6 +116,64 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
             attributes: self.attributes.clone(),
             is_negated: !self.is_negated,
             disjunction: self.disjunction.clone(),
+        }
+    }
+    fn and(&self, other: &impl Heading<A, T>) -> Self {
+        if !self.is_negated() && !other.is_negated() {
+            if !self.disjunction().is_empty() || !other.disjunction().is_empty() {
+                unimplemented!("conjunction of disjunctions");
+            }
+            let common = self.common_attributes(other);
+            let mut new_heading = Self::new(self.is_negated());
+            let compatible = common
+                .iter()
+                .all(|attr| self.attribute_type(*attr) == other.attribute_type(*attr));
+
+            if !compatible {
+                return new_heading;
+            };
+
+            for attr in self.attributes().iter() {
+                new_heading.add_attribute(**attr, *self.attribute_type(**attr).unwrap());
+            }
+            for attr in other.attributes().iter() {
+                if common.get(attr).is_none() {
+                    new_heading.add_attribute(**attr, *other.attribute_type(**attr).unwrap());
+                }
+            }
+            new_heading
+        } else if self.is_negated() {
+            if other.is_negated() {
+                // DeMorgan's
+                self.not().or(&other.not()).not()
+            } else {
+                todo!("negated heading and non-negated heading");
+            }
+        } else {
+            let mut new_heading = Self::new(false);
+
+            for attr in self.attributes().iter() {
+                if other.attribute_type(**attr).is_some() {
+                    continue;
+                }
+
+                let mut a = true;
+
+                for d in other.disjunction().iter() {
+                    if d.get(*attr).is_some() {
+                        a = false;
+                        continue;
+                    }
+                    if !a {
+                        continue;
+                    }
+                }
+                if a {
+                    new_heading.add_attribute(**attr, *self.attribute_type(**attr).unwrap())
+                }
+            }
+
+            new_heading
         }
     }
     fn or(&self, other: &impl Heading<A, T>) -> Self {
@@ -265,7 +266,7 @@ mod tests {
 
     #[test]
     fn test_heading() {
-        let mut heading0 = SimpleHeading::<Attr, Typ>::default();
+        let heading0 = SimpleHeading::<Attr, Typ>::default();
         assert_eq!(0, heading0.arity());
 
         let mut heading1 = SimpleHeading::<Attr, Typ>::default();
@@ -290,8 +291,7 @@ mod tests {
         heading1_2_3.add_attribute(2, 200);
         heading1_2_3.add_attribute(3, 300);
 
-        let heading1and2 = heading1.and(&heading1_2);
-        let heading1and2 = heading1.and(&heading1_2);
+        let heading1and_1_2 = heading1.and(&heading1_2);
         let heading1x_3and1_2 = heading1x_3.and(&heading1_2);
         let heading1_2and_not1 = heading1_2.and(&heading1.not());
         let heading1_2or1_2 = heading1_2.or(&heading1_2);
@@ -343,9 +343,10 @@ mod tests {
         assert_eq!(2, heading1_2_3.common_attributes(&heading1_2).len());
 
         // and
-        assert!(!heading1.equal(&heading1and2));
-        assert!(heading1_2.equal(&heading1and2));
-        assert!(heading1_2.equal(&heading1and2));
+        assert!(!heading1.equal(&heading1and_1_2));
+        assert!(heading1_2.equal(&heading1and_1_2));
+        assert!(heading1_2.equal(&heading1and_1_2));
+        assert!(heading1_2and_not1.equal(&heading2));
         assert!(heading1_2_3and_not1_2.equal(&heading3));
         // Type mismatch on common attribute yields empty conjunction.
         assert!(heading1x_3and1_2.equal(&heading0));
