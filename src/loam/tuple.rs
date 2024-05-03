@@ -104,23 +104,27 @@ mod test {
 
     #[test]
     fn test_tuple() {
-        let t1 = Tuple::new([
-            (5, LoamValue::Wide([1, 2, 3, 4, 5, 6, 7, 8])),
-            (6, LoamValue::Ptr(9, 10)),
-        ]);
+        let w1 = LoamValue::Wide([1, 2, 3, 4, 5, 6, 7, 8]);
+        let p1 = LoamValue::Ptr(9, 10);
+        let p2 = LoamValue::Ptr(11, 12);
+
+        let (a1, a2, a3) = (5, 6, 7);
+
+        let t1 = Tuple::new([(a1, w1), (a2, p1)]);
 
         assert_eq!(2, t1.arity());
-        assert_eq!(2, *t1.attribute_type(5).unwrap());
-        assert_eq!(1, *t1.attribute_type(6).unwrap());
-        assert_eq!(
-            LoamValue::Wide([1, 2, 3, 4, 5, 6, 7, 8]),
-            *t1.get(5).unwrap()
-        );
-        assert_eq!(LoamValue::Ptr(9, 10), *t1.get(6).unwrap());
+        assert_eq!(2, *t1.attribute_type(a1).unwrap());
+        assert_eq!(1, *t1.attribute_type(a2).unwrap());
+        assert_eq!(w1, *t1.get(a1).unwrap());
+        assert_eq!(p1, *t1.get(a2).unwrap());
 
-        let t2 = Tuple::new([(6, LoamValue::Ptr(9, 10)), (7, LoamValue::Ptr(11, 12))]);
+        let t2 = Tuple::new([(a2, p1), (a3, p2)]);
         let t1andt2 = t1.and(&t2);
         let t2andt1 = t2.and(&t1);
         assert_eq!(t1andt2, t2andt1);
+        assert_eq!(3, t1andt2.arity());
+        assert_eq!(w1, *t1andt2.get(a1).unwrap());
+        assert_eq!(p1, *t1andt2.get(a2).unwrap());
+        assert_eq!(p2, *t1andt2.get(a3).unwrap());
     }
 }
