@@ -11,23 +11,24 @@ pub(crate) struct FuncInfo {
 
 impl<F: Clone + Ord> Toplevel<F> {
     pub fn new(funcs: &[FuncE<F>]) -> Self {
-        let info_vec = funcs
+        let ordered_funcs = Map::from_vec(funcs.iter().map(|func| (func.name, func)).collect());
+        let info_vec = ordered_funcs
             .iter()
-            .map(|func| {
+            .map(|(name, func)| {
                 let func_info = FuncInfo {
                     input_size: func.input_params.len(),
                     output_size: func.output_size,
                 };
-                (func.name, func_info)
+                (*name, func_info)
             })
             .collect();
-        let info_map = Map::from_vec(info_vec);
-        let map = funcs
+        let info_map = Map::from_vec_unsafe(info_vec);
+        let map = ordered_funcs
             .iter()
             .enumerate()
-            .map(|(i, func)| (func.name, func.check_and_link(i, &info_map)))
+            .map(|(i, (name, func))| (*name, func.check_and_link(i, &info_map)))
             .collect();
-        Toplevel(Map::from_vec(map))
+        Toplevel(Map::from_vec_unsafe(map))
     }
 }
 

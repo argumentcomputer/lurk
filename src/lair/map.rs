@@ -16,6 +16,10 @@ impl<K: Ord, V> Map<K, V> {
         Self(pairs)
     }
 
+    pub(crate) fn from_vec_unsafe(pairs: Vec<(K, V)>) -> Self {
+        Self(pairs)
+    }
+
     pub fn get(&self, f: &K) -> Option<&V> {
         if self.0.len() < LINEAR_SEARCH_MAX {
             self.0.iter().find(|(g, _)| f == g).map(|(_, v)| v)

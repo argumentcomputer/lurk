@@ -15,6 +15,7 @@ p3-air = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
 p3-baby-bear = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
 p3-field = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
 p3-matrix = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+wp1-core = { git = "ssh://git@github.com/wormhole-foundation/wp1.git", branch = "dev" }
 
 [workspace]
 members = ["examples/calculator"]

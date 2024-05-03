@@ -199,7 +199,7 @@ impl<F: Field + Ord> Op<F> {
 mod tests {
     use crate::{
         func,
-        lair::{execute::QueryRecord, toplevel::Toplevel},
+        lair::{demo_toplevel, execute::QueryRecord, toplevel::Toplevel},
     };
 
     use p3_baby_bear::BabyBear as F;
@@ -207,46 +207,7 @@ mod tests {
 
     #[test]
     fn lair_execute_test() {
-        let factorial_e = func!(
-        fn factorial(n): 1 {
-            let one = num(1);
-            if n {
-                let pred = sub(n, one);
-                let m = call(factorial, pred);
-                let res = mul(n, m);
-                return res
-            }
-            return one
-        });
-
-        let even_e = func!(
-        fn even(n): 1 {
-            let one = num(1);
-            match n {
-                0 => {
-                    return one
-                }
-            };
-            let pred = sub(n, one);
-            let res = call(odd, pred);
-            return res
-        });
-
-        let odd_e = func!(
-        fn odd(n): 1 {
-            let one = num(1);
-            match n {
-                0 => {
-                    let zero = num(0);
-                    return zero
-                }
-            };
-            let pred = sub(n, one);
-            let res = call(even, pred);
-            return res
-        });
-
-        let toplevel = Toplevel::new(&[even_e, factorial_e, odd_e]);
+        let toplevel = demo_toplevel::<_>();
 
         let factorial = toplevel.get_by_name("factorial").unwrap();
         let args = &[F::from_canonical_u32(5)];
