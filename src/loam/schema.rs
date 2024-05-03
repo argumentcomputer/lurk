@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::hash::Hash;
 
-use crate::loam::heading::{Heading, SimpleHeading};
+use crate::loam::heading::SimpleHeading;
 use crate::loam::tuple::Tuple;
-use crate::loam::{Algebra, Attribute, Type, Value};
+use crate::loam::Value;
 
 use super::BubbaBear;
 
@@ -57,6 +57,7 @@ impl Schema {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::loam::Heading;
 
     #[test]
     fn test_schema() {

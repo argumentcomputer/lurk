@@ -47,6 +47,12 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T> for Tuple<A, T, V> {
     }
 }
 
+impl<A: Attribute, T: Type, V: Value> PartialEq for Tuple<A, T, V> {
+    fn eq(&self, other: &Self) -> bool {
+        self.heading == other.heading && self.values == other.values
+    }
+}
+
 impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for Tuple<A, T, V> {
     fn and(&self, other: &Self) -> Self {
         let heading = self.heading.and(&other.heading);
@@ -64,9 +70,6 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for Tuple<A, T, V> {
         Self { heading, values }
     }
     fn or(&self, other: &Self) -> Self {
-        todo!();
-    }
-    fn equal(&self, other: &Self) -> bool {
         todo!();
     }
     fn not(&self) -> Self {
@@ -101,18 +104,23 @@ mod test {
 
     #[test]
     fn test_tuple() {
-        let tuple = Tuple::new([
+        let t1 = Tuple::new([
             (5, LoamValue::Wide([1, 2, 3, 4, 5, 6, 7, 8])),
             (6, LoamValue::Ptr(9, 10)),
         ]);
 
-        assert_eq!(2, tuple.arity());
-        assert_eq!(2, *tuple.attribute_type(5).unwrap());
-        assert_eq!(1, *tuple.attribute_type(6).unwrap());
+        assert_eq!(2, t1.arity());
+        assert_eq!(2, *t1.attribute_type(5).unwrap());
+        assert_eq!(1, *t1.attribute_type(6).unwrap());
         assert_eq!(
             LoamValue::Wide([1, 2, 3, 4, 5, 6, 7, 8]),
-            *tuple.get(5).unwrap()
+            *t1.get(5).unwrap()
         );
-        assert_eq!(LoamValue::Ptr(9, 10), *tuple.get(6).unwrap());
+        assert_eq!(LoamValue::Ptr(9, 10), *t1.get(6).unwrap());
+
+        let t2 = Tuple::new([(6, LoamValue::Ptr(9, 10)), (7, LoamValue::Ptr(11, 12))]);
+        let t1andt2 = t1.and(&t2);
+        let t2andt1 = t2.and(&t1);
+        assert_eq!(t1andt2, t2andt1);
     }
 }

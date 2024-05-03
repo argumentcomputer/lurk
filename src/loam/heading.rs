@@ -70,8 +70,8 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
     }
 }
 
-impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
-    fn equal(&self, other: &Self) -> bool {
+impl<A: Attribute, T: Type> PartialEq for SimpleHeading<A, T> {
+    fn eq(&self, other: &Self) -> bool {
         if self.arity() != other.arity() {
             return false;
         };
@@ -87,6 +87,9 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
             .all(|attr| self.attribute_type(*attr) == other.attribute_type(*attr))
             && &self.disjunction == other.disjunction()
     }
+}
+
+impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
     fn not(&self) -> Self {
         Self {
             attributes: self.attributes.clone(),
@@ -153,7 +156,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
         }
     }
     fn or(&self, other: &Self) -> Self {
-        if self.equal(other) {
+        if self == other {
             // If we can require that constructed headings are frozen, we can avoid this duplication.
             self.clone()
         } else {
@@ -296,29 +299,29 @@ mod tests {
         assert_eq!(3, heading1_2_3.arity());
 
         // project
-        assert!(heading1.project([]).equal(&heading0));
-        assert!(heading1.project([1]).equal(&heading1));
-        assert!(heading1_2_3.project([1, 2]).equal(&heading1_2));
+        assert_eq!(heading0, heading1.project([]));
+        assert_eq!(heading1, heading1.project([1]));
+        assert_eq!(heading1_2, heading1_2_3.project([1, 2]));
         // TODO: Should this be an error?
-        assert!(heading1_2_3.project([1, 2, 12345]).equal(&heading1_2));
+        assert_eq!(heading1_2, heading1_2_3.project([1, 2, 12345]));
 
         // remove
-        assert!(heading1.remove([1]).equal(&heading0));
-        assert!(heading1_2_3.remove([1, 2]).equal(&heading3));
-        assert!(heading1_2_3.remove([1, 2, 12345]).equal(&heading3));
+        assert_eq!(heading0, heading1.remove([1]));
+        assert_eq!(heading3, heading1_2_3.remove([1, 2]));
+        assert_eq!(heading3, heading1_2_3.remove([1, 2, 12345]));
 
         // rename
         let h = heading1_2_3.rename([(1, 9), (2, 10)]);
         assert_eq!(3, h.arity());
-        assert!(h.project([3]).equal(&heading3));
+        assert_eq!(heading3, h.project([3]));
         assert!(h.attribute_type(1).is_none());
         assert!(h.attribute_type(2).is_none());
         assert_eq!(Some(100), h.attribute_type(9).cloned());
         assert_eq!(Some(200), h.attribute_type(10).cloned());
 
         // compose
-        assert!(heading1.compose(&heading1_2).equal(&heading2));
-        assert!(heading3.compose(&heading1_2_3).equal(&heading1_2));
+        assert_eq!(heading2, heading1.compose(&heading1_2));
+        assert_eq!(heading1_2, heading3.compose(&heading1_2_3));
 
         // attribute_type
         assert_eq!(Some(100), heading1.attribute_type(1).cloned());
@@ -327,23 +330,23 @@ mod tests {
 
         // common_attributes
         assert_eq!(1, heading1.common_attributes(&heading1_2).len());
-        assert!(!heading1.equal(&heading1_2));
+        assert!(heading1 != heading1_2);
         assert_eq!(2, heading1_2_3.common_attributes(&heading1_2).len());
 
         // and
-        assert!(!heading1.equal(&heading1and_1_2));
-        assert!(heading1_2.equal(&heading1and_1_2));
-        assert!(heading1_2.equal(&heading1and_1_2));
-        assert!(heading1_2and_not1.equal(&heading2));
-        assert!(heading1_2_3and_not1_2.equal(&heading3));
+        assert!(heading1 != heading1and_1_2);
+        assert_eq!(heading1and_1_2, heading1_2);
+        assert_eq!(heading1and_1_2, heading1_2);
+        assert_eq!(heading2, heading1_2and_not1);
+        assert_eq!(heading3, heading1_2_3and_not1_2);
         // Type mismatch on common attribute yields empty conjunction.
-        assert!(heading1x_3and1_2.equal(&heading0));
+        assert_eq!(heading0, heading1x_3and1_2);
 
         // or
-        assert!(heading1_2or1_2.equal(&heading1_2));
-        assert!(!heading1_2or1_2.equal(&heading1));
-        assert!(!heading1or2.equal(&heading1));
-        assert!(!heading1or2.equal(&heading2));
-        assert!(!heading1or2.equal(&heading1_2));
+        assert_eq!(heading1_2, heading1_2or1_2);
+        assert!(heading1_2or1_2 != heading1);
+        assert!(heading1or2 != heading1);
+        assert!(heading2 != heading1or2);
+        assert!(heading1_2 != heading1or2);
     }
 }
