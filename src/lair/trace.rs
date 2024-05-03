@@ -402,7 +402,9 @@ impl<F: Field + Ord> Op<F> {
 mod tests {
     use crate::{
         func,
-        lair::{execute::QueryRecord, field_from_i32, toplevel::Toplevel, trace::Width},
+        lair::{
+            demo_toplevel, execute::QueryRecord, field_from_i32, toplevel::Toplevel, trace::Width,
+        },
     };
 
     use p3_baby_bear::BabyBear as F;
@@ -412,18 +414,7 @@ mod tests {
 
     #[test]
     fn lair_width_test() {
-        let func_e = func!(
-        fn factorial(n): 1 {
-            let one = num(1);
-            if n {
-                let pred = sub(n, one);
-                let m = call(factorial, pred);
-                let res = mul(n, m);
-                return res
-            }
-            return one
-        });
-        let toplevel = Toplevel::<F>::new(&[func_e]);
+        let toplevel = demo_toplevel::<F>();
 
         let factorial = toplevel.get_by_name("factorial").unwrap();
         let out = factorial.compute_width(&toplevel);
@@ -438,36 +429,7 @@ mod tests {
 
     #[test]
     fn lair_trace_test() {
-        let factorial_e = func!(
-        fn factorial(n): 1 {
-            let one = num(1);
-            if n {
-                let pred = sub(n, one);
-                let m = call(factorial, pred);
-                let res = mul(n, m);
-                return res
-            }
-            return one
-        });
-        let fib_e = func!(
-        fn fib(n): 1 {
-            let one = num(1);
-            match n {
-                0 => {
-                    return one
-                }
-                1 => {
-                    return one
-                }
-            };
-            let n_1 = sub(n, one);
-            let a = call(fib, n_1);
-            let n_2 = sub(n_1, one);
-            let b = call(fib, n_2);
-            let res = add(a, b);
-            return res
-        });
-        let toplevel = Toplevel::<F>::new(&[factorial_e, fib_e]);
+        let toplevel = demo_toplevel::<F>();
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         let queries = &mut QueryRecord::new(&toplevel);
