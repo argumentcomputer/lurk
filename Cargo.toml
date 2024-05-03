@@ -13,7 +13,7 @@ indexmap = { version = "2.2.6", features = ["rayon"] }
 rayon = "1.10.0"
 
 [workspace]
-members = ["examples/calculator"]
+members = ["examples/calculator", "examples/byte_lookup"]
 
 [profile.dev-ci]
 inherits = "dev"
