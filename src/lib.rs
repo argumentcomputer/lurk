@@ -1,4 +1,3 @@
-pub mod pointers;
 pub mod store_core;
 
 pub fn add(left: usize, right: usize) -> usize {

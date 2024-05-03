@@ -1,9 +1,6 @@
 use p3_field::Field;
 
-use loam::{
-    pointers::GPtr,
-    store_core::{StoreCore, StoreHasher},
-};
+use loam::store_core::{pointers::GPtr, StoreCore, StoreHasher};
 
 use super::{
     dummy_hasher::DummyHasher,

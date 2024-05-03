@@ -4,7 +4,8 @@ use indexmap::IndexSet;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::sync::Arc;
 
-use super::pointers::{GPtr, IPtr, IVal};
+pub mod pointers;
+use pointers::{GPtr, IPtr, IVal};
 
 /// Trait that teaches the `StoreCore` how to perform custom hashing operations
 pub trait StoreHasher<T, D> {
