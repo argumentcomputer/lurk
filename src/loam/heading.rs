@@ -35,7 +35,7 @@ pub struct SimpleHeading<A, T> {
 }
 
 impl<A: Attribute, T: Type> SimpleHeading<A, T> {
-    fn new(is_negated: bool) -> Self {
+    pub fn new(is_negated: bool) -> Self {
         SimpleHeading {
             attributes: Default::default(),
             is_negated,
@@ -43,7 +43,7 @@ impl<A: Attribute, T: Type> SimpleHeading<A, T> {
         }
     }
 
-    fn add_attribute(&mut self, attr: A, typ: T) {
+    pub(crate) fn add_attribute(&mut self, attr: A, typ: T) {
         self.attributes.insert(attr, typ);
     }
 }
