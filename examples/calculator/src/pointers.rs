@@ -1,4 +1,4 @@
-use loam::pointers::IPtr;
+use loam::store_core::pointers::IPtr;
 use p3_field::AbstractField;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
