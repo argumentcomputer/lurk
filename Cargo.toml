@@ -11,6 +11,7 @@ match_opt = "0.1.2"
 elsa = { version = "1.9.0", git = "https://github.com/lurk-lab/elsa", branch = "sync_frozen", features = ["indexmap"] }
 indexmap = { version = "2.2.6", features = ["rayon"] }
 rayon = "1.10.0"
+thiserror = "1.0.44"
 
 [workspace]
 members = ["examples/calculator"]

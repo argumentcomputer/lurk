@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 
-use crate::loam::{Algebra, Attribute, Type};
+use crate::loam::algebra::{Algebra, AlgebraError};
+use crate::loam::{Attribute, Type};
 
 pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
     fn attributes(&self) -> BTreeSet<&A>;
@@ -239,7 +240,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
             disjunction,
         }
     }
-    fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Self {
+    fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Result<Self, AlgebraError> {
         let mapping = mapping.into();
         let mut attributes = BTreeMap::new();
         for (k, v) in self.attributes.iter() {
@@ -247,6 +248,11 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
 
             attributes.insert(new_k, v.clone());
         }
+
+        if attributes.len() != self.attributes.len() {
+            Err(AlgebraError::DuplicatedAttribute)?;
+        }
+
         let disjunction = self.disjunction.as_ref().and_then(|disj| {
             let mut disjunction: BTreeSet<BTreeMap<A, T>> = Default::default();
             for d in disj.iter() {
@@ -264,11 +270,11 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
                 Some(disjunction)
             }
         });
-        Self {
+        Ok(Self {
             attributes,
             is_negated: self.is_negated(),
             disjunction,
-        }
+        })
     }
     fn compose(&self, other: &Self) -> Self {
         let common = self.common_attributes(other);
@@ -344,13 +350,17 @@ mod tests {
         assert_eq!(heading3, heading1_2_3.remove([1, 2, 12345]));
 
         // rename
-        let h = heading1_2_3.rename([(1, 9), (2, 10)]);
+        let h = heading1_2_3.rename([(1, 9), (2, 10)]).unwrap();
         assert_eq!(3, h.arity());
         assert_eq!(heading3, h.project([3]));
         assert!(h.get_type(1).is_none());
         assert!(h.get_type(2).is_none());
         assert_eq!(Some(100), h.get_type(9).cloned());
         assert_eq!(Some(200), h.get_type(10).cloned());
+        assert_eq!(
+            Err(AlgebraError::DuplicatedAttribute),
+            heading1_2_3.rename([(1, 2)])
+        );
 
         // compose
         assert_eq!(heading2, heading1.compose(&heading1_2));

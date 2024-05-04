@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use crate::loam::algebra::{Algebra, AlgebraError};
 use crate::loam::heading::{Heading, SimpleHeading};
 use crate::loam::schema::{LoamElement, LoamValue};
-use crate::loam::{Algebra, Attribute, Type, Value};
+use crate::loam::{Attribute, Type, Value};
 
 #[derive(Clone, Debug)]
 pub struct Tuple<A, T, V> {
@@ -43,7 +44,9 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T> for Tuple<A, T, V> {
         self.heading.attribute_types()
     }
     fn arity(&self) -> usize {
-        self.heading.arity()
+        let arity = self.heading.arity();
+        assert_eq!(arity, self.values.len());
+        arity
     }
 }
 
@@ -109,12 +112,12 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Tuple<A, T, V> {
 
         Self { heading, values }
     }
-    fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Self {
+    fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Result<Self, AlgebraError> {
         if self.disjunction().is_some() {
             unimplemented!("tuple disjunction")
         }
         let mapping = mapping.into();
-        let heading = self.heading.rename(mapping.clone());
+        let heading = self.heading.rename(mapping.clone())?;
 
         let mut values = BTreeMap::new();
         for (k, v) in self.values.iter() {
@@ -122,7 +125,12 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Tuple<A, T, V> {
 
             values.insert(new_k, v.clone());
         }
-        Self { heading, values }
+        let renamed = Self { heading, values };
+        if self.arity() == renamed.arity() {
+            Ok(renamed)
+        } else {
+            Err(AlgebraError::DuplicatedAttribute)
+        }
     }
     fn compose(&self, other: &Self) -> Self {
         todo!();
@@ -192,11 +200,23 @@ mod test {
         assert_eq!(None, t4.get(a2));
         assert_eq!(t3, t4);
 
-        let t5 = t1.rename([(a1, a3), (a2, a1)]);
+        let t5 = t1.rename([(a1, a3), (a2, a1)]).unwrap();
         assert_eq!(2, t1.arity());
         assert_eq!(w1, *t5.get(a3).unwrap());
         assert_eq!(p1, *t5.get(a1).unwrap());
         assert_eq!(wt, *t5.get_type(a3).unwrap());
         assert_eq!(pt, *t5.get_type(a1).unwrap());
+
+        let t6 = t1.rename([(a1, a2), (a2, a1)]).unwrap();
+        assert_eq!(2, t1.arity());
+        assert_eq!(w1, *t6.get(a2).unwrap());
+        assert_eq!(p1, *t6.get(a1).unwrap());
+        assert_eq!(wt, *t6.get_type(a2).unwrap());
+        assert_eq!(pt, *t6.get_type(a1).unwrap());
+
+        assert_eq!(
+            Err(AlgebraError::DuplicatedAttribute),
+            t1.rename([(a1, a2)])
+        );
     }
 }
