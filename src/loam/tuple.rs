@@ -88,7 +88,12 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Tuple<A, T, V> {
         }
     }
     fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
-        todo!();
+        let attrs = attrs.into();
+        let heading = self.heading.project(attrs.clone());
+        let mut values = self.values.clone();
+        values.retain(|k, _v| attrs.contains(k));
+
+        Self { heading, values }
     }
     fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
         todo!();
@@ -145,5 +150,10 @@ mod test {
         assert_eq!(w1, *t1andt2.get(a1).unwrap());
         assert_eq!(p1, *t1andt2.get(a2).unwrap());
         assert_eq!(p2, *t1andt2.get(a3).unwrap());
+
+        let t3 = t1.project([(a1)]);
+        assert_eq!(1, t3.arity());
+        assert_eq!(w1, *t3.get(a1).unwrap());
+        assert_eq!(None, t3.get(a2));
     }
 }
