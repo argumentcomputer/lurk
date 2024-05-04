@@ -96,7 +96,12 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Tuple<A, T, V> {
         Self { heading, values }
     }
     fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
-        todo!();
+        let attrs = attrs.into();
+        let heading = self.heading.remove(attrs.clone());
+        let mut values = self.values.clone();
+        values.retain(|k, _v| !attrs.contains(k));
+
+        Self { heading, values }
     }
     fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Self {
         todo!();
@@ -129,13 +134,18 @@ mod test {
         let p1 = LoamValue::Ptr(9, 10);
         let p2 = LoamValue::Ptr(11, 12);
 
+        let wt = w1.type_of();
+        let pt = p1.type_of();
+        assert_eq!(1, pt);
+        assert_eq!(2, wt);
+
         let (a1, a2, a3) = (5, 6, 7);
 
         let t1 = Tuple::new([(a1, w1), (a2, p1)]);
 
         assert_eq!(2, t1.arity());
-        assert_eq!(2, *t1.attribute_type(a1).unwrap());
-        assert_eq!(1, *t1.attribute_type(a2).unwrap());
+        assert_eq!(wt, *t1.attribute_type(a1).unwrap());
+        assert_eq!(pt, *t1.attribute_type(a2).unwrap());
         assert_eq!(w1, *t1.get(a1).unwrap());
         assert_eq!(p1, *t1.get(a2).unwrap());
 
@@ -154,6 +164,15 @@ mod test {
         let t3 = t1.project([(a1)]);
         assert_eq!(1, t3.arity());
         assert_eq!(w1, *t3.get(a1).unwrap());
+        assert_eq!(wt, *t3.attribute_type(a1).unwrap());
         assert_eq!(None, t3.get(a2));
+
+        let t4 = t1.remove([(a2)]);
+        assert_eq!(1, t4.arity());
+        assert_eq!(w1, *t4.get(a1).unwrap());
+        assert_eq!(wt, *t4.attribute_type(a1).unwrap());
+        assert_eq!(None, t4.get(a2));
+
+        assert_eq!(t3, t4);
     }
 }
