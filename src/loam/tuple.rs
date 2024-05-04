@@ -88,6 +88,9 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Tuple<A, T, V> {
         }
     }
     fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
+        if self.disjunction().is_some() {
+            unimplemented!("tuple disjunction is not yet implemented")
+        }
         let attrs = attrs.into();
         let heading = self.heading.project(attrs.clone());
         let mut values = self.values.clone();
@@ -96,6 +99,9 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Tuple<A, T, V> {
         Self { heading, values }
     }
     fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
+        if self.disjunction().is_some() {
+            unimplemented!("tuple disjunction")
+        }
         let attrs = attrs.into();
         let heading = self.heading.remove(attrs.clone());
         let mut values = self.values.clone();
@@ -104,7 +110,19 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Tuple<A, T, V> {
         Self { heading, values }
     }
     fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Self {
-        todo!();
+        if self.disjunction().is_some() {
+            unimplemented!("tuple disjunction")
+        }
+        let mapping = mapping.into();
+        let heading = self.heading.rename(mapping.clone());
+
+        let mut values = BTreeMap::new();
+        for (k, v) in self.values.iter() {
+            let new_k = mapping.get(k).unwrap_or(k).clone();
+
+            values.insert(new_k, v.clone());
+        }
+        Self { heading, values }
     }
     fn compose(&self, other: &Self) -> Self {
         todo!();
@@ -119,7 +137,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Tuple<A, T, V> {
         if self.heading.disjunction().is_none() {
             &None
         } else {
-            unimplemented!()
+            unimplemented!("tuple disjunction")
         }
     }
 }
@@ -172,7 +190,13 @@ mod test {
         assert_eq!(w1, *t4.get(a1).unwrap());
         assert_eq!(wt, *t4.get_type(a1).unwrap());
         assert_eq!(None, t4.get(a2));
-
         assert_eq!(t3, t4);
+
+        let t5 = t1.rename([(a1, a3), (a2, a1)]);
+        assert_eq!(2, t1.arity());
+        assert_eq!(w1, *t5.get(a3).unwrap());
+        assert_eq!(p1, *t5.get(a1).unwrap());
+        assert_eq!(wt, *t5.get_type(a3).unwrap());
+        assert_eq!(pt, *t5.get_type(a1).unwrap());
     }
 }
