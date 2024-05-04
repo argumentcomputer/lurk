@@ -68,8 +68,8 @@ mod test {
         ]);
 
         assert_eq!(2, tuple.arity());
-        assert_eq!(2, *tuple.attribute_type(5).unwrap());
-        assert_eq!(1, *tuple.attribute_type(6).unwrap());
+        assert_eq!(2, *tuple.get_type(5).unwrap());
+        assert_eq!(1, *tuple.get_type(6).unwrap());
         assert_eq!(
             LoamValue::Wide([1, 2, 3, 4, 5, 6, 7, 8]),
             *tuple.get(5).unwrap()

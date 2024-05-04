@@ -5,7 +5,7 @@ use crate::loam::{Algebra, Attribute, Type};
 
 pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
     fn attributes(&self) -> BTreeSet<&A>;
-    fn attribute_type(&self, attr: A) -> Option<&T>;
+    fn get_type(&self, attr: A) -> Option<&T>;
     fn attribute_types(&self) -> &BTreeMap<A, T>;
     fn arity(&self) -> usize;
     fn common_attributes<'a, 'b>(&'a self, other: &'b Self) -> HashSet<A>
@@ -16,7 +16,7 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
 
         if self.arity() <= other.arity() {
             for attr in self.attributes() {
-                if other.attribute_type(*attr).is_some() {
+                if other.get_type(*attr).is_some() {
                     common.insert(*attr);
                 }
             }
@@ -58,7 +58,7 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
         }
         set
     }
-    fn attribute_type(&self, attr: A) -> Option<&T> {
+    fn get_type(&self, attr: A) -> Option<&T> {
         self.attributes.get(&attr)
     }
     fn attribute_types(&self) -> &BTreeMap<A, T> {
@@ -88,7 +88,7 @@ impl<A: Attribute, T: Type> PartialEq for SimpleHeading<A, T> {
 
         common
             .iter()
-            .all(|attr| self.attribute_type(*attr) == other.attribute_type(*attr))
+            .all(|attr| self.get_type(*attr) == other.get_type(*attr))
             && &self.disjunction == other.disjunction()
     }
 }
@@ -111,18 +111,18 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
             let mut new_heading = Self::new(self.is_negated());
             let compatible = common
                 .iter()
-                .all(|attr| self.attribute_type(*attr) == other.attribute_type(*attr));
+                .all(|attr| self.get_type(*attr) == other.get_type(*attr));
 
             if !compatible {
                 return new_heading;
             };
 
             for attr in self.attributes().iter() {
-                new_heading.add_attribute(**attr, *self.attribute_type(**attr).unwrap());
+                new_heading.add_attribute(**attr, *self.get_type(**attr).unwrap());
             }
             for attr in other.attributes().iter() {
                 if common.get(attr).is_none() {
-                    new_heading.add_attribute(**attr, *other.attribute_type(**attr).unwrap());
+                    new_heading.add_attribute(**attr, *other.get_type(**attr).unwrap());
                 }
             }
             new_heading
@@ -137,7 +137,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
             let mut new_heading = Self::new(false);
 
             for attr in self.attributes().iter() {
-                if other.attribute_type(**attr).is_some() {
+                if other.get_type(**attr).is_some() {
                     continue;
                 }
 
@@ -155,7 +155,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
                     }
                 }
                 if a {
-                    new_heading.add_attribute(**attr, *self.attribute_type(**attr).unwrap())
+                    new_heading.add_attribute(**attr, *self.get_type(**attr).unwrap())
                 }
             }
 
@@ -347,19 +347,19 @@ mod tests {
         let h = heading1_2_3.rename([(1, 9), (2, 10)]);
         assert_eq!(3, h.arity());
         assert_eq!(heading3, h.project([3]));
-        assert!(h.attribute_type(1).is_none());
-        assert!(h.attribute_type(2).is_none());
-        assert_eq!(Some(100), h.attribute_type(9).cloned());
-        assert_eq!(Some(200), h.attribute_type(10).cloned());
+        assert!(h.get_type(1).is_none());
+        assert!(h.get_type(2).is_none());
+        assert_eq!(Some(100), h.get_type(9).cloned());
+        assert_eq!(Some(200), h.get_type(10).cloned());
 
         // compose
         assert_eq!(heading2, heading1.compose(&heading1_2));
         assert_eq!(heading1_2, heading3.compose(&heading1_2_3));
 
-        // attribute_type
-        assert_eq!(Some(100), heading1.attribute_type(1).cloned());
-        assert_eq!(Some(100), heading1_2.attribute_type(1).cloned());
-        assert_eq!(Some(200), heading1_2.attribute_type(2).cloned());
+        // get_type
+        assert_eq!(Some(100), heading1.get_type(1).cloned());
+        assert_eq!(Some(100), heading1_2.get_type(1).cloned());
+        assert_eq!(Some(200), heading1_2.get_type(2).cloned());
 
         // common_attributes
         assert_eq!(1, heading1.common_attributes(&heading1_2).len());

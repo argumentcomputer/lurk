@@ -36,8 +36,8 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T> for Tuple<A, T, V> {
     fn attributes(&self) -> BTreeSet<&A> {
         self.heading.attributes()
     }
-    fn attribute_type(&self, attr: A) -> Option<&T> {
-        self.heading.attribute_type(attr)
+    fn get_type(&self, attr: A) -> Option<&T> {
+        self.heading.get_type(attr)
     }
     fn attribute_types(&self) -> &BTreeMap<A, T> {
         self.heading.attribute_types()
@@ -144,8 +144,8 @@ mod test {
         let t1 = Tuple::new([(a1, w1), (a2, p1)]);
 
         assert_eq!(2, t1.arity());
-        assert_eq!(wt, *t1.attribute_type(a1).unwrap());
-        assert_eq!(pt, *t1.attribute_type(a2).unwrap());
+        assert_eq!(wt, *t1.get_type(a1).unwrap());
+        assert_eq!(pt, *t1.get_type(a2).unwrap());
         assert_eq!(w1, *t1.get(a1).unwrap());
         assert_eq!(p1, *t1.get(a2).unwrap());
 
@@ -164,13 +164,13 @@ mod test {
         let t3 = t1.project([(a1)]);
         assert_eq!(1, t3.arity());
         assert_eq!(w1, *t3.get(a1).unwrap());
-        assert_eq!(wt, *t3.attribute_type(a1).unwrap());
+        assert_eq!(wt, *t3.get_type(a1).unwrap());
         assert_eq!(None, t3.get(a2));
 
         let t4 = t1.remove([(a2)]);
         assert_eq!(1, t4.arity());
         assert_eq!(w1, *t4.get(a1).unwrap());
-        assert_eq!(wt, *t4.attribute_type(a1).unwrap());
+        assert_eq!(wt, *t4.get_type(a1).unwrap());
         assert_eq!(None, t4.get(a2));
 
         assert_eq!(t3, t4);
