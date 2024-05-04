@@ -279,6 +279,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
     fn compose(&self, other: &Self) -> Self {
         let common = self.common_attributes(other);
 
+        // This can be optimized.
         self.and(other).remove(common)
     }
     fn is_negated(&self) -> bool {

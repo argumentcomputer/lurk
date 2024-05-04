@@ -133,10 +133,12 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Tuple<A, T, V> {
         }
     }
     fn compose(&self, other: &Self) -> Self {
-        todo!();
+        let common = self.heading.common_attributes(&other.heading);
+
+        // This can be optimized.
+        self.and(&other).remove(common)
     }
 
-    // TODO: Move this and disjunction to Algebra.
     fn is_negated(&self) -> bool {
         self.heading.is_negated()
     }
@@ -218,5 +220,13 @@ mod test {
             Err(AlgebraError::DuplicatedAttribute),
             t1.rename([(a1, a2)])
         );
+
+        let t8 = t1.compose(&t2);
+        let t8a = t2.compose(&t1);
+        assert_eq!(t8, t8a);
+        assert_eq!(2, t8.arity());
+        assert_eq!(w1, *t8.get(a1).unwrap());
+        assert_eq!(None, t8.get(a2));
+        assert_eq!(p2, *t8.get(a3).unwrap());
     }
 }
