@@ -53,27 +53,39 @@ impl<A: Attribute, T: Type, V: Value> PartialEq for Tuple<A, T, V> {
     }
 }
 
-impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for Tuple<A, T, V> {
+impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Tuple<A, T, V> {
     fn and(&self, other: &Self) -> Self {
-        let heading = self.heading.and(&other.heading);
-        let mut values = BTreeMap::<A, V>::new();
+        if !self.is_negated() && !other.is_negated() {
+            if self.disjunction().is_some() || other.disjunction().is_some() {
+                // Defer dealing with this case
+                unimplemented!("conjunction of disjunctions");
+            }
 
-        for attr in heading.attributes() {
-            let value = self
-                .values
-                .get(attr)
-                .or_else(|| other.values.get(attr))
-                .unwrap();
+            let heading = self.heading.and(&other.heading);
+            let mut values = BTreeMap::<A, V>::new();
 
-            values.insert(attr.clone(), value.clone());
+            for attr in heading.attributes() {
+                let value = self
+                    .values
+                    .get(attr)
+                    .or_else(|| other.values.get(attr))
+                    .unwrap();
+
+                values.insert(attr.clone(), value.clone());
+            }
+            Self { heading, values }
+        } else {
+            unimplemented!()
         }
-        Self { heading, values }
     }
     fn or(&self, other: &Self) -> Self {
-        todo!();
+        unimplemented!();
     }
     fn not(&self) -> Self {
-        todo!();
+        Self {
+            heading: self.heading.not(),
+            values: self.values.clone(),
+        }
     }
     fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
         todo!();
@@ -90,11 +102,15 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for Tuple<A, T, V> {
 
     // TODO: Move this and disjunction to Algebra.
     fn is_negated(&self) -> bool {
-        todo!();
+        self.heading.is_negated()
     }
 
-    fn disjunction(&self) -> &BTreeSet<BTreeMap<A, T>> {
-        todo!();
+    fn disjunction(&self) -> &Option<BTreeSet<BTreeMap<A, V>>> {
+        if self.heading.disjunction().is_none() {
+            &None
+        } else {
+            unimplemented!()
+        }
     }
 }
 
@@ -117,6 +133,9 @@ mod test {
         assert_eq!(1, *t1.attribute_type(a2).unwrap());
         assert_eq!(w1, *t1.get(a1).unwrap());
         assert_eq!(p1, *t1.get(a2).unwrap());
+
+        assert!(t1 != t1.not());
+        assert_eq!(t1, t1.not().not());
 
         let t2 = Tuple::new([(a2, p1), (a3, p2)]);
         let t1andt2 = t1.and(&t2);

@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use super::{Attribute, Type};
+use super::Attribute;
 
-pub trait Algebra<A: Attribute, T: Type>: PartialEq {
+pub trait Algebra<A: Attribute, T>: PartialEq {
     fn and(&self, other: &Self) -> Self;
     fn or(&self, other: &Self) -> Self;
     fn not(&self) -> Self;
@@ -12,5 +12,5 @@ pub trait Algebra<A: Attribute, T: Type>: PartialEq {
     fn compose(&self, other: &Self) -> Self;
 
     fn is_negated(&self) -> bool;
-    fn disjunction(&self) -> &BTreeSet<BTreeMap<A, T>>;
+    fn disjunction(&self) -> &Option<BTreeSet<BTreeMap<A, T>>>;
 }

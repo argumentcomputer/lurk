@@ -3,7 +3,7 @@ use std::fmt::Debug;
 
 use crate::loam::{Algebra, Attribute, Type};
 
-pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone + Algebra<A, T> {
+pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
     fn attributes(&self) -> BTreeSet<&A>;
     fn attribute_type(&self, attr: A) -> Option<&T>;
     fn attribute_types(&self) -> &BTreeMap<A, T>;
@@ -31,7 +31,7 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone + Algebra<A, T> 
 pub struct SimpleHeading<A, T> {
     attributes: BTreeMap<A, T>,
     is_negated: bool,
-    disjunction: BTreeSet<BTreeMap<A, T>>,
+    disjunction: Option<BTreeSet<BTreeMap<A, T>>>,
 }
 
 impl<A: Attribute, T: Type> SimpleHeading<A, T> {
@@ -39,7 +39,7 @@ impl<A: Attribute, T: Type> SimpleHeading<A, T> {
         SimpleHeading {
             attributes: Default::default(),
             is_negated,
-            disjunction: Default::default(),
+            disjunction: None,
         }
     }
 
@@ -76,6 +76,10 @@ impl<A: Attribute, T: Type> PartialEq for SimpleHeading<A, T> {
             return false;
         };
 
+        if self.is_negated != other.is_negated {
+            return false;
+        }
+
         let common = self.common_attributes(other);
 
         if common.len() != self.arity() {
@@ -99,7 +103,8 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
     }
     fn and(&self, other: &Self) -> Self {
         if !self.is_negated() && !other.is_negated() {
-            if !self.disjunction().is_empty() || !other.disjunction().is_empty() {
+            if self.disjunction.is_some() || other.disjunction.is_some() {
+                // Defer dealing with this case
                 unimplemented!("conjunction of disjunctions");
             }
             let common = self.common_attributes(other);
@@ -138,13 +143,15 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
 
                 let mut a = true;
 
-                for d in other.disjunction().iter() {
-                    if d.get(*attr).is_some() {
-                        a = false;
-                        continue;
-                    }
-                    if !a {
-                        continue;
+                if let Some(o) = other.disjunction() {
+                    for d in o.iter() {
+                        if d.get(*attr).is_some() {
+                            a = false;
+                            continue;
+                        }
+                        if !a {
+                            continue;
+                        }
                     }
                 }
                 if a {
@@ -160,7 +167,11 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
             // If we can require that constructed headings are frozen, we can avoid this duplication.
             self.clone()
         } else {
-            let mut disjunction = self.disjunction.clone();
+            let mut disjunction = self
+                .disjunction
+                .as_ref()
+                .map(|d| d.clone())
+                .unwrap_or(Default::default());
 
             if other.is_negated() {
                 unimplemented!("disjunction with negation");
@@ -171,7 +182,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
             Self {
                 attributes: self.attributes.clone(),
                 is_negated: self.is_negated(),
-                disjunction,
+                disjunction: Some(disjunction),
             }
         }
     }
@@ -182,12 +193,20 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
             attributes.retain(|k, _v| attrs.contains(k));
         }
 
-        let mut disjunction: BTreeSet<BTreeMap<A, T>> = Default::default();
-        for d in self.disjunction.iter() {
-            let mut a = d.clone();
-            a.retain(|k, _v| attrs.contains(k));
-            disjunction.insert(a);
-        }
+        let disjunction = self.disjunction.as_ref().and_then(|disj| {
+            let mut disjunction: BTreeSet<BTreeMap<A, T>> = Default::default();
+            for d in disj.iter() {
+                let mut a = d.clone();
+                a.retain(|k, _v| attrs.contains(k));
+                disjunction.insert(a);
+            }
+            if disjunction.is_empty() {
+                None
+            } else {
+                Some(disjunction)
+            }
+        });
+
         Self {
             attributes,
             is_negated: self.is_negated(),
@@ -201,12 +220,19 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
             attributes.retain(|k, _v| !attrs.contains(k));
         }
 
-        let mut disjunction: BTreeSet<BTreeMap<A, T>> = Default::default();
-        for d in self.disjunction.iter() {
-            let mut a = d.clone();
-            a.retain(|k, _v| !attrs.contains(k));
-            disjunction.insert(a);
-        }
+        let disjunction = self.disjunction.as_ref().and_then(|disj| {
+            let mut disjunction: BTreeSet<BTreeMap<A, T>> = Default::default();
+            for d in disj.iter() {
+                let mut a = d.clone();
+                a.retain(|k, _v| !attrs.contains(k));
+                disjunction.insert(a);
+            }
+            if disjunction.is_empty() {
+                None
+            } else {
+                Some(disjunction)
+            }
+        });
         Self {
             attributes,
             is_negated: self.is_negated(),
@@ -221,16 +247,23 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
 
             attributes.insert(new_k, v.clone());
         }
-        let mut disjunction: BTreeSet<BTreeMap<A, T>> = Default::default();
-        for d in self.disjunction.iter() {
-            let mut a = BTreeMap::new();
-            for (k, v) in d.iter() {
-                let new_k = mapping.get(k).unwrap_or(k).clone();
+        let disjunction = self.disjunction.as_ref().and_then(|disj| {
+            let mut disjunction: BTreeSet<BTreeMap<A, T>> = Default::default();
+            for d in disj.iter() {
+                let mut a = BTreeMap::new();
+                for (k, v) in d.iter() {
+                    let new_k = mapping.get(k).unwrap_or(k).clone();
 
-                a.insert(new_k, v.clone());
+                    a.insert(new_k, v.clone());
+                }
+                disjunction.insert(a);
             }
-            disjunction.insert(a);
-        }
+            if disjunction.is_empty() {
+                None
+            } else {
+                Some(disjunction)
+            }
+        });
         Self {
             attributes,
             is_negated: self.is_negated(),
@@ -245,7 +278,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
     fn is_negated(&self) -> bool {
         self.is_negated
     }
-    fn disjunction(&self) -> &BTreeSet<BTreeMap<A, T>> {
+    fn disjunction(&self) -> &Option<BTreeSet<BTreeMap<A, T>>> {
         &self.disjunction
     }
 }
@@ -348,5 +381,9 @@ mod tests {
         assert!(heading1or2 != heading1);
         assert!(heading2 != heading1or2);
         assert!(heading1_2 != heading1or2);
+
+        // not
+        assert!(heading1 != heading1.not());
+        assert_eq!(heading1, heading1.not().not());
     }
 }
