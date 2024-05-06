@@ -14,8 +14,8 @@ pub enum Op<F> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Block<F> {
-    pub ops: List<Op<F>>,
-    pub ctrl: Ctrl<F>,
+    pub(crate) ops: List<Op<F>>,
+    pub(crate) ctrl: Ctrl<F>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -27,8 +27,8 @@ pub enum Ctrl<F> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Cases<F> {
-    pub branches: Map<F, Block<F>>,
-    pub default: Option<Box<Block<F>>>,
+    pub(crate) branches: Map<F, Block<F>>,
+    pub(crate) default: Option<Box<Block<F>>>,
 }
 
 impl<F: Ord> Cases<F> {
