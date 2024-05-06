@@ -60,12 +60,6 @@ impl<'a, T> ColumnSlice<'a, T> {
         index.aux += 1;
         t
     }
-
-    pub fn next_sel(&self, index: &mut ColumnIndex) -> &T {
-        let t = &self.sel[index.sel];
-        index.sel += 1;
-        t
-    }
 }
 
 impl<'a, T> ColumnMutSlice<'a, T> {
@@ -96,11 +90,6 @@ impl<'a, T> ColumnMutSlice<'a, T> {
     pub fn push_aux(&mut self, index: &mut ColumnIndex, t: T) {
         self.aux[index.aux] = t;
         index.aux += 1;
-    }
-
-    pub fn push_sel(&mut self, index: &mut ColumnIndex, t: T) {
-        self.sel[index.sel] = t;
-        index.sel += 1;
     }
 }
 
@@ -160,17 +149,15 @@ impl<'a, F: Field + Ord> FuncChip<'a, F> {
         let height = query_map.size().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
         for (i, (args, res)) in query_map.iter().enumerate() {
+            if res.mult == 0 {
+                continue;
+            }
             let start = i * width;
             let index = &mut ColumnIndex::default();
             let row = &mut rows[start..start + width];
             let slice = &mut ColumnMutSlice::from_slice(row, self.width);
-            let mult = F::from_canonical_u32(res.mult);
-            if mult != F::zero() {
-                let not_dummy = F::one();
-                slice.push_aux(index, mult);
-                slice.push_sel(index, not_dummy);
-                self.func.populate_row(args, index, slice, queries);
-            }
+            slice.push_aux(index, F::from_canonical_u32(res.mult));
+            self.func.populate_row(args, index, slice, queries);
         }
         RowMajorMatrix::new(rows, self.width())
     }
@@ -182,9 +169,9 @@ impl<F> Func<F> {
     pub fn compute_width(&self, toplevel: &Toplevel<F>) -> Width {
         let input = self.input_size;
         let output = self.output_size;
-        // multiplicity and initial selector
+        // first auxiliary is multiplicity
         let mut aux = 1;
-        let mut sel = 1;
+        let mut sel = 0;
         let degrees = &mut vec![1; input];
         self.body
             .compute_width(degrees, toplevel, &mut aux, &mut sel);
@@ -205,6 +192,7 @@ impl<F> Block<F> {
         aux: &mut usize,
         sel: &mut usize,
     ) {
+        *sel += 1;
         self.ops
             .iter()
             .for_each(|op| op.compute_width(degrees, toplevel, aux));
@@ -223,7 +211,6 @@ impl<F> Ctrl<F> {
         match self {
             Ctrl::Return(..) => (),
             Ctrl::Match(_, cases) => {
-                *sel += cases.size();
                 let degrees_len = degrees.len();
                 let mut max_aux = *aux;
                 for (_, block) in cases.branches.iter() {
@@ -242,7 +229,6 @@ impl<F> Ctrl<F> {
                 *aux = max_aux;
             }
             Ctrl::If(_, t, f) => {
-                *sel += 2;
                 let degrees_len = degrees.len();
                 let t_aux = &mut aux.clone();
                 // for proof of inequality we need inversion
@@ -322,6 +308,7 @@ impl<F: Field + Ord> Block<F> {
         slice: &mut ColumnMutSlice<'_, F>,
         queries: &QueryRecord<F>,
     ) {
+        slice.sel[self.ident] = F::one();
         self.ops
             .iter()
             .for_each(|op| op.populate_row(map, index, slice, queries));
@@ -341,30 +328,22 @@ impl<F: Field + Ord> Ctrl<F> {
             Ctrl::Return(out) => out.iter().for_each(|i| slice.push_output(index, map[*i].0)),
             Ctrl::Match(t, cases) => {
                 let (t, _) = map[*t];
-                let mut sels = vec![F::zero(); cases.size()];
-                let match_idx = cases
-                    .get_index_of(&t)
-                    .unwrap_or_else(|| panic!("No match for value {:?}", t));
-                sels[match_idx] = F::one();
-                sels.iter().for_each(|sel| slice.push_sel(index, *sel));
-                if match_idx == cases.default_index() {
+                if let Some(branch) = cases.branches.get(&t) {
+                    branch.populate_row(map, index, slice, queries);
+                } else {
+                    let branch = cases.default.as_ref().expect("No match");
                     for (f, _) in cases.branches.iter() {
                         slice.push_aux(index, (t - *f).inverse());
                     }
+                    branch.populate_row(map, index, slice, queries);
                 }
-                let branch = cases.get_index(match_idx).unwrap();
-                branch.populate_row(map, index, slice, queries);
             }
             Ctrl::If(b, t, f) => {
                 let (b, _) = map[*b];
                 if b != F::zero() {
-                    slice.push_sel(index, F::one());
-                    slice.push_sel(index, F::zero());
                     slice.push_aux(index, b.inverse());
                     t.populate_row(map, index, slice, queries);
                 } else {
-                    slice.push_sel(index, F::zero());
-                    slice.push_sel(index, F::one());
                     f.populate_row(map, index, slice, queries);
                 }
             }
@@ -558,6 +537,70 @@ mod tests {
             1, //
             // dummy
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+        ]
+        .into_iter()
+        .map(field_from_i32)
+        .collect::<Vec<_>>();
+        assert_eq!(trace.values, expected_trace);
+    }
+
+    #[test]
+    fn lair_inner_match_trace_test() {
+        let func_e = func!(
+        fn test(n, m): 1 {
+            let zero = num(0);
+            let one = num(1);
+            let two = num(2);
+            let three = num(3);
+            match n {
+                0 => {
+                    match m {
+                        0 => {
+                            return zero;
+                        }
+                        1 => {
+                            return one;
+                        }
+                    }
+                }
+                1 => {
+                    match m {
+                        0 => {
+                            return two;
+                        }
+                        1 => {
+                            return three;
+                        }
+                    }
+                }
+            }
+        });
+        let toplevel = Toplevel::<F>::new(&[func_e]);
+        let test_chip = FuncChip::from_name("test", &toplevel);
+
+        let expected_width = Width {
+            input: 2,
+            output: 1,
+            aux: 1,
+            sel: 7,
+        };
+        assert_eq!(test_chip.width, expected_width);
+
+        let zero = [F::from_canonical_u32(0), F::from_canonical_u32(0)].into();
+        let one = [F::from_canonical_u32(0), F::from_canonical_u32(1)].into();
+        let two = [F::from_canonical_u32(1), F::from_canonical_u32(0)].into();
+        let three = [F::from_canonical_u32(1), F::from_canonical_u32(1)].into();
+        let queries = &mut QueryRecord::new(&toplevel);
+        queries.record_event(&toplevel, test_chip.func.index, zero);
+        queries.record_event(&toplevel, test_chip.func.index, one);
+        queries.record_event(&toplevel, test_chip.func.index, two);
+        queries.record_event(&toplevel, test_chip.func.index, three);
+        let trace = test_chip.generate_trace(queries);
+        let expected_trace = [
+            0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, //
+            0, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, //
+            1, 0, 2, 1, 1, 0, 0, 0, 1, 1, 0, //
+            1, 1, 3, 1, 1, 0, 0, 0, 1, 0, 1, //
         ]
         .into_iter()
         .map(field_from_i32)
