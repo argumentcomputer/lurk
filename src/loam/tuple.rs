@@ -5,22 +5,26 @@ use crate::loam::heading::{Heading, SimpleHeading};
 use crate::loam::schema::{LoamElement, LoamValue};
 use crate::loam::{Attribute, Type, Value};
 
-#[derive(Clone, Debug)]
-pub struct Tuple<A, T, V> {
+pub trait Tuple<A, T, V> {
+    fn get(&self, attr: A) -> Option<&V>;
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct SimpleTuple<A, T, V> {
     pub(crate) heading: SimpleHeading<A, T>,
     pub(crate) values: BTreeMap<A, V>,
 }
 
-impl<A: Attribute, T: Type, V: Value> Tuple<A, T, V> {
-    pub fn get(&self, attr: A) -> Option<&V> {
+impl<A: Attribute, T: Type, V: Value> Tuple<A, T, V> for SimpleTuple<A, T, V> {
+    fn get(&self, attr: A) -> Option<&V> {
         self.values.get(&attr)
     }
 }
 
-impl Tuple<LoamElement, LoamElement, LoamValue<LoamElement>> {
+impl SimpleTuple<LoamElement, LoamElement, LoamValue<LoamElement>> {
     pub fn new<I: IntoIterator<Item = (LoamElement, LoamValue<LoamElement>)>>(
         vals: I,
-    ) -> Tuple<LoamElement, LoamElement, LoamValue<LoamElement>> {
+    ) -> SimpleTuple<LoamElement, LoamElement, LoamValue<LoamElement>> {
         let mut heading = SimpleHeading::new(false);
         let mut values = BTreeMap::<LoamElement, LoamValue<LoamElement>>::new();
 
@@ -29,11 +33,11 @@ impl Tuple<LoamElement, LoamElement, LoamValue<LoamElement>> {
             heading.add_attribute(attr, typ);
             values.insert(attr, value);
         }
-        Tuple { heading, values }
+        SimpleTuple { heading, values }
     }
 }
 
-impl<A: Attribute, T: Type, V: Value> Heading<A, T> for Tuple<A, T, V> {
+impl<A: Attribute, T: Type, V: Value> Heading<A, T> for SimpleTuple<A, T, V> {
     fn attributes(&self) -> BTreeSet<&A> {
         self.heading.attributes()
     }
@@ -50,13 +54,13 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T> for Tuple<A, T, V> {
     }
 }
 
-impl<A: Attribute, T: Type, V: Value> PartialEq for Tuple<A, T, V> {
+impl<A: Attribute, T: Type, V: Value> PartialEq for SimpleTuple<A, T, V> {
     fn eq(&self, other: &Self) -> bool {
         self.heading == other.heading && self.values == other.values
     }
 }
 
-impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Tuple<A, T, V> {
+impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
     fn and(&self, other: &Self) -> Self {
         if !self.is_negated() && !other.is_negated() {
             if self.disjunction().is_some() || other.disjunction().is_some() {
@@ -169,7 +173,7 @@ mod test {
 
         let (a1, a2, a3) = (5, 6, 7);
 
-        let t1 = Tuple::new([(a1, w1), (a2, p1)]);
+        let t1 = SimpleTuple::new([(a1, w1), (a2, p1)]);
 
         assert_eq!(2, t1.arity());
         assert_eq!(wt, *t1.get_type(a1).unwrap());
@@ -180,7 +184,7 @@ mod test {
         assert!(t1 != t1.not());
         assert_eq!(t1, t1.not().not());
 
-        let t2 = Tuple::new([(a2, p1), (a3, p2)]);
+        let t2 = SimpleTuple::new([(a2, p1), (a3, p2)]);
         let t1andt2 = t1.and(&t2);
         let t2andt1 = t2.and(&t1);
         assert_eq!(t1andt2, t2andt1);

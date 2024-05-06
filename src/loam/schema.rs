@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::marker::PhantomData;
 
 use crate::loam::heading::SimpleHeading;
-use crate::loam::tuple::Tuple;
+use crate::loam::tuple::{SimpleTuple, Tuple};
 use crate::loam::Value;
 
 use super::BubbaBear;
@@ -11,7 +12,9 @@ use super::BubbaBear;
 pub type LoamElement = BubbaBear;
 
 #[derive(Default)]
-pub struct Schema {}
+pub struct Schema<T: Default> {
+    _p: PhantomData<T>,
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialOrd, PartialEq)]
 pub enum LoamValue<T> {
@@ -34,14 +37,11 @@ impl LoamValue<LoamElement> {
     }
 }
 
-// impl<T: Copy + Debug + Hash + Ord> Attribute for LoamValue<T> {}
-// impl<T: Copy + Debug + Hash + Ord> Type for LoamValue<T> {}
-
-impl Schema {
+impl Schema<SimpleTuple<LoamElement, LoamElement, LoamValue<LoamElement>>> {
     fn tuple<I: IntoIterator<Item = (LoamElement, LoamValue<LoamElement>)>>(
         &self,
         vals: I,
-    ) -> Tuple<LoamElement, LoamElement, LoamValue<LoamElement>> {
+    ) -> SimpleTuple<LoamElement, LoamElement, LoamValue<LoamElement>> {
         let mut heading = SimpleHeading::new(false);
         let mut values = BTreeMap::<LoamElement, LoamValue<LoamElement>>::new();
 
@@ -50,9 +50,11 @@ impl Schema {
             heading.add_attribute(attr, typ);
             values.insert(attr, value);
         }
-        Tuple { heading, values }
+        SimpleTuple { heading, values }
     }
 }
+
+type SimpleSchema = Schema<SimpleTuple<LoamElement, LoamElement, LoamValue<LoamElement>>>;
 
 #[cfg(test)]
 mod test {
@@ -61,7 +63,7 @@ mod test {
 
     #[test]
     fn test_schema() {
-        let schema = Schema::default();
+        let schema = SimpleSchema::default();
         let tuple = schema.tuple([
             (5, LoamValue::Wide([1, 2, 3, 4, 5, 6, 7, 8])),
             (6, LoamValue::Ptr(9, 10)),
