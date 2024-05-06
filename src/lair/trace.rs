@@ -16,8 +16,10 @@ pub struct ColumnLayout<T> {
     pub(crate) aux: T,
     pub(crate) sel: T,
 }
-pub type Columns<T> = ColumnLayout<Vec<T>>;
 pub type Width = ColumnLayout<usize>;
+pub type ColumnIndex = ColumnLayout<usize>;
+pub type ColumnSlice<'a, T> = ColumnLayout<&'a [T]>;
+pub type ColumnMutSlice<'a, T> = ColumnLayout<&'a mut [T]>;
 
 impl Width {
     #[inline]
@@ -26,12 +28,13 @@ impl Width {
     }
 }
 
-impl<T: Clone> Columns<T> {
-    pub fn new_with_capacity(width: &Width) -> Self {
-        let input = Vec::with_capacity(width.input);
-        let output = Vec::with_capacity(width.output);
-        let aux = Vec::with_capacity(width.aux);
-        let sel = Vec::with_capacity(width.sel);
+impl<'a, T> ColumnSlice<'a, T> {
+    pub fn from_slice(slice: &'a [T], width: Width) -> Self {
+        let (input, slice) = slice.split_at(width.input);
+        let (output, slice) = slice.split_at(width.output);
+        let (aux, slice) = slice.split_at(width.aux);
+        let (sel, slice) = slice.split_at(width.sel);
+        assert!(slice.is_empty());
         Self {
             input,
             output,
@@ -40,34 +43,64 @@ impl<T: Clone> Columns<T> {
         }
     }
 
-    pub fn fill_with_dummy(&mut self, dummy: T) {
-        self.input.resize(self.input.capacity(), dummy.clone());
-        self.output.resize(self.output.capacity(), dummy.clone());
-        self.aux.resize(self.aux.capacity(), dummy.clone());
-        self.sel.resize(self.sel.capacity(), dummy);
+    pub fn next_input(&self, index: &mut ColumnIndex) -> &T {
+        let t = &self.input[index.input];
+        index.input += 1;
+        t
     }
 
-    pub fn push_input(&mut self, t: T) {
-        self.input.push(t)
+    pub fn next_output(&self, index: &mut ColumnIndex) -> &T {
+        let t = &self.output[index.output];
+        index.output += 1;
+        t
     }
 
-    pub fn push_output(&mut self, t: T) {
-        self.output.push(t)
+    pub fn next_aux(&self, index: &mut ColumnIndex) -> &T {
+        let t = &self.aux[index.aux];
+        index.aux += 1;
+        t
     }
 
-    pub fn push_aux(&mut self, t: T) {
-        self.aux.push(t)
+    pub fn next_sel(&self, index: &mut ColumnIndex) -> &T {
+        let t = &self.sel[index.sel];
+        index.sel += 1;
+        t
+    }
+}
+
+impl<'a, T> ColumnMutSlice<'a, T> {
+    pub fn from_slice(slice: &'a mut [T], width: Width) -> Self {
+        let (input, slice) = slice.split_at_mut(width.input);
+        let (output, slice) = slice.split_at_mut(width.output);
+        let (aux, slice) = slice.split_at_mut(width.aux);
+        let (sel, slice) = slice.split_at_mut(width.sel);
+        assert!(slice.is_empty());
+        Self {
+            input,
+            output,
+            aux,
+            sel,
+        }
     }
 
-    pub fn push_sel(&mut self, t: T) {
-        self.sel.push(t)
+    pub fn push_input(&mut self, index: &mut ColumnIndex, t: T) {
+        self.input[index.input] = t;
+        index.input += 1;
     }
 
-    pub fn extend_vec(self, vec: &mut Vec<T>) {
-        vec.extend(self.input);
-        vec.extend(self.output);
-        vec.extend(self.aux);
-        vec.extend(self.sel);
+    pub fn push_output(&mut self, index: &mut ColumnIndex, t: T) {
+        self.output[index.output] = t;
+        index.output += 1;
+    }
+
+    pub fn push_aux(&mut self, index: &mut ColumnIndex, t: T) {
+        self.aux[index.aux] = t;
+        index.aux += 1;
+    }
+
+    pub fn push_sel(&mut self, index: &mut ColumnIndex, t: T) {
+        self.sel[index.sel] = t;
+        index.sel += 1;
     }
 }
 
@@ -122,35 +155,24 @@ impl<'a, F: Sync> BaseAir<F> for FuncChip<'a, F> {
 
 impl<'a, F: Field + Ord> FuncChip<'a, F> {
     pub fn generate_trace(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
-        let index = self.func.index;
-        let query_map = &queries.record()[index];
-        let mut rows_vec = vec![];
-        for (args, res) in query_map.iter() {
-            let mult = F::from_canonical_u32(res.mult);
-            let row = self.compute_row(mult, args, queries);
-            row.extend_vec(&mut rows_vec);
-        }
-
-        // padding
+        let query_map = &queries.record()[self.func.index];
         let width = self.width();
-        let height = query_map.size();
-        let next_pow = height.next_power_of_two().max(4);
-        let dummy = vec![F::zero(); (next_pow - height) * width];
-        rows_vec.extend(dummy);
-
-        RowMajorMatrix::new(rows_vec, self.width())
-    }
-
-    pub fn compute_row(&self, mult: F, args: &[F], queries: &QueryRecord<F>) -> Columns<F> {
-        let mut row = Columns::new_with_capacity(&self.width);
-        if mult != F::zero() {
-            let not_dummy = F::one();
-            row.push_aux(mult);
-            row.push_sel(not_dummy);
-            self.func.populate_row(args, &mut row, queries);
+        let height = query_map.size().next_power_of_two().max(4);
+        let mut rows = vec![F::zero(); height * width];
+        for (i, (args, res)) in query_map.iter().enumerate() {
+            let start = i * width;
+            let index = &mut ColumnIndex::default();
+            let row = &mut rows[start..start + width];
+            let slice = &mut ColumnMutSlice::from_slice(row, self.width);
+            let mult = F::from_canonical_u32(res.mult);
+            if mult != F::zero() {
+                let not_dummy = F::one();
+                slice.push_aux(index, mult);
+                slice.push_sel(index, not_dummy);
+                self.func.populate_row(args, index, slice, queries);
+            }
         }
-        row.fill_with_dummy(F::zero());
-        row
+        RowMajorMatrix::new(rows, self.width())
     }
 }
 
@@ -276,13 +298,19 @@ impl<F> Op<F> {
 }
 
 impl<F: Field + Ord> Func<F> {
-    pub fn populate_row(&self, args: &[F], row: &mut Columns<F>, queries: &QueryRecord<F>) {
+    pub fn populate_row(
+        &self,
+        args: &[F],
+        index: &mut ColumnIndex,
+        slice: &mut ColumnMutSlice<'_, F>,
+        queries: &QueryRecord<F>,
+    ) {
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
         // Variable to value map
         let map = &mut args.iter().map(|arg| (*arg, 1)).collect();
         // One column per input
-        row.input.extend(args);
-        self.body.populate_row(map, row, queries);
+        args.iter().for_each(|arg| slice.push_input(index, *arg));
+        self.body.populate_row(map, index, slice, queries);
     }
 }
 
@@ -290,13 +318,14 @@ impl<F: Field + Ord> Block<F> {
     fn populate_row(
         &self,
         map: &mut Vec<(F, Degree)>,
-        row: &mut Columns<F>,
+        index: &mut ColumnIndex,
+        slice: &mut ColumnMutSlice<'_, F>,
         queries: &QueryRecord<F>,
     ) {
         self.ops
             .iter()
-            .for_each(|op| op.populate_row(map, row, queries));
-        self.ctrl.populate_row(map, row, queries);
+            .for_each(|op| op.populate_row(map, index, slice, queries));
+        self.ctrl.populate_row(map, index, slice, queries);
     }
 }
 
@@ -304,11 +333,12 @@ impl<F: Field + Ord> Ctrl<F> {
     fn populate_row(
         &self,
         map: &mut Vec<(F, Degree)>,
-        row: &mut Columns<F>,
+        index: &mut ColumnIndex,
+        slice: &mut ColumnMutSlice<'_, F>,
         queries: &QueryRecord<F>,
     ) {
         match self {
-            Ctrl::Return(out) => out.iter().for_each(|i| row.push_output(map[*i].0)),
+            Ctrl::Return(out) => out.iter().for_each(|i| slice.push_output(index, map[*i].0)),
             Ctrl::Match(t, cases) => {
                 let (t, _) = map[*t];
                 let mut sels = vec![F::zero(); cases.size()];
@@ -316,26 +346,26 @@ impl<F: Field + Ord> Ctrl<F> {
                     .get_index_of(&t)
                     .unwrap_or_else(|| panic!("No match for value {:?}", t));
                 sels[match_idx] = F::one();
-                row.sel.extend(&sels);
+                sels.iter().for_each(|sel| slice.push_sel(index, *sel));
                 if match_idx == cases.default_index() {
                     for (f, _) in cases.branches.iter() {
-                        row.push_aux((t - *f).inverse());
+                        slice.push_aux(index, (t - *f).inverse());
                     }
                 }
                 let branch = cases.get_index(match_idx).unwrap();
-                branch.populate_row(map, row, queries);
+                branch.populate_row(map, index, slice, queries);
             }
             Ctrl::If(b, t, f) => {
                 let (b, _) = map[*b];
                 if b != F::zero() {
-                    row.push_sel(F::one());
-                    row.push_sel(F::zero());
-                    row.push_aux(b.inverse());
-                    t.populate_row(map, row, queries);
+                    slice.push_sel(index, F::one());
+                    slice.push_sel(index, F::zero());
+                    slice.push_aux(index, b.inverse());
+                    t.populate_row(map, index, slice, queries);
                 } else {
-                    row.push_sel(F::zero());
-                    row.push_sel(F::one());
-                    f.populate_row(map, row, queries);
+                    slice.push_sel(index, F::zero());
+                    slice.push_sel(index, F::one());
+                    f.populate_row(map, index, slice, queries);
                 }
             }
         }
@@ -346,7 +376,8 @@ impl<F: Field + Ord> Op<F> {
     fn populate_row(
         &self,
         map: &mut Vec<(F, Degree)>,
-        row: &mut Columns<F>,
+        index: &mut ColumnIndex,
+        slice: &mut ColumnMutSlice<'_, F>,
         queries: &QueryRecord<F>,
     ) {
         match self {
@@ -372,7 +403,7 @@ impl<F: Field + Ord> Op<F> {
                     map.push((f, deg));
                 } else {
                     map.push((f, 1));
-                    row.push_aux(f);
+                    slice.push_aux(index, f);
                 }
             }
             Op::Inv(a) => {
@@ -382,7 +413,7 @@ impl<F: Field + Ord> Op<F> {
                     map.push((f, 0));
                 } else {
                     map.push((f, 1));
-                    row.push_aux(f);
+                    slice.push_aux(index, f);
                 }
             }
             Op::Call(idx, inp) => {
@@ -391,7 +422,7 @@ impl<F: Field + Ord> Op<F> {
                 let result = query_map.get(&args).expect("Cannot find query result");
                 for f in result.output.iter() {
                     map.push((*f, 1));
-                    row.push_aux(*f);
+                    slice.push_aux(index, *f);
                 }
             }
         }

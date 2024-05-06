@@ -7,62 +7,8 @@ use p3_matrix::Matrix;
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
     toplevel::Toplevel,
-    trace::{ColumnLayout, FuncChip, Width},
+    trace::{ColumnIndex, ColumnSlice, FuncChip, Width},
 };
-
-pub type ColumnSlice<'a, T> = ColumnLayout<&'a [T]>;
-pub type ColumnIndex = ColumnLayout<usize>;
-
-impl<'a, T> ColumnSlice<'a, T> {
-    pub fn from_slice(slice: &'a [T], width: Width) -> Self {
-        assert_eq!(
-            slice.len(),
-            width.input + width.output + width.aux + width.sel
-        );
-        let mut from = 0;
-        let mut to = width.input;
-        let input = &slice[from..to];
-        from += width.input;
-        to += width.output;
-        let output = &slice[from..to];
-        from += width.output;
-        to += width.aux;
-        let aux = &slice[from..to];
-        from += width.aux;
-        to += width.sel;
-        let sel = &slice[from..to];
-        Self {
-            input,
-            output,
-            aux,
-            sel,
-        }
-    }
-
-    pub fn next_input(&self, index: &mut ColumnIndex) -> &T {
-        let t = &self.input[index.input];
-        index.input += 1;
-        t
-    }
-
-    pub fn next_output(&self, index: &mut ColumnIndex) -> &T {
-        let t = &self.output[index.output];
-        index.output += 1;
-        t
-    }
-
-    pub fn next_aux(&self, index: &mut ColumnIndex) -> &T {
-        let t = &self.aux[index.aux];
-        index.aux += 1;
-        t
-    }
-
-    pub fn next_sel(&self, index: &mut ColumnIndex) -> &T {
-        let t = &self.sel[index.sel];
-        index.sel += 1;
-        t
-    }
-}
 
 impl<'a, AB> Air<AB> for FuncChip<'a, AB::F>
 where
