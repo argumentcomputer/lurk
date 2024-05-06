@@ -14,6 +14,8 @@ pub enum Op<F> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Block<F> {
+    // a unique block identifier
+    pub(crate) ident: usize,
     pub(crate) ops: List<Op<F>>,
     pub(crate) ctrl: Ctrl<F>,
 }

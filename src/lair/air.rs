@@ -53,12 +53,12 @@ impl<F: Field> Func<F> {
         }
 
         let mult = *local.next_aux(index);
-        let not_dummy = *local.next_sel(index);
-        builder.assert_bool(not_dummy);
-        builder.when_ne(not_dummy, AB::F::one()).assert_zero(mult);
+        let toplevel_sel = local.sel[self.body.ident];
+        builder
+            .when_ne(toplevel_sel, AB::F::one())
+            .assert_zero(mult);
 
-        self.body
-            .eval(builder, local, not_dummy, index, map, toplevel)
+        self.body.eval(builder, local, index, map, toplevel)
     }
 }
 
@@ -67,7 +67,6 @@ impl<F: Field> Block<F> {
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
-        not_dummy: AB::Var,
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F>,
@@ -75,12 +74,13 @@ impl<F: Field> Block<F> {
         AB: AirBuilder<F = F>,
         <AB as AirBuilder>::Var: Debug,
     {
+        let sel = local.sel[self.ident];
+        builder.assert_bool(sel);
         self.ops
             .iter()
-            .for_each(|op| op.eval(builder, local, not_dummy, index, map, toplevel));
+            .for_each(|op| op.eval(builder, local, sel, index, map, toplevel));
 
-        self.ctrl
-            .eval(builder, local, not_dummy, index, map, toplevel);
+        self.ctrl.eval(builder, local, sel, index, map, toplevel);
     }
 }
 
@@ -89,7 +89,7 @@ impl<F: Field> Op<F> {
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
-        not_dummy: AB::Var,
+        sel: AB::Var,
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F>,
@@ -128,9 +128,7 @@ impl<F: Field> Op<F> {
                     Val::Const(*a * *b)
                 } else {
                     let c = local.next_aux(index);
-                    builder
-                        .when(not_dummy)
-                        .assert_eq(a.to_expr() * b.to_expr(), *c);
+                    builder.when(sel).assert_eq(a.to_expr() * b.to_expr(), *c);
                     Val::Expr((*c).into())
                 };
                 map.push(c);
@@ -141,7 +139,7 @@ impl<F: Field> Op<F> {
                     Val::Const(a.inverse())
                 } else {
                     let c = local.next_aux(index);
-                    builder.when(not_dummy).assert_one(a.to_expr() * *c);
+                    builder.when(sel).assert_one(a.to_expr() * *c);
                     Val::Expr((*c).into())
                 };
                 map.push(c);
@@ -163,7 +161,7 @@ impl<F: Field> Ctrl<F> {
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
-        not_dummy: AB::Var,
+        ctrl_sel: AB::Var,
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F>,
@@ -175,65 +173,58 @@ impl<F: Field> Ctrl<F> {
             Ctrl::Match(v, cases) => {
                 let map_len = map.len();
                 let v = map[*v].to_expr();
-
                 let mut sels = vec![];
-                for _ in 0..cases.size() {
-                    let sel = *local.next_sel(index);
-                    sels.push(sel);
-                }
 
-                for ((f, branch), sel) in cases.branches.iter().zip(sels.iter()) {
-                    let sel = *sel;
+                for (f, branch) in cases.branches.iter() {
                     let index = &mut index.clone();
-                    builder.assert_bool(sel);
+                    let sel = local.sel[branch.ident];
+                    sels.push(sel);
                     builder.when(sel).assert_eq(v.clone(), *f);
-                    branch.eval(builder, local, sel, index, map, toplevel);
+                    branch.eval(builder, local, index, map, toplevel);
                     map.truncate(map_len);
                 }
 
                 if let Some(branch) = &cases.default {
                     let index = &mut index.clone();
-                    let sel = *sels.last().unwrap();
-                    builder.assert_bool(sel);
+                    let sel = local.sel[branch.ident];
+                    sels.push(sel);
                     for (f, _) in cases.branches.iter() {
                         let inv = *local.next_aux(index);
                         builder.when(sel).assert_one(inv * (v.clone() - *f));
                     }
-                    branch.eval(builder, local, sel, index, map, toplevel);
+                    branch.eval(builder, local, index, map, toplevel);
                     map.truncate(map_len);
                 }
 
-                let dummy: AB::Expr = -not_dummy.into() + AB::F::one();
-                let sum = sels.into_iter().fold(dummy, |acc, sel| acc + sel);
+                let not_sel: AB::Expr = -ctrl_sel.into() + AB::F::one();
+                let sum = sels.into_iter().fold(not_sel, |acc, sel| acc + sel);
                 builder.assert_one(sum);
             }
             Ctrl::If(b, t, f) => {
                 let map_len = map.len();
                 let b = map[*b].to_expr();
 
-                let t_not_dummy = *local.next_sel(index);
-                let f_not_dummy = *local.next_sel(index);
+                let t_sel = local.sel[t.ident];
+                let f_sel = local.sel[f.ident];
 
                 let t_index = &mut index.clone();
-                builder.assert_bool(t_not_dummy);
                 let inv = *local.next_aux(t_index);
-                builder.when(t_not_dummy).assert_one(inv * b.clone());
-                t.eval(builder, local, t_not_dummy, t_index, map, toplevel);
+                builder.when(t_sel).assert_one(inv * b.clone());
+                t.eval(builder, local, t_index, map, toplevel);
                 map.truncate(map_len);
 
                 let f_index = &mut index.clone();
-                builder.assert_bool(f_not_dummy);
-                builder.when(f_not_dummy).assert_zero(b);
-                f.eval(builder, local, f_not_dummy, f_index, map, toplevel);
+                builder.when(f_sel).assert_zero(b);
+                f.eval(builder, local, f_index, map, toplevel);
                 map.truncate(map_len);
 
-                builder.assert_one(t_not_dummy + f_not_dummy + AB::F::one() - not_dummy);
+                builder.assert_one(t_sel + f_sel + AB::F::one() - ctrl_sel);
             }
             Ctrl::Return(vs) => {
                 for v in vs.iter() {
                     let v = map[*v].to_expr();
                     let o = *local.next_output(index);
-                    builder.when(not_dummy).assert_eq(v, o);
+                    builder.when(ctrl_sel).assert_eq(v, o);
                 }
             }
         }

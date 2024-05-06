@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use super::{bytecode::*, expr::*, map::Map, Name};
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Toplevel<F>(Map<Name, Func<F>>);
 
 pub(crate) struct FuncInfo {
@@ -83,9 +84,10 @@ impl<F: Clone + Ord> FuncE<F> {
         self.input_params.iter().for_each(|var| {
             bind(var, &mut idx, map);
         });
+        let ident = &mut 0;
         let body = self
             .body
-            .check_and_link(self.output_size, map, idx, info_map);
+            .check_and_link(self.output_size, map, idx, ident, info_map);
         // for (var, (_, used)) in map.iter() {
         //     let ch = var.0.chars().next().unwrap();
         //     assert!(
@@ -109,8 +111,10 @@ impl<F: Clone + Ord> BlockE<F> {
         return_size: usize,
         map: &mut BindingMap,
         mut idx: usize,
+        running_ident: &mut usize,
         info_map: &Map<Name, FuncInfo>,
     ) -> Block<F> {
+        let ident = *running_ident;
         let mut ops = Vec::new();
         for op in self.ops.iter() {
             match op {
@@ -183,27 +187,39 @@ impl<F: Clone + Ord> BlockE<F> {
                 let mut vec = Vec::with_capacity(cases.branches.size());
                 for (f, block) in cases.branches.iter() {
                     let cloned_map = &mut map.clone();
-                    let block = block.check_and_link(return_size, cloned_map, idx, info_map);
+                    *running_ident += 1;
+                    let block =
+                        block.check_and_link(return_size, cloned_map, idx, running_ident, info_map);
                     vec.push((f.clone(), block))
                 }
                 let branches = Map::from_vec(vec);
-                let default = cases
-                    .default
-                    .as_ref()
-                    .map(|def| def.check_and_link(return_size, map, idx, info_map).into());
+                let default = cases.default.as_ref().map(|def| {
+                    *running_ident += 1;
+                    def.check_and_link(return_size, map, idx, running_ident, info_map)
+                        .into()
+                });
                 let cases = Cases { branches, default };
                 Ctrl::Match(t, cases)
             }
             CtrlE::If(b, true_block, false_block) => {
                 let b = use_var(b, map);
                 let cloned_map = &mut map.clone();
-                let true_block = true_block.check_and_link(return_size, cloned_map, idx, info_map);
-                let false_block = false_block.check_and_link(return_size, map, idx, info_map);
+                *running_ident += 1;
+                let true_block = true_block.check_and_link(
+                    return_size,
+                    cloned_map,
+                    idx,
+                    running_ident,
+                    info_map,
+                );
+                *running_ident += 1;
+                let false_block =
+                    false_block.check_and_link(return_size, map, idx, running_ident, info_map);
                 Ctrl::If(b, true_block.into(), false_block.into())
             }
         };
         let ops = ops.into();
-        Block { ctrl, ops }
+        Block { ctrl, ops, ident }
     }
 }
 
