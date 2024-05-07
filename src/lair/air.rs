@@ -6,9 +6,45 @@ use p3_matrix::Matrix;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
+    chip::{ColumnLayout, FuncChip, Width},
     toplevel::Toplevel,
-    trace::{ColumnIndex, ColumnSlice, FuncChip, Width},
+    trace::ColumnIndex,
 };
+
+pub type ColumnSlice<'a, T> = ColumnLayout<&'a [T]>;
+impl<'a, T> ColumnSlice<'a, T> {
+    pub fn from_slice(slice: &'a [T], width: Width) -> Self {
+        let (input, slice) = slice.split_at(width.input);
+        let (output, slice) = slice.split_at(width.output);
+        let (aux, slice) = slice.split_at(width.aux);
+        let (sel, slice) = slice.split_at(width.sel);
+        assert!(slice.is_empty());
+        Self {
+            input,
+            output,
+            aux,
+            sel,
+        }
+    }
+
+    pub fn next_input(&self, index: &mut ColumnIndex) -> &T {
+        let t = &self.input[index.input];
+        index.input += 1;
+        t
+    }
+
+    pub fn next_output(&self, index: &mut ColumnIndex) -> &T {
+        let t = &self.output[index.output];
+        index.output += 1;
+        t
+    }
+
+    pub fn next_aux(&self, index: &mut ColumnIndex) -> &T {
+        let t = &self.aux[index.aux];
+        index.aux += 1;
+        t
+    }
+}
 
 impl<'a, AB> Air<AB> for FuncChip<'a, AB::F>
 where

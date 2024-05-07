@@ -1,4 +1,3 @@
-use p3_air::BaseAir;
 use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrix;
 use rayon::{
@@ -8,63 +7,12 @@ use rayon::{
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
+    chip::{ColumnLayout, Degree, FuncChip, Width},
     execute::QueryRecord,
-    toplevel::Toplevel,
     List,
 };
-
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-pub struct ColumnLayout<T> {
-    pub(crate) input: T,
-    pub(crate) output: T,
-    pub(crate) aux: T,
-    pub(crate) sel: T,
-}
-pub type Width = ColumnLayout<usize>;
 pub type ColumnIndex = ColumnLayout<usize>;
-pub type ColumnSlice<'a, T> = ColumnLayout<&'a [T]>;
 pub type ColumnMutSlice<'a, T> = ColumnLayout<&'a mut [T]>;
-
-impl Width {
-    #[inline]
-    fn len(&self) -> usize {
-        self.input + self.output + self.aux + self.sel
-    }
-}
-
-impl<'a, T> ColumnSlice<'a, T> {
-    pub fn from_slice(slice: &'a [T], width: Width) -> Self {
-        let (input, slice) = slice.split_at(width.input);
-        let (output, slice) = slice.split_at(width.output);
-        let (aux, slice) = slice.split_at(width.aux);
-        let (sel, slice) = slice.split_at(width.sel);
-        assert!(slice.is_empty());
-        Self {
-            input,
-            output,
-            aux,
-            sel,
-        }
-    }
-
-    pub fn next_input(&self, index: &mut ColumnIndex) -> &T {
-        let t = &self.input[index.input];
-        index.input += 1;
-        t
-    }
-
-    pub fn next_output(&self, index: &mut ColumnIndex) -> &T {
-        let t = &self.output[index.output];
-        index.output += 1;
-        t
-    }
-
-    pub fn next_aux(&self, index: &mut ColumnIndex) -> &T {
-        let t = &self.aux[index.aux];
-        index.aux += 1;
-        t
-    }
-}
 
 impl<'a, T> ColumnMutSlice<'a, T> {
     pub fn from_slice(slice: &'a mut [T], width: Width) -> Self {
@@ -94,55 +42,6 @@ impl<'a, T> ColumnMutSlice<'a, T> {
     pub fn push_aux(&mut self, index: &mut ColumnIndex, t: T) {
         self.aux[index.aux] = t;
         index.aux += 1;
-    }
-}
-
-pub struct FuncChip<'a, F> {
-    pub(crate) func: &'a Func<F>,
-    pub(crate) toplevel: &'a Toplevel<F>,
-    pub(crate) width: Width,
-}
-
-impl<'a, F> FuncChip<'a, F> {
-    pub fn from_name(name: &'static str, toplevel: &'a Toplevel<F>) -> Self {
-        let func = toplevel.get_by_name(name).unwrap();
-        let width = func.compute_width(toplevel);
-        Self {
-            func,
-            toplevel,
-            width,
-        }
-    }
-
-    pub fn from_index(idx: usize, toplevel: &'a Toplevel<F>) -> Self {
-        let func = toplevel.get_by_index(idx).unwrap();
-        let width = func.compute_width(toplevel);
-        Self {
-            func,
-            toplevel,
-            width,
-        }
-    }
-
-    #[inline]
-    pub fn width(&self) -> usize {
-        self.width.len()
-    }
-
-    #[inline]
-    pub fn func(&self) -> &Func<F> {
-        self.func
-    }
-
-    #[inline]
-    pub fn toplevel(&self) -> &Toplevel<F> {
-        self.toplevel
-    }
-}
-
-impl<'a, F: Sync> BaseAir<F> for FuncChip<'a, F> {
-    fn width(&self) -> usize {
-        self.width()
     }
 }
 
@@ -180,125 +79,6 @@ impl<'a, F: Field + Ord> FuncChip<'a, F> {
                 self.func.populate_row(args, index, slice, queries);
             });
         RowMajorMatrix::new(rows, width)
-    }
-}
-
-type Degree = u8;
-
-impl<F> Func<F> {
-    pub fn compute_width(&self, toplevel: &Toplevel<F>) -> Width {
-        let input = self.input_size;
-        let output = self.output_size;
-        // first auxiliary is multiplicity
-        let mut aux = 1;
-        let mut sel = 0;
-        let degrees = &mut vec![1; input];
-        self.body
-            .compute_width(degrees, toplevel, &mut aux, &mut sel);
-        Width {
-            input,
-            output,
-            aux,
-            sel,
-        }
-    }
-}
-
-impl<F> Block<F> {
-    fn compute_width(
-        &self,
-        degrees: &mut Vec<Degree>,
-        toplevel: &Toplevel<F>,
-        aux: &mut usize,
-        sel: &mut usize,
-    ) {
-        self.ops
-            .iter()
-            .for_each(|op| op.compute_width(degrees, toplevel, aux));
-        self.ctrl.compute_width(degrees, toplevel, aux, sel);
-    }
-}
-
-impl<F> Ctrl<F> {
-    fn compute_width(
-        &self,
-        degrees: &mut Vec<Degree>,
-        toplevel: &Toplevel<F>,
-        aux: &mut usize,
-        sel: &mut usize,
-    ) {
-        match self {
-            Ctrl::Return(..) => *sel += 1,
-            Ctrl::Match(_, cases) => {
-                let degrees_len = degrees.len();
-                let mut max_aux = *aux;
-                for (_, block) in cases.branches.iter() {
-                    let block_aux = &mut aux.clone();
-                    block.compute_width(degrees, toplevel, block_aux, sel);
-                    degrees.truncate(degrees_len);
-                    max_aux = max_aux.max(*block_aux);
-                }
-                if let Some(block) = &cases.default {
-                    let block_aux = &mut aux.clone();
-                    *block_aux += cases.branches.size();
-                    block.compute_width(degrees, toplevel, block_aux, sel);
-                    degrees.truncate(degrees_len);
-                    max_aux = max_aux.max(*block_aux);
-                }
-                *aux = max_aux;
-            }
-            Ctrl::If(_, t, f) => {
-                let degrees_len = degrees.len();
-                let t_aux = &mut aux.clone();
-                // for proof of inequality we need inversion
-                *t_aux += 1;
-                t.compute_width(degrees, toplevel, t_aux, sel);
-                degrees.truncate(degrees_len);
-                let f_aux = &mut aux.clone();
-                f.compute_width(degrees, toplevel, f_aux, sel);
-                degrees.truncate(degrees_len);
-                *aux = (*t_aux).max(*f_aux);
-            }
-        }
-    }
-}
-
-impl<F> Op<F> {
-    fn compute_width(&self, degrees: &mut Vec<Degree>, toplevel: &Toplevel<F>, aux: &mut usize) {
-        match self {
-            Op::Const(..) => {
-                degrees.push(0);
-            }
-            Op::Add(a, b) | Op::Sub(a, b) => {
-                let deg = degrees[*a].max(degrees[*b]);
-                degrees.push(deg);
-            }
-            Op::Mul(a, b) => {
-                let deg = degrees[*a] + degrees[*b];
-                // degree less than 2 does not need allocation
-                if deg < 2 {
-                    degrees.push(deg);
-                } else {
-                    degrees.push(1);
-                    *aux += 1;
-                }
-            }
-            Op::Inv(a) => {
-                let a_deg = degrees[*a];
-                if a_deg == 0 {
-                    degrees.push(0);
-                } else {
-                    degrees.push(1);
-                    *aux += 1;
-                }
-            }
-            Op::Call(f_idx, ..) => {
-                let func = toplevel.get_by_index(*f_idx as usize).unwrap();
-                let out_size = func.output_size;
-                *aux += out_size;
-                degrees.extend(vec![1; out_size]);
-            }
-        }
     }
 }
 
@@ -466,7 +246,7 @@ mod tests {
         let queries = &mut QueryRecord::new(&toplevel);
 
         let args = [F::from_canonical_u32(5)].into();
-        queries.record_event(&toplevel, factorial_chip.func.index, args);
+        factorial_chip.execute(args, queries);
         let trace = factorial_chip.generate_trace_parallel(queries);
         let expected_trace = [
             // in order: n, output, mult, fact(n-1), n*fact(n-1), 1/n, and selectors
@@ -486,7 +266,7 @@ mod tests {
         assert_eq!(trace.values, expected_trace);
 
         let args = [F::from_canonical_u32(7)].into();
-        queries.record_event(&toplevel, fib_chip.func.index, args);
+        fib_chip.execute(args, queries);
         let trace = fib_chip.generate_trace_parallel(queries);
 
         let expected_trace = [
@@ -545,7 +325,7 @@ mod tests {
 
         let args = [F::from_canonical_u32(5), F::from_canonical_u32(2)].into();
         let queries = &mut QueryRecord::new(&toplevel);
-        queries.record_event(&toplevel, test_chip.func.index, args);
+        test_chip.execute(args, queries);
         let trace = test_chip.generate_trace_parallel(queries);
         let expected_trace = [
             // The big numbers in the trace are the inverted elements, the witnesses of
@@ -611,10 +391,10 @@ mod tests {
         let two = [F::from_canonical_u32(1), F::from_canonical_u32(0)].into();
         let three = [F::from_canonical_u32(1), F::from_canonical_u32(1)].into();
         let queries = &mut QueryRecord::new(&toplevel);
-        queries.record_event(&toplevel, test_chip.func.index, zero);
-        queries.record_event(&toplevel, test_chip.func.index, one);
-        queries.record_event(&toplevel, test_chip.func.index, two);
-        queries.record_event(&toplevel, test_chip.func.index, three);
+        test_chip.execute(zero, queries);
+        test_chip.execute(one, queries);
+        test_chip.execute(two, queries);
+        test_chip.execute(three, queries);
         let trace = test_chip.generate_trace_parallel(queries);
 
         let expected_trace = [
