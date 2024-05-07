@@ -4,21 +4,22 @@ use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_uni_stark::{Entry, SymbolicExpression, SymbolicVariable};
 
-pub enum InteractionKind<T> {
+enum InteractionKind<T> {
     Require(T),
     Provide(T),
 }
 
-pub struct Interaction<T> {
+#[allow(dead_code)]
+struct Interaction<T> {
     values: Vec<T>,
     kind: InteractionKind<T>,
 }
 
 /// A builder for the lookup table interactions.
-pub struct SymbolicBuilder<F: Field> {
+struct SymbolicBuilder<F: Field> {
     main: RowMajorMatrix<SymbolicVariable<F>>,
-    pub constraints: Vec<SymbolicExpression<F>>,
-    pub interactions: Vec<Interaction<SymbolicExpression<F>>>,
+    constraints: Vec<SymbolicExpression<F>>,
+    interactions: Vec<Interaction<SymbolicExpression<F>>>,
 }
 
 impl<F: Field> LookupAirBuilder<SymbolicExpression<F>> for SymbolicBuilder<F> {
@@ -45,7 +46,8 @@ impl<F: Field> LookupAirBuilder<SymbolicExpression<F>> for SymbolicBuilder<F> {
 
 impl<F: Field> SymbolicBuilder<F> {
     /// Creates a new `InteractionBuilder` with the given width.
-    pub fn new(main_width: usize) -> Self {
+    #[allow(dead_code)]
+    fn new(main_width: usize) -> Self {
         let main_values = [0, 1]
             .into_iter()
             .flat_map(|offset| {

@@ -1,6 +1,7 @@
 mod debug_builder;
 mod symbolic_builder;
 
+use crate::debug_builder::{debug_constraints, LookupSet};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, Field};
@@ -9,34 +10,17 @@ use p3_matrix::{
     Matrix,
 };
 use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-use std::{
-    sync::mpsc::{channel, Sender},
-};
 use std::collections::BTreeMap;
-use crate::debug_builder::{debug_constraints, LookupSet};
+use std::sync::mpsc::{channel, Sender};
 
 struct Lookup<T> {
     data: Vec<T>,
     multiplicity: T,
 }
 
-impl<T> Lookup<T> {
-    #[inline]
-    fn new<D: Into<T>, I: IntoIterator<Item = D>, M: Into<T>>(data: I, multiplicity: M) -> Self {
-        Self {
-            data: data.into_iter().map(Into::into).collect(),
-            multiplicity: multiplicity.into(),
-        }
-    }
-}
-
 pub trait LookupAirBuilder<T> {
-    fn require<V: Into<T>, R: Into<T>>(
-        &mut self,
-        values: impl IntoIterator<Item = V>,
-        is_real: R,
-    );
-    fn provide<V: Into<T>,  M: Into<T>>(
+    fn require<V: Into<T>, R: Into<T>>(&mut self, values: impl IntoIterator<Item = V>, is_real: R);
+    fn provide<V: Into<T>, M: Into<T>>(
         &mut self,
         values: impl IntoIterator<Item = V>,
         multiplicity: M,
@@ -112,19 +96,19 @@ enum LookupKind {
 
 type Message<F> = (LookupKind, Lookup<F>);
 
-struct LookupBuilder<'a, F> {
+struct LookupBuilder<'a, 'b, F> {
     view: RowMajorMatrixView<'a, F>,
     is_first_row: F,
     is_transition: F,
     is_last_row: F,
-    sender: Sender<Message<F>>,
+    sender: &'b Sender<Message<F>>,
 }
 
-impl<'a, F: Field> LookupBuilder<'a, F> {
+impl<'a, 'b, F: Field> LookupBuilder<'a, 'b, F> {
     fn mk_views(
         matrix: &'a RowMajorMatrix<F>,
         roundtrip: &'a [F],
-        sender: &Sender<Message<F>>,
+        sender: &'b Sender<Message<F>>,
     ) -> Vec<Self> {
         let width = matrix.width;
         let height = matrix.height();
@@ -142,33 +126,42 @@ impl<'a, F: Field> LookupBuilder<'a, F> {
                     is_first_row: F::from_bool(r == 0),
                     is_transition: F::one() - is_last_row,
                     is_last_row,
-                    sender: sender.clone(),
+                    sender,
                 }
             })
             .collect()
     }
 }
 
-impl<'a, F> LookupAirBuilder<F> for LookupBuilder<'a, F> {
-    fn require<V: Into<F>, R: Into<F>>(&mut self, values: impl IntoIterator<Item=V>, is_real: R) {
+impl<'a, 'b, F> LookupAirBuilder<F> for LookupBuilder<'a, 'b, F> {
+    fn require<V: Into<F>, R: Into<F>>(&mut self, values: impl IntoIterator<Item = V>, is_real: R) {
         let data = values.into_iter().map(|v| v.into()).collect();
-        let lookup = Lookup{ data, multiplicity: is_real.into() };
+        let lookup = Lookup {
+            data,
+            multiplicity: is_real.into(),
+        };
         self.sender
             .send((LookupKind::Required, lookup))
             .expect("send error");
     }
 
-    fn provide<V: Into<F>, M: Into<F>>(&mut self, values: impl IntoIterator<Item=V>, multiplicity: M) {
+    fn provide<V: Into<F>, M: Into<F>>(
+        &mut self,
+        values: impl IntoIterator<Item = V>,
+        multiplicity: M,
+    ) {
         let data = values.into_iter().map(|v| v.into()).collect();
-        let lookup = Lookup{ data, multiplicity: multiplicity.into() };
+        let lookup = Lookup {
+            data,
+            multiplicity: multiplicity.into(),
+        };
         self.sender
             .send((LookupKind::Provided, lookup))
             .expect("send error");
     }
-
 }
 
-impl<'a, F: Field> AirBuilder for LookupBuilder<'a, F> {
+impl<'a, 'b, F: Field> AirBuilder for LookupBuilder<'a, 'b, F> {
     type F = F;
     type Expr = F;
     type Var = F;
@@ -201,10 +194,10 @@ fn extract_roundtrip<F: Clone + Sync + Send>(matrix: &RowMajorMatrix<F>) -> Vec<
     roundtrip
 }
 
-fn send_lookups<'a, F: Field, A: Air<LookupBuilder<'a, F>>>(
+fn send_lookups<'a, 'b, F: Field, A: Air<LookupBuilder<'a, 'b, F>>>(
     matrix: &'a RowMajorMatrix<F>,
     roundtrip: &'a [F],
-    sender: &Sender<Message<F>>,
+    sender: &'b Sender<Message<F>>,
     chip: &A,
 ) {
     LookupBuilder::mk_views(matrix, roundtrip, sender)
@@ -235,8 +228,8 @@ fn main() {
     let bytes_trace = RowMajorMatrix::new(bytes_vals.into_iter().flatten().collect(), 10);
 
     let mut lookups = LookupSet::default();
-    debug_constraints(MainChip{}, &main_trace, &mut  lookups);
-    debug_constraints(BytesChip{}, &bytes_trace, &mut  lookups);
+    debug_constraints(&MainChip, &main_trace, &mut lookups);
+    debug_constraints(&BytesChip, &bytes_trace, &mut lookups);
 
     for m in lookups.values() {
         assert!(m.is_zero())
