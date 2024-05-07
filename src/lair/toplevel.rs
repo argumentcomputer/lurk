@@ -54,55 +54,50 @@ type BindMap = BTreeMap<Var, (usize, usize)>;
 type UsedMap = BTreeMap<(Var, usize), bool>;
 
 #[inline]
-fn bind(
-    var: &Var,
-    idx: &mut usize,
-    block_ident: &usize,
-    bind_map: &mut BindMap,
-    used_map: &mut UsedMap,
-) {
-    bind_map.insert(*var, (*idx, *block_ident));
-    if let Some(used) = used_map.insert((*var, *block_ident), false) {
+fn bind(var: &Var, ctx: &mut CheckCtx<'_>) {
+    ctx.bind_map.insert(*var, (ctx.var_index, ctx.block_ident));
+    if let Some(used) = ctx.used_map.insert((*var, ctx.block_ident), false) {
         let ch = var.0.chars().next().unwrap();
         assert!(
             used || ch == '_',
             "Variable {var} not used. If intended, please prefix it with \"_\""
         );
     }
-    *idx += 1;
+    ctx.var_index += 1;
 }
 
 #[inline]
-fn use_var(var: &Var, bind_map: &mut BindMap, used_map: &mut UsedMap) -> usize {
-    let (idx, block_idx) = bind_map
+fn use_var(var: &Var, ctx: &mut CheckCtx<'_>) -> usize {
+    let (idx, block_idx) = ctx
+        .bind_map
         .get(var)
         .unwrap_or_else(|| panic!("Variable {var} is unbound."));
-    let used = used_map
+    let used = ctx
+        .used_map
         .get_mut(&(*var, *block_idx))
         .unwrap_or_else(|| panic!("Variable {var} is unbound."));
     *used = true;
     *idx
 }
 
-impl<F: Ord> Func<F> {
-    #[inline]
-    pub fn name(&self) -> Name {
-        self.name
+struct CheckCtx<'a> {
+    var_index: usize,
+    block_ident: usize,
+    return_ident: usize,
+    return_size: usize,
+    bind_map: BindMap,
+    used_map: UsedMap,
+    info_map: &'a Map<Name, FuncInfo>,
+}
+
+impl<'a> CheckCtx<'a> {
+    fn save_bind_state(&mut self) -> (usize, BindMap) {
+        (self.var_index, self.bind_map.clone())
     }
 
-    #[inline]
-    pub fn body(&self) -> &Block<F> {
-        &self.body
-    }
-
-    #[inline]
-    pub fn input_size(&self) -> usize {
-        self.input_size
-    }
-
-    #[inline]
-    pub fn output_size(&self) -> usize {
-        self.output_size
+    fn restore_bind_state(&mut self, (index, bind_map): (usize, BindMap)) {
+        self.var_index = index;
+        self.bind_map = bind_map;
     }
 }
 
@@ -110,24 +105,20 @@ impl<F: Clone + Ord> FuncE<F> {
     /// Checks if a named `Func` is correct, and produces an index-based `Func`
     /// by replacing names with indices
     fn check_and_link(&self, func_index: usize, info_map: &Map<Name, FuncInfo>) -> Func<F> {
-        let bind_map = &mut BTreeMap::new();
-        let used_map = &mut BTreeMap::new();
-        let mut idx = 0;
-        let return_ident = &mut 0;
-        let block_ident = &mut 0;
-        self.input_params.iter().for_each(|var| {
-            bind(var, &mut idx, block_ident, bind_map, used_map);
-        });
-        let body = self.body.check_and_link(
-            self.output_size,
-            idx,
-            return_ident,
-            block_ident,
-            bind_map,
-            used_map,
+        let ctx = &mut CheckCtx {
+            var_index: 0,
+            block_ident: 0,
+            return_ident: 0,
+            return_size: self.output_size,
+            bind_map: BTreeMap::new(),
+            used_map: BTreeMap::new(),
             info_map,
-        );
-        for ((var, _), used) in used_map.iter() {
+        };
+        self.input_params.iter().for_each(|var| {
+            bind(var, ctx);
+        });
+        let body = self.body.check_and_link(ctx);
+        for ((var, _), used) in ctx.used_map.iter() {
             let ch = var.0.chars().next().unwrap();
             assert!(
                 *used || ch == '_',
@@ -145,171 +136,113 @@ impl<F: Clone + Ord> FuncE<F> {
 }
 
 impl<F: Clone + Ord> BlockE<F> {
-    fn check_and_link(
-        &self,
-        return_size: usize,
-        mut idx: usize,
-        return_ident: &mut usize,
-        block_ident: &mut usize,
-        bind_map: &mut BindMap,
-        used_map: &mut UsedMap,
-        info_map: &Map<Name, FuncInfo>,
-    ) -> Block<F> {
+    fn check_and_link(&self, ctx: &mut CheckCtx<'_>) -> Block<F> {
         let mut ops = Vec::new();
         for op in self.ops.iter() {
             match op {
                 OpE::Const(tgt, f) => {
                     ops.push(Op::Const(f.clone()));
-                    bind(tgt, &mut idx, block_ident, bind_map, used_map);
+                    bind(tgt, ctx);
                 }
                 OpE::Add(tgt, a, b) => {
-                    let a = use_var(a, bind_map, used_map);
-                    let b = use_var(b, bind_map, used_map);
+                    let a = use_var(a, ctx);
+                    let b = use_var(b, ctx);
                     ops.push(Op::Add(a, b));
-                    bind(tgt, &mut idx, block_ident, bind_map, used_map);
+                    bind(tgt, ctx);
                 }
                 OpE::Mul(tgt, a, b) => {
-                    let a = use_var(a, bind_map, used_map);
-                    let b = use_var(b, bind_map, used_map);
+                    let a = use_var(a, ctx);
+                    let b = use_var(b, ctx);
                     ops.push(Op::Mul(a, b));
-                    bind(tgt, &mut idx, block_ident, bind_map, used_map);
+                    bind(tgt, ctx);
                 }
                 OpE::Sub(tgt, a, b) => {
-                    let a = use_var(a, bind_map, used_map);
-                    let b = use_var(b, bind_map, used_map);
+                    let a = use_var(a, ctx);
+                    let b = use_var(b, ctx);
                     ops.push(Op::Sub(a, b));
-                    bind(tgt, &mut idx, block_ident, bind_map, used_map);
+                    bind(tgt, ctx);
                 }
                 OpE::Div(tgt, a, b) => {
-                    let a = use_var(a, bind_map, used_map);
-                    let b = use_var(b, bind_map, used_map);
+                    let a = use_var(a, ctx);
+                    let b = use_var(b, ctx);
                     ops.push(Op::Inv(b));
-                    ops.push(Op::Mul(a, idx));
-                    idx += 1;
-                    bind(tgt, &mut idx, block_ident, bind_map, used_map);
+                    ops.push(Op::Mul(a, ctx.var_index));
+                    ctx.var_index += 1;
+                    bind(tgt, ctx);
                 }
                 OpE::Inv(tgt, a) => {
-                    let a = use_var(a, bind_map, used_map);
+                    let a = use_var(a, ctx);
                     ops.push(Op::Inv(a));
-                    bind(tgt, &mut idx, block_ident, bind_map, used_map);
+                    bind(tgt, ctx);
                 }
                 OpE::Call(out, name, inp) => {
-                    let name_idx = info_map
+                    let name_idx = ctx
+                        .info_map
                         .get_index_of(name)
                         .unwrap_or_else(|| panic!("Unknown function {name}"));
                     assert!(u32::try_from(name_idx).is_ok());
                     let FuncInfo {
                         input_size,
                         output_size,
-                    } = info_map.get_index(name_idx).unwrap().1;
+                    } = ctx.info_map.get_index(name_idx).unwrap().1;
                     assert_eq!(inp.len(), input_size);
                     assert_eq!(out.len(), output_size);
-                    let inp = inp.iter().map(|a| use_var(a, bind_map, used_map)).collect();
+                    let inp = inp.iter().map(|a| use_var(a, ctx)).collect();
                     ops.push(Op::Call(name_idx as u32, inp));
-                    out.iter()
-                        .for_each(|t| bind(t, &mut idx, block_ident, bind_map, used_map));
+                    out.iter().for_each(|t| bind(t, ctx));
                 }
             }
         }
         let ops = ops.into();
-        let ctrl = self.ctrl.check_and_link(
-            return_size,
-            idx,
-            return_ident,
-            block_ident,
-            bind_map,
-            used_map,
-            info_map,
-        );
+        let ctrl = self.ctrl.check_and_link(ctx);
         Block { ctrl, ops }
     }
 }
 
 impl<F: Clone + Ord> CtrlE<F> {
-    fn check_and_link(
-        &self,
-        return_size: usize,
-        idx: usize,
-        return_ident: &mut usize,
-        block_ident: &mut usize,
-        bind_map: &mut BindMap,
-        used_map: &mut UsedMap,
-        info_map: &Map<Name, FuncInfo>,
-    ) -> Ctrl<F> {
+    fn check_and_link(&self, ctx: &mut CheckCtx<'_>) -> Ctrl<F> {
         match &self {
             CtrlE::Return(return_vars) => {
                 assert_eq!(
                     return_vars.len(),
-                    return_size,
+                    ctx.return_size,
                     "Return size {} different from expected size of return {}",
                     return_vars.len(),
-                    return_size
+                    ctx.return_size
                 );
-                let return_vec = return_vars
-                    .iter()
-                    .map(|arg| use_var(arg, bind_map, used_map))
-                    .collect();
-                let ctrl = Ctrl::Return(*return_ident, return_vec);
-                *return_ident += 1;
+                let return_vec = return_vars.iter().map(|arg| use_var(arg, ctx)).collect();
+                let ctrl = Ctrl::Return(ctx.return_ident, return_vec);
+                ctx.return_ident += 1;
                 ctrl
             }
             CtrlE::Match(var, cases) => {
-                let t = use_var(var, bind_map, used_map);
+                let t = use_var(var, ctx);
                 let mut vec = Vec::with_capacity(cases.branches.size());
                 for (f, block) in cases.branches.iter() {
-                    let bind_map_clone = &mut bind_map.clone();
-                    *block_ident += 1;
-                    let block = block.check_and_link(
-                        return_size,
-                        idx,
-                        return_ident,
-                        block_ident,
-                        bind_map_clone,
-                        used_map,
-                        info_map,
-                    );
+                    ctx.block_ident += 1;
+                    let state = ctx.save_bind_state();
+                    let block = block.check_and_link(ctx);
+                    ctx.restore_bind_state(state);
                     vec.push((f.clone(), block))
                 }
                 let branches = Map::from_vec(vec);
                 let default = cases.default.as_ref().map(|def| {
-                    *block_ident += 1;
-                    def.check_and_link(
-                        return_size,
-                        idx,
-                        return_ident,
-                        block_ident,
-                        bind_map,
-                        used_map,
-                        info_map,
-                    )
-                    .into()
+                    ctx.block_ident += 1;
+                    def.check_and_link(ctx).into()
                 });
                 let cases = Cases { branches, default };
                 Ctrl::Match(t, cases)
             }
             CtrlE::If(b, true_block, false_block) => {
-                let b = use_var(b, bind_map, used_map);
-                let bind_map_clone = &mut bind_map.clone();
-                *block_ident += 1;
-                let true_block = true_block.check_and_link(
-                    return_size,
-                    idx,
-                    return_ident,
-                    block_ident,
-                    bind_map_clone,
-                    used_map,
-                    info_map,
-                );
-                *block_ident += 1;
-                let false_block = false_block.check_and_link(
-                    return_size,
-                    idx,
-                    return_ident,
-                    block_ident,
-                    bind_map,
-                    used_map,
-                    info_map,
-                );
+                let b = use_var(b, ctx);
+
+                ctx.block_ident += 1;
+                let state = ctx.save_bind_state();
+                let true_block = true_block.check_and_link(ctx);
+                ctx.restore_bind_state(state);
+
+                ctx.block_ident += 1;
+                let false_block = false_block.check_and_link(ctx);
                 Ctrl::If(b, true_block.into(), false_block.into())
             }
         }

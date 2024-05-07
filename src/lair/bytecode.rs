@@ -72,3 +72,25 @@ pub struct Func<F> {
     pub(crate) output_size: usize,
     pub(crate) body: Block<F>,
 }
+
+impl<F: Ord> Func<F> {
+    #[inline]
+    pub fn name(&self) -> Name {
+        self.name
+    }
+
+    #[inline]
+    pub fn body(&self) -> &Block<F> {
+        &self.body
+    }
+
+    #[inline]
+    pub fn input_size(&self) -> usize {
+        self.input_size
+    }
+
+    #[inline]
+    pub fn output_size(&self) -> usize {
+        self.output_size
+    }
+}
