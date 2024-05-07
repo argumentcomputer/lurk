@@ -1,3 +1,6 @@
+mod debug_builder;
+mod symbolic_builder;
+
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, Field};
@@ -7,9 +10,10 @@ use p3_matrix::{
 };
 use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::{
-    collections::BTreeMap,
     sync::mpsc::{channel, Sender},
 };
+use std::collections::BTreeMap;
+use crate::debug_builder::{debug_constraints, LookupSet};
 
 struct Lookup<T> {
     data: Vec<T>,
@@ -26,9 +30,17 @@ impl<T> Lookup<T> {
     }
 }
 
-trait LookupAirBuilder<T> {
-    fn require(&self, lookup: Lookup<T>);
-    fn provide(&self, lookup: Lookup<T>);
+pub trait LookupAirBuilder<T> {
+    fn require<V: Into<T>, R: Into<T>>(
+        &mut self,
+        values: impl IntoIterator<Item = V>,
+        is_real: R,
+    );
+    fn provide<V: Into<T>,  M: Into<T>>(
+        &mut self,
+        values: impl IntoIterator<Item = V>,
+        multiplicity: M,
+    );
 }
 
 /// Columns:
@@ -51,7 +63,7 @@ impl<AB: AirBuilder + LookupAirBuilder<AB::Expr>> Air<AB> for MainChip {
 
         builder.assert_bool(is_byte);
 
-        builder.require(Lookup::new([byte], is_byte));
+        builder.require([byte], is_byte);
     }
 }
 
@@ -89,7 +101,7 @@ impl<AB: AirBuilder + LookupAirBuilder<AB::Expr>> Air<AB> for BytesChip {
 
         builder.assert_eq(byte_expected, byte);
 
-        builder.provide(Lookup::new([byte], multiplicity));
+        builder.provide([byte], multiplicity);
     }
 }
 
@@ -138,16 +150,22 @@ impl<'a, F: Field> LookupBuilder<'a, F> {
 }
 
 impl<'a, F> LookupAirBuilder<F> for LookupBuilder<'a, F> {
-    fn require(&self, lookup: Lookup<F>) {
+    fn require<V: Into<F>, R: Into<F>>(&mut self, values: impl IntoIterator<Item=V>, is_real: R) {
+        let data = values.into_iter().map(|v| v.into()).collect();
+        let lookup = Lookup{ data, multiplicity: is_real.into() };
         self.sender
             .send((LookupKind::Required, lookup))
             .expect("send error");
     }
-    fn provide(&self, lookup: Lookup<F>) {
+
+    fn provide<V: Into<F>, M: Into<F>>(&mut self, values: impl IntoIterator<Item=V>, multiplicity: M) {
+        let data = values.into_iter().map(|v| v.into()).collect();
+        let lookup = Lookup{ data, multiplicity: multiplicity.into() };
         self.sender
             .send((LookupKind::Provided, lookup))
             .expect("send error");
     }
+
 }
 
 impl<'a, F: Field> AirBuilder for LookupBuilder<'a, F> {
@@ -215,6 +233,14 @@ fn main() {
         [f(255), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(1)],
     ];
     let bytes_trace = RowMajorMatrix::new(bytes_vals.into_iter().flatten().collect(), 10);
+
+    let mut lookups = LookupSet::default();
+    debug_constraints(MainChip{}, &main_trace, &mut  lookups);
+    debug_constraints(BytesChip{}, &bytes_trace, &mut  lookups);
+
+    for m in lookups.values() {
+        assert!(m.is_zero())
+    }
 
     let (sender, receiver) = channel();
 
