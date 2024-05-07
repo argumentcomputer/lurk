@@ -33,7 +33,6 @@ impl<F: Field> LookupAirBuilder<SymbolicExpression<F>> for SymbolicBuilder<F> {
 }
 
 impl<F: Field> SymbolicBuilder<F> {
-    /// Creates a new `InteractionBuilder` with the given width.
     #[allow(dead_code)]
     fn new(main_width: usize) -> Self {
         let main_values = [0, 1]

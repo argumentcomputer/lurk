@@ -1,9 +1,6 @@
 use p3_air::{Air, AirBuilder};
-use p3_field::{Field, PrimeField};
-use p3_matrix::dense::{RowMajorMatrix, RowMajorMatrixView};
-use p3_matrix::stack::VerticalPair;
-use p3_matrix::Matrix;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use p3_field::Field;
+use p3_matrix::{dense::RowMajorMatrixView, stack::VerticalPair, Matrix};
 
 use crate::{Interaction, LookupAirBuilder};
 
@@ -13,14 +10,14 @@ type LocalRowView<'a, F> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatri
 pub(crate) fn debug_constraints_collecting_interactions<
     F: Field,
     A: for<'a> Air<DebugConstraintBuilder<'a, F>>,
+    M: Matrix<F>,
 >(
     air: &A,
-    main: &RowMajorMatrix<F>,
+    main: &M,
 ) -> Vec<Interaction<F>> {
     let height = main.height();
 
     (0..height)
-        .into_par_iter()
         .flat_map(|row| {
             let row_next = (row + 1) % height;
 
@@ -32,12 +29,7 @@ pub(crate) fn debug_constraints_collecting_interactions<
                 RowMajorMatrixView::new_row(main_next),
             );
 
-            let mut builder = DebugConstraintBuilder {
-                main,
-                row,
-                height,
-                interactions: vec![],
-            };
+            let mut builder = DebugConstraintBuilder::new(main, row, height);
 
             air.eval(&mut builder);
 
@@ -47,14 +39,41 @@ pub(crate) fn debug_constraints_collecting_interactions<
 }
 
 /// A builder for debugging constraints.
-pub(crate) struct DebugConstraintBuilder<'a, F: Field> {
+pub(crate) struct DebugConstraintBuilder<'a, F> {
     main: LocalRowView<'a, F>,
     row: usize,
     height: usize,
     interactions: Vec<Interaction<F>>,
 }
 
-impl<'a, F: PrimeField> LookupAirBuilder<F> for DebugConstraintBuilder<'a, F> {
+impl<'a, F> DebugConstraintBuilder<'a, F> {
+    #[inline]
+    fn new(main: LocalRowView<'a, F>, row: usize, height: usize) -> Self {
+        Self {
+            main,
+            row,
+            height,
+            interactions: vec![],
+        }
+    }
+
+    #[inline]
+    fn debug_constraint(&self, x: F, y: F)
+    where
+        F: Field,
+    {
+        if x != y {
+            let backtrace = std::backtrace::Backtrace::force_capture();
+            eprintln!(
+                "constraint failed at row {}: {:?} != {:?}\n{}",
+                self.row, x, y, backtrace
+            );
+            panic!();
+        }
+    }
+}
+
+impl<'a, F: Field> LookupAirBuilder<F> for DebugConstraintBuilder<'a, F> {
     fn require<V: Into<F>, R: Into<F>>(&mut self, values: impl IntoIterator<Item = V>, is_real: R) {
         let is_real = is_real.into();
         self.assert_bool(is_real);
@@ -72,27 +91,7 @@ impl<'a, F: PrimeField> LookupAirBuilder<F> for DebugConstraintBuilder<'a, F> {
     }
 }
 
-impl<'a, F> DebugConstraintBuilder<'a, F>
-where
-    F: Field,
-{
-    #[inline]
-    fn debug_constraint(&self, row: usize, x: F, y: F) {
-        if x != y {
-            let backtrace = std::backtrace::Backtrace::force_capture();
-            eprintln!(
-                "constraint failed at row {}: {:?} != {:?}\n{}",
-                row, x, y, backtrace
-            );
-            panic!();
-        }
-    }
-}
-
-impl<'a, F> AirBuilder for DebugConstraintBuilder<'a, F>
-where
-    F: Field,
-{
+impl<'a, F: Field> AirBuilder for DebugConstraintBuilder<'a, F> {
     type F = F;
     type Expr = F;
     type Var = F;
@@ -119,15 +118,15 @@ where
     }
 
     fn assert_zero<I: Into<Self::Expr>>(&mut self, x: I) {
-        self.debug_constraint(self.row, x.into(), F::zero());
+        self.debug_constraint(x.into(), F::zero());
     }
 
     fn assert_one<I: Into<Self::Expr>>(&mut self, x: I) {
-        self.debug_constraint(self.row, x.into(), F::one());
+        self.debug_constraint(x.into(), F::one());
     }
 
     fn assert_eq<I1: Into<Self::Expr>, I2: Into<Self::Expr>>(&mut self, x: I1, y: I2) {
-        self.debug_constraint(self.row, x.into(), y.into());
+        self.debug_constraint(x.into(), y.into());
     }
 
     /// Assert that `x` is a boolean, i.e. either 0 or 1.
