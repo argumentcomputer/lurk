@@ -1,15 +1,21 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use thiserror::Error;
 
-use crate::loam::algebra::Algebra;
+use crate::loam::algebra::{Algebra, AlgebraError};
 use crate::loam::heading::{Heading, SimpleHeading};
 use crate::loam::tuple::{SimpleTuple, Tuple};
 use crate::loam::{Attribute, Type, Value};
+
+use super::schema::{LoamElement, LoamValue};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum RelationError {
     #[error("Duplicate Tuple")]
     DuplicateTuple,
+    #[error("Incompatible Sense")]
+    IncompatibleSense,
+    #[error("Incompatible Heading")]
+    IncompatibleHeading,
 }
 
 pub trait Relation<A: Attribute, T: Type, V: Value> {
@@ -36,6 +42,7 @@ pub struct SimpleRelation<A: Attribute, T: Type, V: Value> {
     pub(crate) heading: SimpleHeading<A, T, V>,
     pub(crate) tuples: BTreeMap<Vec<V>, SimpleTuple<A, T, V>>,
     pub(crate) key: Vec<A>,
+    pub(crate) is_negated: bool,
 }
 
 impl<A: Attribute, T: Type, V: Value> Relation<A, T, V> for SimpleRelation<A, T, V> {
@@ -73,8 +80,11 @@ impl<A: Attribute, T: Type, V: Value> Relation<A, T, V> for SimpleRelation<A, T,
             heading,
             tuples: Default::default(),
             key,
+            is_negated: false,
         }
     }
+
+    // This does not type-check the tuple itself. Tuple is assumed to conform to its own header.
     fn insert(
         &mut self,
         tuple: (impl Tuple<A, T, V> + Algebra<A, V>),
@@ -87,14 +97,92 @@ impl<A: Attribute, T: Type, V: Value> Relation<A, T, V> for SimpleRelation<A, T,
             .map(|attr| tuple.get(*attr).unwrap().clone())
             .collect::<Vec<_>>();
 
-        if let Some(found) = self.tuples.get(&k) {
-            if found != &simple_tuple {
+        self.insert_with_key(k, simple_tuple)?;
+
+        Ok(())
+    }
+}
+impl SimpleRelation<LoamElement, LoamElement, LoamValue<LoamElement>> {
+    fn make<I: IntoIterator<Item = Vec<(LoamElement, LoamValue<LoamElement>)>>>(
+        tuples: I,
+        key: Option<Vec<LoamElement>>,
+    ) -> Result<Self, RelationError> {
+        Self::new(tuples.into_iter().map(SimpleTuple::new), key)
+    }
+}
+impl<A: Attribute, T: Type, V: Value> SimpleRelation<A, T, V> {
+    fn insert_with_key(
+        &mut self,
+        key: Vec<V>,
+        tuple: SimpleTuple<A, T, V>,
+    ) -> Result<(), RelationError> {
+        if tuple.is_negated() != self.is_negated() {
+            return Err(RelationError::IncompatibleSense);
+        }
+        if tuple.attributes() != self.heading.attributes() {
+            return Err(RelationError::IncompatibleHeading);
+        }
+        for attr in tuple.attributes() {
+            if tuple.get_type(*attr) != self.heading.get_type(*attr) {
+                return Err(RelationError::IncompatibleHeading);
+            }
+        }
+
+        if let Some(found) = self.tuples.get(&key) {
+            if found != &tuple {
                 return Err(RelationError::DuplicateTuple);
             }
         }
-        let _ = self.tuples.insert(k.clone(), simple_tuple);
+        let _ = self.tuples.insert(key, tuple);
 
         Ok(())
+    }
+}
+
+impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> {
+    fn and(&self, other: &Self) -> Self {
+        todo!()
+    }
+    fn or(&self, other: &Self) -> Self {
+        if self.heading != other.heading || self.is_negated() != other.is_negated() {
+            // This can be implemented eventually.
+            unimplemented!("disjunction of non-congruent relations is unimplemented")
+        };
+
+        let (a, b) = if self.cardinality() <= other.cardinality() {
+            (self, other)
+        } else {
+            (other, self)
+        };
+
+        let mut result = b.clone();
+
+        for (k, tuple) in a.tuples.iter() {
+            result.insert(tuple.clone());
+        }
+
+        result
+    }
+    fn not(&self) -> Self {
+        todo!()
+    }
+    fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
+        todo!()
+    }
+    fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
+        todo!()
+    }
+    fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Result<Self, AlgebraError> {
+        todo!()
+    }
+    fn compose(&self, other: &Self) -> Self {
+        todo!()
+    }
+    fn is_negated(&self) -> bool {
+        self.is_negated
+    }
+    fn disjunction(&self) -> &Option<BTreeSet<BTreeMap<A, V>>> {
+        todo!()
     }
 }
 
@@ -123,6 +211,7 @@ mod test {
 
         let w1 = LoamValue::Wide([1, 2, 3, 4, 5, 6, 7, 8]);
         let w2 = LoamValue::Wide([10, 20, 30, 40, 50, 60, 70, 80]);
+        let w3 = LoamValue::Wide([100, 200, 300, 400, 500, 600, 700, 800]);
         let p1 = LoamValue::Ptr(9, 10);
         let p2 = LoamValue::Ptr(11, 12);
 
@@ -141,13 +230,17 @@ mod test {
         .unwrap();
         assert_eq!(Some(1), r3.cardinality());
 
-        let r4 = SimpleRelation::new(
-            [
-                SimpleTuple::new([(a1, w1), (a2, p1)]),
-                SimpleTuple::new([(a1, w1), (a2, p2)]),
-            ],
+        let r3a = SimpleRelation::make([vec![(a1, w1), (a2, p1)]], Some(vec![a1])).unwrap();
+        assert_eq!(r3, r3a);
+
+        let r4 = SimpleRelation::make(
+            [vec![(a1, w1), (a2, p1)], vec![(a1, w1), (a2, p2)]],
             Some(vec![a1]),
         );
         assert_eq!(Err(RelationError::DuplicateTuple), r4);
+
+        let r5 = SimpleRelation::make([vec![(a1, w2), (a2, p1)]], Some(vec![a1])).unwrap();
+        let r3_or_r5 = r3.or(&r5);
+        assert_eq!(Some(2), r3_or_r5.cardinality());
     }
 }
