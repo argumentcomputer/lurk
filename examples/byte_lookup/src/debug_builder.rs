@@ -55,7 +55,7 @@ impl<'a, F: PrimeField> LookupAirBuilder<F> for DebugConstraintBuilder<'a, F> {
     fn require<V: Into<F>, R: Into<F>>(&mut self, values: impl IntoIterator<Item = V>, is_real: R) {
         let is_real = is_real.into();
         self.assert_bool(is_real);
-        let data = values.into_iter().map(|v| v.into()).collect();
+        let data = values.into_iter().map(Into::into).collect();
 
         let m = self.lookups.entry(data).or_default();
         *m -= is_real;
@@ -66,7 +66,7 @@ impl<'a, F: PrimeField> LookupAirBuilder<F> for DebugConstraintBuilder<'a, F> {
         values: impl IntoIterator<Item = V>,
         multiplicity: M,
     ) {
-        let data = values.into_iter().map(|v| v.into()).collect();
+        let data = values.into_iter().map(Into::into).collect();
 
         let m = self.lookups.entry(data).or_default();
         *m += multiplicity.into()

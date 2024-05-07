@@ -28,7 +28,7 @@ impl<F: Field> LookupAirBuilder<SymbolicExpression<F>> for SymbolicBuilder<F> {
         values: impl IntoIterator<Item = V>,
         is_real: R,
     ) {
-        let values = values.into_iter().map(|v| v.into()).collect();
+        let values = values.into_iter().map(Into::into).collect();
         let kind = InteractionKind::Require(is_real.into());
         self.interactions.push(Interaction { values, kind })
     }
@@ -38,7 +38,7 @@ impl<F: Field> LookupAirBuilder<SymbolicExpression<F>> for SymbolicBuilder<F> {
         values: impl IntoIterator<Item = V>,
         multiplicity: M,
     ) {
-        let values = values.into_iter().map(|v| v.into()).collect();
+        let values = values.into_iter().map(Into::into).collect();
         let kind = InteractionKind::Provide(multiplicity.into());
         self.interactions.push(Interaction { values, kind })
     }

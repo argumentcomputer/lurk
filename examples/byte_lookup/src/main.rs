@@ -5,18 +5,7 @@ use crate::debug_builder::{debug_constraints, LookupSet};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, Field};
-use p3_matrix::{
-    dense::{RowMajorMatrix, RowMajorMatrixView},
-    Matrix,
-};
-use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-use std::collections::BTreeMap;
-use std::sync::mpsc::{channel, Sender};
-
-struct Lookup<T> {
-    data: Vec<T>,
-    multiplicity: T,
-}
+use p3_matrix::{dense::RowMajorMatrix, Matrix};
 
 pub trait LookupAirBuilder<T> {
     fn require<V: Into<T>, R: Into<T>>(&mut self, values: impl IntoIterator<Item = V>, is_real: R);
@@ -89,125 +78,16 @@ impl<AB: AirBuilder + LookupAirBuilder<AB::Expr>> Air<AB> for BytesChip {
     }
 }
 
-enum LookupKind {
-    Required,
-    Provided,
-}
-
-type Message<F> = (LookupKind, Lookup<F>);
-
-struct LookupBuilder<'a, 'b, F> {
-    view: RowMajorMatrixView<'a, F>,
-    is_first_row: F,
-    is_transition: F,
-    is_last_row: F,
-    sender: &'b Sender<Message<F>>,
-}
-
-impl<'a, 'b, F: Field> LookupBuilder<'a, 'b, F> {
-    fn mk_views(
-        matrix: &'a RowMajorMatrix<F>,
-        roundtrip: &'a [F],
-        sender: &'b Sender<Message<F>>,
-    ) -> Vec<Self> {
-        let width = matrix.width;
-        let height = matrix.height();
-        (0..height)
-            .into_par_iter()
-            .map(|r| {
-                let is_last_row = F::from_bool(r == height - 1);
-                let row_values = if is_last_row.is_one() {
-                    roundtrip
-                } else {
-                    &matrix.values[(r * width)..((r + 1) * width)]
-                };
-                Self {
-                    view: RowMajorMatrixView::new(row_values, width),
-                    is_first_row: F::from_bool(r == 0),
-                    is_transition: F::one() - is_last_row,
-                    is_last_row,
-                    sender,
-                }
-            })
-            .collect()
-    }
-}
-
-impl<'a, 'b, F> LookupAirBuilder<F> for LookupBuilder<'a, 'b, F> {
-    fn require<V: Into<F>, R: Into<F>>(&mut self, values: impl IntoIterator<Item = V>, is_real: R) {
-        let data = values.into_iter().map(|v| v.into()).collect();
-        let lookup = Lookup {
-            data,
-            multiplicity: is_real.into(),
-        };
-        self.sender
-            .send((LookupKind::Required, lookup))
-            .expect("send error");
-    }
-
-    fn provide<V: Into<F>, M: Into<F>>(
-        &mut self,
-        values: impl IntoIterator<Item = V>,
-        multiplicity: M,
-    ) {
-        let data = values.into_iter().map(|v| v.into()).collect();
-        let lookup = Lookup {
-            data,
-            multiplicity: multiplicity.into(),
-        };
-        self.sender
-            .send((LookupKind::Provided, lookup))
-            .expect("send error");
-    }
-}
-
-impl<'a, 'b, F: Field> AirBuilder for LookupBuilder<'a, 'b, F> {
-    type F = F;
-    type Expr = F;
-    type Var = F;
-    type M = RowMajorMatrixView<'a, F>;
-    fn main(&self) -> Self::M {
-        self.view
-    }
-    fn is_first_row(&self) -> Self::Expr {
-        self.is_first_row
-    }
-    fn is_last_row(&self) -> Self::Expr {
-        self.is_last_row
-    }
-    fn is_transition_window(&self, size: usize) -> Self::Expr {
-        if size == 2 {
-            self.is_transition
-        } else {
-            panic!("only supports a window size of 2")
-        }
-    }
-    fn assert_zero<I: Into<Self::Expr>>(&mut self, x: I) {
-        assert_eq!(x.into(), F::zero(), "constraints must evaluate to zero");
-    }
-}
-
-fn extract_roundtrip<F: Clone + Sync + Send>(matrix: &RowMajorMatrix<F>) -> Vec<F> {
-    let mut roundtrip = Vec::with_capacity(2 * matrix.width);
-    roundtrip.extend_from_slice(&matrix.row_slice(matrix.height() - 1));
-    roundtrip.extend_from_slice(&matrix.row_slice(0));
-    roundtrip
-}
-
-fn send_lookups<'a, 'b, F: Field, A: Air<LookupBuilder<'a, 'b, F>>>(
-    matrix: &'a RowMajorMatrix<F>,
-    roundtrip: &'a [F],
-    sender: &'b Sender<Message<F>>,
-    chip: &A,
-) {
-    LookupBuilder::mk_views(matrix, roundtrip, sender)
-        .par_iter_mut()
-        .for_each(|builder| chip.eval(builder));
+#[inline]
+fn mk_matrix<F: Send + Sync + Clone, const H: usize, const W: usize>(
+    data: [[F; W]; H],
+) -> RowMajorMatrix<F> {
+    RowMajorMatrix::new(data.into_iter().flatten().collect(), W)
 }
 
 fn main() {
     let f = BabyBear::from_canonical_u16;
-    let main_vals = [
+    let main_trace = mk_matrix([
         [f(0), f(1)],
         [f(0), f(0)],
         [f(4), f(1)],
@@ -216,16 +96,14 @@ fn main() {
         [f(5), f(1)],
         [f(255), f(1)],
         [f(256), f(0)],
-    ];
-    let main_trace = RowMajorMatrix::new(main_vals.into_iter().flatten().collect(), 2);
+    ]);
 
-    let bytes_vals = [
+    let bytes_trace = mk_matrix([
         [f(0), f(0), f(0), f(0), f(0), f(0), f(0), f(0), f(0), f(1)],
         [f(4), f(0), f(0), f(1), f(0), f(0), f(0), f(0), f(0), f(2)],
         [f(5), f(1), f(0), f(1), f(0), f(0), f(0), f(0), f(0), f(1)],
         [f(255), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(1)],
-    ];
-    let bytes_trace = RowMajorMatrix::new(bytes_vals.into_iter().flatten().collect(), 10);
+    ]);
 
     let mut lookups = LookupSet::default();
     debug_constraints(&MainChip, &main_trace, &mut lookups);
@@ -234,34 +112,4 @@ fn main() {
     for m in lookups.values() {
         assert!(m.is_zero())
     }
-
-    let (sender, receiver) = channel();
-
-    let main_roundtrip = extract_roundtrip(&main_trace);
-    send_lookups(&main_trace, &main_roundtrip, &sender, &MainChip);
-
-    let bytes_roundtrip = extract_roundtrip(&bytes_trace);
-    send_lookups(&bytes_trace, &bytes_roundtrip, &sender, &BytesChip);
-
-    let mut required = BTreeMap::default();
-    let mut provided = BTreeMap::default();
-
-    for (kind, Lookup { data, multiplicity }) in receiver.try_iter() {
-        let collected = match kind {
-            LookupKind::Required => &mut required,
-            LookupKind::Provided => &mut provided,
-        };
-        if multiplicity.is_zero() {
-            continue;
-        }
-        if let Some(mult) = collected.get_mut(&data) {
-            *mult += multiplicity;
-        } else {
-            collected.insert(data, multiplicity);
-        }
-    }
-
-    println!("Required: {:?}", required);
-    println!("Provided: {:?}", provided);
-    assert_eq!(required, provided);
 }
