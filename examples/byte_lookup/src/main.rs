@@ -1,13 +1,65 @@
 mod debug_builder;
 mod symbolic_builder;
 
-use crate::debug_builder::{debug_constraints, LookupSet};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, Field};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
+use std::collections::BTreeMap;
 
-pub trait LookupAirBuilder<T> {
+use crate::debug_builder::debug_constraints_collecting_interactions;
+
+#[derive(Clone)]
+enum InteractionKind<T> {
+    Require(T),
+    Provide(T),
+}
+
+#[derive(Clone)]
+struct Interaction<T> {
+    values: Vec<T>,
+    kind: InteractionKind<T>,
+}
+
+impl<T> Interaction<T> {
+    fn required<V: Into<T>, R: Into<T>>(values: impl IntoIterator<Item = V>, is_real: R) -> Self {
+        Self {
+            values: values.into_iter().map(Into::into).collect(),
+            kind: InteractionKind::Require(is_real.into()),
+        }
+    }
+
+    fn provided<V: Into<T>, M: Into<T>>(
+        values: impl IntoIterator<Item = V>,
+        multiplicity: M,
+    ) -> Self {
+        Self {
+            values: values.into_iter().map(Into::into).collect(),
+            kind: InteractionKind::Provide(multiplicity.into()),
+        }
+    }
+
+    fn assert_zero_sum(interactions_vecs: &[&[Interaction<T>]])
+    where
+        T: Field + Ord,
+    {
+        let mut map: BTreeMap<_, T> = BTreeMap::default();
+        for interactions in interactions_vecs {
+            for Interaction { values, kind } in interactions.iter() {
+                let entry = map.entry(values).or_default();
+                match kind {
+                    InteractionKind::Require(f) => *entry += *f,
+                    InteractionKind::Provide(f) => *entry -= *f,
+                }
+            }
+        }
+        for value in map.into_values() {
+            assert_eq!(value, T::zero())
+        }
+    }
+}
+
+trait LookupAirBuilder<T> {
     fn require<V: Into<T>, R: Into<T>>(&mut self, values: impl IntoIterator<Item = V>, is_real: R);
     fn provide<V: Into<T>, M: Into<T>>(
         &mut self,
@@ -105,11 +157,8 @@ fn main() {
         [f(255), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(1)],
     ]);
 
-    let mut lookups = LookupSet::default();
-    debug_constraints(&MainChip, &main_trace, &mut lookups);
-    debug_constraints(&BytesChip, &bytes_trace, &mut lookups);
+    let main_interactions = debug_constraints_collecting_interactions(&MainChip, &main_trace);
+    let bytes_interactions = debug_constraints_collecting_interactions(&BytesChip, &bytes_trace);
 
-    for m in lookups.values() {
-        assert!(m.is_zero())
-    }
+    Interaction::assert_zero_sum(&[&main_interactions, &bytes_interactions]);
 }

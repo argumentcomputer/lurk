@@ -1,19 +1,9 @@
-use crate::LookupAirBuilder;
 use p3_air::AirBuilder;
 use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_uni_stark::{Entry, SymbolicExpression, SymbolicVariable};
 
-enum InteractionKind<T> {
-    Require(T),
-    Provide(T),
-}
-
-#[allow(dead_code)]
-struct Interaction<T> {
-    values: Vec<T>,
-    kind: InteractionKind<T>,
-}
+use crate::{Interaction, LookupAirBuilder};
 
 /// A builder for the lookup table interactions.
 struct SymbolicBuilder<F: Field> {
@@ -28,9 +18,8 @@ impl<F: Field> LookupAirBuilder<SymbolicExpression<F>> for SymbolicBuilder<F> {
         values: impl IntoIterator<Item = V>,
         is_real: R,
     ) {
-        let values = values.into_iter().map(Into::into).collect();
-        let kind = InteractionKind::Require(is_real.into());
-        self.interactions.push(Interaction { values, kind })
+        self.interactions
+            .push(Interaction::required(values, is_real))
     }
 
     fn provide<V: Into<SymbolicExpression<F>>, M: Into<SymbolicExpression<F>>>(
@@ -38,9 +27,8 @@ impl<F: Field> LookupAirBuilder<SymbolicExpression<F>> for SymbolicBuilder<F> {
         values: impl IntoIterator<Item = V>,
         multiplicity: M,
     ) {
-        let values = values.into_iter().map(Into::into).collect();
-        let kind = InteractionKind::Provide(multiplicity.into());
-        self.interactions.push(Interaction { values, kind })
+        self.interactions
+            .push(Interaction::provided(values, multiplicity))
     }
 }
 

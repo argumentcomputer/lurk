@@ -1,46 +1,49 @@
-use crate::LookupAirBuilder;
 use p3_air::{Air, AirBuilder};
 use p3_field::{Field, PrimeField};
 use p3_matrix::dense::{RowMajorMatrix, RowMajorMatrixView};
 use p3_matrix::stack::VerticalPair;
 use p3_matrix::Matrix;
-use std::collections::BTreeMap;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-pub(crate) type LookupSet<F> = BTreeMap<Vec<F>, F>;
+use crate::{Interaction, LookupAirBuilder};
 
 type LocalRowView<'a, F> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatrixView<'a, F>>;
 
 /// Check the `air` constraints over a given `main` trace.
-pub(crate) fn debug_constraints<F: Field, A>(
+pub(crate) fn debug_constraints_collecting_interactions<
+    F: Field,
+    A: for<'a> Air<DebugConstraintBuilder<'a, F>>,
+>(
     air: &A,
     main: &RowMajorMatrix<F>,
-    lookups: &mut LookupSet<F>,
-) where
-    A: for<'a> Air<DebugConstraintBuilder<'a, F>>,
-{
+) -> Vec<Interaction<F>> {
     let height = main.height();
 
-    // Check that constraints are satisfied.
-    for row in 0..height {
-        let row_next = (row + 1) % height;
+    (0..height)
+        .into_par_iter()
+        .flat_map(|row| {
+            let row_next = (row + 1) % height;
 
-        let main_local = &main.row_slice(row);
-        let main_next = &main.row_slice(row_next);
+            let main_local = &main.row_slice(row);
+            let main_next = &main.row_slice(row_next);
 
-        let main = VerticalPair::new(
-            RowMajorMatrixView::new_row(main_local),
-            RowMajorMatrixView::new_row(main_next),
-        );
+            let main = VerticalPair::new(
+                RowMajorMatrixView::new_row(main_local),
+                RowMajorMatrixView::new_row(main_next),
+            );
 
-        let mut builder = DebugConstraintBuilder {
-            main,
-            row,
-            height,
-            lookups,
-        };
+            let mut builder = DebugConstraintBuilder {
+                main,
+                row,
+                height,
+                interactions: vec![],
+            };
 
-        air.eval(&mut builder);
-    }
+            air.eval(&mut builder);
+
+            builder.interactions
+        })
+        .collect()
 }
 
 /// A builder for debugging constraints.
@@ -48,17 +51,15 @@ pub(crate) struct DebugConstraintBuilder<'a, F: Field> {
     main: LocalRowView<'a, F>,
     row: usize,
     height: usize,
-    lookups: &'a mut LookupSet<F>,
+    interactions: Vec<Interaction<F>>,
 }
 
 impl<'a, F: PrimeField> LookupAirBuilder<F> for DebugConstraintBuilder<'a, F> {
     fn require<V: Into<F>, R: Into<F>>(&mut self, values: impl IntoIterator<Item = V>, is_real: R) {
         let is_real = is_real.into();
         self.assert_bool(is_real);
-        let data = values.into_iter().map(Into::into).collect();
-
-        let m = self.lookups.entry(data).or_default();
-        *m -= is_real;
+        self.interactions
+            .push(Interaction::required(values, is_real));
     }
 
     fn provide<V: Into<F>, M: Into<F>>(
@@ -66,10 +67,8 @@ impl<'a, F: PrimeField> LookupAirBuilder<F> for DebugConstraintBuilder<'a, F> {
         values: impl IntoIterator<Item = V>,
         multiplicity: M,
     ) {
-        let data = values.into_iter().map(Into::into).collect();
-
-        let m = self.lookups.entry(data).or_default();
-        *m += multiplicity.into()
+        self.interactions
+            .push(Interaction::provided(values, multiplicity))
     }
 }
 
