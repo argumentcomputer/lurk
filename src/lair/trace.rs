@@ -1,6 +1,7 @@
 use p3_air::BaseAir;
 use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrix;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
@@ -146,20 +147,25 @@ impl<'a, F: Field + Ord> FuncChip<'a, F> {
     pub fn generate_trace(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let query_map = &queries.record()[self.func.index];
         let width = self.width();
-        let height = query_map.size().next_power_of_two().max(4);
-        let mut rows = vec![F::zero(); height * width];
-        for (i, (args, res)) in query_map.iter().enumerate() {
-            if res.mult == 0 {
-                continue;
-            }
-            let start = i * width;
-            let index = &mut ColumnIndex::default();
-            let row = &mut rows[start..start + width];
-            let slice = &mut ColumnMutSlice::from_slice(row, self.width);
-            slice.push_aux(index, F::from_canonical_u32(res.mult));
-            self.func.populate_row(args, index, slice, queries);
-        }
-        RowMajorMatrix::new(rows, self.width())
+        let mut values: Vec<F> = query_map
+            .0
+            .par_iter()
+            .flat_map(|(args, res)| {
+                if res.mult != 0 {
+                    let index = &mut ColumnIndex::default();
+                    let mut row = vec![F::zero(); width];
+                    let slice = &mut ColumnMutSlice::from_slice(&mut row, self.width);
+                    slice.push_aux(index, F::from_canonical_u32(res.mult));
+                    self.func.populate_row(args, index, slice, queries);
+                    row
+                } else {
+                    vec![F::zero(); width]
+                }
+            })
+            .collect();
+        let target_height = query_map.size().next_power_of_two().max(4);
+        values.resize(width * target_height, F::zero());
+        RowMajorMatrix::new(values, self.width())
     }
 }
 
