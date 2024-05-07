@@ -1,0 +1,15 @@
+[package]
+name = "byte_lookup"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+p3-air = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-baby-bear = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-field = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-matrix = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-uni-stark = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+rayon = "1.10.0"
+wp1-core = { git = "ssh://git@github.com/wormhole-foundation/wp1.git", branch = "dev" }
