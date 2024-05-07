@@ -14,8 +14,6 @@ pub enum Op<F> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Block<F> {
-    // a unique block identifier
-    pub(crate) ident: usize,
     pub(crate) ops: List<Op<F>>,
     pub(crate) ctrl: Ctrl<F>,
 }
@@ -24,7 +22,8 @@ pub struct Block<F> {
 pub enum Ctrl<F> {
     Match(usize, Cases<F>),
     If(usize, Box<Block<F>>, Box<Block<F>>),
-    Return(List<usize>),
+    // a unique return identifier, for selectors
+    Return(usize, List<usize>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

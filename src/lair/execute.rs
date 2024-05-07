@@ -136,7 +136,7 @@ impl<F: Field + Ord> Ctrl<F> {
         record: &mut QueryRecord<F>,
     ) -> List<F> {
         match self {
-            Ctrl::Return(vars) => vars.iter().map(|var| stack_frame[*var]).collect(),
+            Ctrl::Return(_, vars) => vars.iter().map(|var| stack_frame[*var]).collect(),
             Ctrl::If(b, t, f) => {
                 let b = stack_frame.get(*b).unwrap();
                 if b.is_zero() {
