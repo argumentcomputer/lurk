@@ -18,7 +18,7 @@ pub enum RelationError {
     IncompatibleHeading,
 }
 
-pub trait Relation<A: Attribute, T: Type, V: Value> {
+pub trait Relation<A: Attribute, T: Type, V: Value>: Heading<A, T, V> + Algebra<A, V> {
     // Infinite or unmaterialized relations may lack a reportable cardinality.
     fn cardinality(&self) -> Option<usize>;
     fn key(&self) -> Vec<A>;
@@ -119,11 +119,11 @@ impl<A: Attribute, T: Type, V: Value> SimpleRelation<A, T, V> {
         if tuple.is_negated() != self.is_negated() {
             return Err(RelationError::IncompatibleSense);
         }
-        if tuple.attributes() != self.heading.attributes() {
+        if tuple.attributes() != self.attributes() {
             return Err(RelationError::IncompatibleHeading);
         }
         for attr in tuple.attributes() {
-            if tuple.get_type(*attr) != self.heading.get_type(*attr) {
+            if tuple.get_type(*attr) != self.get_type(*attr) {
                 return Err(RelationError::IncompatibleHeading);
             }
         }
@@ -136,6 +136,29 @@ impl<A: Attribute, T: Type, V: Value> SimpleRelation<A, T, V> {
         let _ = self.tuples.insert(key, tuple);
 
         Ok(())
+    }
+}
+
+impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleRelation<A, T, V> {
+    fn attributes(&self) -> BTreeSet<&A> {
+        self.heading.attributes()
+    }
+    fn get_type(&self, attr: A) -> Option<&T> {
+        self.heading.get_type(attr)
+    }
+    fn attribute_types(&self) -> &BTreeMap<A, T> {
+        self.heading.attribute_types()
+    }
+    fn arity(&self) -> usize {
+        let arity = self.heading.arity();
+        arity
+    }
+    fn from_tuple(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self {
+        let heading = SimpleHeading::from_tuple(tuple);
+        let mut relation = Self::empty(heading, None);
+
+        relation.insert(tuple.clone());
+        relation
     }
 }
 
@@ -229,6 +252,11 @@ mod test {
         )
         .unwrap();
         assert_eq!(Some(1), r3.cardinality());
+        assert_eq!(2, r3.attributes().len());
+
+        // Heading
+        assert_eq!(wt, *r3.get_type(a1).unwrap());
+        assert_eq!(pt, *r3.get_type(a2).unwrap());
 
         let r3a = SimpleRelation::make([vec![(a1, w1), (a2, p1)]], Some(vec![a1])).unwrap();
         assert_eq!(r3, r3a);

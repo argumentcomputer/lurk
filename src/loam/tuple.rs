@@ -5,7 +5,7 @@ use crate::loam::heading::{Heading, SimpleHeading};
 use crate::loam::schema::{LoamElement, LoamValue};
 use crate::loam::{Attribute, Type, Value};
 
-pub trait Tuple<A: Attribute, T: Type, V: Value>: Heading<A, T, V> {
+pub trait Tuple<A: Attribute, T: Type, V: Value>: Heading<A, T, V> + Algebra<A, V> {
     fn get(&self, attr: A) -> Option<&V>;
 }
 
