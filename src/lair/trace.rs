@@ -1,7 +1,10 @@
 use p3_air::BaseAir;
 use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrix;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::{
+    iter::{IndexedParallelIterator, ParallelIterator},
+    slice::ParallelSliceMut,
+};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
@@ -147,25 +150,36 @@ impl<'a, F: Field + Ord> FuncChip<'a, F> {
     pub fn generate_trace(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let query_map = &queries.record()[self.func.index];
         let width = self.width();
-        let mut values: Vec<F> = query_map
-            .0
-            .par_iter()
-            .flat_map(|(args, res)| {
-                if res.mult != 0 {
-                    let index = &mut ColumnIndex::default();
-                    let mut row = vec![F::zero(); width];
-                    let slice = &mut ColumnMutSlice::from_slice(&mut row, self.width);
-                    slice.push_aux(index, F::from_canonical_u32(res.mult));
-                    self.func.populate_row(args, index, slice, queries);
-                    row
-                } else {
-                    vec![F::zero(); width]
-                }
-            })
-            .collect();
-        let target_height = query_map.size().next_power_of_two().max(4);
-        values.resize(width * target_height, F::zero());
-        RowMajorMatrix::new(values, self.width())
+        let height = query_map.size().next_power_of_two().max(4);
+        let mut rows = vec![F::zero(); height * width];
+        for (i, (args, res)) in query_map.iter().enumerate() {
+            let start = i * width;
+            let index = &mut ColumnIndex::default();
+            let row = &mut rows[start..start + width];
+            let slice = &mut ColumnMutSlice::from_slice(row, self.width);
+            slice.push_aux(index, F::from_canonical_u32(res.mult));
+            self.func.populate_row(args, index, slice, queries);
+        }
+        RowMajorMatrix::new(rows, width)
+    }
+
+    pub fn generate_trace_parallel(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
+        let func_queries = Vec::from_iter(&queries.record()[self.func.index].0);
+        let width = self.width();
+        let height = func_queries.len().next_power_of_two().max(4);
+        let mut rows = vec![F::zero(); height * width];
+        let non_dummies = &mut rows[0..func_queries.len() * width];
+        non_dummies
+            .par_chunks_mut(width)
+            .enumerate()
+            .for_each(|(i, row)| {
+                let (args, res) = func_queries[i];
+                let index = &mut ColumnIndex::default();
+                let slice = &mut ColumnMutSlice::from_slice(row, self.width);
+                slice.push_aux(index, F::from_canonical_u32(res.mult));
+                self.func.populate_row(args, index, slice, queries);
+            });
+        RowMajorMatrix::new(rows, width)
     }
 }
 
@@ -453,9 +467,9 @@ mod tests {
 
         let args = [F::from_canonical_u32(5)].into();
         queries.record_event(&toplevel, factorial_chip.func.index, args);
-        let trace = factorial_chip.generate_trace(queries);
+        let trace = factorial_chip.generate_trace_parallel(queries);
         let expected_trace = [
-            // in order: n, output, mult, 1/n, fact(n-1), n*fact(n-1), and selectors
+            // in order: n, output, mult, fact(n-1), n*fact(n-1), 1/n, and selectors
             0, 1, 1, 0, 0, 0, 0, 1, //
             1, 1, 1, 1, 1, 1, 1, 0, //
             2, 2, 1, 1, 2, 1006632961, 1, 0, //
@@ -473,7 +487,7 @@ mod tests {
 
         let args = [F::from_canonical_u32(7)].into();
         queries.record_event(&toplevel, fib_chip.func.index, args);
-        let trace = fib_chip.generate_trace(queries);
+        let trace = fib_chip.generate_trace_parallel(queries);
 
         let expected_trace = [
             // in order: n, output, mult, fib(n-1), fib(n-2), 1/n, 1/(n-1), and selectors
@@ -532,7 +546,7 @@ mod tests {
         let args = [F::from_canonical_u32(5), F::from_canonical_u32(2)].into();
         let queries = &mut QueryRecord::new(&toplevel);
         queries.record_event(&toplevel, test_chip.func.index, args);
-        let trace = test_chip.generate_trace(queries);
+        let trace = test_chip.generate_trace_parallel(queries);
         let expected_trace = [
             // The big numbers in the trace are the inverted elements, the witnesses of
             // the inequalities that appear on the default case. Note that the branch
@@ -601,7 +615,7 @@ mod tests {
         queries.record_event(&toplevel, test_chip.func.index, one);
         queries.record_event(&toplevel, test_chip.func.index, two);
         queries.record_event(&toplevel, test_chip.func.index, three);
-        let trace = test_chip.generate_trace(queries);
+        let trace = test_chip.generate_trace_parallel(queries);
 
         let expected_trace = [
             // two inputs, one output, multiplicity, selectors

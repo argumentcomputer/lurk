@@ -247,7 +247,7 @@ mod tests {
         let factorial_width = factorial_chip.width();
         let factorial_trace = RowMajorMatrix::new(
             [
-                // in order: n, output, mult, 1/n, fact(n-1), n*fact(n-1), and selectors
+                // in order: n, output, mult, fact(n-1), n*fact(n-1), 1/n, and selectors
                 0, 1, 1, 0, 0, 0, 0, 1, //
                 1, 1, 1, 1, 1, 1, 1, 0, //
                 2, 2, 1, 1, 2, 1006632961, 1, 0, //
