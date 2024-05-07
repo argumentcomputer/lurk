@@ -5,12 +5,12 @@ use crate::loam::heading::{Heading, SimpleHeading};
 use crate::loam::schema::{LoamElement, LoamValue};
 use crate::loam::{Attribute, Type, Value};
 
-pub trait Tuple<A, T, V> {
+pub trait Tuple<A: Attribute, T: Type, V>: Heading<A, T> {
     fn get(&self, attr: A) -> Option<&V>;
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct SimpleTuple<A, T, V> {
+#[derive(Clone, Debug, Default, Eq, Ord, PartialOrd, Hash)]
+pub struct SimpleTuple<A: Attribute, T: Type, V: Value> {
     pub(crate) heading: SimpleHeading<A, T>,
     pub(crate) values: BTreeMap<A, V>,
 }
@@ -52,6 +52,14 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T> for SimpleTuple<A, T, V> {
         assert_eq!(arity, self.values.len());
         arity
     }
+    // fn from_tuple(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self {
+    //     let mut heading = SimpleHeading::from_tuple(tuple);
+
+    //     Self {
+    //         heading,
+    //         values: todo!(),
+    //     }
+    // }
 }
 
 impl<A: Attribute, T: Type, V: Value> PartialEq for SimpleTuple<A, T, V> {

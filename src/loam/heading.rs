@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 
 use crate::loam::algebra::{Algebra, AlgebraError};
+use crate::loam::tuple::Tuple;
 use crate::loam::{Attribute, Type};
 
 pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
@@ -26,11 +27,12 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
             other.common_attributes(self)
         }
     }
+    //    fn from_tuple<V>(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self;
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct SimpleHeading<A, T> {
-    attributes: BTreeMap<A, T>,
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialOrd)]
+pub struct SimpleHeading<A: Attribute, T: Type> {
+    pub(crate) attributes: BTreeMap<A, T>,
     is_negated: bool,
     disjunction: Option<BTreeSet<BTreeMap<A, T>>>,
 }
@@ -42,6 +44,18 @@ impl<A: Attribute, T: Type> SimpleHeading<A, T> {
             is_negated,
             disjunction: None,
         }
+    }
+
+    pub fn from_tuple<V>(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self {
+        let mut heading = SimpleHeading::new(tuple.is_negated());
+
+        for attr in tuple.attributes().iter() {
+            if let Some(t) = tuple.get_type(**attr) {
+                heading.attributes.insert(**attr, *t);
+            }
+        }
+
+        heading
     }
 
     pub(crate) fn add_attribute(&mut self, attr: A, typ: T) {
