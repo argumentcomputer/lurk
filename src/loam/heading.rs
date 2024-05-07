@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
+use std::marker::PhantomData;
 
 use crate::loam::algebra::{Algebra, AlgebraError};
 use crate::loam::tuple::Tuple;
-use crate::loam::{Attribute, Type};
+use crate::loam::{Attribute, Type, Value};
 
-pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
+pub trait Heading<A: Attribute, T: Type, V: Value>: Debug + Sized + Clone {
     fn attributes(&self) -> BTreeSet<&A>;
     fn get_type(&self, attr: A) -> Option<&T>;
     fn attribute_types(&self) -> &BTreeMap<A, T>;
@@ -27,42 +28,32 @@ pub trait Heading<A: Attribute, T: Type>: Debug + Sized + Clone {
             other.common_attributes(self)
         }
     }
-    //    fn from_tuple<V>(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self;
+    fn from_tuple(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self;
 }
 
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialOrd)]
-pub struct SimpleHeading<A: Attribute, T: Type> {
+pub struct SimpleHeading<A: Attribute, T: Type, V: Value> {
     pub(crate) attributes: BTreeMap<A, T>,
     is_negated: bool,
     disjunction: Option<BTreeSet<BTreeMap<A, T>>>,
+    _p: PhantomData<V>,
 }
 
-impl<A: Attribute, T: Type> SimpleHeading<A, T> {
+impl<A: Attribute, T: Type, V: Value> SimpleHeading<A, T, V> {
     pub fn new(is_negated: bool) -> Self {
         SimpleHeading {
             attributes: Default::default(),
             is_negated,
             disjunction: None,
+            _p: Default::default(),
         }
-    }
-
-    pub fn from_tuple<V>(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self {
-        let mut heading = SimpleHeading::new(tuple.is_negated());
-
-        for attr in tuple.attributes().iter() {
-            if let Some(t) = tuple.get_type(**attr) {
-                heading.attributes.insert(**attr, *t);
-            }
-        }
-
-        heading
     }
 
     pub(crate) fn add_attribute(&mut self, attr: A, typ: T) {
         self.attributes.insert(attr, typ);
     }
 }
-impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
+impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleHeading<A, T, V> {
     // TODO: implement iterator
     fn attributes(&self) -> BTreeSet<&A> {
         // Make this OnceOnly, after heading is frozen.
@@ -83,9 +74,20 @@ impl<A: Attribute, T: Type> Heading<A, T> for SimpleHeading<A, T> {
     fn arity(&self) -> usize {
         self.attributes.len()
     }
+    fn from_tuple(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self {
+        let mut heading = SimpleHeading::new(tuple.is_negated());
+
+        for attr in tuple.attributes().iter() {
+            if let Some(t) = tuple.get_type(**attr) {
+                heading.attributes.insert(**attr, *t);
+            }
+        }
+
+        heading
+    }
 }
 
-impl<A: Attribute, T: Type> PartialEq for SimpleHeading<A, T> {
+impl<A: Attribute, T: Type, V: Value> PartialEq for SimpleHeading<A, T, V> {
     fn eq(&self, other: &Self) -> bool {
         if self.arity() != other.arity() {
             return false;
@@ -108,12 +110,13 @@ impl<A: Attribute, T: Type> PartialEq for SimpleHeading<A, T> {
     }
 }
 
-impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
+impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for SimpleHeading<A, T, V> {
     fn not(&self) -> Self {
         Self {
             attributes: self.attributes.clone(),
             is_negated: !self.is_negated,
             disjunction: self.disjunction.clone(),
+            _p: Default::default(),
         }
     }
     fn and(&self, other: &Self) -> Self {
@@ -198,6 +201,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
                 attributes: self.attributes.clone(),
                 is_negated: self.is_negated(),
                 disjunction: Some(disjunction),
+                _p: Default::default(),
             }
         }
     }
@@ -226,6 +230,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
             attributes,
             is_negated: self.is_negated(),
             disjunction,
+            _p: Default::default(),
         }
     }
     fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
@@ -252,6 +257,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
             attributes,
             is_negated: self.is_negated(),
             disjunction,
+            _p: Default::default(),
         }
     }
     fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Result<Self, AlgebraError> {
@@ -264,7 +270,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
         }
 
         if attributes.len() != self.attributes.len() {
-            Err(AlgebraError::DuplicatedAttribute)?;
+            Err(AlgebraError::DuplicateAttribute)?;
         }
 
         let disjunction = self.disjunction.as_ref().and_then(|disj| {
@@ -288,6 +294,7 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
             attributes,
             is_negated: self.is_negated(),
             disjunction,
+            _p: Default::default(),
         })
     }
     fn compose(&self, other: &Self) -> Self {
@@ -307,31 +314,34 @@ impl<A: Attribute, T: Type> Algebra<A, T> for SimpleHeading<A, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::loam::{Attr, Typ};
+    use crate::loam::{Attr, BubbaBear, Typ};
+    //    use crate::schema::{LoamElement, LoamValue};
+
+    type V = BubbaBear;
 
     #[test]
     fn test_heading() {
-        let heading0 = SimpleHeading::<Attr, Typ>::default();
+        let heading0 = SimpleHeading::<Attr, Typ, V>::default();
         assert_eq!(0, heading0.arity());
 
-        let mut heading1 = SimpleHeading::<Attr, Typ>::default();
+        let mut heading1 = SimpleHeading::<Attr, Typ, V>::default();
         heading1.add_attribute(1, 100);
 
-        let mut heading2 = SimpleHeading::<Attr, Typ>::default();
+        let mut heading2 = SimpleHeading::<Attr, Typ, V>::default();
         heading2.add_attribute(2, 200);
 
-        let mut heading3 = SimpleHeading::<Attr, Typ>::default();
+        let mut heading3 = SimpleHeading::<Attr, Typ, V>::default();
         heading3.add_attribute(3, 300);
 
-        let mut heading1_2 = SimpleHeading::<Attr, Typ>::default();
+        let mut heading1_2 = SimpleHeading::<Attr, Typ, V>::default();
         heading1_2.add_attribute(1, 100);
         heading1_2.add_attribute(2, 200);
 
-        let mut heading1x_3 = SimpleHeading::<Attr, Typ>::default();
+        let mut heading1x_3 = SimpleHeading::<Attr, Typ, V>::default();
         heading1x_3.add_attribute(1, 101);
         heading1x_3.add_attribute(3, 300);
 
-        let mut heading1_2_3 = SimpleHeading::<Attr, Typ>::default();
+        let mut heading1_2_3 = SimpleHeading::<Attr, Typ, V>::default();
         heading1_2_3.add_attribute(1, 100);
         heading1_2_3.add_attribute(2, 200);
         heading1_2_3.add_attribute(3, 300);
@@ -373,7 +383,7 @@ mod tests {
         assert_eq!(Some(100), h.get_type(9).cloned());
         assert_eq!(Some(200), h.get_type(10).cloned());
         assert_eq!(
-            Err(AlgebraError::DuplicatedAttribute),
+            Err(AlgebraError::DuplicateAttribute),
             heading1_2_3.rename([(1, 2)])
         );
 

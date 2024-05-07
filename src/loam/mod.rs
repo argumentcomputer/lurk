@@ -13,7 +13,10 @@ mod tuple;
 pub trait Attribute: Copy + Default + Eq + PartialEq + Hash + Debug + Ord {}
 pub trait Type: Copy + Eq + Hash + Debug + Ord {}
 pub trait Value: Clone + Debug + PartialEq + Ord {}
-pub trait AlgebraHeading<A: Attribute, T: Type>: Algebra<A, T> + Heading<A, T> {}
+pub trait AlgebraHeading<A: Attribute, T: Type, V: Value>:
+    Algebra<A, T> + Heading<A, T, V>
+{
+}
 
 pub type BubbaBear = u32;
 

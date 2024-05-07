@@ -5,13 +5,13 @@ use crate::loam::heading::{Heading, SimpleHeading};
 use crate::loam::schema::{LoamElement, LoamValue};
 use crate::loam::{Attribute, Type, Value};
 
-pub trait Tuple<A: Attribute, T: Type, V>: Heading<A, T> {
+pub trait Tuple<A: Attribute, T: Type, V: Value>: Heading<A, T, V> {
     fn get(&self, attr: A) -> Option<&V>;
 }
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialOrd, Hash)]
 pub struct SimpleTuple<A: Attribute, T: Type, V: Value> {
-    pub(crate) heading: SimpleHeading<A, T>,
+    pub(crate) heading: SimpleHeading<A, T, V>,
     pub(crate) values: BTreeMap<A, V>,
 }
 
@@ -37,7 +37,7 @@ impl SimpleTuple<LoamElement, LoamElement, LoamValue<LoamElement>> {
     }
 }
 
-impl<A: Attribute, T: Type, V: Value> Heading<A, T> for SimpleTuple<A, T, V> {
+impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleTuple<A, T, V> {
     fn attributes(&self) -> BTreeSet<&A> {
         self.heading.attributes()
     }
@@ -52,14 +52,15 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T> for SimpleTuple<A, T, V> {
         assert_eq!(arity, self.values.len());
         arity
     }
-    // fn from_tuple(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self {
-    //     let mut heading = SimpleHeading::from_tuple(tuple);
-
-    //     Self {
-    //         heading,
-    //         values: todo!(),
-    //     }
-    // }
+    fn from_tuple(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self {
+        let mut heading = SimpleHeading::from_tuple(tuple);
+        let values = tuple
+            .attributes()
+            .iter()
+            .map(|attr| (**attr, tuple.get(**attr).unwrap().clone()))
+            .collect();
+        Self { heading, values }
+    }
 }
 
 impl<A: Attribute, T: Type, V: Value> PartialEq for SimpleTuple<A, T, V> {
@@ -141,7 +142,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
         if self.arity() == renamed.arity() {
             Ok(renamed)
         } else {
-            Err(AlgebraError::DuplicatedAttribute)
+            Err(AlgebraError::DuplicateAttribute)
         }
     }
     fn compose(&self, other: &Self) -> Self {
@@ -228,10 +229,7 @@ mod test {
         assert_eq!(wt, *t6.get_type(a2).unwrap());
         assert_eq!(pt, *t6.get_type(a1).unwrap());
 
-        assert_eq!(
-            Err(AlgebraError::DuplicatedAttribute),
-            t1.rename([(a1, a2)])
-        );
+        assert_eq!(Err(AlgebraError::DuplicateAttribute), t1.rename([(a1, a2)]));
 
         let t8 = t1.compose(&t2);
         let t8a = t2.compose(&t1);

@@ -5,8 +5,8 @@ use super::Attribute;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum AlgebraError {
-    #[error("Duplicated Attribute")]
-    DuplicatedAttribute,
+    #[error("Duplicate Attribute")]
+    DuplicateAttribute,
 }
 
 pub trait Algebra<A: Attribute, T>: PartialEq + Sized {
