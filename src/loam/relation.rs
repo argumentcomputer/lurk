@@ -220,7 +220,15 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
         relation
     }
     fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
-        todo!()
+        let attributes = attrs.into();
+        let to_project: HashSet<A> = self
+            .attributes()
+            .into_iter()
+            .cloned()
+            .filter(|attr| !attributes.contains(attr))
+            .collect();
+
+        self.project(to_project)
     }
     fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Result<Self, AlgebraError> {
         todo!()
@@ -300,8 +308,10 @@ mod test {
 
         let r6 = r3_or_r5.project([a1]);
         assert_eq!(Some(2), r6.cardinality());
+        assert_eq!(r6, r3_or_r5.remove([a2]));
 
         let r7 = r3_or_r5.project([a2]);
         assert_eq!(Some(1), r7.cardinality());
+        assert_eq!(r7, r3_or_r5.remove([a1]));
     }
 }
