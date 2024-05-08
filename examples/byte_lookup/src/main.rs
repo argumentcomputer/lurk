@@ -3,7 +3,7 @@ mod symbolic_builder;
 
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_baby_bear::BabyBear;
-use p3_field::{AbstractField, Field};
+use p3_field::{AbstractField, PrimeField};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use std::collections::BTreeMap;
 
@@ -41,7 +41,7 @@ impl<T> Interaction<T> {
 
     fn assert_zero_sum(interactions_vecs: &[&[Interaction<T>]])
     where
-        T: Field + Ord,
+        T: PrimeField,
     {
         let mut map: BTreeMap<_, T> = BTreeMap::default();
         for interactions in interactions_vecs {
@@ -53,8 +53,14 @@ impl<T> Interaction<T> {
                 }
             }
         }
-        for value in map.into_values() {
-            assert_eq!(value, T::zero())
+        for (key, value) in map {
+            assert_eq!(
+                value,
+                T::zero(),
+                "Resulting multiplicity for {:?} is {:?} (not zero)",
+                key,
+                value
+            )
         }
     }
 }
@@ -104,6 +110,8 @@ impl<F: Send + Sync> BaseAir<F> for BytesChip {
     }
 }
 
+const BYTE_BASES: [u16; 8] = [1, 2, 4, 8, 16, 32, 64, 128];
+
 impl<AB: AirBuilder + LookupAirBuilder<AB::Expr>> Air<AB> for BytesChip {
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
@@ -117,7 +125,7 @@ impl<AB: AirBuilder + LookupAirBuilder<AB::Expr>> Air<AB> for BytesChip {
             builder.assert_bool(*bit);
         }
 
-        let bases = [1, 2, 4, 8, 16, 32, 64, 128].map(AB::Expr::from_canonical_u16);
+        let bases = BYTE_BASES.map(AB::Expr::from_canonical_u16);
 
         let mut byte_expected = AB::Expr::zero();
         for (bit, base) in bits.iter().zip(bases) {
