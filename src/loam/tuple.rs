@@ -70,14 +70,26 @@ impl<A: Attribute, T: Type, V: Value> PartialEq for SimpleTuple<A, T, V> {
 }
 
 impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
-    fn and(&self, other: &Self) -> Self {
+    fn and(&self, other: &Self) -> Option<Self> {
         if !self.is_negated() && !other.is_negated() {
             if self.disjunction().is_some() || other.disjunction().is_some() {
                 // Defer dealing with this case
                 unimplemented!("conjunction of disjunctions");
             }
 
-            let heading = self.heading.and(&other.heading);
+            let Some(heading) = self.heading.and(&other.heading) else {
+                return None;
+            };
+            let common = self.common_attributes(&other);
+
+            for attr in common.iter() {
+                if self.get_type(*attr) != other.get_type(*attr) {
+                    return None;
+                }
+                if self.get(*attr) != other.get(*attr) {
+                    return None;
+                }
+            }
             let mut values = BTreeMap::<A, V>::new();
 
             for attr in heading.attributes() {
@@ -89,7 +101,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
 
                 values.insert(attr.clone(), value.clone());
             }
-            Self { heading, values }
+            Some(Self { heading, values })
         } else {
             unimplemented!()
         }
@@ -147,11 +159,11 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
             Err(AlgebraError::DuplicateAttribute)
         }
     }
-    fn compose(&self, other: &Self) -> Self {
+    fn compose(&self, other: &Self) -> Option<Self> {
         let common = self.heading.common_attributes(&other.heading);
 
         // This can be optimized.
-        self.and(&other).remove(common)
+        self.and(&other).map(|r| r.remove(common))
     }
 
     fn is_negated(&self) -> bool {
@@ -209,8 +221,8 @@ mod test {
         assert_eq!(t1, t1.not().not());
 
         let t2 = SimpleTuple::new([(a2, p1), (a3, p2)]);
-        let t1andt2 = t1.and(&t2);
-        let t2andt1 = t2.and(&t1);
+        let t1andt2 = t1.and(&t2).unwrap();
+        let t2andt1 = t2.and(&t1).unwrap();
         assert_eq!(t1andt2, t2andt1);
         assert_eq!(3, t1andt2.arity());
         assert_eq!(w1, *t1andt2.get(a1).unwrap());
@@ -246,8 +258,8 @@ mod test {
 
         assert_eq!(Err(AlgebraError::DuplicateAttribute), t1.rename([(a1, a2)]));
 
-        let t8 = t1.compose(&t2);
-        let t8a = t2.compose(&t1);
+        let t8 = t1.compose(&t2).unwrap();
+        let t8a = t2.compose(&t1).unwrap();
         assert_eq!(t8, t8a);
         assert_eq!(2, t8.arity());
         assert_eq!(w1, *t8.get(a1).unwrap());
