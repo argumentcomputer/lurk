@@ -29,6 +29,20 @@ pub trait Heading<A: Attribute, T: Type, V: Value>: Debug + Sized + Clone {
         }
     }
     fn from_tuple(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self;
+
+    fn heading_equal(&self, other: &Self) -> bool {
+        if self.attributes() != other.attributes() {
+            return false;
+        };
+
+        for attr in self.attributes() {
+            if self.get_type(*attr) != other.get_type(*attr) {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialOrd)]

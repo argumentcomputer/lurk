@@ -43,11 +43,16 @@ pub struct SimpleRelation<A: Attribute, T: Type, V: Value> {
     pub(crate) key: Vec<A>,
     pub(crate) is_negated: bool,
     pub(crate) tuples: BTreeMap<Vec<V>, SimpleTuple<A, T, V>>,
+    pub(crate) predicate: Option<fn(&SimpleTuple<A, T, V>) -> bool>,
 }
 
 impl<A: Attribute, T: Type, V: Value> Relation<A, T, V> for SimpleRelation<A, T, V> {
     fn cardinality(&self) -> Option<usize> {
-        Some(self.tuples.len())
+        if self.predicate.is_some() {
+            None
+        } else {
+            Some(self.tuples.len())
+        }
     }
     fn key(&self) -> Vec<A> {
         self.key.clone()
@@ -81,6 +86,7 @@ impl<A: Attribute, T: Type, V: Value> Relation<A, T, V> for SimpleRelation<A, T,
             tuples: Default::default(),
             key,
             is_negated: false,
+            predicate: None,
         }
     }
 
@@ -138,6 +144,21 @@ impl<A: Attribute, T: Type, V: Value> SimpleRelation<A, T, V> {
 
         Ok(())
     }
+
+    fn contains(&self, tuple: &SimpleTuple<A, T, V>) -> bool {
+        if let Some(predicate) = self.predicate {
+            predicate(tuple)
+        } else {
+            let key_values: Vec<V> = self
+                .key
+                .clone()
+                .iter()
+                .map(|attr| tuple.get(*attr).unwrap().clone())
+                .collect();
+
+            self.tuples.contains_key(&key_values)
+        }
+    }
 }
 
 impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleRelation<A, T, V> {
@@ -171,8 +192,6 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
                 unimplemented!("conjunction of disjunctions");
             }
 
-            let common = self.heading.common_attributes(&other.heading);
-
             let Some(heading) = self.heading.and(&other.heading) else {
                 return None;
             };
@@ -180,7 +199,11 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
             // FIXME: What should this be, since we only maintain a single key?
             // Do we need to track all? There must be a reasonable simplification.
             // Just use None for initial development.
-            let key = None;
+            let key = if self.key == other.key {
+                Some(self.key.clone())
+            } else {
+                None
+            };
 
             let (a, b) = if self.cardinality() <= other.cardinality() {
                 (self, other)
@@ -190,11 +213,34 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
 
             let mut relation = Self::empty(heading, key);
 
-            for (_, tuplea) in a.tuples.iter() {
-                // TODO: Use indexes to avoid enumerating the whole product.
-                for (_, tupleb) in b.tuples.iter() {
-                    if let Some(and_tuple) = tuplea.and(&tupleb) {
-                        relation.insert(and_tuple).unwrap();
+            if self.heading == other.heading {
+                // Intersection
+
+                let (a, b) = if a.predicate.is_some() && !b.predicate.is_some() {
+                    (b, a)
+                } else {
+                    (a, b)
+                };
+
+                // TODO: If a and b both have predicates, the result should be a predicate composing them.
+
+                for (key, tuple) in a.tuples.iter() {
+                    if b.contains(tuple) {
+                        relation
+                            .insert_with_key(key.clone(), tuple.clone())
+                            .unwrap();
+                    }
+                }
+            } else {
+                if a.predicate.is_some() || b.predicate.is_some() {
+                    unimplemented!();
+                }
+                for (_, tuplea) in a.tuples.iter() {
+                    // TODO: Use indexes to avoid enumerating the whole product.
+                    for (_, tupleb) in b.tuples.iter() {
+                        if let Some(and_tuple) = tuplea.and(&tupleb) {
+                            relation.insert(and_tuple).unwrap();
+                        }
                     }
                 }
             }
@@ -220,6 +266,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
             let mut relation = Self::empty(positive.heading.clone(), Some(positive.key.clone()));
 
             for (k, tuple) in positive.tuples.iter() {
+                // Less optimized but clearer: if !negative.contains(tuple) {
                 if !negative.tuples.contains_key(k) {
                     relation.insert_with_key(k.to_vec(), tuple.clone()).unwrap();
                 }
@@ -241,7 +288,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
 
         let mut relation = b.clone();
 
-        for (k, tuple) in a.tuples.iter() {
+        for (_, tuple) in a.tuples.iter() {
             relation.insert(tuple.clone()).unwrap();
         }
 
@@ -253,6 +300,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
             tuples: self.tuples.clone(),
             is_negated: !self.is_negated,
             key: self.key.clone(),
+            predicate: None,
         }
     }
     fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
@@ -269,7 +317,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
         for tuple in self
             .tuples
             .iter()
-            .map(|(k, tuple)| tuple.project_aux(&attributes))
+            .map(|(_, tuple)| tuple.project_aux(&attributes))
         {
             let key_values = key
                 .clone()
@@ -291,7 +339,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
 
         self.project(to_project)
     }
-    fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Result<Self, AlgebraError> {
+    fn rename<I: Into<HashMap<A, A>>>(&self, _mapping: I) -> Result<Self, AlgebraError> {
         todo!()
     }
     fn compose(&self, other: &Self) -> Option<Self> {
@@ -313,18 +361,19 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
 mod test {
     use super::*;
     use crate::loam::schema::{LoamElement, LoamValue};
-    use crate::loam::{Attr, Typ};
 
-    type V = LoamValue<LoamElement>;
+    type LE = LoamElement;
+    type LT = LoamElement;
+    type LV = LoamValue<LoamElement>;
 
     #[test]
     fn test_simple_relation() {
-        let empty_heading = SimpleHeading::<Attr, Typ, V>::default();
+        let empty_heading = SimpleHeading::<LE, LT, LV>::default();
         assert_eq!(0, empty_heading.arity());
-        let mut r: SimpleRelation<Attr, Typ, V> = SimpleRelation::empty(empty_heading, None);
+        let mut r: SimpleRelation<LE, LT, LV> = SimpleRelation::empty(empty_heading, None);
 
         assert_eq!(Some(0), r.cardinality());
-        assert_eq!(Vec::<Attr>::new(), r.key());
+        assert_eq!(Vec::<LE>::new(), r.key());
 
         let empty_tuple = SimpleTuple::new([]);
         r.insert(empty_tuple.clone()).unwrap();
@@ -400,6 +449,10 @@ mod test {
         assert_eq!(Some(1), r7.cardinality());
         assert_eq!(r7, r3_or_r5.remove([a1]));
 
+        // Intersection
+        assert_eq!(r3, r3_or_r5.and(&r3).unwrap());
+        assert_eq!(r5, r3_or_r5.and(&r5).unwrap());
+
         // Difference: a.and(b.not())
 
         // a1 | a2
@@ -429,7 +482,72 @@ mod test {
 
         let r9 = r3_or_r5.and(&r8).unwrap();
         assert_eq!(3, r9.arity());
-        dbg!(&r9);
         assert_eq!(Some(4), r9.cardinality());
+    }
+
+    #[test]
+    fn test_simple_relation_predicate() {
+        let (a1, a2, a3, a4) = (1, 2, 3, 4);
+        let (w1, w2, w3) = (
+            LoamValue::Wide([1, 0, 0, 0, 0, 0, 0, 0]),
+            LoamValue::Wide([2, 0, 0, 0, 0, 0, 0, 0]),
+            LoamValue::Wide([3, 0, 0, 0, 0, 0, 0, 0]),
+        );
+
+        let mut heading = SimpleHeading::<LE, LT, LV>::default();
+        heading.add_attribute(1, 2);
+        heading.add_attribute(2, 2);
+        heading.add_attribute(3, 2);
+
+        let r = SimpleRelation {
+            heading: heading.clone(),
+            key: vec![a1, a2],
+            is_negated: false,
+            tuples: Default::default(),
+            predicate: Some(|_| true),
+        };
+
+        let r2 =
+            SimpleRelation::make([vec![(a1, w1), (a2, w2), (a3, w3)]], Some(vec![a1, a2])).unwrap();
+
+        let r3 = r.and(&r2).unwrap();
+        let r3a = r2.and(&r).unwrap();
+        assert_eq!(Some(1), r3.cardinality());
+        assert_eq!(Some(1), r3a.cardinality());
+        assert_eq!(r3, r3a);
+
+        // Wrong heading. Panics.
+        // let r4 =
+        //     SimpleRelation::make([vec![(a1, w1), (a2, w2), (a4, w3)]], Some(vec![a1, a2])).unwrap();
+        // let r5 = r.and(&r4).unwrap();
+
+        let addition = SimpleRelation {
+            heading,
+            key: vec![a1, a2],
+            is_negated: false,
+            tuples: Default::default(),
+            predicate: Some(|tuple| {
+                let a = tuple.get(1).and_then(LoamValue::wide_val).unwrap()[0];
+                let b = tuple.get(2).and_then(LoamValue::wide_val).unwrap()[0];
+                let c = tuple.get(3).and_then(LoamValue::wide_val).unwrap()[0];
+
+                a + b == c
+            }),
+        };
+
+        // 1 + 2 = 3
+        let r4 = r2.and(&addition).unwrap();
+        assert_eq!(3, r4.arity());
+        assert_eq!(Some(1), r4.cardinality());
+        // r2 really does contain only an addition tuple.
+        assert_eq!(r2, r4);
+        assert_eq!(r4, addition.and(&r2).unwrap());
+
+        let r5 =
+            SimpleRelation::make([vec![(a1, w1), (a2, w2), (a3, w1)]], Some(vec![a1, a2])).unwrap();
+        // 1 + 2 = 1
+        let r6 = r5.and(&addition).unwrap();
+        assert_eq!(3, r6.arity());
+        assert_eq!(Some(0), r6.cardinality());
     }
 }

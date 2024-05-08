@@ -53,7 +53,7 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleTuple<A, T, V> 
         arity
     }
     fn from_tuple(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self {
-        let mut heading = SimpleHeading::from_tuple(tuple);
+        let heading = SimpleHeading::from_tuple(tuple);
         let values = tuple
             .attributes()
             .iter()

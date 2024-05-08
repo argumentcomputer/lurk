@@ -37,6 +37,15 @@ impl LoamValue<LoamElement> {
     }
 }
 
+impl<T> LoamValue<T> {
+    pub fn wide_val(&self) -> Option<&[T; 8]> {
+        match self {
+            Self::Wide(x) => Some(x),
+            _ => None,
+        }
+    }
+}
+
 impl Schema<SimpleTuple<LoamElement, LoamElement, LoamValue<LoamElement>>> {
     fn tuple<I: IntoIterator<Item = (LoamElement, LoamValue<LoamElement>)>>(
         &self,
