@@ -187,10 +187,37 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
         result
     }
     fn not(&self) -> Self {
-        todo!()
+        Self {
+            heading: self.heading.clone(),
+            tuples: self.tuples.clone(),
+            is_negated: !self.is_negated,
+            key: self.key.clone(),
+        }
     }
     fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
-        todo!()
+        let attributes = attrs.into();
+        let heading = self.heading.project(attributes.clone());
+        let key = self
+            .key
+            .iter()
+            .cloned()
+            .filter(|attr| attributes.contains(attr))
+            .collect::<Vec<_>>();
+        let mut relation = Self::empty(heading, Some(key.clone()));
+
+        for tuple in self
+            .tuples
+            .iter()
+            .map(|(k, tuple)| tuple.project_aux(&attributes))
+        {
+            let key_values = key
+                .clone()
+                .iter()
+                .map(|attr| tuple.get(*attr).unwrap().clone())
+                .collect();
+            relation.insert_with_key(key_values, tuple);
+        }
+        relation
     }
     fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
         todo!()
@@ -205,7 +232,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
         self.is_negated
     }
     fn disjunction(&self) -> &Option<BTreeSet<BTreeMap<A, V>>> {
-        todo!()
+        unimplemented!();
     }
 }
 
@@ -270,5 +297,11 @@ mod test {
         let r5 = SimpleRelation::make([vec![(a1, w2), (a2, p1)]], Some(vec![a1])).unwrap();
         let r3_or_r5 = r3.or(&r5);
         assert_eq!(Some(2), r3_or_r5.cardinality());
+
+        let r6 = r3_or_r5.project([a1]);
+        assert_eq!(Some(2), r6.cardinality());
+
+        let r7 = r3_or_r5.project([a2]);
+        assert_eq!(Some(1), r7.cardinality());
     }
 }

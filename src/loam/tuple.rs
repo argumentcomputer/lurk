@@ -104,15 +104,17 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
         }
     }
     fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
-        if self.disjunction().is_some() {
-            unimplemented!("tuple disjunction is not yet implemented")
-        }
+        // if self.disjunction().is_some() {
+        //     unimplemented!("tuple disjunction is not yet implemented")
+        // }
         let attrs = attrs.into();
-        let heading = self.heading.project(attrs.clone());
-        let mut values = self.values.clone();
-        values.retain(|k, _v| attrs.contains(k));
+        self.project_aux(&attrs)
 
-        Self { heading, values }
+        // let heading = self.heading.project(attrs.clone());
+        // let mut values = self.values.clone();
+        // values.retain(|k, _v| attrs.contains(k));
+
+        // Self { heading, values }
     }
     fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
         if self.disjunction().is_some() {
@@ -162,6 +164,19 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
         } else {
             unimplemented!("tuple disjunction")
         }
+    }
+}
+
+impl<A: Attribute, T: Type, V: Value> SimpleTuple<A, T, V> {
+    pub fn project_aux(&self, attrs: &HashSet<A>) -> Self {
+        if self.disjunction().is_some() {
+            unimplemented!("tuple disjunction is not yet implemented")
+        }
+        let heading = self.heading.project(attrs.clone());
+        let mut values = self.values.clone();
+        values.retain(|k, _v| attrs.contains(k));
+
+        Self { heading, values }
     }
 }
 
