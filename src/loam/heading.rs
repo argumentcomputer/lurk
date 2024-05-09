@@ -7,11 +7,11 @@ use crate::loam::tuple::Tuple;
 use crate::loam::{Attribute, Type, Value};
 
 pub trait Heading<A: Attribute, T: Type, V: Value>: Debug + Sized + Clone {
-    fn attributes(&self) -> BTreeSet<&A>;
+    fn attributes(&self) -> HashSet<A>;
     fn get_type(&self, attr: A) -> Option<&T>;
     fn attribute_types(&self) -> &BTreeMap<A, T>;
     fn arity(&self) -> usize;
-    fn common_attributes<'a, 'b>(&'a self, other: &'b Self) -> HashSet<A>
+    fn common_attributes<'a, 'b, H: Heading<A, T, V>>(&'a self, other: &'b H) -> HashSet<A>
     where
         'b: 'a,
     {
@@ -19,8 +19,8 @@ pub trait Heading<A: Attribute, T: Type, V: Value>: Debug + Sized + Clone {
 
         if self.arity() <= other.arity() {
             for attr in self.attributes() {
-                if other.get_type(*attr).is_some() {
-                    common.insert(*attr);
+                if other.get_type(attr).is_some() {
+                    common.insert(attr);
                 }
             }
             common
@@ -36,7 +36,7 @@ pub trait Heading<A: Attribute, T: Type, V: Value>: Debug + Sized + Clone {
         };
 
         for attr in self.attributes() {
-            if self.get_type(*attr) != other.get_type(*attr) {
+            if self.get_type(attr) != other.get_type(attr) {
                 return false;
             }
         }
@@ -69,12 +69,11 @@ impl<A: Attribute, T: Type, V: Value> SimpleHeading<A, T, V> {
 }
 impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleHeading<A, T, V> {
     // TODO: implement iterator
-    fn attributes(&self) -> BTreeSet<&A> {
+    fn attributes(&self) -> HashSet<A> {
         // Make this OnceOnly, after heading is frozen.
-        let mut set = BTreeSet::new();
-
+        let mut set = HashSet::new();
         for key in self.attributes.keys() {
-            set.insert(key);
+            set.insert(key.clone());
         }
         set
     }
@@ -92,8 +91,8 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleHeading<A, T, V
         let mut heading = SimpleHeading::new(tuple.is_negated());
 
         for attr in tuple.attributes().iter() {
-            if let Some(t) = tuple.get_type(**attr) {
-                heading.attributes.insert(**attr, *t);
+            if let Some(t) = tuple.get_type(*attr) {
+                heading.attributes.insert(*attr, *t);
             }
         }
 
@@ -151,11 +150,11 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for SimpleHeading<A, T, V> {
             };
 
             for attr in self.attributes().iter() {
-                new_heading.add_attribute(**attr, *self.get_type(**attr).unwrap());
+                new_heading.add_attribute(*attr, *self.get_type(*attr).unwrap());
             }
             for attr in other.attributes().iter() {
                 if common.get(attr).is_none() {
-                    new_heading.add_attribute(**attr, *other.get_type(**attr).unwrap());
+                    new_heading.add_attribute(*attr, *other.get_type(*attr).unwrap());
                 }
             }
             Some(new_heading)
@@ -170,7 +169,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for SimpleHeading<A, T, V> {
             let mut new_heading = Self::new(false);
 
             for attr in self.attributes().iter() {
-                if other.get_type(**attr).is_some() {
+                if other.get_type(*attr).is_some() {
                     continue;
                 }
 
@@ -178,7 +177,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for SimpleHeading<A, T, V> {
 
                 if let Some(o) = other.disjunction() {
                     for d in o.iter() {
-                        if d.get(*attr).is_some() {
+                        if d.get(attr).is_some() {
                             a = false;
                             continue;
                         }
@@ -188,7 +187,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for SimpleHeading<A, T, V> {
                     }
                 }
                 if a {
-                    new_heading.add_attribute(**attr, *self.get_type(**attr).unwrap())
+                    new_heading.add_attribute(*attr, *self.get_type(*attr).unwrap())
                 }
             }
 

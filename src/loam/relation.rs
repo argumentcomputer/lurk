@@ -100,7 +100,7 @@ impl<A: Attribute, T: Type, V: Value> Relation<A, T, V> for SimpleRelation<A, T,
         Ok(relation)
     }
     fn empty(heading: SimpleHeading<A, T, V>, key: Option<Vec<A>>) -> Self {
-        let key = key.unwrap_or_else(|| heading.attributes().into_iter().cloned().collect());
+        let key = key.unwrap_or_else(|| heading.attributes().into_iter().collect());
 
         Self {
             heading,
@@ -224,7 +224,7 @@ impl<A: Attribute, T: Type, V: Value> SimpleRelation<A, T, V> {
             return Err(RelationError::IncompatibleHeading);
         }
         for attr in tuple.attributes() {
-            if tuple.get_type(*attr) != self.get_type(*attr) {
+            if tuple.get_type(attr) != self.get_type(attr) {
                 return Err(RelationError::IncompatibleHeading);
             }
         }
@@ -257,9 +257,31 @@ impl<A: Attribute, T: Type, V: Value> ComputedRelation<A, T, V> {
         let predicate = self.predicate;
         predicate(tuple)
     }
+
+    pub fn and_tuple(&self, tuple: &SimpleTuple<A, T, V>) -> Option<SimpleTuple<A, T, V>> {
+        let common = self.common_attributes(tuple);
+
+        for attr in common.iter() {
+            if self.get_type(*attr) != tuple.get_type(*attr) {
+                return None;
+            };
+        }
+
+        if !self.attributes().is_subset(&common) {
+            return None;
+        }
+
+        let predicate = self.predicate;
+
+        if predicate(&tuple.project(common)) {
+            Some(tuple.clone())
+        } else {
+            None
+        }
+    }
 }
 impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleRelation<A, T, V> {
-    fn attributes(&self) -> BTreeSet<&A> {
+    fn attributes(&self) -> HashSet<A> {
         self.heading.attributes()
     }
     fn get_type(&self, attr: A) -> Option<&T> {
@@ -281,7 +303,7 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleRelation<A, T, 
     }
 }
 impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for ComputedRelation<A, T, V> {
-    fn attributes(&self) -> BTreeSet<&A> {
+    fn attributes(&self) -> HashSet<A> {
         self.heading.attributes()
     }
     fn get_type(&self, attr: A) -> Option<&T> {
@@ -299,7 +321,7 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for ComputedRelation<A, T
     }
 }
 impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for Rel<A, T, V> {
-    fn attributes(&self) -> BTreeSet<&A> {
+    fn attributes(&self) -> HashSet<A> {
         match self {
             Self::Computed(r) => r.attributes(),
             Self::Simple(r) => r.attributes(),
@@ -465,7 +487,6 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
         let to_project: HashSet<A> = self
             .attributes()
             .into_iter()
-            .cloned()
             .filter(|attr| !attributes.contains(attr))
             .collect();
 
@@ -525,15 +546,13 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Rel<A, T, V> {
                             }
                         }
                     } else {
-                        todo!();
-                        // for (_, tuplea) in a.tuples.iter() {
-                        //     // TODO: Use indexes to avoid enumerating the whole product.
-                        //     for (_, tupleb) in b.tuples.iter() {
-                        //         if let Some(and_tuple) = tuplea.and(&tupleb) {
-                        //             relation.insert(and_tuple).unwrap();
-                        //         }
-                        //     }
-                        // }
+                        for (key, tuple) in s.tuples.iter() {
+                            if let Some(and_tuple) = c.and_tuple(tuple) {
+                                relation
+                                    .insert_with_key(key.clone(), and_tuple.clone())
+                                    .unwrap();
+                            }
+                        }
                     }
                     Some(relation.into())
                 } else {
@@ -574,7 +593,14 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Rel<A, T, V> {
     fn compose(&self, other: &Self) -> Option<Self> {
         match (self, other) {
             (Self::Simple(s), Self::Simple(c)) => s.compose(c).map(Into::into),
-            (Self::Simple(s), Self::Computed(c)) | (Self::Computed(c), Self::Simple(s)) => todo!(),
+            (Self::Simple(s), Self::Computed(c)) => {
+                let common = s.heading.common_attributes(&c.heading);
+                self.and(other).map(|r| r.remove(common))
+            }
+            (Self::Computed(c), Self::Simple(s)) => {
+                let common = s.heading.common_attributes(&c.heading);
+                other.and(self).map(|r| r.remove(common))
+            }
             (Self::Computed(s), Self::Computed(c)) => unimplemented!(),
         }
     }
@@ -781,6 +807,6 @@ mod test {
 
         // 1 + 1
         let r7 = Rel::make([vec![(a1, w1), (a2, w2)]], Some(vec![a1, a2])).unwrap();
-        //let r8 = r7.compose(&addition).unwrap();
+        let r8 = r7.compose(&addition).unwrap();
     }
 }

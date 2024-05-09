@@ -38,7 +38,7 @@ impl SimpleTuple<LoamElement, LoamElement, LoamValue<LoamElement>> {
 }
 
 impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleTuple<A, T, V> {
-    fn attributes(&self) -> BTreeSet<&A> {
+    fn attributes(&self) -> HashSet<A> {
         self.heading.attributes()
     }
     fn get_type(&self, attr: A) -> Option<&T> {
@@ -57,7 +57,7 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleTuple<A, T, V> 
         let values = tuple
             .attributes()
             .iter()
-            .map(|attr| (**attr, tuple.get(**attr).unwrap().clone()))
+            .map(|attr| (*attr, tuple.get(*attr).unwrap().clone()))
             .collect();
         Self { heading, values }
     }
@@ -80,7 +80,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
             let Some(heading) = self.heading.and(&other.heading) else {
                 return None;
             };
-            let common = self.common_attributes(&other);
+            let common = self.common_attributes(other);
 
             for attr in common.iter() {
                 if self.get_type(*attr) != other.get_type(*attr) {
@@ -95,8 +95,8 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
             for attr in heading.attributes() {
                 let value = self
                     .values
-                    .get(attr)
-                    .or_else(|| other.values.get(attr))
+                    .get(&attr)
+                    .or_else(|| other.values.get(&attr))
                     .unwrap();
 
                 values.insert(attr.clone(), value.clone());
