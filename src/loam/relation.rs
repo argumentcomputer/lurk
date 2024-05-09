@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+
 use thiserror::Error;
 
 use crate::loam::algebra::{Algebra, AlgebraError};
@@ -51,6 +52,8 @@ pub struct ComputedRelation<A: Attribute, T: Type, V: Value> {
     pub(crate) key: Vec<A>,
     pub(crate) is_negated: bool,
     pub(crate) predicate: fn(&SimpleTuple<A, T, V>) -> bool,
+    pub(crate) hints:
+        BTreeMap<BTreeSet<A>, fn(&SimpleTuple<A, T, V>) -> Option<SimpleTuple<A, T, V>>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -180,13 +183,6 @@ impl Rel<LoamElement, LoamElement, LoamValue<LoamElement>> {
     }
 }
 impl<A: Attribute, T: Type, V: Value> Rel<A, T, V> {
-    pub fn has_predicate(&self) -> bool {
-        match self {
-            Self::Computed(_) => true,
-            Self::Simple(_) => false,
-        }
-    }
-
     // tuple heading is assumed to match self.heading.
     pub fn contains(&self, tuple: &SimpleTuple<A, T, V>) -> bool {
         match self {
@@ -250,6 +246,7 @@ impl<A: Attribute, T: Type, V: Value> ComputedRelation<A, T, V> {
             key: self.key.clone(),
             is_negated: self.is_negated,
             predicate: self.predicate,
+            hints: Default::default(),
         }
     }
 
@@ -267,16 +264,23 @@ impl<A: Attribute, T: Type, V: Value> ComputedRelation<A, T, V> {
             };
         }
 
-        if !self.attributes().is_subset(&common) {
-            return None;
-        }
-
         let predicate = self.predicate;
+        let projected = tuple.project(common.clone());
 
-        if predicate(&tuple.project(common)) {
-            Some(tuple.clone())
+        if self.attributes().is_subset(&common) {
+            predicate(&projected).then_some(tuple.clone())
         } else {
-            None
+            let common = common.into_iter().collect::<BTreeSet<_>>();
+
+            self.hints.get(&common).and_then(|hint| {
+                hint(tuple).and_then(|extended| {
+                    if predicate(&extended) {
+                        extended.and(&projected)
+                    } else {
+                        None
+                    }
+                })
+            })
         }
     }
 }
@@ -794,10 +798,11 @@ mod test {
     #[test]
     fn test_simple_relation_predicate() {
         let (a1, a2, a3, a4) = (1, 2, 3, 4);
-        let (w1, w2, w3) = (
+        let (w1, w2, w3, w4) = (
             LoamValue::Wide([1, 0, 0, 0, 0, 0, 0, 0]),
             LoamValue::Wide([2, 0, 0, 0, 0, 0, 0, 0]),
             LoamValue::Wide([3, 0, 0, 0, 0, 0, 0, 0]),
+            LoamValue::Wide([4, 0, 0, 0, 0, 0, 0, 0]),
         );
 
         let mut heading = SimpleHeading::<LE, LT, LV>::default();
@@ -810,8 +815,12 @@ mod test {
             key: vec![a1, a2],
             is_negated: false,
             predicate: |_| true,
+            hints: Default::default(),
         });
 
+        // a1 | a2 | a3
+        //-------------
+        // w1 | w2 | w3
         let r2 = Rel::make([vec![(a1, w1), (a2, w2), (a3, w3)]], Some(vec![a1, a2])).unwrap();
 
         let r3 = r.and(&r2).unwrap();
@@ -825,6 +834,33 @@ mod test {
         //     SimpleRelation::make([vec![(a1, w1), (a2, w2), (a4, w3)]], Some(vec![a1, a2])).unwrap();
         // let r5 = r.and(&r4).unwrap();
 
+        let predicate = |tuple: SimpleTuple<LE, LT, LV>| {
+            let a = tuple.get(1).and_then(LoamValue::wide_val).unwrap()[0];
+            let b = tuple.get(2).and_then(LoamValue::wide_val).unwrap()[0];
+            let c = tuple.get(3).and_then(LoamValue::wide_val).unwrap()[0];
+
+            a + b == c
+        };
+        let mut hints = BTreeMap::default();
+
+        fn hint(tuple: &SimpleTuple<LE, LT, LV>) -> Option<SimpleTuple<LE, LT, LV>> {
+            let a = tuple.get(1).and_then(LoamValue::wide_val).unwrap()[0];
+            let b = tuple.get(2).and_then(LoamValue::wide_val).unwrap()[0];
+            let c = LoamValue::Wide([a + b, 0, 0, 0, 0, 0, 0, 0]);
+
+            // TODO: better tuple manipulation API
+            let mut extended = tuple.clone();
+            extended.heading.add_attribute(3, 2);
+            extended.values.insert(3, c);
+
+            Some(extended)
+        };
+
+        hints.insert(
+            BTreeSet::from([a1, a2]),
+            hint as fn(&SimpleTuple<LE, LT, LV>) -> Option<SimpleTuple<LE, LT, LV>>,
+        );
+
         let addition = Rel::Computed(ComputedRelation {
             heading,
             key: vec![a1, a2],
@@ -836,6 +872,7 @@ mod test {
 
                 a + b == c
             },
+            hints,
         });
 
         // 1 + 2 = 3
@@ -844,7 +881,10 @@ mod test {
         assert_eq!(Some(1), r4.cardinality());
         // r2 really does contain only an addition tuple.
         assert_eq!(r2, r4);
+        // computational `and` is commutative
         assert_eq!(r4, addition.and(&r2).unwrap());
+        // r2 is defined above to hold the correct result
+        assert_eq!(r2, r4);
 
         let r5 = Rel::make([vec![(a1, w1), (a2, w2), (a3, w1)]], Some(vec![a1, a2])).unwrap();
         // 1 + 2 = 1
@@ -853,8 +893,37 @@ mod test {
         assert_eq!(Some(0), r6.cardinality());
 
         // 1 + 1
+        //
+        // a1 | a2
+        //--------
+        // w1 | w2
         let r7 = Rel::make([vec![(a1, w1), (a2, w2)]], Some(vec![a1, a2])).unwrap();
         let r8 = r7.compose(&addition).unwrap();
+
+        // a3
+        //---
+        // w3
+        let r9 = Rel::make([vec![(a3, w3)]], Some(vec![a3])).unwrap();
         assert_eq!(1, r8.arity());
+        assert_eq!(Some(1), r8.cardinality());
+        assert_eq!(r9, r8);
+
+        let r10 = Rel::make([vec![(a1, w1), (a2, w2), (a4, w4)]], Some(vec![a1, a2])).unwrap();
+        let r11 = r10.and(&addition).unwrap();
+        let r12 = r10.compose(&addition).unwrap();
+
+        // a4
+        //---
+        // w4
+        let r13 = Rel::make([vec![(a4, w4)]], Some(vec![a4])).unwrap();
+
+        assert_eq!(4, r11.arity());
+        assert_eq!(2, r12.arity());
+        // TODO: compute keys consistently.
+        //assert_eq!(r11, r2.and(&r13).unwrap());
+        // Result is as expected when the extra a4 attribute is removed.
+        assert_eq!(r2, r11.remove([a4]));
+        // The a4 attribute has its original value.
+        assert_eq!(r13, r11.project([a4]));
     }
 }
