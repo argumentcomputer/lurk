@@ -21,7 +21,7 @@ pub enum RelationError {
 pub trait Relation<A: Attribute, T: Type, V: Value>: Heading<A, T, V> + Algebra<A, V> {
     // Infinite or unmaterialized relations may lack a reportable cardinality.
     fn cardinality(&self) -> Option<usize>;
-    fn key(&self) -> Vec<A>;
+    fn key(&self) -> &Vec<A>;
     // If key is unspecified, all attributes will be used, in arbitrary order.
     fn new<I: IntoIterator<Item = Tup>, Tup: Tuple<A, T, V> + Algebra<A, V>>(
         tuples: I,
@@ -43,19 +43,40 @@ pub struct SimpleRelation<A: Attribute, T: Type, V: Value> {
     pub(crate) key: Vec<A>,
     pub(crate) is_negated: bool,
     pub(crate) tuples: BTreeMap<Vec<V>, SimpleTuple<A, T, V>>,
-    pub(crate) predicate: Option<fn(&SimpleTuple<A, T, V>) -> bool>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ComputedRelation<A: Attribute, T: Type, V: Value> {
+    pub(crate) heading: SimpleHeading<A, T, V>,
+    pub(crate) key: Vec<A>,
+    pub(crate) is_negated: bool,
+    pub(crate) predicate: fn(&SimpleTuple<A, T, V>) -> bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Rel<A: Attribute, T: Type, V: Value> {
+    Simple(SimpleRelation<A, T, V>),
+    Computed(ComputedRelation<A, T, V>),
+}
+
+impl<A: Attribute, T: Type, V: Value> From<SimpleRelation<A, T, V>> for Rel<A, T, V> {
+    fn from(simple: SimpleRelation<A, T, V>) -> Self {
+        Self::Simple(simple)
+    }
+}
+
+impl<A: Attribute, T: Type, V: Value> From<ComputedRelation<A, T, V>> for Rel<A, T, V> {
+    fn from(computed: ComputedRelation<A, T, V>) -> Self {
+        Self::Computed(computed)
+    }
 }
 
 impl<A: Attribute, T: Type, V: Value> Relation<A, T, V> for SimpleRelation<A, T, V> {
     fn cardinality(&self) -> Option<usize> {
-        if self.predicate.is_some() {
-            None
-        } else {
-            Some(self.tuples.len())
-        }
+        Some(self.tuples.len())
     }
-    fn key(&self) -> Vec<A> {
-        self.key.clone()
+    fn key(&self) -> &Vec<A> {
+        &self.key
     }
     fn new<I: IntoIterator<Item = Tup>, Tup: Tuple<A, T, V> + Algebra<A, V>>(
         tuples: I,
@@ -86,7 +107,6 @@ impl<A: Attribute, T: Type, V: Value> Relation<A, T, V> for SimpleRelation<A, T,
             tuples: Default::default(),
             key,
             is_negated: false,
-            predicate: None,
         }
     }
 
@@ -108,6 +128,41 @@ impl<A: Attribute, T: Type, V: Value> Relation<A, T, V> for SimpleRelation<A, T,
         Ok(())
     }
 }
+impl<A: Attribute, T: Type, V: Value> Relation<A, T, V> for Rel<A, T, V> {
+    fn cardinality(&self) -> Option<usize> {
+        match self {
+            Self::Simple(r) => r.cardinality(),
+            Self::Computed(_) => None,
+        }
+    }
+    fn key(&self) -> &Vec<A> {
+        match self {
+            Self::Simple(r) => &r.key,
+            Self::Computed(r) => &r.key,
+        }
+    }
+    fn new<I: IntoIterator<Item = Tup>, Tup: Tuple<A, T, V> + Algebra<A, V>>(
+        tuples: I,
+        key: Option<Vec<A>>,
+    ) -> Result<Self, RelationError> {
+        Ok(Self::Simple(SimpleRelation::new(tuples, key)?))
+    }
+    fn empty(heading: SimpleHeading<A, T, V>, key: Option<Vec<A>>) -> Self {
+        Self::Simple(SimpleRelation::empty(heading, key))
+    }
+
+    // This does not type-check the tuple itself. Tuple is assumed to conform to its own header.
+    fn insert(
+        &mut self,
+        tuple: (impl Tuple<A, T, V> + Algebra<A, V>),
+    ) -> Result<(), RelationError> {
+        match self {
+            Self::Simple(r) => r.insert(tuple),
+            Self::Computed(_) => unimplemented!(),
+        }
+    }
+}
+
 impl SimpleRelation<LoamElement, LoamElement, LoamValue<LoamElement>> {
     fn make<I: IntoIterator<Item = Vec<(LoamElement, LoamValue<LoamElement>)>>>(
         tuples: I,
@@ -116,8 +171,47 @@ impl SimpleRelation<LoamElement, LoamElement, LoamValue<LoamElement>> {
         Self::new(tuples.into_iter().map(SimpleTuple::new), key)
     }
 }
+impl Rel<LoamElement, LoamElement, LoamValue<LoamElement>> {
+    fn make<I: IntoIterator<Item = Vec<(LoamElement, LoamValue<LoamElement>)>>>(
+        tuples: I,
+        key: Option<Vec<LoamElement>>,
+    ) -> Result<Self, RelationError> {
+        Ok(Self::Simple(SimpleRelation::make(tuples, key)?))
+    }
+}
+impl<A: Attribute, T: Type, V: Value> Rel<A, T, V> {
+    pub fn has_predicate(&self) -> bool {
+        match self {
+            Self::Computed(_) => true,
+            Self::Simple(_) => false,
+        }
+    }
+
+    // tuple heading is assumed to match self.heading.
+    pub fn contains(&self, tuple: &SimpleTuple<A, T, V>) -> bool {
+        match self {
+            Self::Computed(r) => {
+                let predicate = r.predicate;
+                predicate(tuple)
+            }
+            Self::Simple(r) => r.contains(tuple),
+        }
+    }
+}
 
 impl<A: Attribute, T: Type, V: Value> SimpleRelation<A, T, V> {
+    // tuple heading is assumed to match self.heading.
+    pub fn contains(&self, tuple: &SimpleTuple<A, T, V>) -> bool {
+        let key_values: Vec<V> = self
+            .key
+            .clone()
+            .iter()
+            .map(|attr| tuple.get(*attr).unwrap().clone())
+            .collect();
+
+        self.tuples.contains_key(&key_values)
+    }
+
     fn insert_with_key(
         &mut self,
         key: Vec<V>,
@@ -144,23 +238,26 @@ impl<A: Attribute, T: Type, V: Value> SimpleRelation<A, T, V> {
 
         Ok(())
     }
+}
+impl<A: Attribute, T: Type, V: Value> ComputedRelation<A, T, V> {
+    fn is_negated(&self) -> bool {
+        self.is_negated
+    }
 
-    fn contains(&self, tuple: &SimpleTuple<A, T, V>) -> bool {
-        if let Some(predicate) = self.predicate {
-            predicate(tuple)
-        } else {
-            let key_values: Vec<V> = self
-                .key
-                .clone()
-                .iter()
-                .map(|attr| tuple.get(*attr).unwrap().clone())
-                .collect();
-
-            self.tuples.contains_key(&key_values)
+    fn not(&self) -> Self {
+        Self {
+            heading: self.heading.clone(),
+            key: self.key.clone(),
+            is_negated: self.is_negated,
+            predicate: self.predicate.clone(),
         }
     }
-}
 
+    pub fn contains(&self, tuple: &SimpleTuple<A, T, V>) -> bool {
+        let predicate = self.predicate;
+        predicate(tuple)
+    }
+}
 impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleRelation<A, T, V> {
     fn attributes(&self) -> BTreeSet<&A> {
         self.heading.attributes()
@@ -181,6 +278,53 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleRelation<A, T, 
 
         relation.insert(tuple.clone()).unwrap();
         relation
+    }
+}
+impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for ComputedRelation<A, T, V> {
+    fn attributes(&self) -> BTreeSet<&A> {
+        self.heading.attributes()
+    }
+    fn get_type(&self, attr: A) -> Option<&T> {
+        self.heading.get_type(attr)
+    }
+    fn attribute_types(&self) -> &BTreeMap<A, T> {
+        self.heading.attribute_types()
+    }
+    fn arity(&self) -> usize {
+        let arity = self.heading.arity();
+        arity
+    }
+    fn from_tuple(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self {
+        unimplemented!();
+    }
+}
+impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for Rel<A, T, V> {
+    fn attributes(&self) -> BTreeSet<&A> {
+        match self {
+            Self::Computed(r) => r.attributes(),
+            Self::Simple(r) => r.attributes(),
+        }
+    }
+    fn get_type(&self, attr: A) -> Option<&T> {
+        match self {
+            Self::Computed(r) => r.get_type(attr),
+            Self::Simple(r) => r.get_type(attr),
+        }
+    }
+    fn attribute_types(&self) -> &BTreeMap<A, T> {
+        match self {
+            Self::Computed(r) => r.attribute_types(),
+            Self::Simple(r) => r.attribute_types(),
+        }
+    }
+    fn arity(&self) -> usize {
+        match self {
+            Self::Computed(r) => r.arity(),
+            Self::Simple(r) => r.arity(),
+        }
+    }
+    fn from_tuple(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self {
+        Self::Simple(SimpleRelation::from_tuple(tuple))
     }
 }
 
@@ -216,14 +360,6 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
             if self.heading == other.heading {
                 // Intersection
 
-                let (a, b) = if a.predicate.is_some() && !b.predicate.is_some() {
-                    (b, a)
-                } else {
-                    (a, b)
-                };
-
-                // TODO: If a and b both have predicates, the result should be a predicate composing them.
-
                 for (key, tuple) in a.tuples.iter() {
                     if b.contains(tuple) {
                         relation
@@ -232,9 +368,6 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
                     }
                 }
             } else {
-                if a.predicate.is_some() || b.predicate.is_some() {
-                    unimplemented!();
-                }
                 for (_, tuplea) in a.tuples.iter() {
                     // TODO: Use indexes to avoid enumerating the whole product.
                     for (_, tupleb) in b.tuples.iter() {
@@ -300,7 +433,6 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
             tuples: self.tuples.clone(),
             is_negated: !self.is_negated,
             key: self.key.clone(),
-            predicate: None,
         }
     }
     fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
@@ -356,6 +488,107 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
         &None
     }
 }
+impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Rel<A, T, V> {
+    fn and(&self, other: &Self) -> Option<Self> {
+        match (self, other) {
+            (Self::Simple(s), Self::Simple(c)) => s.and(c).map(Into::into), //|r| r.into()),
+            (Self::Simple(s), Self::Computed(c)) | (Self::Computed(c), Self::Simple(s)) => {
+                if !s.is_negated() && !c.is_negated() {
+                    if s.disjunction().is_some() {
+                        // Defer dealing with this case
+                        unimplemented!("conjunction of disjunctions");
+                    }
+
+                    let Some(heading) = s.heading.and(&c.heading) else {
+                        return None;
+                    };
+
+                    // FIXME: What should this be, since we only maintain a single key?
+                    // Do we need to track all? There must be a reasonable simplification.
+                    // Just use None for initial development.
+                    let key = if s.key == c.key {
+                        Some(s.key.clone())
+                    } else {
+                        None
+                    };
+
+                    let mut relation = SimpleRelation::empty(heading, key);
+
+                    if s.heading == c.heading {
+                        // Intersection
+
+                        for (key, tuple) in s.tuples.iter() {
+                            if c.contains(tuple) {
+                                relation
+                                    .insert_with_key(key.clone(), tuple.clone())
+                                    .unwrap();
+                            }
+                        }
+                    } else {
+                        todo!();
+                        // for (_, tuplea) in a.tuples.iter() {
+                        //     // TODO: Use indexes to avoid enumerating the whole product.
+                        //     for (_, tupleb) in b.tuples.iter() {
+                        //         if let Some(and_tuple) = tuplea.and(&tupleb) {
+                        //             relation.insert(and_tuple).unwrap();
+                        //         }
+                        //     }
+                        // }
+                    }
+                    Some(relation.into())
+                } else {
+                    todo!()
+                }
+            }
+            (Self::Computed(s), Self::Computed(c)) => unimplemented!(),
+        }
+    }
+    fn or(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Simple(s), Self::Simple(c)) => s.or(c).into(),
+            (Self::Simple(s), Self::Computed(c)) | (Self::Computed(c), Self::Simple(s)) => todo!(),
+            (Self::Computed(s), Self::Computed(c)) => unimplemented!(),
+        }
+    }
+    fn not(&self) -> Self {
+        match self {
+            Self::Simple(r) => r.not().into(),
+            Self::Computed(r) => r.not().into(),
+        }
+    }
+    fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
+        match self {
+            Self::Simple(r) => Self::Simple(r.project(attrs)),
+            Self::Computed(r) => unimplemented!(),
+        }
+    }
+    fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
+        match self {
+            Self::Simple(r) => Self::Simple(r.remove(attrs)),
+            Self::Computed(r) => unimplemented!(),
+        }
+    }
+    fn rename<I: Into<HashMap<A, A>>>(&self, _mapping: I) -> Result<Self, AlgebraError> {
+        todo!()
+    }
+    fn compose(&self, other: &Self) -> Option<Self> {
+        match (self, other) {
+            (Self::Simple(s), Self::Simple(c)) => s.compose(c).map(Into::into),
+            (Self::Simple(s), Self::Computed(c)) | (Self::Computed(c), Self::Simple(s)) => todo!(),
+            (Self::Computed(s), Self::Computed(c)) => unimplemented!(),
+        }
+    }
+    fn is_negated(&self) -> bool {
+        match self {
+            Self::Simple(r) => r.is_negated(),
+            Self::Computed(r) => r.is_negated(),
+        }
+    }
+    fn disjunction(&self) -> &Option<BTreeSet<BTreeMap<A, V>>> {
+        // Only the difference case is currently supported, so there will be no 'residual disjunction'.
+        &None
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -373,7 +606,7 @@ mod test {
         let mut r: SimpleRelation<LE, LT, LV> = SimpleRelation::empty(empty_heading, None);
 
         assert_eq!(Some(0), r.cardinality());
-        assert_eq!(Vec::<LE>::new(), r.key());
+        assert_eq!(Vec::<LE>::new(), *r.key());
 
         let empty_tuple = SimpleTuple::new([]);
         r.insert(empty_tuple.clone()).unwrap();
@@ -499,16 +732,14 @@ mod test {
         heading.add_attribute(2, 2);
         heading.add_attribute(3, 2);
 
-        let r = SimpleRelation {
+        let r = Rel::Computed(ComputedRelation {
             heading: heading.clone(),
             key: vec![a1, a2],
             is_negated: false,
-            tuples: Default::default(),
-            predicate: Some(|_| true),
-        };
+            predicate: |_| true,
+        });
 
-        let r2 =
-            SimpleRelation::make([vec![(a1, w1), (a2, w2), (a3, w3)]], Some(vec![a1, a2])).unwrap();
+        let r2 = Rel::make([vec![(a1, w1), (a2, w2), (a3, w3)]], Some(vec![a1, a2])).unwrap();
 
         let r3 = r.and(&r2).unwrap();
         let r3a = r2.and(&r).unwrap();
@@ -521,19 +752,18 @@ mod test {
         //     SimpleRelation::make([vec![(a1, w1), (a2, w2), (a4, w3)]], Some(vec![a1, a2])).unwrap();
         // let r5 = r.and(&r4).unwrap();
 
-        let addition = SimpleRelation {
+        let addition = Rel::Computed(ComputedRelation {
             heading,
             key: vec![a1, a2],
             is_negated: false,
-            tuples: Default::default(),
-            predicate: Some(|tuple| {
+            predicate: |tuple| {
                 let a = tuple.get(1).and_then(LoamValue::wide_val).unwrap()[0];
                 let b = tuple.get(2).and_then(LoamValue::wide_val).unwrap()[0];
                 let c = tuple.get(3).and_then(LoamValue::wide_val).unwrap()[0];
 
                 a + b == c
-            }),
-        };
+            },
+        });
 
         // 1 + 2 = 3
         let r4 = r2.and(&addition).unwrap();
@@ -543,11 +773,14 @@ mod test {
         assert_eq!(r2, r4);
         assert_eq!(r4, addition.and(&r2).unwrap());
 
-        let r5 =
-            SimpleRelation::make([vec![(a1, w1), (a2, w2), (a3, w1)]], Some(vec![a1, a2])).unwrap();
+        let r5 = Rel::make([vec![(a1, w1), (a2, w2), (a3, w1)]], Some(vec![a1, a2])).unwrap();
         // 1 + 2 = 1
         let r6 = r5.and(&addition).unwrap();
         assert_eq!(3, r6.arity());
         assert_eq!(Some(0), r6.cardinality());
+
+        // 1 + 1
+        let r7 = Rel::make([vec![(a1, w1), (a2, w2)]], Some(vec![a1, a2])).unwrap();
+        //let r8 = r7.compose(&addition).unwrap();
     }
 }
