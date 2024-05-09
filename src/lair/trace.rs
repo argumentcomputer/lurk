@@ -1,4 +1,4 @@
-use p3_field::Field;
+use p3_field::PrimeField;
 use p3_matrix::dense::RowMajorMatrix;
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
@@ -45,9 +45,9 @@ impl<'a, T> ColumnMutSlice<'a, T> {
     }
 }
 
-impl<'a, F: Field + Ord> FuncChip<'a, F> {
+impl<'a, F: PrimeField + Ord> FuncChip<'a, F> {
     pub fn generate_trace(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
-        let query_map = &queries.record()[self.func.index];
+        let query_map = &queries.func_queries()[self.func.index];
         let width = self.width();
         let height = query_map.len().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
@@ -63,7 +63,7 @@ impl<'a, F: Field + Ord> FuncChip<'a, F> {
     }
 
     pub fn generate_trace_parallel(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
-        let func_queries = Vec::from_iter(&queries.record()[self.func.index]);
+        let func_queries = Vec::from_iter(&queries.func_queries()[self.func.index]);
         let width = self.width();
         let height = func_queries.len().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
@@ -82,7 +82,7 @@ impl<'a, F: Field + Ord> FuncChip<'a, F> {
     }
 }
 
-impl<F: Field + Ord> Func<F> {
+impl<F: PrimeField + Ord> Func<F> {
     pub fn populate_row(
         &self,
         args: &[F],
@@ -99,7 +99,7 @@ impl<F: Field + Ord> Func<F> {
     }
 }
 
-impl<F: Field + Ord> Block<F> {
+impl<F: PrimeField + Ord> Block<F> {
     fn populate_row(
         &self,
         map: &mut Vec<(F, Degree)>,
@@ -114,7 +114,7 @@ impl<F: Field + Ord> Block<F> {
     }
 }
 
-impl<F: Field + Ord> Ctrl<F> {
+impl<F: PrimeField + Ord> Ctrl<F> {
     fn populate_row(
         &self,
         map: &mut Vec<(F, Degree)>,
@@ -152,7 +152,7 @@ impl<F: Field + Ord> Ctrl<F> {
     }
 }
 
-impl<F: Field + Ord> Op<F> {
+impl<F: PrimeField + Ord> Op<F> {
     fn populate_row(
         &self,
         map: &mut Vec<(F, Degree)>,
@@ -198,7 +198,7 @@ impl<F: Field + Ord> Op<F> {
             }
             Op::Call(idx, inp) => {
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let query_map = &queries.record()[*idx];
+                let query_map = &queries.func_queries()[*idx];
                 let result = query_map.get(&args).expect("Cannot find query result");
                 for f in result.output.iter() {
                     map.push((*f, 1));
@@ -220,7 +220,7 @@ mod tests {
     use crate::{
         func,
         lair::{
-            demo_toplevel, execute::QueryRecord, field_from_i32, toplevel::Toplevel, trace::Width,
+            demo_toplevel, execute::QueryRecord, field_from_u32, toplevel::Toplevel, trace::Width,
         },
     };
 
@@ -267,7 +267,7 @@ mod tests {
             0, 0, 0, 0, 0, 0, 0, 0, //
         ]
         .into_iter()
-        .map(field_from_i32)
+        .map(field_from_u32)
         .collect::<Vec<_>>();
         assert_eq!(trace.values, expected_trace);
 
@@ -287,7 +287,7 @@ mod tests {
             7, 21, 1, 13, 8, 862828252, 1677721601, 0, 0, 1, //
         ]
         .into_iter()
-        .map(field_from_i32)
+        .map(field_from_u32)
         .collect::<Vec<_>>();
         assert_eq!(trace.values, expected_trace);
     }
@@ -345,7 +345,7 @@ mod tests {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
         ]
         .into_iter()
-        .map(field_from_i32)
+        .map(field_from_u32)
         .collect::<Vec<_>>();
         assert_eq!(trace.values, expected_trace);
     }
@@ -411,7 +411,7 @@ mod tests {
             1, 1, 3, 1, 0, 0, 0, 1, //
         ]
         .into_iter()
-        .map(field_from_i32)
+        .map(field_from_u32)
         .collect::<Vec<_>>();
         assert_eq!(trace.values, expected_trace);
     }

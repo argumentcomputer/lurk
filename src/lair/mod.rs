@@ -25,6 +25,12 @@ impl std::fmt::Display for Name {
 
 #[inline]
 #[allow(dead_code)]
+pub(crate) fn field_from_u32<F: p3_field::AbstractField>(i: u32) -> F {
+    F::from_canonical_u32(i)
+}
+
+#[inline]
+#[allow(dead_code)]
 pub(crate) fn field_from_i32<F: p3_field::AbstractField>(i: i32) -> F {
     if i < 0 {
         -F::from_canonical_u32((-i).try_into().unwrap())

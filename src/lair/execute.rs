@@ -7,36 +7,47 @@ use super::{
     List,
 };
 
-use p3_field::Field;
+use indexmap::IndexMap;
+use p3_field::PrimeField;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct QueryResult<F> {
-    pub(crate) output: List<F>,
+pub struct QueryResult<T> {
+    pub(crate) output: T,
     pub(crate) mult: u32,
 }
 
-type QueryMap<F> = BTreeMap<List<F>, QueryResult<F>>;
+pub(crate) type QueryMap<F> = BTreeMap<List<F>, QueryResult<List<F>>>;
+pub(crate) type MemMap<F> = IndexMap<List<F>, u32>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct QueryRecord<F> {
-    record: Vec<QueryMap<F>>,
+pub struct QueryRecord<F: PrimeField> {
+    pub(crate) func_queries: Vec<QueryMap<F>>,
+    pub(crate) mem_queries: Vec<MemMap<F>>,
 }
 
-impl<F: Clone + Ord> QueryRecord<F> {
+const NUM_MEM_TABLES: usize = 4;
+const MEM_TABLE_SIZES: [usize; NUM_MEM_TABLES] = [3, 4, 6, 8];
+
+pub fn mem_index_from_len(len: usize) -> Option<usize> {
+    MEM_TABLE_SIZES.iter().position(|&i| len == i)
+}
+
+impl<F: PrimeField + Ord> QueryRecord<F> {
     #[inline]
     pub fn new(toplevel: &Toplevel<F>) -> Self {
         Self {
-            record: vec![QueryMap::new(); toplevel.size()],
+            func_queries: vec![BTreeMap::new(); toplevel.size()],
+            mem_queries: vec![IndexMap::new(); NUM_MEM_TABLES],
         }
     }
 
     #[inline]
-    pub fn record(&self) -> &Vec<QueryMap<F>> {
-        &self.record
+    pub fn func_queries(&self) -> &Vec<QueryMap<F>> {
+        &self.func_queries
     }
 
     pub fn query(&mut self, index: usize, input: &[F]) -> Option<List<F>> {
-        if let Some(event) = self.record[index].get_mut(input) {
+        if let Some(event) = self.func_queries[index].get_mut(input) {
             event.mult += 1;
             Some(event.output.clone())
         } else {
@@ -46,22 +57,9 @@ impl<F: Clone + Ord> QueryRecord<F> {
 
     pub fn insert_result(&mut self, index: usize, input: List<F>, output: List<F>) {
         let result = QueryResult { output, mult: 1 };
-        assert!(self.record[index].insert(input, result).is_none());
+        assert!(self.func_queries[index].insert(input, result).is_none());
     }
-}
 
-impl<'a, F: Field + Ord> FuncChip<'a, F> {
-    pub fn execute(&self, args: List<F>, queries: &mut QueryRecord<F>) {
-        let index = self.func.index;
-        let toplevel = self.toplevel;
-        if queries.query(index, &args).is_none() {
-            let out = self.func.execute(&args, toplevel, queries);
-            queries.insert_result(index, args, out);
-        }
-    }
-}
-
-impl<F: Field + Ord> QueryRecord<F> {
     fn record_event_and_return(
         &mut self,
         toplevel: &Toplevel<F>,
@@ -77,9 +75,47 @@ impl<F: Field + Ord> QueryRecord<F> {
             out
         }
     }
+
+    fn store(&mut self, args: List<F>) -> F {
+        let len = args.len();
+        let idx = mem_index_from_len(len)
+            .unwrap_or_else(|| panic!("There are no mem tables of size {}", len));
+        if let Some((ptr, _, mult)) = self.mem_queries[idx].get_full_mut(&args) {
+            *mult += 1;
+            F::from_canonical_usize(ptr)
+        } else {
+            let (ptr, _) = self.mem_queries[idx].insert_full(args, 1);
+            F::from_canonical_usize(ptr)
+        }
+    }
+
+    fn load(&mut self, len: usize, ptr: F) -> &[F] {
+        let ptr_f: usize = ptr
+            .as_canonical_biguint()
+            .try_into()
+            .expect("Field element is too big for a pointer");
+        let idx = mem_index_from_len(len)
+            .unwrap_or_else(|| panic!("There are no mem tables of size {}", len));
+        let (args, mult) = self.mem_queries[idx]
+            .get_index_mut(ptr_f)
+            .expect("Unbound pointer");
+        *mult += 1;
+        args
+    }
 }
 
-impl<F: Field + Ord> Func<F> {
+impl<'a, F: PrimeField + Ord> FuncChip<'a, F> {
+    pub fn execute(&self, args: List<F>, queries: &mut QueryRecord<F>) {
+        let index = self.func.index;
+        let toplevel = self.toplevel;
+        if queries.query(index, &args).is_none() {
+            let out = self.func.execute(&args, toplevel, queries);
+            queries.insert_result(index, args, out);
+        }
+    }
+}
+
+impl<F: PrimeField + Ord> Func<F> {
     fn execute(&self, args: &[F], toplevel: &Toplevel<F>, record: &mut QueryRecord<F>) -> List<F> {
         let frame = &mut args.into();
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
@@ -87,7 +123,7 @@ impl<F: Field + Ord> Func<F> {
     }
 }
 
-impl<F: Field + Ord> Block<F> {
+impl<F: PrimeField + Ord> Block<F> {
     fn execute(
         &self,
         frame: &mut Vec<F>,
@@ -101,7 +137,7 @@ impl<F: Field + Ord> Block<F> {
     }
 }
 
-impl<F: Field + Ord> Ctrl<F> {
+impl<F: PrimeField + Ord> Ctrl<F> {
     fn execute(
         &self,
         frame: &mut Vec<F>,
@@ -129,7 +165,7 @@ impl<F: Field + Ord> Ctrl<F> {
     }
 }
 
-impl<F: Field + Ord> Op<F> {
+impl<F: PrimeField + Ord> Op<F> {
     fn execute(&self, frame: &mut Vec<F>, toplevel: &Toplevel<F>, record: &mut QueryRecord<F>) {
         match self {
             Op::Const(c) => {
@@ -159,11 +195,15 @@ impl<F: Field + Ord> Op<F> {
                 let out = record.record_event_and_return(toplevel, *idx, args);
                 frame.extend(out.iter());
             }
-            Op::Store(..) => {
-                todo!()
+            Op::Store(inp) => {
+                let args = inp.iter().map(|a| frame[*a]).collect();
+                let ptr = record.store(args);
+                frame.push(ptr);
             }
-            Op::Load(..) => {
-                todo!()
+            Op::Load(len, ptr) => {
+                let ptr = frame.get(*ptr).unwrap();
+                let args = record.load(*len, *ptr);
+                frame.extend(args);
             }
         }
     }
