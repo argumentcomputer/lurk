@@ -10,8 +10,8 @@ use super::schema::{LoamElement, LoamValue};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum RelationError {
-    #[error("Duplicate Tuple")]
-    DuplicateTuple,
+    #[error("Duplicate Key")]
+    DuplicateKey,
     #[error("Incompatible Sense")]
     IncompatibleSense,
     #[error("Incompatible Heading")]
@@ -32,7 +32,7 @@ pub trait Relation<A: Attribute, T: Type, V: Value>: Heading<A, T, V> + Algebra<
     fn empty(heading: SimpleHeading<A, T, V>, key: Option<Vec<A>>) -> Self;
 
     // The same tuple can be inserted more than once without changing the relation. If a distinct tuple with an existing
-    // key is inserted, a RelationError::DuplicateTuple error is returned.
+    // key is inserted, a RelationError::DuplicateKey error is returned.
     fn insert(&mut self, tuple: (impl Tuple<A, T, V> + Algebra<A, V>))
         -> Result<(), RelationError>;
 }
@@ -231,7 +231,7 @@ impl<A: Attribute, T: Type, V: Value> SimpleRelation<A, T, V> {
 
         if let Some(found) = self.tuples.get(&key) {
             if found != &tuple {
-                return Err(RelationError::DuplicateTuple);
+                return Err(RelationError::DuplicateKey);
             }
         }
         let _ = self.tuples.insert(key, tuple);
@@ -460,12 +460,15 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
     fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
         let attributes = attrs.into();
         let heading = self.heading.project(attributes.clone());
-        let key = self
-            .key
-            .iter()
-            .cloned()
-            .filter(|attr| attributes.contains(attr))
-            .collect::<Vec<_>>();
+        let key = if self.key.iter().all(|attr| attributes.contains(attr)) {
+            self.key
+                .iter()
+                .cloned()
+                .filter(|attr| attributes.contains(attr))
+                .collect::<Vec<_>>()
+        } else {
+            heading.attributes().iter().cloned().collect::<Vec<_>>()
+        };
         let mut relation = Self::empty(heading, Some(key.clone()));
 
         for tuple in self
@@ -478,7 +481,12 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
                 .iter()
                 .map(|attr| tuple.get(*attr).unwrap().clone())
                 .collect();
-            relation.insert_with_key(key_values, tuple).unwrap();
+
+            match relation.insert_with_key(key_values, tuple) {
+                Err(RelationError::DuplicateKey) => (),
+                Ok(()) => (),
+                Err(e) => Err(e).unwrap(),
+            }
         }
         relation
     }
@@ -492,8 +500,37 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
 
         self.project(to_project)
     }
-    fn rename<I: Into<HashMap<A, A>>>(&self, _mapping: I) -> Result<Self, AlgebraError> {
-        todo!()
+    fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Result<Self, AlgebraError> {
+        // TODO: This is very expensive because we rename all the tuples. A representation that stores tuples as vectors
+        // ordered by a canonical attribute-order from the heading will not have that problem.
+
+        let mapping = mapping.into();
+        let heading = self.heading.rename(mapping.clone())?;
+        let key = self
+            .key
+            .iter()
+            .map(|attr| mapping.get(attr).unwrap_or(attr).clone())
+            .collect::<Vec<_>>();
+
+        let tuples = self
+            .tuples
+            .iter()
+            .map(|(k, tuple)| {
+                let tuple = tuple.rename(mapping.clone()).unwrap();
+                let key = key
+                    .iter()
+                    .map(|attr| tuple.get(*attr).unwrap().clone())
+                    .collect::<Vec<_>>();
+                (key, tuple)
+            })
+            .collect::<BTreeMap<_, _>>();
+
+        Ok(Self {
+            heading,
+            key,
+            is_negated: self.is_negated,
+            tuples,
+        })
     }
     fn compose(&self, other: &Self) -> Option<Self> {
         let common = self.heading.common_attributes(&other.heading);
@@ -587,8 +624,11 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Rel<A, T, V> {
             Self::Computed(r) => unimplemented!(),
         }
     }
-    fn rename<I: Into<HashMap<A, A>>>(&self, _mapping: I) -> Result<Self, AlgebraError> {
-        todo!()
+    fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Result<Self, AlgebraError> {
+        match self {
+            Self::Simple(r) => r.rename(mapping).map(Self::Simple),
+            Self::Computed(r) => unimplemented!(),
+        }
     }
     fn compose(&self, other: &Self) -> Option<Self> {
         match (self, other) {
@@ -679,7 +719,7 @@ mod test {
             [vec![(a1, w1), (a2, p1)], vec![(a1, w1), (a2, p2)]],
             Some(vec![a1]),
         );
-        assert_eq!(Err(RelationError::DuplicateTuple), r4);
+        assert_eq!(Err(RelationError::DuplicateKey), r4);
 
         // a1 | a2
         //--------
@@ -742,6 +782,13 @@ mod test {
         let r9 = r3_or_r5.and(&r8).unwrap();
         assert_eq!(3, r9.arity());
         assert_eq!(Some(4), r9.cardinality());
+
+        let r10 = r8.rename([(a2, a3), (a3, a2)]).unwrap();
+        assert_eq!(2, r10.arity());
+        assert_eq!(Some(3), r10.cardinality());
+        assert_eq!(pt, *r10.get_type(a3).unwrap());
+        assert_eq!(wt, *r10.get_type(a2).unwrap());
+        assert_eq!(Some(2), r10.project([a3]).cardinality());
     }
 
     #[test]
