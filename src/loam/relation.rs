@@ -249,7 +249,7 @@ impl<A: Attribute, T: Type, V: Value> ComputedRelation<A, T, V> {
             heading: self.heading.clone(),
             key: self.key.clone(),
             is_negated: self.is_negated,
-            predicate: self.predicate.clone(),
+            predicate: self.predicate,
         }
     }
 
@@ -291,8 +291,7 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleRelation<A, T, 
         self.heading.attribute_types()
     }
     fn arity(&self) -> usize {
-        let arity = self.heading.arity();
-        arity
+        self.heading.arity()
     }
     fn from_tuple(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self {
         let heading = SimpleHeading::from_tuple(tuple);
@@ -313,10 +312,9 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for ComputedRelation<A, T
         self.heading.attribute_types()
     }
     fn arity(&self) -> usize {
-        let arity = self.heading.arity();
-        arity
+        self.heading.arity()
     }
-    fn from_tuple(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self {
+    fn from_tuple(_tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self {
         unimplemented!();
     }
 }
@@ -393,7 +391,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
                 for (_, tuplea) in a.tuples.iter() {
                     // TODO: Use indexes to avoid enumerating the whole product.
                     for (_, tupleb) in b.tuples.iter() {
-                        if let Some(and_tuple) = tuplea.and(&tupleb) {
+                        if let Some(and_tuple) = tuplea.and(tupleb) {
                             relation.insert(and_tuple).unwrap();
                         }
                     }
@@ -473,8 +471,8 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
 
         for tuple in self
             .tuples
-            .iter()
-            .map(|(_, tuple)| tuple.project_aux(&attributes))
+            .values()
+            .map(|tuple| tuple.project_aux(&attributes))
         {
             let key_values = key
                 .clone()
@@ -485,7 +483,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
             match relation.insert_with_key(key_values, tuple) {
                 Err(RelationError::DuplicateKey) => (),
                 Ok(()) => (),
-                Err(e) => Err(e).unwrap(),
+                Err(e) => panic!("{:?}", e),
             }
         }
         relation
@@ -509,13 +507,13 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
         let key = self
             .key
             .iter()
-            .map(|attr| mapping.get(attr).unwrap_or(attr).clone())
+            .map(|attr| *mapping.get(attr).unwrap_or(attr))
             .collect::<Vec<_>>();
 
         let tuples = self
             .tuples
             .iter()
-            .map(|(k, tuple)| {
+            .map(|(_k, tuple)| {
                 let tuple = tuple.rename(mapping.clone()).unwrap();
                 let key = key
                     .iter()
@@ -536,7 +534,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
         let common = self.heading.common_attributes(&other.heading);
 
         // This can be optimized.
-        self.and(&other).map(|r| r.remove(common))
+        self.and(other).map(|r| r.remove(common))
     }
     fn is_negated(&self) -> bool {
         self.is_negated
@@ -596,14 +594,16 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Rel<A, T, V> {
                     todo!()
                 }
             }
-            (Self::Computed(s), Self::Computed(c)) => unimplemented!(),
+            (Self::Computed(_s), Self::Computed(_c)) => unimplemented!(),
         }
     }
     fn or(&self, other: &Self) -> Self {
         match (self, other) {
             (Self::Simple(s), Self::Simple(c)) => s.or(c).into(),
-            (Self::Simple(s), Self::Computed(c)) | (Self::Computed(c), Self::Simple(s)) => todo!(),
-            (Self::Computed(s), Self::Computed(c)) => unimplemented!(),
+            (Self::Simple(_s), Self::Computed(_c)) | (Self::Computed(_c), Self::Simple(_s)) => {
+                todo!()
+            }
+            (Self::Computed(_s), Self::Computed(_c)) => unimplemented!(),
         }
     }
     fn not(&self) -> Self {
@@ -615,19 +615,19 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Rel<A, T, V> {
     fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
         match self {
             Self::Simple(r) => Self::Simple(r.project(attrs)),
-            Self::Computed(r) => unimplemented!(),
+            Self::Computed(_r) => unimplemented!(),
         }
     }
     fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
         match self {
             Self::Simple(r) => Self::Simple(r.remove(attrs)),
-            Self::Computed(r) => unimplemented!(),
+            Self::Computed(_r) => unimplemented!(),
         }
     }
     fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Result<Self, AlgebraError> {
         match self {
             Self::Simple(r) => r.rename(mapping).map(Self::Simple),
-            Self::Computed(r) => unimplemented!(),
+            Self::Computed(_r) => unimplemented!(),
         }
     }
     fn compose(&self, other: &Self) -> Option<Self> {
@@ -641,7 +641,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Rel<A, T, V> {
                 let common = s.heading.common_attributes(&c.heading);
                 other.and(self).map(|r| r.remove(common))
             }
-            (Self::Computed(s), Self::Computed(c)) => unimplemented!(),
+            (Self::Computed(_s), Self::Computed(_c)) => unimplemented!(),
         }
     }
     fn is_negated(&self) -> bool {
@@ -855,5 +855,6 @@ mod test {
         // 1 + 1
         let r7 = Rel::make([vec![(a1, w1), (a2, w2)]], Some(vec![a1, a2])).unwrap();
         let r8 = r7.compose(&addition).unwrap();
+        assert_eq!(1, r8.arity());
     }
 }

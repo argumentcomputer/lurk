@@ -99,14 +99,14 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
                     .or_else(|| other.values.get(&attr))
                     .unwrap();
 
-                values.insert(attr.clone(), value.clone());
+                values.insert(attr, value.clone());
             }
             Some(Self { heading, values })
         } else {
             unimplemented!()
         }
     }
-    fn or(&self, other: &Self) -> Self {
+    fn or(&self, _other: &Self) -> Self {
         unimplemented!();
     }
     fn not(&self) -> Self {
@@ -148,7 +148,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
 
         let mut values = BTreeMap::new();
         for (k, v) in self.values.iter() {
-            let new_k = mapping.get(k).unwrap_or(k).clone();
+            let new_k = *mapping.get(k).unwrap_or(k);
 
             values.insert(new_k, v.clone());
         }
@@ -163,7 +163,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
         let common = self.heading.common_attributes(&other.heading);
 
         // This can be optimized.
-        self.and(&other).map(|r| r.remove(common))
+        self.and(other).map(|r| r.remove(common))
     }
 
     fn is_negated(&self) -> bool {

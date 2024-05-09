@@ -73,7 +73,7 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleHeading<A, T, V
         // Make this OnceOnly, after heading is frozen.
         let mut set = HashSet::new();
         for key in self.attributes.keys() {
-            set.insert(key.clone());
+            set.insert(*key);
         }
         set
     }
@@ -200,10 +200,8 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for SimpleHeading<A, T, V> {
             self.clone()
         } else {
             let mut disjunction = self
-                .disjunction
-                .as_ref()
-                .map(|d| d.clone())
-                .unwrap_or(Default::default());
+                .disjunction.clone()
+                .unwrap_or_default();
 
             if other.is_negated() {
                 unimplemented!("disjunction with negation");
@@ -278,9 +276,9 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for SimpleHeading<A, T, V> {
         let mapping = mapping.into();
         let mut attributes = BTreeMap::new();
         for (k, v) in self.attributes.iter() {
-            let new_k = mapping.get(k).unwrap_or(k).clone();
+            let new_k = *mapping.get(k).unwrap_or(k);
 
-            attributes.insert(new_k, v.clone());
+            attributes.insert(new_k, *v);
         }
 
         if attributes.len() != self.attributes.len() {
@@ -292,9 +290,9 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for SimpleHeading<A, T, V> {
             for d in disj.iter() {
                 let mut a = BTreeMap::new();
                 for (k, v) in d.iter() {
-                    let new_k = mapping.get(k).unwrap_or(k).clone();
+                    let new_k = *mapping.get(k).unwrap_or(k);
 
-                    a.insert(new_k, v.clone());
+                    a.insert(new_k, *v);
                 }
                 disjunction.insert(a);
             }
