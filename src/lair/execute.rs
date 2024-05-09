@@ -1,4 +1,4 @@
-use std::collections::{btree_map::Iter, BTreeMap};
+use std::collections::BTreeMap;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
@@ -15,25 +15,28 @@ pub struct QueryResult<F> {
     pub(crate) mult: u32,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct QueryMap<F>(pub(crate) BTreeMap<List<F>, QueryResult<F>>);
+type QueryMap<F> = BTreeMap<List<F>, QueryResult<F>>;
 
-impl<F> QueryMap<F> {
-    #[inline]
-    pub fn new() -> Self {
-        QueryMap(BTreeMap::new())
-    }
-
-    #[inline]
-    pub fn size(&self) -> usize {
-        self.0.len()
-    }
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QueryRecord<F> {
+    record: Vec<QueryMap<F>>,
 }
 
-impl<F: Clone + Ord> QueryMap<F> {
+impl<F: Clone + Ord> QueryRecord<F> {
     #[inline]
-    pub fn query(&mut self, input: &[F]) -> Option<List<F>> {
-        if let Some(event) = self.0.get_mut(input) {
+    pub fn new(toplevel: &Toplevel<F>) -> Self {
+        Self {
+            record: vec![QueryMap::new(); toplevel.size()],
+        }
+    }
+
+    #[inline]
+    pub fn record(&self) -> &Vec<QueryMap<F>> {
+        &self.record
+    }
+
+    pub fn query(&mut self, index: usize, input: &[F]) -> Option<List<F>> {
+        if let Some(event) = self.record[index].get_mut(input) {
             event.mult += 1;
             Some(event.output.clone())
         } else {
@@ -41,38 +44,9 @@ impl<F: Clone + Ord> QueryMap<F> {
         }
     }
 
-    pub fn insert_result(&mut self, input: List<F>, output: List<F>) {
+    pub fn insert_result(&mut self, index: usize, input: List<F>, output: List<F>) {
         let result = QueryResult { output, mult: 1 };
-        assert!(self.0.insert(input, result).is_none());
-    }
-
-    pub fn iter(&self) -> Iter<'_, List<F>, QueryResult<F>> {
-        self.0.iter()
-    }
-
-    pub fn get(&self, args: &List<F>) -> Option<&QueryResult<F>> {
-        self.0.get(args)
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct QueryRecord<F> {
-    record: Vec<QueryMap<F>>,
-}
-
-impl<F: Clone> QueryRecord<F> {
-    #[inline]
-    pub fn new(toplevel: &Toplevel<F>) -> Self {
-        Self {
-            record: vec![QueryMap::new(); toplevel.size()],
-        }
-    }
-}
-
-impl<F> QueryRecord<F> {
-    #[inline]
-    pub fn record(&self) -> &Vec<QueryMap<F>> {
-        &self.record
+        assert!(self.record[index].insert(input, result).is_none());
     }
 }
 
@@ -80,9 +54,9 @@ impl<'a, F: Field + Ord> FuncChip<'a, F> {
     pub fn execute(&self, args: List<F>, queries: &mut QueryRecord<F>) {
         let index = self.func.index;
         let toplevel = self.toplevel;
-        if queries.record[index].query(&args).is_none() {
+        if queries.query(index, &args).is_none() {
             let out = self.func.execute(&args, toplevel, queries);
-            queries.record[index].insert_result(args, out);
+            queries.insert_result(index, args, out);
         }
     }
 }
@@ -95,11 +69,11 @@ impl<F: Field + Ord> QueryRecord<F> {
         args: List<F>,
     ) -> List<F> {
         let func = toplevel.get_by_index(func_idx).unwrap();
-        if let Some(out) = self.record[func_idx].query(&args) {
+        if let Some(out) = self.query(func_idx, &args) {
             out
         } else {
             let out = func.execute(&args, toplevel, self);
-            self.record[func_idx].insert_result(args, out.clone());
+            self.insert_result(func_idx, args, out.clone());
             out
         }
     }

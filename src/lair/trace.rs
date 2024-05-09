@@ -49,7 +49,7 @@ impl<'a, F: Field + Ord> FuncChip<'a, F> {
     pub fn generate_trace(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let query_map = &queries.record()[self.func.index];
         let width = self.width();
-        let height = query_map.size().next_power_of_two().max(4);
+        let height = query_map.len().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
         for (i, (args, res)) in query_map.iter().enumerate() {
             let start = i * width;
@@ -63,7 +63,7 @@ impl<'a, F: Field + Ord> FuncChip<'a, F> {
     }
 
     pub fn generate_trace_parallel(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
-        let func_queries = Vec::from_iter(&queries.record()[self.func.index].0);
+        let func_queries = Vec::from_iter(&queries.record()[self.func.index]);
         let width = self.width();
         let height = func_queries.len().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
