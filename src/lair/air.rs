@@ -182,7 +182,7 @@ impl<F: Field> Op<F> {
                 map.push(c);
             }
             Op::Call(idx, _) => {
-                let func = toplevel.get_by_index(*idx as usize).unwrap();
+                let func = toplevel.get_by_index(*idx).unwrap();
                 for _ in 0..func.output_size {
                     let o = *local.next_aux(index);
                     map.push(Val::Expr(o.into()));

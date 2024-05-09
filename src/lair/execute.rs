@@ -182,7 +182,7 @@ impl<F: Field + Ord> Op<F> {
             }
             Op::Call(idx, inp) => {
                 let args = inp.iter().map(|a| frame[*a]).collect();
-                let out = record.record_event_and_return(toplevel, *idx as usize, args);
+                let out = record.record_event_and_return(toplevel, *idx, args);
                 frame.extend(out.iter());
             }
         }

@@ -198,7 +198,7 @@ impl<F: Field + Ord> Op<F> {
             }
             Op::Call(idx, inp) => {
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let query_map = &queries.record()[*idx as usize];
+                let query_map = &queries.record()[*idx];
                 let result = query_map.get(&args).expect("Cannot find query result");
                 for f in result.output.iter() {
                     map.push((*f, 1));

@@ -180,7 +180,6 @@ impl<F: Clone + Ord> BlockE<F> {
                         .info_map
                         .get_index_of(name)
                         .unwrap_or_else(|| panic!("Unknown function {name}"));
-                    assert!(u32::try_from(name_idx).is_ok());
                     let FuncInfo {
                         input_size,
                         output_size,
@@ -188,7 +187,7 @@ impl<F: Clone + Ord> BlockE<F> {
                     assert_eq!(inp.len(), input_size);
                     assert_eq!(out.len(), output_size);
                     let inp = inp.iter().map(|a| use_var(a, ctx)).collect();
-                    ops.push(Op::Call(name_idx as u32, inp));
+                    ops.push(Op::Call(name_idx, inp));
                     out.iter().for_each(|t| bind(t, ctx));
                 }
             }

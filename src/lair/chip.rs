@@ -180,7 +180,7 @@ impl<F> Op<F> {
                 }
             }
             Op::Call(f_idx, ..) => {
-                let func = toplevel.get_by_index(*f_idx as usize).unwrap();
+                let func = toplevel.get_by_index(*f_idx).unwrap();
                 let out_size = func.output_size;
                 *aux += out_size;
                 degrees.extend(vec![1; out_size]);

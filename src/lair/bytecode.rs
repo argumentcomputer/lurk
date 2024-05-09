@@ -8,8 +8,7 @@ pub enum Op<F> {
     Mul(usize, usize),
     Inv(usize),
     // index, arguments
-    // u32 is used here to reduce the size of Op<F> on 64 bit machines
-    Call(u32, List<usize>),
+    Call(usize, List<usize>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
