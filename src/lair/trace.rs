@@ -205,6 +205,12 @@ impl<F: Field + Ord> Op<F> {
                     slice.push_aux(index, *f);
                 }
             }
+            Op::Store(..) => {
+                todo!()
+            }
+            Op::Load(..) => {
+                todo!()
+            }
         }
     }
 }

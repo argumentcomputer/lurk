@@ -23,6 +23,10 @@ pub enum Op<F> {
     /// at index `i` in the toplevel when applied to the arguments at positions
     /// `[a, b, ...]` in the stack
     Call(usize, List<usize>),
+    /// `Store([y, ...])` pushes to the stack the pointer to `[y, ...]`
+    Store(List<usize>),
+    /// `Load(len, y)` extends the stack with the `len` values that is pointed by `y`
+    Load(usize, usize),
 }
 
 /// A "code block" containing a sequence of operators and a control node to be

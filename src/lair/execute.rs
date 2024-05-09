@@ -159,6 +159,12 @@ impl<F: Field + Ord> Op<F> {
                 let out = record.record_event_and_return(toplevel, *idx, args);
                 frame.extend(out.iter());
             }
+            Op::Store(..) => {
+                todo!()
+            }
+            Op::Load(..) => {
+                todo!()
+            }
         }
     }
 }

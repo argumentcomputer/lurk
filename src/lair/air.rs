@@ -189,6 +189,12 @@ impl<F: Field> Op<F> {
                 }
                 // TODO: lookup argument
             }
+            Op::Store(..) => {
+                todo!()
+            }
+            Op::Load(..) => {
+                todo!()
+            }
         }
     }
 }

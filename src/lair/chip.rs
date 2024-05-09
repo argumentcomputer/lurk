@@ -185,6 +185,14 @@ impl<F> Op<F> {
                 *aux += out_size;
                 degrees.extend(vec![1; out_size]);
             }
+            Op::Store(..) => {
+                *aux += 1;
+                degrees.push(1);
+            }
+            Op::Load(ptr_size, ..) => {
+                *aux += *ptr_size;
+                degrees.extend(vec![1; *ptr_size]);
+            }
         }
     }
 }
