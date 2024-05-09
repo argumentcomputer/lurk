@@ -282,7 +282,7 @@ mod tests {
         utils::{uni_stark_prove as prove, uni_stark_verify as verify, BabyBearPoseidon2},
     };
 
-    use crate::lair::{demo_toplevel, field_from_u32};
+    use crate::lair::{demo_toplevel, execute::QueryRecord, field_from_u32};
 
     use super::*;
 
@@ -336,6 +336,22 @@ mod tests {
         let challenger = &mut config.challenger();
         verify(&config, &factorial_chip, challenger, &proof).unwrap();
 
+        let challenger = &mut config.challenger();
+        let proof = prove(&config, &fib_chip, challenger, fib_trace);
+        let challenger = &mut config.challenger();
+        verify(&config, &fib_chip, challenger, &proof).unwrap();
+    }
+
+    #[test]
+    fn lair_long_constraint_test() {
+        let toplevel = demo_toplevel::<_>();
+        let fib_chip = FuncChip::from_name("fib", &toplevel);
+        let args = [field_from_u32(20000)].into();
+        let queries = &mut QueryRecord::new(&toplevel);
+        fib_chip.execute_iter(args, queries);
+        let fib_trace = fib_chip.generate_trace_parallel(queries);
+
+        let config = BabyBearPoseidon2::new();
         let challenger = &mut config.challenger();
         let proof = prove(&config, &fib_chip, challenger, fib_trace);
         let challenger = &mut config.challenger();
