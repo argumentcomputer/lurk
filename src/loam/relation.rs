@@ -52,6 +52,12 @@ pub struct ComputedRelation<A: Attribute, T: Type, V: Value> {
     pub(crate) key: Vec<A>,
     pub(crate) is_negated: bool,
     pub(crate) predicate: fn(&SimpleTuple<A, T, V>) -> bool,
+    // - A hint is a function from a set of attributes to a tuple intended to satisfy the predicate.
+    // - The result will be checked by the predicate, so theoretically need not satisfy.
+    // - In theory, there could be multiple hints for a given input tuple shape (the attributes).
+    // - Hints could also return relations.
+    // - If all these changes were made, hints could function as guessing strategies.
+    // - TODO: The input shape should be specified as a Heading (including types), not just by the input attributes.
     pub(crate) hints:
         BTreeMap<BTreeSet<A>, fn(&SimpleTuple<A, T, V>) -> Option<SimpleTuple<A, T, V>>>,
 }
@@ -103,7 +109,8 @@ impl<A: Attribute, T: Type, V: Value> Relation<A, T, V> for SimpleRelation<A, T,
         Ok(relation)
     }
     fn empty(heading: SimpleHeading<A, T, V>, key: Option<Vec<A>>) -> Self {
-        let key = key.unwrap_or_else(|| heading.attributes().into_iter().collect());
+        let mut key = key.unwrap_or_else(|| heading.attributes().into_iter().collect());
+        key.sort();
 
         Self {
             heading,
@@ -236,6 +243,26 @@ impl<A: Attribute, T: Type, V: Value> SimpleRelation<A, T, V> {
     }
 }
 impl<A: Attribute, T: Type, V: Value> ComputedRelation<A, T, V> {
+    fn new(
+        heading: SimpleHeading<A, T, V>,
+        key: Option<Vec<A>>,
+        is_negated: bool,
+        predicate: fn(&SimpleTuple<A, T, V>) -> bool,
+        hints: Option<
+            BTreeMap<BTreeSet<A>, fn(&SimpleTuple<A, T, V>) -> Option<SimpleTuple<A, T, V>>>,
+        >,
+    ) -> Self {
+        let mut key = key.unwrap_or_else(|| heading.attributes().into_iter().collect());
+        key.sort();
+
+        Self {
+            heading,
+            key,
+            is_negated,
+            predicate,
+            hints: hints.unwrap_or_else(|| Default::default()),
+        }
+    }
     fn is_negated(&self) -> bool {
         self.is_negated
     }
@@ -364,13 +391,14 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleRelation<A, T, V> 
                 return None;
             };
 
-            // FIXME: What should this be, since we only maintain a single key?
-            // Do we need to track all? There must be a reasonable simplification.
-            // Just use None for initial development.
             let key = if self.key == other.key {
                 Some(self.key.clone())
             } else {
-                None
+                let mut key = self.key().clone();
+                key.extend(&other.key);
+                key.dedup();
+
+                Some(key)
             };
 
             let (a, b) = if self.cardinality() <= other.cardinality() {
@@ -563,13 +591,14 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for Rel<A, T, V> {
                         return None;
                     };
 
-                    // FIXME: What should this be, since we only maintain a single key?
-                    // Do we need to track all? There must be a reasonable simplification.
-                    // Just use None for initial development.
                     let key = if s.key == c.key {
                         Some(s.key.clone())
                     } else {
-                        None
+                        let mut key = s.key().clone();
+                        key.extend(&c.key);
+                        key.sort();
+                        key.dedup();
+                        Some(key)
                     };
 
                     let mut relation = SimpleRelation::empty(heading, key);
@@ -834,32 +863,29 @@ mod test {
         //     SimpleRelation::make([vec![(a1, w1), (a2, w2), (a4, w3)]], Some(vec![a1, a2])).unwrap();
         // let r5 = r.and(&r4).unwrap();
 
-        let predicate = |tuple: SimpleTuple<LE, LT, LV>| {
-            let a = tuple.get(1).and_then(LoamValue::wide_val).unwrap()[0];
-            let b = tuple.get(2).and_then(LoamValue::wide_val).unwrap()[0];
-            let c = tuple.get(3).and_then(LoamValue::wide_val).unwrap()[0];
+        let hints = {
+            let mut hints = BTreeMap::default();
 
-            a + b == c
+            fn hint(tuple: &SimpleTuple<LE, LT, LV>) -> Option<SimpleTuple<LE, LT, LV>> {
+                let a = tuple.get(1).and_then(LoamValue::wide_val).unwrap()[0];
+                let b = tuple.get(2).and_then(LoamValue::wide_val).unwrap()[0];
+                let c = LoamValue::Wide([a + b, 0, 0, 0, 0, 0, 0, 0]);
+
+                // TODO: better tuple manipulation API
+                let mut extended = tuple.clone();
+                extended.heading.add_attribute(3, 2);
+                extended.values.insert(3, c);
+
+                Some(extended)
+            };
+
+            hints.insert(
+                BTreeSet::from([a1, a2]),
+                hint as fn(&SimpleTuple<LE, LT, LV>) -> Option<SimpleTuple<LE, LT, LV>>,
+            );
+
+            hints
         };
-        let mut hints = BTreeMap::default();
-
-        fn hint(tuple: &SimpleTuple<LE, LT, LV>) -> Option<SimpleTuple<LE, LT, LV>> {
-            let a = tuple.get(1).and_then(LoamValue::wide_val).unwrap()[0];
-            let b = tuple.get(2).and_then(LoamValue::wide_val).unwrap()[0];
-            let c = LoamValue::Wide([a + b, 0, 0, 0, 0, 0, 0, 0]);
-
-            // TODO: better tuple manipulation API
-            let mut extended = tuple.clone();
-            extended.heading.add_attribute(3, 2);
-            extended.values.insert(3, c);
-
-            Some(extended)
-        };
-
-        hints.insert(
-            BTreeSet::from([a1, a2]),
-            hint as fn(&SimpleTuple<LE, LT, LV>) -> Option<SimpleTuple<LE, LT, LV>>,
-        );
 
         let addition = Rel::Computed(ComputedRelation {
             heading,
@@ -912,18 +938,104 @@ mod test {
         let r11 = r10.and(&addition).unwrap();
         let r12 = r10.compose(&addition).unwrap();
 
+        assert_eq!(4, r11.arity());
+        assert_eq!(2, r12.arity());
+        // Result is as expected when the extra a4 attribute is removed.
+        assert_eq!(r2, r11.remove([a4]));
+
         // a4
         //---
         // w4
         let r13 = Rel::make([vec![(a4, w4)]], Some(vec![a4])).unwrap();
 
-        assert_eq!(4, r11.arity());
-        assert_eq!(2, r12.arity());
-        // TODO: compute keys consistently.
-        //assert_eq!(r11, r2.and(&r13).unwrap());
-        // Result is as expected when the extra a4 attribute is removed.
-        assert_eq!(r2, r11.remove([a4]));
         // The a4 attribute has its original value.
         assert_eq!(r13, r11.project([a4]));
+
+        let (hints, bad_hints) = {
+            let mut hints = BTreeMap::default();
+            let mut bad_hints = BTreeMap::default();
+
+            // This contrived example will extend a tuple by adding a 4 attribute whose
+            // values is 2 + its 2 attribute.
+            fn extend_hint(tuple: &SimpleTuple<LE, LT, LV>) -> Option<SimpleTuple<LE, LT, LV>> {
+                let b = tuple.get(2).and_then(LoamValue::wide_val).unwrap()[0];
+                let d = LoamValue::Wide([b + 2, 0, 0, 0, 0, 0, 0, 0]);
+
+                // TODO: better tuple manipulation API
+                let mut extended = tuple.clone();
+                extended.heading.add_attribute(4, 2);
+                extended.values.insert(4, d);
+
+                Some(extended)
+            };
+
+            // Like `extend_hint`, except this adds 3 -- which disagrees with the predicate relation below.
+            fn bad_extend_hint(tuple: &SimpleTuple<LE, LT, LV>) -> Option<SimpleTuple<LE, LT, LV>> {
+                let b = tuple.get(2).and_then(LoamValue::wide_val).unwrap()[0];
+                let d = LoamValue::Wide([b + 3, 0, 0, 0, 0, 0, 0, 0]);
+
+                // TODO: better tuple manipulation API
+                let mut extended = tuple.clone();
+                extended.heading.add_attribute(4, 2);
+                extended.values.insert(4, d);
+
+                Some(extended)
+            };
+
+            hints.insert(
+                BTreeSet::from([a2]),
+                extend_hint as fn(&SimpleTuple<LE, LT, LV>) -> Option<SimpleTuple<LE, LT, LV>>,
+            );
+
+            bad_hints.insert(
+                BTreeSet::from([a2]),
+                bad_extend_hint as fn(&SimpleTuple<LE, LT, LV>) -> Option<SimpleTuple<LE, LT, LV>>,
+            );
+
+            (hints, bad_hints)
+        };
+
+        let extend = {
+            let mut heading = SimpleHeading::<LE, LT, LV>::default();
+            heading.add_attribute(2, 2);
+            heading.add_attribute(4, 2);
+
+            // This computed relation ensures that its 4 attribute is 2 + its 2 attribute.
+            Rel::Computed(ComputedRelation {
+                heading,
+                key: vec![a2],
+                is_negated: false,
+                predicate: |tuple| {
+                    let b = tuple.get(2).and_then(LoamValue::wide_val).unwrap()[0];
+                    let d = tuple.get(4).and_then(LoamValue::wide_val).unwrap()[0];
+
+                    d == b + 2
+                },
+                hints,
+            })
+        };
+        let bad_extend = {
+            let mut heading = SimpleHeading::<LE, LT, LV>::default();
+            heading.add_attribute(2, 2);
+            heading.add_attribute(4, 2);
+
+            // This computed relation ensures that its 4 attribute is 2 + its 2 attribute.
+            Rel::Computed(ComputedRelation {
+                heading,
+                key: vec![a2],
+                is_negated: false,
+                predicate: |tuple| {
+                    let b = tuple.get(2).and_then(LoamValue::wide_val).unwrap()[0];
+                    let d = tuple.get(4).and_then(LoamValue::wide_val).unwrap()[0];
+
+                    d == b + 2
+                },
+                hints: bad_hints,
+            })
+        };
+
+        assert_eq!(r11, r2.and(&extend).unwrap());
+        // Joining with bad_extend yields an empty relation.
+        assert_eq!(Some(0), r2.and(&bad_extend).unwrap().cardinality());
     }
 }
