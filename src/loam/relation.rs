@@ -51,7 +51,7 @@ pub struct ComputedRelation<A: Attribute, T: Type, V: Value> {
     pub(crate) heading: SimpleHeading<A, T, V>,
     pub(crate) key: Vec<A>,
     pub(crate) is_negated: bool,
-    pub(crate) predicate: fn(&SimpleTuple<A, T, V>) -> bool,
+    pub(crate) predicate: Option<fn(&SimpleTuple<A, T, V>) -> bool>,
     // - A hint is a function from a set of attributes to a tuple intended to satisfy the predicate.
     // - The result will be checked by the predicate, so theoretically need not satisfy.
     // - In theory, there could be multiple hints for a given input tuple shape (the attributes).
@@ -194,8 +194,11 @@ impl<A: Attribute, T: Type, V: Value> Rel<A, T, V> {
     pub fn contains(&self, tuple: &SimpleTuple<A, T, V>) -> bool {
         match self {
             Self::Computed(r) => {
-                let predicate = r.predicate;
-                predicate(tuple)
+                if let Some(predicate) = r.predicate {
+                    predicate(tuple)
+                } else {
+                    true
+                }
             }
             Self::Simple(r) => r.contains(tuple),
         }
@@ -247,7 +250,7 @@ impl<A: Attribute, T: Type, V: Value> ComputedRelation<A, T, V> {
         heading: SimpleHeading<A, T, V>,
         key: Option<Vec<A>>,
         is_negated: bool,
-        predicate: fn(&SimpleTuple<A, T, V>) -> bool,
+        predicate: Option<fn(&SimpleTuple<A, T, V>) -> bool>,
         hints: Option<
             BTreeMap<BTreeSet<A>, fn(&SimpleTuple<A, T, V>) -> Option<SimpleTuple<A, T, V>>>,
         >,
@@ -278,8 +281,11 @@ impl<A: Attribute, T: Type, V: Value> ComputedRelation<A, T, V> {
     }
 
     pub fn contains(&self, tuple: &SimpleTuple<A, T, V>) -> bool {
-        let predicate = self.predicate;
-        predicate(tuple)
+        if let Some(predicate) = self.predicate {
+            predicate(tuple)
+        } else {
+            true
+        }
     }
 
     pub fn and_tuple(&self, tuple: &SimpleTuple<A, T, V>) -> Option<SimpleTuple<A, T, V>> {
@@ -291,20 +297,27 @@ impl<A: Attribute, T: Type, V: Value> ComputedRelation<A, T, V> {
             };
         }
 
-        let predicate = self.predicate;
         let projected = tuple.project(common.clone());
 
         if self.attributes().is_subset(&common) {
-            predicate(&projected).then_some(tuple.clone())
+            if let Some(predicate) = self.predicate {
+                predicate(&projected).then_some(tuple.clone())
+            } else {
+                Some(tuple.clone())
+            }
         } else {
             let common = common.into_iter().collect::<BTreeSet<_>>();
 
             self.hints.get(&common).and_then(|hint| {
                 hint(tuple).and_then(|extended| {
-                    if predicate(&extended) {
-                        extended.and(&projected)
+                    if let Some(predicate) = self.predicate {
+                        if predicate(&extended) {
+                            extended.and(&projected)
+                        } else {
+                            None
+                        }
                     } else {
-                        None
+                        extended.and(&projected)
                     }
                 })
             })
@@ -843,7 +856,7 @@ mod test {
             heading: heading.clone(),
             key: vec![a1, a2],
             is_negated: false,
-            predicate: |_| true,
+            predicate: None,
             hints: Default::default(),
         });
 
@@ -857,6 +870,8 @@ mod test {
         assert_eq!(Some(1), r3.cardinality());
         assert_eq!(Some(1), r3a.cardinality());
         assert_eq!(r3, r3a);
+        // join with unconstrained ComputedRelation (predicate none) yields self.
+        assert_eq!(r2, r3);
 
         // Wrong heading. Panics.
         // let r4 =
@@ -891,13 +906,13 @@ mod test {
             heading,
             key: vec![a1, a2],
             is_negated: false,
-            predicate: |tuple| {
+            predicate: Some(|tuple| {
                 let a = tuple.get(1).and_then(LoamValue::wide_val).unwrap()[0];
                 let b = tuple.get(2).and_then(LoamValue::wide_val).unwrap()[0];
                 let c = tuple.get(3).and_then(LoamValue::wide_val).unwrap()[0];
 
                 a + b == c
-            },
+            }),
             hints,
         });
 
@@ -1005,12 +1020,12 @@ mod test {
                 heading,
                 key: vec![a2],
                 is_negated: false,
-                predicate: |tuple| {
+                predicate: Some(|tuple| {
                     let b = tuple.get(2).and_then(LoamValue::wide_val).unwrap()[0];
                     let d = tuple.get(4).and_then(LoamValue::wide_val).unwrap()[0];
 
                     d == b + 2
-                },
+                }),
                 hints,
             })
         };
@@ -1024,12 +1039,12 @@ mod test {
                 heading,
                 key: vec![a2],
                 is_negated: false,
-                predicate: |tuple| {
+                predicate: Some(|tuple| {
                     let b = tuple.get(2).and_then(LoamValue::wide_val).unwrap()[0];
                     let d = tuple.get(4).and_then(LoamValue::wide_val).unwrap()[0];
 
                     d == b + 2
-                },
+                }),
                 hints: bad_hints,
             })
         };
