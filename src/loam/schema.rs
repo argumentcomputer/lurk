@@ -17,9 +17,10 @@ pub struct Schema<T: Default> {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialOrd, PartialEq)]
-pub enum LoamValue<T> {
+pub enum LoamValue<T: Copy> {
     Ptr(T, T),
     Wide([T; 8]),
+    F(T),
     #[default]
     Dummy,
 }
@@ -30,6 +31,7 @@ impl<T: Value> Value for LoamValue<T> {}
 impl LoamValue<LoamElement> {
     pub fn type_of(&self) -> LoamElement {
         match self {
+            Self::F(_) => 0,
             Self::Ptr(_, _) => 1,
             Self::Wide(_) => 2,
             Self::Dummy => unimplemented!(),
@@ -37,7 +39,13 @@ impl LoamValue<LoamElement> {
     }
 }
 
-impl<T> LoamValue<T> {
+impl<T: Copy> LoamValue<T> {
+    pub fn f_val(&self) -> Option<T> {
+        match self {
+            Self::F(x) => Some(*x),
+            _ => None,
+        }
+    }
     pub fn wide_val(&self) -> Option<&[T; 8]> {
         match self {
             Self::Wide(x) => Some(x),

@@ -28,7 +28,7 @@ pub trait Heading<A: Attribute, T: Type, V: Value>: Debug + Sized + Clone {
             other.common_attributes(self)
         }
     }
-    fn from_tuple(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self;
+    fn from_tuple(tuple: &impl Tuple<A, T, V>) -> Self;
 
     fn heading_equal(&self, other: &Self) -> bool {
         if self.attributes() != other.attributes() {
@@ -87,7 +87,7 @@ impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleHeading<A, T, V
     fn arity(&self) -> usize {
         self.attributes.len()
     }
-    fn from_tuple(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self {
+    fn from_tuple(tuple: &impl Tuple<A, T, V>) -> Self {
         let mut heading = SimpleHeading::new(tuple.is_negated());
 
         for attr in tuple.attributes().iter() {
@@ -119,7 +119,7 @@ impl<A: Attribute, T: Type, V: Value> PartialEq for SimpleHeading<A, T, V> {
         common
             .iter()
             .all(|attr| self.get_type(*attr) == other.get_type(*attr))
-            && &self.disjunction == other.disjunction()
+            && self.disjunction == other.disjunction
     }
 }
 
@@ -132,7 +132,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for SimpleHeading<A, T, V> {
             _p: Default::default(),
         }
     }
-    fn and(&self, other: &Self) -> Option<Self> {
+    fn and(&self, other: &Self) -> Self {
         if !self.is_negated() && !other.is_negated() {
             if self.disjunction.is_some() || other.disjunction.is_some() {
                 // Defer dealing with this case
@@ -146,7 +146,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for SimpleHeading<A, T, V> {
 
             if !compatible {
                 // Empty heading, not None.
-                return Some(new_heading);
+                return new_heading;
             };
 
             for attr in self.attributes().iter() {
@@ -157,11 +157,11 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for SimpleHeading<A, T, V> {
                     new_heading.add_attribute(*attr, *other.get_type(*attr).unwrap());
                 }
             }
-            Some(new_heading)
+            new_heading
         } else if self.is_negated() {
             if other.is_negated() {
                 // DeMorgan's
-                Some(self.not().or(&other.not()).not())
+                self.not().or(&other.not()).not()
             } else {
                 todo!("negated heading and non-negated heading");
             }
@@ -175,7 +175,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for SimpleHeading<A, T, V> {
 
                 let mut a = true;
 
-                if let Some(o) = other.disjunction() {
+                if let Some(o) = &other.disjunction {
                     for d in o.iter() {
                         if d.get(attr).is_some() {
                             a = false;
@@ -191,7 +191,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for SimpleHeading<A, T, V> {
                 }
             }
 
-            Some(new_heading)
+            new_heading
         }
     }
     fn or(&self, other: &Self) -> Self {
@@ -199,9 +199,7 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for SimpleHeading<A, T, V> {
             // If we can require that constructed headings are frozen, we can avoid this duplication.
             self.clone()
         } else {
-            let mut disjunction = self
-                .disjunction.clone()
-                .unwrap_or_default();
+            let mut disjunction = self.disjunction.clone().unwrap_or_default();
 
             if other.is_negated() {
                 unimplemented!("disjunction with negation");
@@ -309,17 +307,14 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, T> for SimpleHeading<A, T, V> {
             _p: Default::default(),
         })
     }
-    fn compose(&self, other: &Self) -> Option<Self> {
+    fn compose(&self, other: &Self) -> Self {
         let common = self.common_attributes(other);
 
         // This can be optimized.
-        self.and(other).map(|r| r.remove(common))
+        self.and(other).remove(common)
     }
     fn is_negated(&self) -> bool {
         self.is_negated
-    }
-    fn disjunction(&self) -> &Option<BTreeSet<BTreeMap<A, T>>> {
-        &self.disjunction
     }
 }
 
@@ -358,12 +353,12 @@ mod tests {
         heading1_2_3.add_attribute(2, 200);
         heading1_2_3.add_attribute(3, 300);
 
-        let heading1and_1_2 = heading1.and(&heading1_2).unwrap();
-        let heading1x_3and1_2 = heading1x_3.and(&heading1_2).unwrap();
-        let heading1_2and_not1 = heading1_2.and(&heading1.not()).unwrap();
+        let heading1and_1_2 = heading1.and(&heading1_2);
+        let heading1x_3and1_2 = heading1x_3.and(&heading1_2);
+        let heading1_2and_not1 = heading1_2.and(&heading1.not());
         let heading1_2or1_2 = heading1_2.or(&heading1_2);
         let heading1or2 = heading1.or(&heading2);
-        let heading1_2_3and_not1_2 = heading1_2_3.and(&heading1or2.not()).unwrap();
+        let heading1_2_3and_not1_2 = heading1_2_3.and(&heading1or2.not());
 
         // unimplemented
         // let heading1or2and_3 = heading1or2.and(&heading3);
@@ -400,8 +395,8 @@ mod tests {
         );
 
         // compose
-        assert_eq!(heading2, heading1.compose(&heading1_2).unwrap());
-        assert_eq!(heading1_2, heading3.compose(&heading1_2_3).unwrap());
+        assert_eq!(heading2, heading1.compose(&heading1_2));
+        assert_eq!(heading1_2, heading3.compose(&heading1_2_3));
 
         // get_type
         assert_eq!(Some(100), heading1.get_type(1).cloned());

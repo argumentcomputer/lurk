@@ -5,8 +5,18 @@ use crate::loam::heading::{Heading, SimpleHeading};
 use crate::loam::schema::{LoamElement, LoamValue};
 use crate::loam::{Attribute, Type, Value};
 
-pub trait Tuple<A: Attribute, T: Type, V: Value>: Heading<A, T, V> + Algebra<A, V> {
+pub trait Tuple<A: Attribute, T: Type, V: Value>: Heading<A, T, V> {
     fn get(&self, attr: A) -> Option<&V>;
+
+    fn and(&self, other: &Self) -> Option<Self>;
+    fn or(&self, other: &Self) -> Self;
+    fn not(&self) -> Self;
+    fn project<I: Into<HashSet<A>>>(&self, attrs: I) -> Self;
+    fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self;
+    fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Result<Self, AlgebraError>;
+    fn compose(&self, other: &Self) -> Option<Self>;
+
+    fn is_negated(&self) -> bool;
 }
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialOrd, Hash)]
@@ -19,67 +29,10 @@ impl<A: Attribute, T: Type, V: Value> Tuple<A, T, V> for SimpleTuple<A, T, V> {
     fn get(&self, attr: A) -> Option<&V> {
         self.values.get(&attr)
     }
-}
 
-impl SimpleTuple<LoamElement, LoamElement, LoamValue<LoamElement>> {
-    pub fn new<I: IntoIterator<Item = (LoamElement, LoamValue<LoamElement>)>>(
-        vals: I,
-    ) -> SimpleTuple<LoamElement, LoamElement, LoamValue<LoamElement>> {
-        let mut heading = SimpleHeading::new(false);
-        let mut values = BTreeMap::<LoamElement, LoamValue<LoamElement>>::new();
-
-        for (attr, value) in vals.into_iter() {
-            let typ = value.type_of();
-            heading.add_attribute(attr, typ);
-            values.insert(attr, value);
-        }
-        SimpleTuple { heading, values }
-    }
-}
-
-impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleTuple<A, T, V> {
-    fn attributes(&self) -> HashSet<A> {
-        self.heading.attributes()
-    }
-    fn get_type(&self, attr: A) -> Option<&T> {
-        self.heading.get_type(attr)
-    }
-    fn attribute_types(&self) -> &BTreeMap<A, T> {
-        self.heading.attribute_types()
-    }
-    fn arity(&self) -> usize {
-        let arity = self.heading.arity();
-        assert_eq!(arity, self.values.len());
-        arity
-    }
-    fn from_tuple(tuple: &(impl Tuple<A, T, V> + Algebra<A, V>)) -> Self {
-        let heading = SimpleHeading::from_tuple(tuple);
-        let values = tuple
-            .attributes()
-            .iter()
-            .map(|attr| (*attr, tuple.get(*attr).unwrap().clone()))
-            .collect();
-        Self { heading, values }
-    }
-}
-
-impl<A: Attribute, T: Type, V: Value> PartialEq for SimpleTuple<A, T, V> {
-    fn eq(&self, other: &Self) -> bool {
-        self.heading == other.heading && self.values == other.values
-    }
-}
-
-impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
     fn and(&self, other: &Self) -> Option<Self> {
         if !self.is_negated() && !other.is_negated() {
-            if self.disjunction().is_some() || other.disjunction().is_some() {
-                // Defer dealing with this case
-                unimplemented!("conjunction of disjunctions");
-            }
-
-            let Some(heading) = self.heading.and(&other.heading) else {
-                return None;
-            };
+            let heading = self.heading.and(&other.heading);
             let common = self.common_attributes(other);
 
             for attr in common.iter() {
@@ -129,9 +82,6 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
         // Self { heading, values }
     }
     fn remove<I: Into<HashSet<A>>>(&self, attrs: I) -> Self {
-        if self.disjunction().is_some() {
-            unimplemented!("tuple disjunction")
-        }
         let attrs = attrs.into();
         let heading = self.heading.remove(attrs.clone());
         let mut values = self.values.clone();
@@ -140,9 +90,6 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
         Self { heading, values }
     }
     fn rename<I: Into<HashMap<A, A>>>(&self, mapping: I) -> Result<Self, AlgebraError> {
-        if self.disjunction().is_some() {
-            unimplemented!("tuple disjunction")
-        }
         let mapping = mapping.into();
         let heading = self.heading.rename(mapping.clone())?;
 
@@ -169,21 +116,60 @@ impl<A: Attribute, T: Type, V: Value> Algebra<A, V> for SimpleTuple<A, T, V> {
     fn is_negated(&self) -> bool {
         self.heading.is_negated()
     }
+}
 
-    fn disjunction(&self) -> &Option<BTreeSet<BTreeMap<A, V>>> {
-        if self.heading.disjunction().is_none() {
-            &None
-        } else {
-            unimplemented!("tuple disjunction")
+impl SimpleTuple<LoamElement, LoamElement, LoamValue<LoamElement>> {
+    pub fn new<I: IntoIterator<Item = (LoamElement, LoamValue<LoamElement>)>>(
+        vals: I,
+    ) -> SimpleTuple<LoamElement, LoamElement, LoamValue<LoamElement>> {
+        let mut heading = SimpleHeading::new(false);
+        let mut values = BTreeMap::<LoamElement, LoamValue<LoamElement>>::new();
+
+        for (attr, value) in vals.into_iter() {
+            let typ = value.type_of();
+            heading.add_attribute(attr, typ);
+            values.insert(attr, value);
         }
+        SimpleTuple { heading, values }
     }
 }
 
+impl<A: Attribute, T: Type, V: Value> Heading<A, T, V> for SimpleTuple<A, T, V> {
+    fn attributes(&self) -> HashSet<A> {
+        self.heading.attributes()
+    }
+    fn get_type(&self, attr: A) -> Option<&T> {
+        self.heading.get_type(attr)
+    }
+    fn attribute_types(&self) -> &BTreeMap<A, T> {
+        self.heading.attribute_types()
+    }
+    fn arity(&self) -> usize {
+        let arity = self.heading.arity();
+        assert_eq!(arity, self.values.len());
+        arity
+    }
+    fn from_tuple(tuple: &(impl Tuple<A, T, V>)) -> Self {
+        let heading = SimpleHeading::from_tuple(tuple);
+        let values = tuple
+            .attributes()
+            .iter()
+            .map(|attr| (*attr, tuple.get(*attr).unwrap().clone()))
+            .collect();
+        Self { heading, values }
+    }
+}
+
+impl<A: Attribute, T: Type, V: Value> PartialEq for SimpleTuple<A, T, V> {
+    fn eq(&self, other: &Self) -> bool {
+        self.heading == other.heading && self.values == other.values
+    }
+}
+
+impl<A: Attribute, T: Type, V: Value> SimpleTuple<A, T, V> {}
+
 impl<A: Attribute, T: Type, V: Value> SimpleTuple<A, T, V> {
     pub fn project_aux(&self, attrs: &HashSet<A>) -> Self {
-        if self.disjunction().is_some() {
-            unimplemented!("tuple disjunction is not yet implemented")
-        }
         let heading = self.heading.project(attrs.clone());
         let mut values = self.values.clone();
         values.retain(|k, _v| attrs.contains(k));
