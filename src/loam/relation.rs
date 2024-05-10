@@ -1026,7 +1026,7 @@ mod test {
 
                     d == b + 2
                 }),
-                hints,
+                hints: hints.clone(),
             })
         };
         let bad_extend = {
@@ -1049,7 +1049,25 @@ mod test {
             })
         };
 
+        // If we trust hints, we don't need to supply a predicate.
+        let easy_extend = {
+            let mut heading = SimpleHeading::<LE, LT, LV>::default();
+            heading.add_attribute(2, 2);
+            heading.add_attribute(4, 2);
+
+            // This computed relation ensures that its 4 attribute is 2 + its 2 attribute.
+            Rel::Computed(ComputedRelation {
+                heading,
+                key: vec![a2],
+                is_negated: false,
+                predicate: None,
+                hints,
+            })
+        };
+
         assert_eq!(r11, r2.and(&extend).unwrap());
+        // extend and easy_extend give the same result.
+        assert_eq!(r11, r2.and(&easy_extend).unwrap());
         // Joining with bad_extend yields an empty relation.
         assert_eq!(Some(0), r2.and(&bad_extend).unwrap().cardinality());
     }
