@@ -11,6 +11,7 @@ pub mod execute;
 pub mod expr;
 mod macros;
 pub mod map;
+pub mod memory;
 pub mod toplevel;
 pub mod trace;
 

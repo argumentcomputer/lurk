@@ -28,6 +28,10 @@ pub struct QueryRecord<F: PrimeField> {
 const NUM_MEM_TABLES: usize = 4;
 const MEM_TABLE_SIZES: [usize; NUM_MEM_TABLES] = [3, 4, 6, 8];
 
+pub fn mem_index_to_len(idx: usize) -> Option<usize> {
+    MEM_TABLE_SIZES.get(idx).copied()
+}
+
 pub fn mem_index_from_len(len: usize) -> Option<usize> {
     MEM_TABLE_SIZES.iter().position(|&i| len == i)
 }
