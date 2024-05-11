@@ -87,6 +87,7 @@ mod tests {
         lair::{chip::FuncChip, toplevel::Toplevel},
     };
     use p3_baby_bear::BabyBear as F;
+    use p3_field::AbstractField;
     use wp1_core::{
         stark::StarkGenericConfig,
         utils::{uni_stark_prove as prove, uni_stark_verify as verify, BabyBearPoseidon2},
@@ -100,17 +101,42 @@ mod tests {
             let one = num(1);
             let two = num(2);
             let three = num(3);
-            let ptr = store(one, two, three);
-            let (_x, y, _z) = load(ptr);
-            return (ptr, y)
+            let ptr1 = store(one, two, three);
+            let ptr2 = store(one, one, one);
+            let (_x, y, _z) = load(ptr1);
+            return (ptr2, y)
         });
         let toplevel = Toplevel::<F>::new(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
         let queries = &mut QueryRecord::new(&toplevel);
         test_chip.execute([].into(), queries);
+        let func_trace = test_chip.generate_trace(queries);
+
+        let expected_trace = [
+            1, 2, 1, 0, 1, 1, 2, 3, 1, //
+            0, 0, 0, 0, 0, 0, 0, 0, 0, //
+            0, 0, 0, 0, 0, 0, 0, 0, 0, //
+            0, 0, 0, 0, 0, 0, 0, 0, 0, //
+        ]
+        .into_iter()
+        .map(F::from_canonical_u32)
+        .collect::<Vec<_>>();
+        assert_eq!(func_trace.values, expected_trace);
+
         let mem_len = 3;
         let mem_chip = MemChip { len: mem_len };
-        let mem_trace = mem_chip.generate_trace_parallel(queries);
+        let mem_trace = mem_chip.generate_trace(queries);
+
+        let expected_trace = [
+            0, 2, 1, 2, 3, //
+            1, 1, 1, 1, 1, //
+            2, 0, 0, 0, 0, //
+            3, 0, 0, 0, 0, //
+        ]
+        .into_iter()
+        .map(F::from_canonical_u32)
+        .collect::<Vec<_>>();
+        assert_eq!(mem_trace.values, expected_trace);
 
         let config = BabyBearPoseidon2::new();
         let challenger = &mut config.challenger();

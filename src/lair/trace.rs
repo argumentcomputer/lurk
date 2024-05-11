@@ -5,6 +5,8 @@ use rayon::{
     slice::ParallelSliceMut,
 };
 
+use crate::lair::execute::mem_index_from_len;
+
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
     chip::{ColumnLayout, Degree, FuncChip, Width},
@@ -205,11 +207,26 @@ impl<F: PrimeField + Ord> Op<F> {
                     slice.push_aux(index, *f);
                 }
             }
-            Op::Store(..) => {
-                todo!()
+            Op::Store(args) => {
+                let idx = mem_index_from_len(args.len()).unwrap();
+                let query_map = &queries.mem_queries[idx];
+                let args = args.iter().map(|a| map[*a].0).collect::<List<_>>();
+                let ptr = query_map
+                    .get_index_of(&args)
+                    .expect("Cannot find query result");
+                let f = F::from_canonical_usize(ptr);
+                map.push((f, 1));
+                slice.push_aux(index, f);
             }
-            Op::Load(..) => {
-                todo!()
+            Op::Load(len, ptr) => {
+                let idx = mem_index_from_len(*len).unwrap();
+                let query_map = &queries.mem_queries[idx];
+                let ptr = map[*ptr].0.as_canonical_biguint().try_into().unwrap();
+                let (args, _) = query_map.get_index(ptr).expect("Cannot find query result");
+                for f in args.iter() {
+                    map.push((*f, 1));
+                    slice.push_aux(index, *f);
+                }
             }
         }
     }
