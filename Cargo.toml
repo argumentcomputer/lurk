@@ -11,10 +11,15 @@ match_opt = "0.1.2"
 elsa = { version = "1.9.0", git = "https://github.com/lurk-lab/elsa", branch = "sync_frozen", features = ["indexmap"] }
 indexmap = { version = "2.2.6", features = ["rayon"] }
 rayon = "1.10.0"
-p3-air = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-baby-bear = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-field = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-matrix = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+itertools = "0.12.1"
+p3-air = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-baby-bear = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-field = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-matrix = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-commit = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-challenger = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-uni-stark = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-util = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
 wp1-core = { git = "ssh://git@github.com/wormhole-foundation/wp1.git", branch = "dev" }
 
 [workspace]
