@@ -19,7 +19,7 @@ impl Multiplicities {
         let mus = self
             .traces
             .iter()
-            .map(|&i| mu.exp_u64(i as u64))
+            .map(|&trace_idx| mu.exp_u64(trace_idx as u64))
             .collect_vec();
 
         self.counts
