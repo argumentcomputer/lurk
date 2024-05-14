@@ -20,10 +20,19 @@ p3-util = { git = "https://github.com/plonky3/Plonky3.git", branch = "main" }
 wp1-core = { git = "ssh://git@github.com/wormhole-foundation/wp1.git", branch = "dev" }
 
 [dependencies]
+anyhow = "1.0.72"
 arc-swap = "1.7.1"
-match_opt = "0.1.2"
+base-x = "0.2.11"
 elsa = { version = "1.9.0", git = "https://github.com/lurk-lab/elsa", branch = "sync_frozen", features = ["indexmap"] }
 indexmap = { version = "2.2.6", features = ["rayon"] }
+match_opt = "0.1.2"
+nom = "7.1.3"
+nom_locate = "4.1.0"
+num-bigint = "0.4.3"
+once_cell = "1.18.0"
+serde = "1.0"
+serde_json = { version = "1.0" }
+thiserror = "1.0.44"
 rayon = { workspace = true }
 itertools = { workspace = true }
 p3-air = { workspace = true }
@@ -34,7 +43,7 @@ p3-commit = { workspace = true }
 p3-challenger = { workspace = true }
 p3-maybe-rayon = { workspace = true }
 p3-util = { workspace = true }
-
+wp1-core = { workspace = true }
 
 [workspace]
 members = ["examples/calculator", "examples/byte_lookup"]
