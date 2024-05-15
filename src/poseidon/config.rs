@@ -1,5 +1,5 @@
 use super::constants::{
-    MATRIX_DIAG_16_BABYBEAR_U32, MATRIX_DIAG_4_BABYBEAR_U32, RC_16_30_U32, RC_4_29_U32,
+    MATRIX_DIAG_16_BABYBEAR_U32, MATRIX_DIAG_4_BABYBEAR_U32, RC_16_21_U32, RC_4_29_U32,
 };
 
 trait ConstantsProvided {}
@@ -15,7 +15,7 @@ pub trait PoseidonConfig<const WIDTH: usize>: Clone + Copy + Sync + ConstantsPro
 }
 
 #[derive(Clone, Copy)]
-pub struct BabyBearConfig4 {}
+pub struct BabyBearConfig4;
 
 impl ConstantsProvided for BabyBearConfig4 {}
 
@@ -31,7 +31,7 @@ impl PoseidonConfig<4> for BabyBearConfig4 {
 }
 
 #[derive(Clone, Copy)]
-pub struct BabyBearConfig16 {}
+pub struct BabyBearConfig16;
 
 impl ConstantsProvided for BabyBearConfig16 {}
 
@@ -42,6 +42,6 @@ impl PoseidonConfig<16> for BabyBearConfig16 {
     const MATRIX_DIAG: [u32; 16] = MATRIX_DIAG_16_BABYBEAR_U32;
 
     fn round_constants() -> Vec<[u32; 16]> {
-        RC_16_30_U32.to_vec()
+        RC_16_21_U32.to_vec()
     }
 }

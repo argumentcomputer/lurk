@@ -4,12 +4,13 @@ use p3_air::AirBuilder;
 use p3_air::{Air, BaseAir};
 use p3_field::AbstractField;
 use p3_matrix::Matrix;
+use p3_poseidon2::matmul_internal;
 use std::marker::PhantomData;
 
 use loam_macros::AlignedBorrow;
 
 use self::config::PoseidonConfig;
-use self::util::{apply_m_4, matmul_internal};
+use self::util::apply_m_4;
 
 mod config;
 mod constants;
@@ -203,66 +204,50 @@ where
 
 #[cfg(test)]
 mod tests {
-    // use itertools::Itertools;
-    // use std::borrow::Borrow;
-    // use std::time::Instant;
+    use self::config::BabyBearConfig4;
 
-    // use p3_baby_bear::{BabyBear, DiffusionMatrixBabybear};
-    // use p3_field::AbstractField;
-    // use p3_matrix::{dense::RowMajorMatrix, Matrix};
-    // use p3_poseidon2::Poseidon2;
-    // use p3_poseidon2::Poseidon2ExternalMatrixGeneral;
-    // use wp1_core::stark::StarkGenericConfig;
-    // use wp1_core::utils::inner_perm;
-    // use wp1_core::{
-    //     air::MachineAir,
-    //     utils::{uni_stark_prove, uni_stark_verify, BabyBearPoseidon2},
-    // };
+    use super::*;
 
-    // use crate::poseidon::{Poseidon2Chip, WIDTH};
-    // use p3_symmetric::Permutation;
+    use itertools::Itertools;
+    use std::borrow::Borrow;
+    use std::time::Instant;
 
-    // use super::Poseidon2Cols;
+    use p3_baby_bear::{BabyBear, DiffusionMatrixBabybear};
+    use p3_field::AbstractField;
+    use p3_matrix::{dense::RowMajorMatrix, Matrix};
+    use p3_poseidon2::Poseidon2;
+    use p3_poseidon2::Poseidon2ExternalMatrixGeneral;
+    use p3_symmetric::Permutation;
 
-    // const ROWS_PER_PERMUTATION: usize = 31;
+    fn generate_trace_with<const WIDTH: usize>() {
+        // TODO: Fix this test
+        let config = BabyBearConfig4 {};
+        let chip = Poseidon2Chip::<4, BabyBearConfig4> { _p: PhantomData };
+        let test_inputs = vec![
+            [BabyBear::from_canonical_u32(1); WIDTH],
+            [BabyBear::from_canonical_u32(2); WIDTH],
+            [BabyBear::from_canonical_u32(3); WIDTH],
+            [BabyBear::from_canonical_u32(4); WIDTH],
+        ];
 
-    // #[test]
-    // fn generate_trace() {
-    //     let chip = Poseidon2Chip;
-    //     let test_inputs = vec![
-    //         [BabyBear::from_canonical_u32(1); WIDTH],
-    //         [BabyBear::from_canonical_u32(2); WIDTH],
-    //         [BabyBear::from_canonical_u32(3); WIDTH],
-    //         [BabyBear::from_canonical_u32(4); WIDTH],
-    //     ];
+        // let gt: Poseidon2<
+        //     BabyBear,
+        //     Poseidon2ExternalMatrixGeneral,
+        //     DiffusionMatrixBabybear,
+        //     WIDTH,
+        //     7,
+        // > = inner_perm();
 
-    //     let gt: Poseidon2<
-    //         BabyBear,
-    //         Poseidon2ExternalMatrixGeneral,
-    //         DiffusionMatrixBabybear,
-    //         16,
-    //         7,
-    //     > = inner_perm();
+        // let expected_outputs = test_inputs
+        //     .iter()
+        //     .map(|input| gt.permute(*input))
+        //     .collect::<Vec<_>>();
+    }
 
-    //     let expected_outputs = test_inputs
-    //         .iter()
-    //         .map(|input| gt.permute(*input))
-    //         .collect::<Vec<_>>();
-
-    //     let mut input_exec = ExecutionRecord::<BabyBear>::default();
-    //     for input in test_inputs.iter().cloned() {
-    //         input_exec.poseidon2_events.push(Poseidon2Event { input });
-    //     }
-
-    //     let trace: RowMajorMatrix<BabyBear> =
-    //         chip.generate_trace(&input_exec, &mut ExecutionRecord::<BabyBear>::default());
-
-    //     for (i, expected_output) in expected_outputs.iter().enumerate() {
-    //         let row = trace.row(ROWS_PER_PERMUTATION * (i + 1) - 1).collect_vec();
-    //         let cols: &Poseidon2Cols<BabyBear> = row.as_slice().borrow();
-    //         assert_eq!(expected_output, &cols.output);
-    //     }
-    // }
+    #[test]
+    fn generate_trace() {
+        generate_trace_with::<4>();
+    }
 
     // #[test]
     // fn prove_babybear() {
