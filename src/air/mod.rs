@@ -1,9 +1,8 @@
-use std::ops::Deref;
 
 
-mod builder;
+pub(crate)  mod builder;
 
-mod symbolic;
+pub(crate) mod symbolic;
 
 
 

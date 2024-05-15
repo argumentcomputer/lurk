@@ -1,5 +1,7 @@
 use crate::air::TracePointer;
-use p3_air::{AirBuilder, FilteredAirBuilder};
+use p3_air::{
+    AirBuilder, FilteredAirBuilder,
+};
 use p3_field::AbstractField;
 
 /// For example, if we have a ROM with 8 words, then we could create a relation as
@@ -16,9 +18,7 @@ pub(crate) trait Relation<T> {
     fn values(&self) -> impl IntoIterator<Item = T>;
 }
 
-
-
-pub trait LairBuilder: AirBuilder {
+pub trait AirBuilderExt: AirBuilder {
     /// Returns the constant index of the current trace being proved
     /// Defaults to 0
     fn trace_index(&self) -> Self::Expr {
@@ -33,12 +33,21 @@ pub trait LairBuilder: AirBuilder {
     fn local_pointer(&self) -> TracePointer<Self::Expr> {
         TracePointer::new(self.trace_index(), self.row_index())
     }
-
-    fn require(&mut self, relation: impl Relation<Self::Expr>, is_real: impl Into<Self::Expr>);
-    fn provide(&mut self, relation: impl Relation<Self::Expr>);
 }
 
-impl<'a,  AB: LairBuilder> LairBuilder for FilteredAirBuilder<'a, AB> {
+pub trait LookupBuilder: AirBuilder {
+    fn require<R, I>(&mut self, relation: R, is_real: I)
+    where
+        R: Relation<Self::Expr>,
+        I: Into<Self::Expr>;
+    fn provide<R, I>(&mut self, relation: R, is_real: I)
+    where
+        R: Relation<Self::Expr>,
+        I: Into<Self::Expr>;
+}
+
+pub trait LairBuilder: AirBuilder + LookupBuilder + AirBuilderExt {}
+impl<'a, AB: AirBuilderExt> AirBuilderExt for FilteredAirBuilder<'a, AB> {
     fn trace_index(&self) -> Self::Expr {
         self.inner.trace_index()
     }
@@ -46,11 +55,23 @@ impl<'a,  AB: LairBuilder> LairBuilder for FilteredAirBuilder<'a, AB> {
     fn row_index(&self) -> Self::Expr {
         self.inner.row_index()
     }
+}
 
-    fn require(&mut self, relation: impl Relation<Self::Expr>, is_real: impl Into<Self::Expr>) {
-        self.inner.require(relation, is_real)
+impl<'a, AB: LairBuilder> LairBuilder for FilteredAirBuilder<'a, AB> {}
+
+impl<'a, AB: LookupBuilder> LookupBuilder for FilteredAirBuilder<'a, AB> {
+    fn require<R, I>(&mut self, _relation: R, _is_real: I)
+    where
+        R: Relation<Self::Expr>,
+        I: Into<Self::Expr>,
+    {
+        panic!("lookups should be called without `when`")
     }
-    fn provide(&mut self, relation: impl Relation<Self::Expr>) {
-        self.inner.provide(relation)
+    fn provide<R, I>(&mut self, _relation: R, _is_real: I)
+    where
+        R: Relation<Self::Expr>,
+        I: Into<Self::Expr>,
+    {
+        panic!("lookups should be called without `when`")
     }
 }

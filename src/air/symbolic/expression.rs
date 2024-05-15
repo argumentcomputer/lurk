@@ -11,6 +11,7 @@ use crate::air::symbolic::variable::Variable;
 #[derive(Clone, Debug)]
 pub enum Expression<F: Field> {
     Variable(Variable<F>),
+    Identity,
     IsFirstRow,
     IsLastRow,
     IsTransition,
@@ -41,6 +42,7 @@ impl<F: Field> Expression<F> {
     pub const fn degree_multiple(&self) -> usize {
         match self {
             Expression::Variable(v) => v.degree_multiple(),
+            Expression::Identity => 0,
             Expression::IsFirstRow => 1,
             Expression::IsLastRow => 1,
             Expression::IsTransition => 0,

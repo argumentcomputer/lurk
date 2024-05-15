@@ -1,7 +1,8 @@
 use itertools::Itertools;
 use p3_field::{ExtensionField, Field};
 use p3_matrix::dense::RowMajorMatrix;
-use rayon::prelude::IndexedParallelIterator;
+use rayon::iter::ParallelIterator;
+
 
 /// List of multiplicities proved by a single `provide` interaction.
 pub(crate) struct Multiplicities {
@@ -23,7 +24,7 @@ impl Multiplicities {
             .collect_vec();
 
         self.counts
-            .par()
+            .par_row_slices()
             .map(|row| {
                 row.iter()
                     .zip(mus.iter())

@@ -13,6 +13,16 @@ pub type Val<SC> = <<<SC as StarkGenericConfig>::Pcs as p3_commit::Pcs<
     <SC as StarkGenericConfig>::Challenger,
 >>::Domain as PolynomialSpace>::Val;
 
+pub type PcsCommit<SC> = <<SC as StarkGenericConfig>::Pcs as p3_commit::Pcs<
+    <SC as StarkGenericConfig>::Challenge,
+    <SC as StarkGenericConfig>::Challenger,
+>>::Commitment;
+
+pub type PcsData<SC> = <<SC as StarkGenericConfig>::Pcs as p3_commit::Pcs<
+    <SC as StarkGenericConfig>::Challenge,
+    <SC as StarkGenericConfig>::Challenger,
+>>::ProverData;
+
 pub type PackedVal<SC> = <Val<SC> as Field>::Packing;
 
 pub type PackedChallenge<SC> =
