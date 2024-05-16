@@ -55,20 +55,45 @@ pub trait LookupBuilder: AirBuilder {
 // TODO: This would be a nice improvement since we could call
 //       `builder.when(condition).require(relation)`.
 //       This requires `FilteredAirBuilder` to make `condition` public.
-// impl <'a, AB: LookupBuilder> LookupBuilder for FilteredAirBuilder<'a, AB> {
+//       The only change would be for Builders to replace
+//       `impl LookupBuilder for Builder`
+//       with
+//       `impl FilteredLookupBuilder for Builder`
+// pub trait LairBuilder: AirBuilder + FilteredLookupBuilder + AirBuilderExt {}
+//
+// pub trait LookupBuilder: AirBuilder {
+//     fn provide(&mut self, relation: impl Relation<Self::Expr>);
+//     fn require(&mut self, relation: impl Relation<Self::Expr>);
+// }
+//
+// pub(crate) trait FilteredLookupBuilder: AirBuilder {
+//     fn filtered_provide(
+//         &mut self,
+//         relation: impl Relation<Self::Expr>,
+//         is_real: Option<Self::Expr>,
+//     );
+//
+//     fn filtered_require(
+//         &mut self,
+//         relation: impl Relation<Self::Expr>,
+//         is_real: Option<Self::Expr>,
+//     );
+// }
+//
+// impl<AB: FilteredLookupBuilder> LookupBuilder for AB {
+//     fn provide(&mut self, relation: impl Relation<Self::Expr>) {
+//         self.filtered_provide(relation, None)
+//     }
+//     fn require(&mut self, relation: impl Relation<Self::Expr>) {
+//         self.filtered_require(relation, None)
+//     }
+// }
+// impl <'a, AB: FilteredLookupBuilder> LookupBuilder for FilteredAirBuilder<'a, AB> {
 //     fn provide(&mut self, relation: impl Relation<Self::Expr>) {
 //         self.inner.filtered_provide(relation, Some(self.condition.clone()))
 //     }
 //
 //     fn require(&mut self, relation: impl Relation<Self::Expr>) {
 //         self.inner.filtered_require(relation, Some(self.condition.clone()))
-//     }
-//
-//     fn filtered_provide(&mut self, _relation: impl Relation<Self::Expr>, _is_real: Option<Self::Expr>) {
-//         panic!("filtered_provide should not be called after `when`")
-//     }
-//
-//     fn filtered_require(&mut self, relation: impl Relation<Self::Expr>, is_real: Option<Self::Expr>) {
-//         panic!("filtered_require should not be called after `when`")
 //     }
 // }
