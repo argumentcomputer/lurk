@@ -1,5 +1,5 @@
 use crate::air::symbolic::Interaction;
-use crate::lookup::builder::LogupBuilder;
+use crate::logup::builder::LogupBuilder;
 use itertools::{chain, enumerate, izip};
 use p3_air::ExtensionBuilder;
 use p3_field::{AbstractExtensionField, AbstractField, Field};

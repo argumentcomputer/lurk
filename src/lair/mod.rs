@@ -12,9 +12,9 @@ pub mod expr;
 mod macros;
 pub mod map;
 pub mod memory;
+mod pointer;
 pub mod toplevel;
 pub mod trace;
-mod pointer;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Name(pub &'static str);

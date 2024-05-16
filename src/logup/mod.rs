@@ -1,5 +1,3 @@
-use itertools::Itertools;
-use p3_field::{ExtensionField, Field};
 use p3_matrix::dense::RowMajorMatrix;
 pub mod air;
 pub mod builder;

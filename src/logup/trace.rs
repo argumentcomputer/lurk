@@ -1,13 +1,11 @@
 use crate::air::symbolic::Interaction;
-use crate::lookup::Multiplicities;
+use crate::logup::Multiplicities;
 use itertools::{chain, enumerate, Itertools};
 use p3_field::{ExtensionField, PrimeField};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::Matrix;
-use rayon::prelude::*;
 use std::iter;
-use std::iter::{zip, Sum};
-use std::ops::Mul;
+use std::iter::zip;
 
 pub(crate) fn generate_multiplicities_trace<F: PrimeField, EF: ExtensionField<F>>(
     multiplicities: &[Multiplicities],
@@ -19,7 +17,12 @@ pub(crate) fn generate_multiplicities_trace<F: PrimeField, EF: ExtensionField<F>
         .map(|m| m.counts.height())
         .all_equal_value()
         .unwrap();
-    let num_z_powers = multiplicities.iter().flat_map(|m| m.traces).max().unwrap();
+    let num_z_powers = multiplicities
+        .iter()
+        .flat_map(|m| &m.traces)
+        .copied()
+        .max()
+        .unwrap();
 
     let z_powers = challenge_z
         .powers()
@@ -36,8 +39,10 @@ pub(crate) fn generate_multiplicities_trace<F: PrimeField, EF: ExtensionField<F>
             .par_rows_mut()
             .zip(m.counts.par_row_slices())
             .for_each(|(row, m)| {
-                let m = m.iter().map(F::from_canonical_u32);
-                row[i] = dot_product(m, z_powers);
+                // TODO: with an updated plonky3::field, we can access `dot_product`
+                for (&m_i, &z_i) in zip(m, &z_powers) {
+                    row[i] += z_i * F::from_canonical_u32(m_i);
+                }
             })
     }
 
@@ -80,7 +85,7 @@ pub(crate) fn generate_permutation_trace<F: PrimeField, EF: ExtensionField<F>>(
         .zip(preprocessed.par_row_slices().zip(main.par_row_slices()))
         .for_each(|(values, (preprocessed, main))| {
             let (_, inverses) = values.split_first_mut().unwrap();
-            for (value, interaction) in zip(inverses, interactions) {
+            for (value, interaction) in zip(inverses, &interactions) {
                 if let Some(is_real) = &interaction.is_real {
                     let is_real: F = is_real.apply(preprocessed, main);
                     if is_real.is_zero() {
@@ -119,15 +124,4 @@ pub(crate) fn generate_permutation_trace<F: PrimeField, EF: ExtensionField<F>>(
     }
 
     values
-}
-
-// TODO: with an updated plonky3::field, we can access `dot_product`
-fn dot_product<S, LI, RI>(li: LI, ri: RI) -> S
-where
-    LI: Iterator,
-    RI: Iterator,
-    LI::Item: Mul<RI::Item>,
-    S: Sum<<LI::Item as Mul<RI::Item>>::Output>,
-{
-    li.zip(ri).map(|(l, r)| l * r).sum()
 }

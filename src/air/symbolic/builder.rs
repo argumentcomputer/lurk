@@ -1,4 +1,4 @@
-use crate::air::builder::{AirBuilderExt, FilteredLookupBuilder, Relation};
+use crate::air::builder::{AirBuilderExt, LookupBuilder, Relation};
 use crate::air::symbolic::expression::Expression;
 use crate::air::symbolic::variable::{Entry, Variable};
 use crate::air::symbolic::virtual_col::VirtualPairCol;
@@ -81,7 +81,7 @@ impl<F: Field> AirBuilderExt for SymbolicAirBuilder<F> {
     }
 }
 
-impl<F: Field> FilteredLookupBuilder for SymbolicAirBuilder<F> {
+impl<F: Field> LookupBuilder for SymbolicAirBuilder<F> {
     fn filtered_provide(
         &mut self,
         relation: impl Relation<Self::Expr>,

@@ -7,7 +7,7 @@ use crate::air::symbolic::builder::SymbolicAirBuilder;
 use crate::air::symbolic::expression::Expression;
 use crate::air::symbolic::virtual_col::VirtualPairCol;
 use p3_air::Air;
-use p3_field::{  Field};
+use p3_field::Field;
 
 #[derive(Clone)]
 pub struct Interaction<F: Field> {
@@ -16,10 +16,10 @@ pub struct Interaction<F: Field> {
 }
 
 impl<F: Field> Interaction<F> {
-
     pub fn num_entries(&self) -> usize {
         self.values.len()
-    }}
+    }
+}
 
 #[derive(Default, Clone)]
 pub struct SymbolicAir<F: Field> {

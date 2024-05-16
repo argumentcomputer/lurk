@@ -1,10 +1,7 @@
 pub mod air;
 pub mod lair;
-mod lookup;
+mod logup;
 pub mod store_core;
-
-#[allow(warnings, unused)]
-mod stark;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right
