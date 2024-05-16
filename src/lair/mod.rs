@@ -14,6 +14,7 @@ pub mod map;
 pub mod memory;
 pub mod toplevel;
 pub mod trace;
+mod pointer;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Name(pub &'static str);

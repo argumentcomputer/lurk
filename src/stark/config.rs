@@ -1,7 +1,7 @@
-use std::marker::PhantomData;
 use p3_challenger::{CanObserve, CanSample, FieldChallenger};
-use p3_commit::{ PolynomialSpace};
+use p3_commit::PolynomialSpace;
 use p3_field::{ExtensionField, Field};
+use std::marker::PhantomData;
 
 pub type Domain<SC> = <<SC as StarkGenericConfig>::Pcs as p3_commit::Pcs<
     <SC as StarkGenericConfig>::Challenge,
@@ -26,7 +26,7 @@ pub type PcsData<SC> = <<SC as StarkGenericConfig>::Pcs as p3_commit::Pcs<
 pub type PackedVal<SC> = <Val<SC> as Field>::Packing;
 
 pub type PackedChallenge<SC> =
-<<SC as StarkGenericConfig>::Challenge as ExtensionField<Val<SC>>>::ExtensionPacking;
+    <<SC as StarkGenericConfig>::Challenge as ExtensionField<Val<SC>>>::ExtensionPacking;
 
 pub trait StarkGenericConfig {
     /// The PCS used to commit to trace polynomials.
@@ -37,8 +37,8 @@ pub trait StarkGenericConfig {
 
     /// The challenger (Fiat-Shamir) implementation used.
     type Challenger: FieldChallenger<Val<Self>>
-    + CanObserve<<Self::Pcs as p3_commit::Pcs<Self::Challenge, Self::Challenger>>::Commitment>
-    + CanSample<Self::Challenge>;
+        + CanObserve<<Self::Pcs as p3_commit::Pcs<Self::Challenge, Self::Challenger>>::Commitment>
+        + CanSample<Self::Challenge>;
 
     fn pcs(&self) -> &Self::Pcs;
 }
@@ -63,8 +63,8 @@ where
     Challenge: ExtensionField<<Pcs::Domain as PolynomialSpace>::Val>,
     Pcs: p3_commit::Pcs<Challenge, Challenger>,
     Challenger: FieldChallenger<<Pcs::Domain as PolynomialSpace>::Val>
-    + CanObserve<<Pcs as p3_commit::Pcs<Challenge, Challenger>>::Commitment>
-    + CanSample<Challenge>,
+        + CanObserve<<Pcs as p3_commit::Pcs<Challenge, Challenger>>::Commitment>
+        + CanSample<Challenge>,
 {
     type Pcs = Pcs;
     type Challenge = Challenge;

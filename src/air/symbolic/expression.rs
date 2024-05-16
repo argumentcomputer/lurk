@@ -3,9 +3,8 @@ use core::iter::{Product, Sum};
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::rc::Rc;
 
-use p3_field::{AbstractField, Field};
 use crate::air::symbolic::variable::Variable;
-
+use p3_field::{AbstractField, Field};
 
 /// An expression over `SymbolicVariable`s.
 #[derive(Clone, Debug)]

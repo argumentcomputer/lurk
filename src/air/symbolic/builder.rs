@@ -1,22 +1,21 @@
-use crate::air::builder::{AirBuilderExt, LookupBuilder, Relation};
+use crate::air::builder::{AirBuilderExt, FilteredLookupBuilder, Relation};
 use crate::air::symbolic::expression::Expression;
 use crate::air::symbolic::variable::{Entry, Variable};
 use crate::air::symbolic::virtual_col::VirtualPairCol;
 use crate::air::symbolic::{Interaction, SymbolicAir};
 use p3_air::AirBuilder;
-use p3_field::Field;
+use p3_field::{AbstractField, Field};
 use p3_matrix::dense::RowMajorMatrix;
 
 /// A builder for the lookup table interactions.
-struct SymbolicAirBuilder<F: Field> {
+pub struct SymbolicAirBuilder<F: Field> {
     preprocessed: RowMajorMatrix<Variable<F>>,
     main: RowMajorMatrix<Variable<F>>,
-    air: SymbolicAir<F>,
+    pub air: SymbolicAir<F>,
 }
 
 impl<F: Field> SymbolicAirBuilder<F> {
-    #[allow(dead_code)]
-    fn new(preprocessed_width: usize, main_width: usize) -> Self {
+    pub fn new(preprocessed_width: usize, main_width: usize) -> Self {
         let preprocessed_values = [0, 1]
             .into_iter()
             .flat_map(|offset| {
@@ -73,37 +72,41 @@ impl<F: Field> AirBuilder for SymbolicAirBuilder<F> {
 }
 
 impl<F: Field> AirBuilderExt for SymbolicAirBuilder<F> {
+    fn trace_index(&self) -> Self::Expr {
+        Self::Expr::zero()
+    }
+
     fn row_index(&self) -> Self::Expr {
         Expression::Identity
     }
 }
 
-impl<F: Field> LookupBuilder for SymbolicAirBuilder<F> {
-    fn require<R, I>(&mut self, relation: R, is_real: I)
-    where
-        R: Relation<Self::Expr>,
-        I: Into<Self::Expr>,
-    {
+impl<F: Field> FilteredLookupBuilder for SymbolicAirBuilder<F> {
+    fn filtered_provide(
+        &mut self,
+        relation: impl Relation<Self::Expr>,
+        is_real: Option<Self::Expr>,
+    ) {
         let values = relation
             .values()
             .into_iter()
             .map(|v| VirtualPairCol::from(v))
             .collect();
-        let is_real = VirtualPairCol::from(is_real.into());
-        self.air.requires.push(Interaction { values, is_real })
+        let is_real = is_real.map(|is_real| VirtualPairCol::from(is_real));
+        self.air.provides.push(Interaction { values, is_real })
     }
 
-    fn provide<R, I>(&mut self, relation: R, is_real: I)
-    where
-        R: Relation<Self::Expr>,
-        I: Into<Self::Expr>,
-    {
+    fn filtered_require(
+        &mut self,
+        relation: impl Relation<Self::Expr>,
+        is_real: Option<Self::Expr>,
+    ) {
         let values = relation
             .values()
             .into_iter()
             .map(|v| VirtualPairCol::from(v))
             .collect();
-        let is_real =VirtualPairCol::from(is_real.into());
-        self.air.provides.push(Interaction { values, is_real })
+        let is_real = is_real.map(|is_real| VirtualPairCol::from(is_real));
+        self.air.requires.push(Interaction { values, is_real })
     }
 }

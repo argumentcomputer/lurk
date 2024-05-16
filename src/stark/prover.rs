@@ -1,9 +1,10 @@
-use crate::air::symbolic::{ Interaction};
+use crate::air::symbolic::Interaction;
 use crate::lookup::Multiplicities;
 use crate::stark::config::{
     Domain, PackedChallenge, PackedVal, PcsCommit, PcsData, StarkGenericConfig, Val,
 };
 
+use crate::stark::folder::prover::ProverConstraintFolder;
 use crate::stark::proof::{Commitments, OpenedValues, Proof};
 use itertools::*;
 use p3_air::Air;
@@ -15,8 +16,6 @@ use p3_matrix::Matrix;
 use p3_util::{log2_ceil_usize, log2_strict_usize};
 use rayon::prelude::*;
 use std::iter;
-use crate::stark::folder::prover::ProverConstraintFolder;
-
 
 struct Config<SC: StarkGenericConfig> {
     requires: Vec<Interaction<Val<SC>>>,

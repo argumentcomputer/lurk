@@ -1,14 +1,11 @@
 pub mod prover;
 
 use crate::air::builder::{LookupBuilder, Relation};
-use crate::stark::air::LogupBuilder;
 use crate::stark::config::{PackedChallenge, PackedVal, StarkGenericConfig, Val};
 use p3_air::{AirBuilder, AirBuilderWithPublicValues, ExtensionBuilder};
 use p3_field::AbstractField;
 use p3_matrix::dense::{RowMajorMatrix, RowMajorMatrixView};
 use p3_matrix::stack::VerticalPair;
-
-
 
 // type ViewPair<'a, T> = VerticalPair<RowMajorMatrixView<'a, T>, RowMajorMatrixView<'a, T>>;
 
@@ -22,7 +19,6 @@ use p3_matrix::stack::VerticalPair;
 //     pub alpha: SC::Challenge,
 //     pub accumulator: SC::Challenge,
 // }
-
 
 // impl<'a, SC: StarkGenericConfig> AirBuilderWithPublicValues for ProverConstraintFolder<'a, SC> {
 //     type PublicVar = Self::F;

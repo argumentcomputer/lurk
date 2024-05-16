@@ -1,5 +1,5 @@
-use p3_commit::Pcs;
 use crate::stark::config::StarkGenericConfig;
+use p3_commit::Pcs;
 
 type Com<SC> = <<SC as StarkGenericConfig>::Pcs as Pcs<
     <SC as StarkGenericConfig>::Challenge,

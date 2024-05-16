@@ -12,6 +12,7 @@ pub struct VirtualPairCol<F: Field> {
     constant: F,
 }
 
+// TODO: Replace with `TryFrom`
 impl<F: Field> From<Expression<F>> for VirtualPairCol<F> {
     fn from(value: Expression<F>) -> Self {
         assert!(value.degree_multiple() <= 1);

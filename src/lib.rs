@@ -1,8 +1,9 @@
-pub mod lair;
-pub mod store_core;
 pub mod air;
+pub mod lair;
 mod lookup;
+pub mod store_core;
 
+#[allow(warnings, unused)]
 mod stark;
 
 pub fn add(left: usize, right: usize) -> usize {

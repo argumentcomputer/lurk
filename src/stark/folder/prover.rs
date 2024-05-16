@@ -1,12 +1,14 @@
-use crate::air::builder::{AirBuilderExt, LookupBuilder, Relation};
+use crate::air::builder::{
+    AirBuilderExt, FilteredLookupBuilder, LairBuilder, Relation,
+};
 use crate::air::symbolic::Interaction;
-use crate::stark::air::LogupBuilder;
 use crate::stark::config::{StarkGenericConfig, Val};
-use crate::stark::logup::eval_logup_constraints;
 use p3_air::{AirBuilder, ExtensionBuilder, PairBuilder};
 use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrixView;
 use p3_matrix::stack::VerticalPair;
+use crate::lookup::air::eval_logup_constraints;
+use crate::lookup::builder::LogupBuilder;
 
 type FolderView<'a, F: Field> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatrixView<'a, F>>;
 
@@ -46,6 +48,54 @@ impl<'a, SC: StarkGenericConfig> ProverConstraintFolder<'a, SC> {
         provides: &[Interaction<Val<SC>>],
     ) {
         eval_logup_constraints(self, requires, provides)
+    }
+}
+
+impl<'a, SC: StarkGenericConfig> LairBuilder for ProverConstraintFolder<'a, SC> {}
+
+impl<'a, SC: StarkGenericConfig> LogupBuilder for ProverConstraintFolder<'a, SC> {
+    type MP = FolderView<'a, SC::Challenge>;
+
+    type RandomVar = SC::Challenge;
+
+    fn logup_challenge_z_trace(&self) -> Self::RandomVar {
+        self.logup_z_trace
+    }
+
+    fn logup_challenge_r(&self) -> Self::RandomVar {
+        self.logup_r
+    }
+
+    fn logup_challenge_gammas(&self) -> &[Self::RandomVar] {
+        &self.logup_gammas
+    }
+
+    fn logup_sum(&self) -> Self::ExprEF {
+        self.logup_sum
+    }
+
+    fn multiplicities(&self) -> Self::MP {
+        self.multiplicities
+    }
+
+    fn permutation(&self) -> Self::MP {
+        self.permutations
+    }
+}
+
+impl<'a, SC: StarkGenericConfig> FilteredLookupBuilder for ProverConstraintFolder<'a, SC> {
+    fn filtered_require(
+        &mut self,
+        _relation: impl Relation<Self::Expr>,
+        _is_real: Option<Self::Expr>,
+    ) {
+    }
+
+    fn filtered_provide(
+        &mut self,
+        _relation: impl Relation<Self::Expr>,
+        _is_real: Option<Self::Expr>,
+    ) {
     }
 }
 
@@ -100,6 +150,10 @@ impl<'a, SC: StarkGenericConfig> ExtensionBuilder for ProverConstraintFolder<'a,
 }
 
 impl<'a, SC: StarkGenericConfig> AirBuilderExt for ProverConstraintFolder<'a, SC> {
+    fn trace_index(&self) -> Self::Expr {
+        todo!()
+    }
+
     fn row_index(&self) -> Self::Expr {
         self.identity
     }
@@ -108,51 +162,5 @@ impl<'a, SC: StarkGenericConfig> AirBuilderExt for ProverConstraintFolder<'a, SC
 impl<'a, SC: StarkGenericConfig> PairBuilder for ProverConstraintFolder<'a, SC> {
     fn preprocessed(&self) -> Self::M {
         self.preprocessed
-    }
-}
-
-impl<'a, SC: StarkGenericConfig> LogupBuilder for ProverConstraintFolder<'a, SC> {
-    type MP = FolderView<'a, SC::Challenge>;
-
-    type RandomVar = SC::Challenge;
-
-    fn logup_challenge_z_trace(&self) -> Self::RandomVar {
-        self.logup_z_trace
-    }
-
-    fn logup_challenge_r(&self) -> Self::RandomVar {
-        self.logup_r
-    }
-
-    fn logup_challenge_gammas(&self) -> &[Self::RandomVar] {
-        &self.logup_gammas
-    }
-
-    fn logup_sum(&self) -> Self::ExprEF {
-        self.logup_sum
-    }
-
-    fn multiplicities(&self) -> Self::MP {
-        self.multiplicities
-    }
-
-    fn permutation(&self) -> Self::MP {
-        self.permutations
-    }
-}
-
-impl<'a, SC: StarkGenericConfig> LookupBuilder for ProverConstraintFolder<'a, SC> {
-    fn require<R, I>(&mut self, _relation: R, _is_real: I)
-    where
-        R: Relation<Self::Expr>,
-        I: Into<Self::Expr>,
-    {
-    }
-
-    fn provide<R, I>(&mut self, _relation: R, _is_real: I)
-    where
-        R: Relation<Self::Expr>,
-        I: Into<Self::Expr>,
-    {
     }
 }

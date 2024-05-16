@@ -1,77 +1,73 @@
-use crate::air::TracePointer;
-use p3_air::{
-    AirBuilder, FilteredAirBuilder,
-};
-use p3_field::AbstractField;
+use crate::air::filtered::FilteredAirBuilder;
+use p3_air::{ AirBuilder};
 
-/// For example, if we have a ROM with 8 words, then we could create a relation as
-///
-/// ```
-/// struct MemoryRelation<F: Field> {
-///     addr: TracePointer<F>,
-///     values: [F; 8],
-/// }
-/// ```
-/// then the `values()` implementation would return
-///  `[Expr::from_canonical_u32(MEMORY_TAG), addr.trace.into(), addr.index.into(), values.map(Into)]`
-pub(crate) trait Relation<T> {
+pub trait Relation<T> {
+    /// Tagged tuple describing an element of a relation
+    ///
+    /// # Example
+    /// If we have a ROM with 8 words, then we could create a relation as
+    ///
+    /// ```
+    /// struct MemoryRelation<F: Field> {
+    ///     addr: TracePointer<F>,
+    ///     values: [F; 8],
+    /// }
+    /// ```
+    /// then the `values()` implementation would return
+    ///  `[Expr::from_canonical_u32(MEMORY_TAG), addr.trace.into(), addr.index.into(), values.map(Into)]`
     fn values(&self) -> impl IntoIterator<Item = T>;
 }
 
+pub trait LairBuilder: AirBuilder+ LookupBuilder + AirBuilderExt {}
+
+/// Extension of [`AirBuilder`] for creating [`Pointer`]s
 pub trait AirBuilderExt: AirBuilder {
     /// Returns the constant index of the current trace being proved
     /// Defaults to 0
-    fn trace_index(&self) -> Self::Expr {
-        Self::Expr::zero()
-    }
+    fn trace_index(&self) -> Self::Expr;
 
     /// Return a unique expression for the current row. When using a univariate PCS, this is given
     /// as the i-th root of unity, since the column it would correspond to would be the
     /// interpolations of the identity.
     fn row_index(&self) -> Self::Expr;
-
-    fn local_pointer(&self) -> TracePointer<Self::Expr> {
-        TracePointer::new(self.trace_index(), self.row_index())
-    }
 }
 
 pub trait LookupBuilder: AirBuilder {
-    fn require<R, I>(&mut self, relation: R, is_real: I)
-    where
-        R: Relation<Self::Expr>,
-        I: Into<Self::Expr>;
-    fn provide<R, I>(&mut self, relation: R, is_real: I)
-    where
-        R: Relation<Self::Expr>,
-        I: Into<Self::Expr>;
+
+    fn provide(&mut self, relation: impl Relation<Self::Expr>);
+    fn require(&mut self, relation: impl Relation<Self::Expr>);
 }
 
-pub trait LairBuilder: AirBuilder + LookupBuilder + AirBuilderExt {}
-impl<'a, AB: AirBuilderExt> AirBuilderExt for FilteredAirBuilder<'a, AB> {
-    fn trace_index(&self) -> Self::Expr {
-        self.inner.trace_index()
-    }
+pub(crate) trait FilteredLookupBuilder: AirBuilder {
 
-    fn row_index(&self) -> Self::Expr {
-        self.inner.row_index()
+    fn filtered_provide(
+        &mut self,
+        relation: impl Relation<Self::Expr>,
+        is_real: Option<Self::Expr>,
+    );
+    fn filtered_require(
+        &mut self,
+        relation: impl Relation<Self::Expr>,
+        is_real: Option<Self::Expr>,
+    );
+}
+
+impl<'a, AB: FilteredLookupBuilder> LookupBuilder for FilteredAirBuilder<'a, AB> {
+    fn provide(&mut self, relation: impl Relation<Self::Expr>) {
+        self.inner
+            .filtered_provide(relation, Some(self.condition.clone()))
+    }
+    fn require(&mut self, relation: impl Relation<Self::Expr>) {
+        self.inner
+            .filtered_require(relation, Some(self.condition.clone()))
     }
 }
 
-impl<'a, AB: LairBuilder> LairBuilder for FilteredAirBuilder<'a, AB> {}
-
-impl<'a, AB: LookupBuilder> LookupBuilder for FilteredAirBuilder<'a, AB> {
-    fn require<R, I>(&mut self, _relation: R, _is_real: I)
-    where
-        R: Relation<Self::Expr>,
-        I: Into<Self::Expr>,
-    {
-        panic!("lookups should be called without `when`")
+impl<AB: FilteredLookupBuilder> LookupBuilder for AB {
+    fn provide(&mut self, relation: impl Relation<Self::Expr>) {
+        self.filtered_provide(relation, None)
     }
-    fn provide<R, I>(&mut self, _relation: R, _is_real: I)
-    where
-        R: Relation<Self::Expr>,
-        I: Into<Self::Expr>,
-    {
-        panic!("lookups should be called without `when`")
+    fn require(&mut self, relation: impl Relation<Self::Expr>) {
+        self.filtered_require(relation, None)
     }
 }

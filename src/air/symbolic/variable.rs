@@ -1,9 +1,8 @@
 use core::marker::PhantomData;
 use core::ops::{Add, Mul, Sub};
 
-use p3_field::Field;
 use crate::air::symbolic::expression::Expression;
-
+use p3_field::Field;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Entry {
@@ -19,7 +18,7 @@ pub enum Entry {
 pub struct Variable<F: Field> {
     pub entry: Entry,
     pub index: usize,
-    pub(crate) _phantom: PhantomData<F>,
+    _phantom: PhantomData<F>,
 }
 
 impl<F: Field> Variable<F> {
