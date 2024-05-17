@@ -31,6 +31,7 @@ p3-util = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
 sphinx-core = { git = "ssh://git@github.com/lurk-lab/sphinx.git", branch = "dev"}
 sphinx-derive = { git = "ssh://git@github.com/lurk-lab/sphinx.git", branch = "dev" }
 anyhow = "1.0.72"
+ascent = "0.6.0"
 arc-swap = "1.7.1"
 base-x = "0.2.11"
 criterion = "0.5"
@@ -63,6 +64,7 @@ loam-macros = { version = "0.1.0", path = "loam-macros" }
 
 [dependencies]
 anyhow = { workspace = true }
+ascent = { workspace = true }
 arc-swap = { workspace = true }
 base-x = { workspace = true }
 elsa = { workspace = true, features = ["indexmap"] }
