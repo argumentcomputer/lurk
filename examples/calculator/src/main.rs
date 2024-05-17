@@ -4,14 +4,12 @@ mod pointers;
 mod store;
 
 use p3_baby_bear::BabyBear;
+use p3_uni_stark::{prove, verify};
 use rustyline::{error::ReadlineError, DefaultEditor};
 use std::time::Instant;
 use wp1_core::{
-    stark::StarkGenericConfig,
-    utils::{
-        uni_stark_prove_with_public_values as prove, uni_stark_verify_with_public_values as verify,
-        BabyBearPoseidon2,
-    },
+    stark::{StarkGenericConfig, UniConfig},
+    utils::BabyBearPoseidon2,
 };
 
 use crate::{calculator::Calculator, store::Store};
@@ -44,17 +42,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let public_values = store.to_scalar_vector(&[entry, nil, nil, resulting_stack]);
                 let config = BabyBearPoseidon2::new();
+                let chllngr_p = &mut config.challenger();
+                let chllngr_v = &mut config.challenger();
+                let uni_config = UniConfig(config);
                 let calculator = Calculator::default();
 
-                let challenger = &mut config.challenger();
                 let now = Instant::now();
-                let proof = prove(&config, &calculator, challenger, trace, &public_values);
+                let proof = prove(&uni_config, &calculator, chllngr_p, trace, &public_values);
                 let elapsed = now.elapsed().as_millis();
                 println!("Proof generated ({elapsed}ms)");
 
-                let challenger = &mut config.challenger();
                 let now = Instant::now();
-                verify(&config, &calculator, challenger, &proof, &public_values).unwrap();
+                verify(&uni_config, &calculator, chllngr_v, &proof, &public_values).unwrap();
                 let elapsed = now.elapsed().as_millis();
                 println!("Proof verified ({elapsed}ms)");
             }
