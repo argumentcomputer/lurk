@@ -1,3 +1,6 @@
+use hybrid_array::typenum::*;
+use hybrid_array::{Array, ArraySize};
+
 use super::constants::{
     MATRIX_DIAG_16_BABYBEAR_U32, MATRIX_DIAG_4_BABYBEAR_U32, RC_16_21_U32, RC_4_29_U32,
 };
@@ -5,13 +8,15 @@ use super::constants::{
 trait ConstantsProvided {}
 
 #[allow(private_bounds)]
-pub trait PoseidonConfig<const WIDTH: usize>: Clone + Copy + Sync + ConstantsProvided {
+pub trait PoseidonConfig: Clone + Copy + Sync + ConstantsProvided {
+    type WIDTH: ArraySize;
     const R_P: usize;
     const R_F: usize;
-    const R: usize = Self::R_P + Self::R_F;
-    const MATRIX_DIAG: [u32; WIDTH];
+    type R: ArraySize;
 
-    fn round_constants() -> Vec<[u32; WIDTH]>;
+    fn round_constants() -> Vec<Array<u32, Self::WIDTH>>;
+
+    fn matrix_diag() -> Array<u32, Self::WIDTH>;
 }
 
 #[derive(Clone, Copy)]
@@ -19,14 +24,18 @@ pub struct BabyBearConfig4;
 
 impl ConstantsProvided for BabyBearConfig4 {}
 
-impl PoseidonConfig<4> for BabyBearConfig4 {
+impl PoseidonConfig for BabyBearConfig4 {
+    type WIDTH = U4;
     const R_P: usize = 21;
     const R_F: usize = 8;
-    const R: usize = Self::R_P + Self::R_F;
-    const MATRIX_DIAG: [u32; 4] = MATRIX_DIAG_4_BABYBEAR_U32;
+    type R = U29;
 
-    fn round_constants() -> Vec<[u32; 4]> {
-        RC_4_29_U32.to_vec()
+    fn round_constants() -> Vec<Array<u32, Self::WIDTH>> {
+        RC_4_29_U32.map(|u| Array::from_iter(u)).to_vec()
+    }
+
+    fn matrix_diag() -> Array<u32, Self::WIDTH> {
+        Array::from_iter(MATRIX_DIAG_4_BABYBEAR_U32)
     }
 }
 
@@ -35,13 +44,17 @@ pub struct BabyBearConfig16;
 
 impl ConstantsProvided for BabyBearConfig16 {}
 
-impl PoseidonConfig<16> for BabyBearConfig16 {
+impl PoseidonConfig for BabyBearConfig16 {
+    type WIDTH = U16;
     const R_P: usize = 22;
     const R_F: usize = 8;
-    const R: usize = Self::R_P + Self::R_F;
-    const MATRIX_DIAG: [u32; 16] = MATRIX_DIAG_16_BABYBEAR_U32;
+    type R = U21;
 
-    fn round_constants() -> Vec<[u32; 16]> {
-        RC_16_21_U32.to_vec()
+    fn round_constants() -> Vec<Array<u32, Self::WIDTH>> {
+        RC_16_21_U32.map(|u| Array::from_iter(u)).to_vec()
+    }
+
+    fn matrix_diag() -> Array<u32, Self::WIDTH> {
+        Array::from_iter(MATRIX_DIAG_16_BABYBEAR_U32)
     }
 }

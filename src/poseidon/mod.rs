@@ -1,73 +1,75 @@
 use core::borrow::Borrow;
 use core::mem::size_of;
-use p3_air::AirBuilder;
-use p3_air::{Air, BaseAir};
+use hybrid_array::{typenum::Unsigned, Array};
+use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::AbstractField;
 use p3_matrix::Matrix;
-use p3_poseidon2::matmul_internal;
 use std::marker::PhantomData;
 
 use loam_macros::AlignedBorrow;
 
-use self::config::PoseidonConfig;
-use self::util::apply_m_4;
+use self::{
+    config::PoseidonConfig,
+    util::{apply_m_4, matmul_generic},
+};
 
 mod config;
 mod constants;
 mod util;
 
 /// A chip that implements addition for the opcode ADD.
-pub struct Poseidon2Chip<const WIDTH: usize, C>
+pub struct Poseidon2Chip<C>
 where
-    C: PoseidonConfig<WIDTH>,
+    C: PoseidonConfig,
 {
     _p: PhantomData<C>,
 }
 
 /// The column layout for the chip.
-#[derive(AlignedBorrow, Clone, Copy)]
+#[derive(AlignedBorrow, Clone)]
 #[repr(C)]
-pub struct Poseidon2Cols<T, const WIDTH: usize, C>
+pub struct Poseidon2Cols<T, C>
 where
-    C: PoseidonConfig<WIDTH>,
+    C: PoseidonConfig,
 {
-    pub input: [T; WIDTH],
-    pub rounds: [T; 31],
-    pub add_rc: [T; WIDTH],
-    pub sbox_deg_3: [T; WIDTH],
-    pub sbox_deg_7: [T; WIDTH],
-    pub output: [T; WIDTH],
+    pub input: Array<T, C::WIDTH>,
+    pub rounds: Array<T, C::R>,
+    pub add_rc: Array<T, C::WIDTH>,
+    pub sbox_deg_3: Array<T, C::WIDTH>,
+    pub sbox_deg_7: Array<T, C::WIDTH>,
+    pub output: Array<T, C::WIDTH>,
     pub is_initial: T,
     pub is_internal: T,
     pub is_external: T,
     _p: PhantomData<C>,
 }
 
-impl<F, const WIDTH: usize, C> BaseAir<F> for Poseidon2Chip<WIDTH, C>
+impl<F, C> BaseAir<F> for Poseidon2Chip<C>
 where
-    C: PoseidonConfig<WIDTH>,
+    C: PoseidonConfig,
 {
     fn width(&self) -> usize {
-        size_of::<Poseidon2Cols<u8, WIDTH, C>>()
+        size_of::<Poseidon2Cols<u8, C>>()
     }
 }
 
-impl<AB, const WIDTH: usize, C> Air<AB> for Poseidon2Chip<WIDTH, C>
+impl<AB, C> Air<AB> for Poseidon2Chip<C>
 where
     AB: AirBuilder,
-    C: PoseidonConfig<WIDTH>,
+    C: PoseidonConfig,
 {
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
         let local = main.row_slice(0);
-        let local: &Poseidon2Cols<AB::Var, WIDTH, C> = (*local).borrow();
+        let local: &Poseidon2Cols<AB::Var, C> = (*local).borrow();
 
+        let width = <C::WIDTH as Unsigned>::USIZE;
         let rounds_f = C::R_F;
         let rounds_p = C::R_P;
-        let rounds = rounds_f + rounds_p;
+        let rounds = <C::R as Unsigned>::USIZE - 1;
 
         // Convert the u32 round constants to field elements.
-        let constants: Vec<[AB::F; WIDTH]> = C::round_constants()
+        let constants: Vec<_> = C::round_constants()
             .into_iter()
             .map(|round| round.map(AB::F::from_wrapped_u32))
             .collect();
@@ -77,7 +79,7 @@ where
         // Initial Layer: Don't apply the round constants.
         // External Layers: Apply the round constants.
         // Internal Layers: Only apply the round constants to the first element.
-        for i in 0..WIDTH {
+        for i in 0..width {
             let mut result: AB::Expr = local.input[i].into();
             for r in 0..rounds {
                 if i == 0 {
@@ -95,13 +97,13 @@ where
         //
         // To differentiate between external and internal layers, we use a masking operation
         // to only apply the state change to the first element for internal layers.
-        for i in 0..WIDTH {
+        for i in 0..width {
             let sbox_deg_3 = local.add_rc[i] * local.add_rc[i] * local.add_rc[i];
             builder.assert_eq(sbox_deg_3, local.sbox_deg_3[i]);
             let sbox_deg_7 = local.sbox_deg_3[i] * local.sbox_deg_3[i] * local.add_rc[i];
             builder.assert_eq(sbox_deg_7, local.sbox_deg_7[i]);
         }
-        let sbox_result: [AB::Expr; WIDTH] = local
+        let sbox_result: Vec<AB::Expr> = local
             .sbox_deg_7
             .iter()
             .enumerate()
@@ -124,16 +126,14 @@ where
                         + (AB::Expr::one() - (local.is_initial + local.is_internal)) * *x
                 }
             })
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
+            .collect::<Vec<_>>();
 
         // EXTERNAL LAYER + INITIAL LAYER
         {
             // First, we apply M_4 to each consecutive four elements of the state.
             // In Appendix B's terminology, this replaces each x_i with x_i'.
-            let mut state: [AB::Expr; WIDTH] = sbox_result.clone();
-            for i in (0..WIDTH).step_by(4) {
+            let mut state: Vec<_> = sbox_result.clone();
+            for i in (0..width).step_by(4) {
                 apply_m_4(&mut state[i..i + 4]);
             }
 
@@ -141,7 +141,7 @@ where
             //
             // We first precompute the four sums of every four elements.
             let sums: [AB::Expr; 4] = core::array::from_fn(|k| {
-                (0..WIDTH)
+                (0..width)
                     .step_by(4)
                     .map(|j| state[j + k].clone())
                     .sum::<AB::Expr>()
@@ -149,7 +149,7 @@ where
 
             // The formula for each y_i involves 2x_i' term and x_j' terms for each j that equals i mod 4.
             // In other words, we can add a single copy of x_i' to the appropriate one of our precomputed sums.
-            for i in 0..WIDTH {
+            for i in 0..width {
                 state[i] += sums[i % 4].clone();
                 builder
                     .when(local.is_external + local.is_initial)
@@ -160,12 +160,12 @@ where
         // INTERNAL LAYER
         {
             // Use a simple matrix multiplication as the permutation.
-            let mut state: [AB::Expr; WIDTH] = sbox_result.clone();
-            let matmul_constants: [<<AB as AirBuilder>::Expr as AbstractField>::F; WIDTH] =
-                C::MATRIX_DIAG
+            let mut state: Vec<AB::Expr> = sbox_result.clone();
+            let matmul_constants: Array<<<AB as AirBuilder>::Expr as AbstractField>::F, C::WIDTH> =
+                C::matrix_diag()
                     .map(<<AB as AirBuilder>::Expr as AbstractField>::F::from_wrapped_u32);
-            matmul_internal(&mut state, matmul_constants);
-            for i in 0..WIDTH {
+            matmul_generic(&mut state, matmul_constants); // matmul_internal(&mut state, matmul_constants); // TODO: Fix this
+            for i in 0..width {
                 builder
                     .when(local.is_internal)
                     .assert_eq(state[i].clone(), local.output[i]);
@@ -184,9 +184,14 @@ where
         // Constrain the initial flag.
         builder.assert_eq(local.is_initial, local.rounds[0]);
 
+        let external_end = rounds_f / 2;
+        let internal_end = external_end + rounds_p;
+
         // Constrain the external flag.
-        let is_external_first_half = (0..4).map(|i| local.rounds[i + 1].into()).sum::<AB::Expr>();
-        let is_external_second_half = (26..30)
+        let is_external_first_half = (0..external_end)
+            .map(|i| local.rounds[i + 1].into())
+            .sum::<AB::Expr>();
+        let is_external_second_half = (internal_end..rounds)
             .map(|i| local.rounds[i + 1].into())
             .sum::<AB::Expr>();
         builder.assert_eq(
@@ -195,7 +200,7 @@ where
         );
 
         // Constrain the internal flag.
-        let is_internal = (4..26)
+        let is_internal = (external_end..internal_end)
             .map(|i| local.rounds[i + 1].into())
             .sum::<AB::Expr>();
         builder.assert_eq(local.is_internal, is_internal);
@@ -204,31 +209,45 @@ where
 
 #[cfg(test)]
 mod tests {
-    use self::config::BabyBearConfig4;
+    use crate::air::DebugConstraintBuilder;
 
     use super::*;
 
-    use itertools::Itertools;
-    use std::borrow::Borrow;
-    use std::time::Instant;
+    use self::config::{BabyBearConfig16, BabyBearConfig4};
 
-    use p3_baby_bear::{BabyBear, DiffusionMatrixBabybear};
+    use hybrid_array::{typenum::*, ArraySize};
+    use itertools::Itertools;
+    use std::{borrow::Borrow, time::Instant};
+    use wp1_core::runtime::ExecutionRecord;
+
+    use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
-    use p3_matrix::{dense::RowMajorMatrix, Matrix};
-    use p3_poseidon2::Poseidon2;
-    use p3_poseidon2::Poseidon2ExternalMatrixGeneral;
+    use p3_matrix::{
+        dense::{DenseMatrix, RowMajorMatrix},
+        stack::VerticalPair,
+        Matrix,
+    };
+    use p3_poseidon2::{Poseidon2, Poseidon2ExternalMatrixGeneral};
     use p3_symmetric::Permutation;
 
-    fn generate_trace_with<const WIDTH: usize>() {
-        // TODO: Fix this test
-        let config = BabyBearConfig4 {};
-        let chip = Poseidon2Chip::<4, BabyBearConfig4> { _p: PhantomData };
-        let test_inputs = vec![
-            [BabyBear::from_canonical_u32(1); WIDTH],
-            [BabyBear::from_canonical_u32(2); WIDTH],
-            [BabyBear::from_canonical_u32(3); WIDTH],
-            [BabyBear::from_canonical_u32(4); WIDTH],
-        ];
+    fn generate_trace_with<Config: PoseidonConfig>() {
+        let chip = Poseidon2Chip::<Config> { _p: PhantomData };
+
+        let first_values = [0; 52].map(BabyBear::from_canonical_u32);
+        let second_values = [0; 7].map(BabyBear::from_canonical_u32);
+
+        let first: DenseMatrix<BabyBear, &[_]> = DenseMatrix::new(first_values.as_slice(), 52);
+        let second: DenseMatrix<_, &[_]> = DenseMatrix::new(second_values.as_slice(), 7);
+
+        let main = VerticalPair::new(first, second);
+
+        let mut builder = DebugConstraintBuilder::new(main, 3, 3);
+
+        // dbg!(BaseAir::<BabyBear>::width(&chip));
+
+        chip.eval(&mut builder);
+
+        // let test_inputs = vec![];
 
         // let gt: Poseidon2<
         //     BabyBear,
@@ -246,7 +265,17 @@ mod tests {
 
     #[test]
     fn generate_trace() {
-        generate_trace_with::<4>();
+        generate_trace_with::<BabyBearConfig4>();
+        generate_trace_with::<BabyBearConfig16>();
+    }
+
+    fn prove_babybear_with() {
+        todo!()
+    }
+
+    #[test]
+    fn prove_babybear() {
+        prove_babybear_with()
     }
 
     // #[test]

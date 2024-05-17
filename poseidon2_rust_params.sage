@@ -14,7 +14,7 @@ p = 2013265921 # BabyBear
 
 n = len(p.bits()) # bit
 # t = 12 # GoldiLocks (t = 12 for sponge, t = 8 for compression)
-t = 4 # BabyBear (t = 24 for sponge, t = 16 for compression)
+t = 16 # BabyBear (t = 24 for sponge, t = 16 for compression)
 # t = 3 # BN254/BN256, BLS12-381, Pallas, Vesta (t = 3 for sponge, t = 2 for compression)
 
 FIELD = 1
@@ -108,7 +108,7 @@ def sat_inequiv_alpha(p, t, R_F, R_P, alpha, M):
         exit(1)
 
 R_F_FIXED, R_P_FIXED, _, _ = poseidon_calc_final_numbers_fixed(p, t, alpha, 128, True)
-print("// +++ R_F = {0}, R_P = {1} +++".format(R_F_FIXED, R_P_FIXED))
+print("// +++ t = {0} R_F = {1}, R_P = {2} +++".format(t, R_F_FIXED, R_P_FIXED))
 
 # For STARK TODO
 # r_p_mod = R_P_FIXED % NUM_CELLS
