@@ -1,4 +1,4 @@
-use crate::air::builder::{AirBuilderExt, LookupBuilder, Relation};
+use crate::air::builder::{AirBuilderExt, LookupBuilder, QueryType, Relation};
 use crate::air::symbolic::expression::Expression;
 use crate::air::symbolic::variable::{Entry, Variable};
 use crate::air::symbolic::virtual_col::VirtualPairCol;
@@ -82,8 +82,9 @@ impl<F: Field> AirBuilderExt for SymbolicAirBuilder<F> {
 }
 
 impl<F: Field> LookupBuilder for SymbolicAirBuilder<F> {
-    fn filtered_provide(
+    fn query(
         &mut self,
+        query_type: QueryType,
         relation: impl Relation<Self::Expr>,
         is_real: Option<Self::Expr>,
     ) {
@@ -93,20 +94,14 @@ impl<F: Field> LookupBuilder for SymbolicAirBuilder<F> {
             .map(|v| VirtualPairCol::from(v))
             .collect();
         let is_real = is_real.map(|is_real| VirtualPairCol::from(is_real));
-        self.air.provides.push(Interaction { values, is_real })
-    }
 
-    fn filtered_require(
-        &mut self,
-        relation: impl Relation<Self::Expr>,
-        is_real: Option<Self::Expr>,
-    ) {
-        let values = relation
-            .values()
-            .into_iter()
-            .map(|v| VirtualPairCol::from(v))
-            .collect();
-        let is_real = is_real.map(|is_real| VirtualPairCol::from(is_real));
-        self.air.requires.push(Interaction { values, is_real })
+        match query_type {
+            QueryType::Require | QueryType::RequireOnce => {
+                self.air.requires.push(Interaction { values, is_real })
+            }
+            QueryType::Provide | QueryType::ProvideOnce => {
+                self.air.provides.push(Interaction { values, is_real })
+            }
+        }
     }
 }

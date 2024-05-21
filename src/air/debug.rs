@@ -1,4 +1,4 @@
-use crate::air::builder::{AirBuilderExt, LairBuilder, LookupBuilder, Relation};
+use crate::air::builder::{AirBuilderExt, LairBuilder, LookupBuilder, QueryType, Relation};
 use p3_air::{Air, AirBuilder};
 use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrixView;
@@ -7,9 +7,9 @@ use p3_matrix::Matrix;
 
 type LocalRowView<'a, F> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatrixView<'a, F>>;
 
-enum Query<F> {
-    Provided(Vec<F>),
-    Required(Vec<F>),
+struct Query<F> {
+    query_type: QueryType,
+    values: Vec<F>,
 }
 
 /// Check the `air` constraints over a given `main` trace.
@@ -79,8 +79,9 @@ impl<'a, F: Field> DebugConstraintBuilder<'a, F> {
 }
 
 impl<'a, F: Field> LookupBuilder for DebugConstraintBuilder<'a, F> {
-    fn filtered_provide(
+    fn query(
         &mut self,
+        query_type: QueryType,
         relation: impl Relation<Self::Expr>,
         is_real: Option<Self::Expr>,
     ) {
@@ -91,24 +92,8 @@ impl<'a, F: Field> LookupBuilder for DebugConstraintBuilder<'a, F> {
             }
         }
 
-        self.queries
-            .push(Query::Provided(relation.values().into_iter().collect()));
-    }
-
-    fn filtered_require(
-        &mut self,
-        relation: impl Relation<Self::Expr>,
-        is_real: Option<Self::Expr>,
-    ) {
-        if let Some(is_real) = is_real {
-            let is_real: F = is_real.into();
-            if is_real.is_zero() {
-                return;
-            }
-        }
-
-        self.queries
-            .push(Query::Required(relation.values().into_iter().collect()));
+        let values = relation.values().into_iter().collect();
+        self.queries.push(Query { query_type, values });
     }
 }
 

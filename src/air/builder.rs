@@ -1,4 +1,5 @@
-use p3_air::AirBuilder;
+use p3_air::{AirBuilder, FilteredAirBuilder};
+use p3_field::AbstractField;
 
 pub trait Relation<T> {
     /// Tagged tuple describing an element of a relation
@@ -17,6 +18,7 @@ pub trait Relation<T> {
     fn values(&self) -> impl IntoIterator<Item = T>;
 }
 
+
 pub trait LairBuilder: AirBuilder + LookupBuilder + AirBuilderExt {}
 
 /// Extension of [`AirBuilder`] for creating [`Pointer`]s
@@ -31,69 +33,58 @@ pub trait AirBuilderExt: AirBuilder {
     fn row_index(&self) -> Self::Expr;
 }
 
-pub trait LookupBuilder: AirBuilder {
-    fn provide(&mut self, relation: impl Relation<Self::Expr>) {
-        self.filtered_provide(relation, None)
-    }
-    fn require(&mut self, relation: impl Relation<Self::Expr>) {
-        self.filtered_require(relation, None)
-    }
-
-    fn filtered_provide(
-        &mut self,
-        relation: impl Relation<Self::Expr>,
-        is_real: Option<Self::Expr>,
-    );
-
-    fn filtered_require(
-        &mut self,
-        relation: impl Relation<Self::Expr>,
-        is_real: Option<Self::Expr>,
-    );
+pub enum QueryType {
+    Require,
+    RequireOnce,
+    Provide,
+    ProvideOnce,
 }
 
-// TODO: This would be a nice improvement since we could call
-//       `builder.when(condition).require(relation)`.
-//       This requires `FilteredAirBuilder` to make `condition` public.
-//       The only change would be for Builders to replace
-//       `impl LookupBuilder for Builder`
-//       with
-//       `impl FilteredLookupBuilder for Builder`
-// pub trait LairBuilder: AirBuilder + FilteredLookupBuilder + AirBuilderExt {}
-//
-// pub trait LookupBuilder: AirBuilder {
-//     fn provide(&mut self, relation: impl Relation<Self::Expr>);
-//     fn require(&mut self, relation: impl Relation<Self::Expr>);
-// }
-//
-// pub(crate) trait FilteredLookupBuilder: AirBuilder {
-//     fn filtered_provide(
-//         &mut self,
-//         relation: impl Relation<Self::Expr>,
-//         is_real: Option<Self::Expr>,
-//     );
-//
-//     fn filtered_require(
-//         &mut self,
-//         relation: impl Relation<Self::Expr>,
-//         is_real: Option<Self::Expr>,
-//     );
-// }
-//
-// impl<AB: FilteredLookupBuilder> LookupBuilder for AB {
-//     fn provide(&mut self, relation: impl Relation<Self::Expr>) {
-//         self.filtered_provide(relation, None)
-//     }
-//     fn require(&mut self, relation: impl Relation<Self::Expr>) {
-//         self.filtered_require(relation, None)
-//     }
-// }
-// impl <'a, AB: FilteredLookupBuilder> LookupBuilder for FilteredAirBuilder<'a, AB> {
-//     fn provide(&mut self, relation: impl Relation<Self::Expr>) {
-//         self.inner.filtered_provide(relation, Some(self.condition.clone()))
-//     }
-//
-//     fn require(&mut self, relation: impl Relation<Self::Expr>) {
-//         self.inner.filtered_require(relation, Some(self.condition.clone()))
-//     }
-// }
+/// TODO: The `once` calls are not fully supported, and defered to their multi-use counterparts.
+pub trait LookupBuilder: AirBuilder {
+    /// Generic query that to be added to the global lookup argument.
+    fn query(
+        &mut self,
+        query_type: QueryType,
+        relation: impl Relation<Self::Expr>,
+        is_real: Option<Self::Expr>,
+    );
+
+    /// Provide a query that can be required multiple times.
+    fn provide(&mut self, relation: impl Relation<Self::Expr>) {
+        self.query(QueryType::Provide, relation, None);
+    }
+
+    /// Provide a query that will be required exactly once.
+    fn provide_once(&mut self, relation: impl Relation<Self::Expr>) {
+        self.query(QueryType::Provide, relation, None);
+    }
+
+    /// Require a query that has been provided.
+    fn require(&mut self, relation: impl Relation<Self::Expr>) {
+        self.query(QueryType::Require, relation, None);
+    }
+
+    /// Require a query that has been provide for single use.
+    fn require_once(&mut self, relation: impl Relation<Self::Expr>) {
+        self.query(QueryType::Require, relation, None);
+    }
+}
+
+impl<'a, AB: LookupBuilder> LookupBuilder for FilteredAirBuilder<'a, AB> {
+    fn query(
+        &mut self,
+        query_type: QueryType,
+        relation: impl Relation<Self::Expr>,
+        is_real: Option<Self::Expr>,
+    ) {
+        // TODO: This requires FilteredAirBuilder.condition to be made public
+        // let condition = if let Some(is_real) = is_real {
+        //     is_real * self.condition.clone()
+        // } else {
+        //     self.condition.clone()
+        // };
+        let condition = is_real.unwrap_or(Self::Expr::one());
+        self.inner.query(query_type, relation, Some(condition))
+    }
+}
