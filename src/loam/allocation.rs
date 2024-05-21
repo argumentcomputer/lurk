@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::Hash;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use ascent::{ascent, Dual};
@@ -66,24 +66,40 @@ impl Allocator {
 
         Ptr(tag, *idx)
     }
-    // FIXME: make non-bogus versions
-    pub fn bogus_hash4(&mut self, a: Wide, b: Wide, c: Wide, d: Wide) -> Wide {
-        let mut h = DefaultHasher::new();
+
+    pub fn hash4(&mut self, a: Wide, b: Wide, c: Wide, d: Wide) -> Wide {
+        use sha2::{Digest, Sha256};
+
+        let mut h = Sha256::new(); //DefaultHasher::new();
         let preimage = vec![a, b, c, d];
 
-        // This is pure nonsense, but it should avoid collisions for testing.
-        preimage.hash(&mut h);
-        let hash = h.finish();
-        let h1 = (hash & 0xFFFFFFFF) as u32;
-        let h2 = (hash >> 32) as u32;
-        let digest = Wide([h1, h2, h1, h2, h1, h2, h1, h2]);
+        for elt in a.0.iter() {
+            h.update(elt.to_le_bytes());
+        }
+        for elt in b.0.iter() {
+            h.update(elt.to_le_bytes());
+        }
+        for elt in c.0.iter() {
+            h.update(elt.to_le_bytes());
+        }
+        for elt in d.0.iter() {
+            h.update(elt.to_le_bytes());
+        }
+        let hash: [u8; 32] = h.finalize().into();
 
-        self.digest_cache.insert(preimage.clone(), digest);
-        self.preimage_cache.insert(digest, preimage.clone());
+        let mut buf = [0u8; 4];
 
-        digest
+        let x: Vec<u32> = hash
+            .chunks(4)
+            .map(|chunk| {
+                buf.copy_from_slice(chunk);
+                u32::from_le_bytes(buf)
+            })
+            .collect();
+
+        Wide(x.try_into().unwrap())
     }
-    pub fn bogus_unhash4(&mut self, digest: &Wide) -> Option<[Wide; 4]> {
+    pub fn unhash4(&mut self, digest: &Wide) -> Option<[Wide; 4]> {
         let mut preimage = [Wide::widen(0); 4];
         self.preimage_cache.get(digest).map(|digest| {
             preimage.copy_from_slice(&digest[..4]);
@@ -156,8 +172,8 @@ ascent! {
         ptr_tag(cdr, cdr_tag),
         ptr_value(cdr, cdr_value);
 
-    hash4_rel(a, b, c, d, allocator().bogus_hash4(*a, *b, *c, *d)) <-- hash4(ptr, a, b, c, d);
-    hash4_rel(a, b, c, d, digest) <-- unhash4(_, digest), let [a, b, c, d] = allocator().bogus_unhash4(digest).unwrap();
+    hash4_rel(a, b, c, d, allocator().hash4(*a, *b, *c, *d)) <-- hash4(ptr, a, b, c, d);
+    hash4_rel(a, b, c, d, digest) <-- unhash4(_, digest), let [a, b, c, d] = allocator().unhash4(digest).unwrap();
 
     cons_value(ptr, digest)
         <-- hash4(ptr, car_tag, car_value, cdr_tag, cdr_value),
@@ -242,13 +258,13 @@ mod test {
         );
 
         let expected_cons0_value =
-            allocator().bogus_hash4(F_WIDE_TAG, Wide::widen(1), F_WIDE_TAG, Wide::widen(2));
+            allocator().hash4(F_WIDE_TAG, Wide::widen(1), F_WIDE_TAG, Wide::widen(2));
 
         assert_eq!(
             Wide([
-                3816709126, 1874310961, 3816709126, 1874310961, 3816709126, 1874310961, 3816709126,
-                1874310961,
-            ],),
+                3463232763, 959203198, 2531151046, 2651019648, 4050318098, 2370584938, 309090293,
+                3040935649
+            ]),
             expected_cons0_value
         );
 
@@ -317,11 +333,11 @@ mod test {
         );
 
         let cons_ptr0_hash =
-            allocator().bogus_hash4(F_WIDE_TAG, Wide::widen(1), F_WIDE_TAG, Wide::widen(2));
+            allocator().hash4(F_WIDE_TAG, Wide::widen(1), F_WIDE_TAG, Wide::widen(2));
         let cons_ptr1_hash =
-            allocator().bogus_hash4(F_WIDE_TAG, Wide::widen(3), F_WIDE_TAG, Wide::widen(4));
+            allocator().hash4(F_WIDE_TAG, Wide::widen(3), F_WIDE_TAG, Wide::widen(4));
         let cons_ptr3_hash =
-            allocator().bogus_hash4(CONS_WIDE_TAG, cons_ptr0_hash, CONS_WIDE_TAG, cons_ptr1_hash);
+            allocator().hash4(CONS_WIDE_TAG, cons_ptr0_hash, CONS_WIDE_TAG, cons_ptr1_hash);
 
         assert_eq!(
             vec![
@@ -344,8 +360,7 @@ mod test {
         allocator().init();
 
         // Calculate the digest for (cons 1 2).
-        let cons0_value =
-            allocator().bogus_hash4(F_WIDE_TAG, Wide::widen(1), F_WIDE_TAG, Wide::widen(2));
+        let cons0_value = allocator().hash4(F_WIDE_TAG, Wide::widen(1), F_WIDE_TAG, Wide::widen(2));
 
         // Initialize the schema.
         prog.tag = vec![(F_TAG, F_WIDE_TAG), (CONS_TAG, CONS_WIDE_TAG)];
@@ -402,10 +417,7 @@ mod test {
         println!("{}", prog.relation_sizes_summary());
 
         let SimpleAllocProgram {
-            counter,
-            input,
-            mut mem,
-            ..
+            counter, mut mem, ..
         } = prog;
 
         mem.sort_by_key(|(_, _, c)| (*c));

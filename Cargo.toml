@@ -51,6 +51,7 @@ rustc-hash = "2.0.0"
 rustyline = "14.0"
 serde = "1.0"
 serde_json = "1.0"
+sha2 = "0.10.8"
 thiserror = "1.0.44"
 hybrid-array = "0.2.0-rc"
 lazy_static = "1.4.0"
@@ -103,8 +104,8 @@ sphinx-core = { workspace = true }
 sphinx-derive = { workspace = true }
 hashbrown = { workspace = true }
 
-ascent = { workspace = true }
 loam-macros = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
