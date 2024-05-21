@@ -70,8 +70,12 @@ impl Allocator {
     pub fn hash4(&mut self, a: Wide, b: Wide, c: Wide, d: Wide) -> Wide {
         use sha2::{Digest, Sha256};
 
-        let mut h = Sha256::new(); //DefaultHasher::new();
         let preimage = vec![a, b, c, d];
+
+        let mut h = Sha256::new();
+        if let Some(found) = self.digest_cache.get(&preimage) {
+            return *found;
+        }
 
         for elt in a.0.iter() {
             h.update(elt.to_le_bytes());
@@ -97,10 +101,17 @@ impl Allocator {
             })
             .collect();
 
-        Wide(x.try_into().unwrap())
+        let digest = Wide(x.try_into().unwrap());
+
+        self.digest_cache.insert(preimage.clone(), digest);
+        self.preimage_cache.insert(digest, preimage);
+
+        digest
     }
     pub fn unhash4(&mut self, digest: &Wide) -> Option<[Wide; 4]> {
         let mut preimage = [Wide::widen(0); 4];
+        dbg!(&digest, &self.preimage_cache);
+
         self.preimage_cache.get(digest).map(|digest| {
             preimage.copy_from_slice(&digest[..4]);
             preimage
@@ -394,7 +405,7 @@ mod test {
         let mut prog = AllocationProgram::default();
         allocator().init();
 
-        // Calculate the digest for (cons 1 2).
+        // Calculate the digest for (1 .  2).
         let cons0_value = allocator().hash4(F_WIDE_TAG, Wide::widen(1), F_WIDE_TAG, Wide::widen(2));
 
         // Allocate the pointer (outside of program).
