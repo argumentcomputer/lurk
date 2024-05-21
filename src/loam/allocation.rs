@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
-use ascent::aggregators::count;
 use ascent::ascent;
 
 type LE = u32;
@@ -64,6 +63,7 @@ impl Allocator {
             .entry(tag)
             .and_modify(|x| *x += 1)
             .or_insert(0);
+
         Ptr(tag, *idx)
     }
     // FIXME: make non-bogus versions
@@ -111,6 +111,7 @@ ascent! {
     relation car(Ptr, Ptr); // (cons, car)
     relation cdr(Ptr, Ptr); // (cons, cdr)
     relation hash4(Ptr, Wide, Wide, Wide, Wide); // (a, b, c, d)
+    relation unhash4(LE, Wide); // (tag, digest)
     relation hash4_rel(Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, digest)
 
     // inclusion triggers *_value relations.
@@ -132,12 +133,13 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
     // Rules
 
-    // Mark input conses as conses.
+    // Mark input conses as conses. [Input may be wrong name. This is mainly to test egress.]
     cons(a, b) <-- input_cons(a, b);
 
     // When a pair is first marked as a cons (and only once), allocate a ptr for it, and populate its
     // constructor and projector relations.
     cons_rel(car, cdr, allocator().alloc(CONS_TAG)) <-- cons(car, cdr);
+
     ptr(cons), car(cons, car), cdr(cons, cdr) <-- cons_rel(car, cdr, cons);
 
     f_value(ptr, Wide::widen(ptr.1)) <-- ptr(ptr), if ptr.0 == F_TAG;
@@ -155,6 +157,7 @@ ascent! {
         ptr_value(cdr, cdr_value);
 
     hash4_rel(a, b, c, d, allocator().bogus_hash4(*a, *b, *c, *d)) <-- hash4(ptr, a, b, c, d);
+    hash4_rel(a, b, c, d, digest) <-- unhash4(_, digest), let [a, b, c, d] = allocator().bogus_unhash4(digest).unwrap();
 
     cons_value(ptr, digest)
         <-- hash4(ptr, car_tag, car_value, cdr_tag, cdr_value),
@@ -162,15 +165,15 @@ ascent! {
 
     ptr(ptr) <-- tag_value_rel(_tag, _wide_tag, _value, ptr);
 
-    hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
+    unhash4(CONS_TAG, digest) <--
+        ingress(tag, digest),
+        tag_value_rel(tag, _, digest, ptr),
+        if ptr.0 == CONS_TAG;
+
     tag_value_rel(car_tag, wide_car_tag, car_value, allocator().alloc(*car_tag)),
     tag_value_rel(cdr_tag, wide_cdr_tag, cdr_value, allocator().alloc(*cdr_tag)) <--
-        ingress(tag, value),
-        ptr(ptr),
-        tag_value_rel(tag, _, val, ptr),
-        if ptr.0 == CONS_TAG && val == value,
-        tag_value_rel(&CONS_TAG, _, digest, ptr),
-        let [wide_car_tag, car_value, wide_cdr_tag, cdr_value] = allocator().bogus_unhash4(digest).unwrap(),
+        unhash4(&CONS_TAG, digest),
+        hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
 
@@ -311,14 +314,24 @@ mod test {
         let mut prog = AllocationProgram::default();
         allocator().init();
 
+        // Calculate the digest for (cons 1 2).
         let cons0_value =
             allocator().bogus_hash4(F_WIDE_TAG, Wide::widen(1), F_WIDE_TAG, Wide::widen(2));
 
-        let ptr = allocator().alloc(CONS_TAG);
+        // Initialize the schema.
         prog.tag = vec![(F_TAG, F_WIDE_TAG), (CONS_TAG, CONS_WIDE_TAG)];
+
+        // Allocate the pointer (outside of program).
+        let ptr = allocator().alloc(CONS_TAG);
+        // Identify a cons for ingress by its explicit content.
         prog.ingress = vec![(CONS_TAG, cons0_value)];
-        prog.ptr = vec![(ptr,)];
+        // Associate this explicit (still-opaque) cons with the allocated pointer.
         prog.tag_value_rel = vec![(CONS_TAG, CONS_WIDE_TAG, cons0_value, ptr)];
+        // Add pointer to ptr relation in database, giving the program access to the allocation.
+        prog.ptr = vec![(ptr,)];
+
+        // Before running the program, exactly one pointer has been allocated.
+        assert_eq!(1, prog.ptr.len());
 
         prog.run();
 
@@ -347,7 +360,7 @@ mod test {
         println!("ptr: {:?}", ptr);
         println!("hash4: {:?}", hash4);
 
-        // TODO: actual tests
-        panic!("uiop");
+        // Two new pointers were allocated. [FAILING]
+        assert_eq!(3, ptr.len());
     }
 }
