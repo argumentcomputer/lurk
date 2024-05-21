@@ -27,6 +27,8 @@ pub enum Op<F> {
     Store(List<usize>),
     /// `Load(len, y)` extends the stack with the `len` values that is pointed by `y`
     Load(usize, usize),
+    /// `Debug(s)` emits debug message `s`
+    Debug(&'static str),
 }
 
 /// A "code block" containing a sequence of operators and a control node to be

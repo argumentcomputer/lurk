@@ -36,6 +36,8 @@ pub enum OpE<F> {
     Store(Var, List<Var>),
     /// `Load([x, ...], y)` binds `[x, ...]` to the values that is pointed by `y`
     Load(List<Var>, Var),
+    /// `Debug(s)` emits debug message `s`
+    Debug(&'static str),
 }
 
 /// A "code block" containing a sequence of operators and a control node to be

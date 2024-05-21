@@ -311,6 +311,7 @@ impl<F: PrimeField + Ord> Op<F> {
                 let args = queries.load(*len, *ptr);
                 map.extend(args);
             }
+            Op::Debug(s) => println!("{}", s),
         }
     }
 
@@ -356,6 +357,7 @@ impl<F: PrimeField + Ord> Op<F> {
                     let args = queries.load(*len, *ptr);
                     map.extend(args);
                 }
+                Op::Debug(s) => println!("{}", s),
                 Op::Call(index, inp) => {
                     let args = inp.iter().map(|a| map[*a]).collect::<Vec<_>>();
                     if let Some(out) = queries.query(*index, &args) {

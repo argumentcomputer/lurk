@@ -201,6 +201,7 @@ impl<F: Clone + Ord> BlockE<F> {
                     ops.push(Op::Load(size, ptr));
                     vals.iter().for_each(|val| bind(val, ctx));
                 }
+                OpE::Debug(s) => ops.push(Op::Debug(s)),
             }
         }
         let ops = ops.into();

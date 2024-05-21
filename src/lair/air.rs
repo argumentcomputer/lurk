@@ -197,6 +197,7 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(o.into()));
                 }
             }
+            Op::Debug(..) => (),
         }
     }
 }

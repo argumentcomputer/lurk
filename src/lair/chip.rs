@@ -193,6 +193,7 @@ impl<F> Op<F> {
                 *aux += *ptr_size;
                 degrees.extend(vec![1; *ptr_size]);
             }
+            Op::Debug(..) => (),
         }
     }
 }

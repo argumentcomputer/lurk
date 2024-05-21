@@ -159,6 +159,16 @@ macro_rules! block {
             $($tail)*
         )
     };
+    (@seq {$($limbs:expr)*}, debug!($s:literal) ; $($tail:tt)*) => {
+        $crate::block! (
+            @seq
+            {
+                $($limbs)*
+                $crate::lair::expr::OpE::Debug($s)
+            },
+            $($tail)*
+        )
+    };
     (@seq {$($limbs:expr)*}, match $var:ident { $( $num:literal $(| $other_num:literal)* => $branch:tt )* } $(; $($def:tt)*)?) => {
         $crate::block! (
             @end

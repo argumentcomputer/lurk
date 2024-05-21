@@ -228,6 +228,7 @@ impl<F: PrimeField + Ord> Op<F> {
                     slice.push_aux(index, *f);
                 }
             }
+            Op::Debug(..) => (),
         }
     }
 }
