@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
-use ascent::ascent;
+use ascent::{ascent, Dual};
 
 type LE = u32;
 
@@ -188,6 +188,35 @@ ascent! {
     ptr_value(ptr, value) <-- ptr(ptr), (f_value(ptr, value) || cons_value(ptr, value));
 }
 
+// This simple allocation program demonstrates how we can use ascent's lattice feature to achieve memoized allocation
+// with an incrementing counter but without mutable state held outside the program (as in the Allocator) above.
+ascent! {
+    struct SimpleAllocProgram;
+
+    // Input must be added one element at a time, so we do it within the program.
+    relation input(usize, usize); // (a, b)
+
+    // Memory holds two elements, and an address allocated for each unique row. The Dual annotation ensures that if an
+    // (a, b, addr) tuple is added when an (a, b, addr') tuple already exists, the lower (first-allocated) address will
+    // be used.
+    lattice mem(usize, usize, Dual<usize>); // (a, b, addr)
+
+    // The counter holds the value of the most-recently allocated address, initially zero (so there will be no memory
+    // with allocated address 0).
+    lattice counter(usize) = vec![(0,)]; // (addr)
+
+    // Add each new input to mem, using the next counter value as address.
+    mem(a, b, Dual(counter + 1)) <-- input(a, b), counter(counter);
+
+    // The address of every new tuple in mem is added to counter. Since counter has only a single lattice attribute, the
+    // new value will replace the old if greater than the old.
+    counter(max.0) <-- mem(_, _, max);
+
+    // When counter is incremented, generate a new tuple. The generation rules will only produce six unique inputs.
+    input(a, b) <-- counter(x) if *x < 100, let a = *x % 2, let b = *x % 3;
+
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -362,5 +391,38 @@ mod test {
 
         // Two new pointers were allocated. [FAILING]
         assert_eq!(3, ptr.len());
+    }
+
+    #[test]
+    fn test_simple_alloc() {
+        let mut prog = SimpleAllocProgram::default();
+
+        prog.run();
+
+        println!("{}", prog.relation_sizes_summary());
+
+        let SimpleAllocProgram {
+            counter,
+            input,
+            mut mem,
+            ..
+        } = prog;
+
+        mem.sort_by_key(|(_, _, c)| (*c));
+        mem.reverse();
+
+        assert_eq!(6, mem.len());
+        // Counter relation never grows, but its single value evolves incrementally.
+        assert_eq!(1, counter.len());
+        assert_eq!((6,), counter[0]);
+        assert_eq!((0, 0, Dual(1)), mem[0]);
+        assert_eq!((1, 1, Dual(2)), mem[1]);
+        assert_eq!((0, 2, Dual(3)), mem[2]);
+        assert_eq!((1, 0, Dual(4)), mem[3]);
+        assert_eq!((0, 1, Dual(5)), mem[4]);
+        assert_eq!((1, 2, Dual(6)), mem[5]);
+
+        // NOTE: If memoization were not working, we would expect (0, 1, Dual(7)) next.
+        assert!(mem.get(6).is_none());
     }
 }
