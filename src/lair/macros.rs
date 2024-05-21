@@ -3,6 +3,16 @@ macro_rules! func {
     (fn $name:ident($( $in:ident ),*): $size:literal $lair:tt) => {
         $crate::lair::expr::FuncE {
             name: $crate::lair::Name(stringify!($name)),
+            invertible: false,
+            input_params: [$($crate::var!($in)),*].into(),
+            output_size: $size,
+            body: $crate::block!($lair),
+        }
+    };
+    (invertible fn $name:ident($( $in:ident ),*): $size:literal $lair:tt) => {
+        $crate::lair::expr::FuncE {
+            name: $crate::lair::Name(stringify!($name)),
+            invertible: true,
             input_params: [$($crate::var!($in)),*].into(),
             output_size: $size,
             body: $crate::block!($lair),
@@ -126,6 +136,36 @@ macro_rules! block {
                     let out = [$crate::var!($tgt)].into();
                     let inp = [$($crate::var!($arg)),*].into();
                     $crate::lair::expr::OpE::Call(out, func, inp)
+                }
+            },
+            $($tail)*
+        )
+    };
+    (@seq {$($limbs:expr)*}, let ($($tgt:ident),*) = preimg($func:ident, $($arg:ident),*) ; $($tail:tt)*) => {
+        $crate::block! (
+            @seq
+            {
+                $($limbs)*
+                {
+                    let func = $crate::lair::Name(stringify!($func));
+                    let out = [$($crate::var!($tgt)),*].into();
+                    let inp = [$($crate::var!($arg)),*].into();
+                    $crate::lair::expr::OpE::PreImg(out, func, inp)
+                }
+            },
+            $($tail)*
+        )
+    };
+    (@seq {$($limbs:expr)*}, let $tgt:ident = preimg($func:ident, $($arg:ident),*) ; $($tail:tt)*) => {
+        $crate::block! (
+            @seq
+            {
+                $($limbs)*
+                {
+                    let func = $crate::lair::Name(stringify!($func));
+                    let out = [$crate::var!($tgt)].into();
+                    let inp = [$($crate::var!($arg)),*].into();
+                    $crate::lair::expr::OpE::PreImg(out, func, inp)
                 }
             },
             $($tail)*

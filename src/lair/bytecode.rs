@@ -23,6 +23,9 @@ pub enum Op<F> {
     /// at index `i` in the toplevel when applied to the arguments at positions
     /// `[a, b, ...]` in the stack
     Call(usize, List<usize>),
+    /// `PreImg(i, [a, b, ...])` extends the stack with the preimage of the function
+    /// of index `i` on the arguments at positions `[a, b, ...]` in the stack
+    PreImg(usize, List<usize>),
     /// `Store([y, ...])` pushes to the stack the pointer to `[y, ...]`
     Store(List<usize>),
     /// `Load(len, y)` extends the stack with the `len` values that is pointed by `y`
@@ -108,6 +111,7 @@ impl<F> Cases<F> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Func<F> {
     pub(crate) name: Name,
+    pub(crate) invertible: bool,
     pub(crate) index: usize,
     pub(crate) input_size: usize,
     pub(crate) output_size: usize,

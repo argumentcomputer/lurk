@@ -207,6 +207,17 @@ impl<F: PrimeField + Ord> Op<F> {
                     slice.push_aux(index, *f);
                 }
             }
+            Op::PreImg(idx, inp) => {
+                let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
+                let inv_map = queries.inv_func_queries[*idx]
+                    .as_ref()
+                    .expect("Function not invertible");
+                let result = inv_map.get(&args).expect("Cannot find preimage");
+                for f in result.iter() {
+                    map.push((*f, 1));
+                    slice.push_aux(index, *f);
+                }
+            }
             Op::Store(args) => {
                 let idx = mem_index_from_len(args.len()).unwrap();
                 let query_map = &queries.mem_queries[idx];

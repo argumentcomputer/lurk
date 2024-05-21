@@ -17,11 +17,13 @@ pub struct QueryResult<T> {
 }
 
 pub(crate) type QueryMap<F> = BTreeMap<List<F>, QueryResult<List<F>>>;
+pub(crate) type InvQueryMap<F> = BTreeMap<List<F>, List<F>>;
 pub(crate) type MemMap<F> = IndexMap<List<F>, u32>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QueryRecord<F: PrimeField> {
     pub(crate) func_queries: Vec<QueryMap<F>>,
+    pub(crate) inv_func_queries: Vec<Option<InvQueryMap<F>>>,
     pub(crate) mem_queries: Vec<MemMap<F>>,
 }
 
@@ -39,9 +41,23 @@ pub fn mem_index_from_len(len: usize) -> Option<usize> {
 impl<F: PrimeField + Ord> QueryRecord<F> {
     #[inline]
     pub fn new(toplevel: &Toplevel<F>) -> Self {
+        let func_queries = vec![BTreeMap::new(); toplevel.size()];
+        let inv_func_queries = toplevel
+            .map
+            .iter()
+            .map(|(_, func)| {
+                if func.invertible {
+                    Some(BTreeMap::new())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let mem_queries = vec![IndexMap::new(); NUM_MEM_TABLES];
         Self {
-            func_queries: vec![BTreeMap::new(); toplevel.size()],
-            mem_queries: vec![IndexMap::new(); NUM_MEM_TABLES],
+            func_queries,
+            inv_func_queries,
+            mem_queries,
         }
     }
 
@@ -59,7 +75,17 @@ impl<F: PrimeField + Ord> QueryRecord<F> {
         }
     }
 
+    pub fn query_preimage(&mut self, index: usize, input: &[F]) -> Option<&List<F>> {
+        let output = self.inv_func_queries[index].as_ref()?.get(input)?;
+        let event = self.func_queries[index].get_mut(output)?;
+        event.mult += 1;
+        Some(output)
+    }
+
     pub fn insert_result(&mut self, index: usize, input: List<F>, output: List<F>) {
+        if let Some(queries) = &mut self.inv_func_queries[index] {
+            queries.insert(output.clone(), input.clone());
+        }
         let result = QueryResult { output, mult: 1 };
         assert!(self.func_queries[index].insert(input, result).is_none());
     }
@@ -301,6 +327,13 @@ impl<F: PrimeField + Ord> Op<F> {
                 let out = queries.record_event_and_return(toplevel, *idx, args);
                 map.extend(out.iter());
             }
+            Op::PreImg(idx, inp) => {
+                let args = inp.iter().map(|a| map[*a]).collect::<List<_>>();
+                let out = queries
+                    .query_preimage(*idx, &args)
+                    .expect("Cannot find preimg");
+                map.extend(out.iter());
+            }
             Op::Store(inp) => {
                 let args = inp.iter().map(|a| map[*a]).collect();
                 let ptr = queries.store(args);
@@ -358,6 +391,13 @@ impl<F: PrimeField + Ord> Op<F> {
                     map.extend(args);
                 }
                 Op::Debug(s) => println!("{}", s),
+                Op::PreImg(idx, inp) => {
+                    let args = inp.iter().map(|a| map[*a]).collect::<List<_>>();
+                    let out = queries
+                        .query_preimage(*idx, &args)
+                        .expect("Cannot find preimg");
+                    map.extend(out.iter());
+                }
                 Op::Call(index, inp) => {
                     let args = inp.iter().map(|a| map[*a]).collect::<Vec<_>>();
                     if let Some(out) = queries.query(*index, &args) {
@@ -383,7 +423,7 @@ impl<F: PrimeField + Ord> Op<F> {
 mod tests {
     use crate::{
         func,
-        lair::{demo_toplevel, execute::QueryRecord, toplevel::Toplevel},
+        lair::{demo_toplevel, execute::QueryRecord, field_from_u32, toplevel::Toplevel, List},
     };
 
     use p3_baby_bear::BabyBear as F;
@@ -459,5 +499,44 @@ mod tests {
         let out = test.execute(args, &toplevel, record);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], F::from_canonical_u32(80));
+    }
+
+    #[test]
+    fn lair_preimg_test() {
+        let polynomial_e = func!(
+            invertible fn polynomial(a0, a1, a2, a3, x): 1 {
+                // a2 + a3*x
+                let coef = mul(a3, x);
+                let res = add(a2, coef);
+                // a1 + a2*x + a3*x^2
+                let coef = mul(res, x);
+                let res = add(a1, coef);
+                // a0 + a1*x + a2*x^2 + a3*x^3
+                let coef = mul(res, x);
+                let res = add(a0, coef);
+                return res
+            }
+        );
+        let inverse_e = func!(
+            fn inverse(y): 5 {
+                let (a0, a1, a2, a3, x) = preimg(polynomial, y);
+                return (a0, a1, a2, a3, x)
+            }
+        );
+        let toplevel = Toplevel::<F>::new(&[polynomial_e, inverse_e]);
+        let polynomial = toplevel.get_by_name("polynomial").unwrap();
+        let inverse = toplevel.get_by_name("inverse").unwrap();
+        let args = [1, 3, 5, 7, 20]
+            .into_iter()
+            .map(field_from_u32)
+            .collect::<List<_>>();
+        let record = &mut QueryRecord::new(&toplevel);
+        let out = record.record_event_and_return(&toplevel, polynomial.index, args.clone());
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0], F::from_canonical_u32(58061));
+        let inp = inverse.execute(&out, &toplevel, record);
+        assert_eq!(inp.len(), 5);
+        let expect_inp = args;
+        assert_eq!(inp, expect_inp);
     }
 }

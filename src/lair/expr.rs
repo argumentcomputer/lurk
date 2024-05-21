@@ -32,6 +32,9 @@ pub enum OpE<F> {
     /// `Call([x, ...], foo, [y, ...])` binds `x, ...` to the output of `foo`
     /// when applied to the arguments `y, ...`
     Call(List<Var>, Name, List<Var>),
+    /// `PreImg([x, ...], foo, [y, ...])` binds `x, ...` to the preimage of `foo`
+    /// when on the arguments `y, ...`
+    PreImg(List<Var>, Name, List<Var>),
     /// `Store(x, [y, ...])` binds `x` to a pointer to `[y, ...]`
     Store(Var, List<Var>),
     /// `Load([x, ...], y)` binds `[x, ...]` to the values that is pointed by `y`
@@ -74,6 +77,7 @@ pub struct CasesE<F> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FuncE<F> {
     pub name: Name,
+    pub invertible: bool,
     pub input_params: List<Var>,
     pub output_size: usize,
     pub body: BlockE<F>,
