@@ -7,7 +7,7 @@ use p3_matrix::Matrix;
 
 type LocalRowView<'a, F> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatrixView<'a, F>>;
 
-struct Query<F> {
+pub struct Query<F> {
     query_type: QueryType,
     values: Vec<F>,
 }
@@ -45,7 +45,7 @@ pub fn debug_constraints_collecting_interactions<
 }
 
 /// A builder for debugging constraints.
-pub(crate) struct DebugConstraintBuilder<'a, F> {
+pub struct DebugConstraintBuilder<'a, F> {
     main: LocalRowView<'a, F>,
     row: usize,
     height: usize,

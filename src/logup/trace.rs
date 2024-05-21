@@ -4,6 +4,8 @@ use itertools::{chain, enumerate, Itertools};
 use p3_field::{ExtensionField, PrimeField};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::Matrix;
+use rayon::iter::IndexedParallelIterator;
+use rayon::iter::ParallelIterator;
 use std::iter;
 use std::iter::zip;
 

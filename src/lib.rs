@@ -1,5 +1,9 @@
+
+#[allow(dead_code)]
 pub mod air;
 pub mod lair;
+
+#[allow(dead_code)]
 mod logup;
 pub mod store_core;
 
