@@ -80,7 +80,7 @@ impl<F: PrimeField + Ord> QueryRecord<F> {
         }
     }
 
-    fn store(&mut self, args: List<F>) -> F {
+    pub fn store(&mut self, args: List<F>) -> F {
         let len = args.len();
         let idx = mem_index_from_len(len)
             .unwrap_or_else(|| panic!("There are no mem tables of size {}", len));
@@ -93,7 +93,7 @@ impl<F: PrimeField + Ord> QueryRecord<F> {
         }
     }
 
-    fn load(&mut self, len: usize, ptr: F) -> &[F] {
+    pub fn load(&mut self, len: usize, ptr: F) -> &[F] {
         let ptr_f: usize = ptr
             .as_canonical_biguint()
             .try_into()
