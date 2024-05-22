@@ -32,6 +32,10 @@ pub enum OpE<F> {
     /// `Call([x, ...], foo, [y, ...])` binds `x, ...` to the output of `foo`
     /// when applied to the arguments `y, ...`
     Call(List<Var>, Name, List<Var>),
+    /// `Store(x, [y, ...])` binds `x` to a pointer to `[y, ...]`
+    Store(Var, List<Var>),
+    /// `Load([x, ...], y)` binds `[x, ...]` to the values that is pointed by `y`
+    Load(List<Var>, Var),
 }
 
 /// A "code block" containing a sequence of operators and a control node to be

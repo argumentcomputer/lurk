@@ -11,6 +11,7 @@ pub mod execute;
 pub mod expr;
 mod macros;
 pub mod map;
+pub mod memory;
 pub mod toplevel;
 pub mod trace;
 
@@ -21,6 +22,12 @@ impl std::fmt::Display for Name {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
+}
+
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn field_from_u32<F: p3_field::AbstractField>(i: u32) -> F {
+    F::from_canonical_u32(i)
 }
 
 #[inline]

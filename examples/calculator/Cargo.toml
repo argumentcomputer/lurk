@@ -7,11 +7,11 @@ edition = "2021"
 
 [dependencies]
 loam = { path = "../.." }
-p3-air = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
-p3-baby-bear = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
-p3-field = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
-p3-matrix = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
-p3-uni-stark = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-air = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-baby-bear = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-field = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-matrix = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-uni-stark = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
 rayon = "1.10.0"
 rustyline = "14.0"
 wp1-core = { git = "ssh://git@github.com/wormhole-foundation/wp1.git", branch = "dev" }

@@ -131,6 +131,34 @@ macro_rules! block {
             $($tail)*
         )
     };
+    (@seq {$($limbs:expr)*}, let $tgt:ident = store($($arg:ident),*) ; $($tail:tt)*) => {
+        $crate::block! (
+            @seq
+            {
+                $($limbs)*
+                {
+                    let out = $crate::var!($tgt);
+                    let inp = [$($crate::var!($arg)),*].into();
+                    $crate::lair::expr::OpE::Store(out, inp)
+                }
+            },
+            $($tail)*
+        )
+    };
+    (@seq {$($limbs:expr)*}, let ($($tgt:ident),*) = load($arg:ident) ; $($tail:tt)*) => {
+        $crate::block! (
+            @seq
+            {
+                $($limbs)*
+                {
+                    let out = [$($crate::var!($tgt)),*].into();
+                    let inp = $crate::var!($arg);
+                    $crate::lair::expr::OpE::Load(out, inp)
+                }
+            },
+            $($tail)*
+        )
+    };
     (@seq {$($limbs:expr)*}, match $var:ident { $( $num:literal $(| $other_num:literal)* => $branch:tt )* } $(; $($def:tt)*)?) => {
         $crate::block! (
             @end

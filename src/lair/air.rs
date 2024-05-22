@@ -181,13 +181,23 @@ impl<F: Field> Op<F> {
                 };
                 map.push(c);
             }
+            // Call, Store, Load TODO: lookup argument
             Op::Call(idx, _) => {
                 let func = toplevel.get_by_index(*idx).unwrap();
                 for _ in 0..func.output_size {
                     let o = *local.next_aux(index);
                     map.push(Val::Expr(o.into()));
                 }
-                // TODO: lookup argument
+            }
+            Op::Store(_) => {
+                let ptr = *local.next_aux(index);
+                map.push(Val::Expr(ptr.into()));
+            }
+            Op::Load(len, _) => {
+                for _ in 0..*len {
+                    let o = *local.next_aux(index);
+                    map.push(Val::Expr(o.into()));
+                }
             }
         }
     }
@@ -272,7 +282,7 @@ mod tests {
         utils::{uni_stark_prove as prove, uni_stark_verify as verify, BabyBearPoseidon2},
     };
 
-    use crate::lair::{demo_toplevel, field_from_i32};
+    use crate::lair::{demo_toplevel, field_from_u32};
 
     use super::*;
 
@@ -295,7 +305,7 @@ mod tests {
                 0, 0, 0, 0, 0, 0, 0, 0, //
             ]
             .into_iter()
-            .map(field_from_i32)
+            .map(field_from_u32)
             .collect::<Vec<_>>(),
             factorial_width,
         );
@@ -314,7 +324,7 @@ mod tests {
                 7, 21, 1, 13, 8, 862828252, 1677721601, 0, 0, 1, //
             ]
             .into_iter()
-            .map(field_from_i32)
+            .map(field_from_u32)
             .collect::<Vec<_>>(),
             fib_width,
         );

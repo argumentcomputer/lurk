@@ -190,6 +190,17 @@ impl<F: Clone + Ord> BlockE<F> {
                     ops.push(Op::Call(name_idx, inp));
                     out.iter().for_each(|t| bind(t, ctx));
                 }
+                OpE::Store(ptr, vals) => {
+                    let vals = vals.iter().map(|a| use_var(a, ctx)).collect();
+                    ops.push(Op::Store(vals));
+                    bind(ptr, ctx);
+                }
+                OpE::Load(vals, ptr) => {
+                    let ptr = use_var(ptr, ctx);
+                    let size = vals.len();
+                    ops.push(Op::Load(size, ptr));
+                    vals.iter().for_each(|val| bind(val, ctx));
+                }
             }
         }
         let ops = ops.into();
