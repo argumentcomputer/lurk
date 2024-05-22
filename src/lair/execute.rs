@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, slice::Iter};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
@@ -117,99 +117,263 @@ impl<'a, F: PrimeField + Ord> FuncChip<'a, F> {
             queries.insert_result(index, args, out);
         }
     }
+
+    pub fn execute_iter(&self, args: List<F>, queries: &mut QueryRecord<F>) {
+        let index = self.func.index;
+        let toplevel = self.toplevel;
+        if queries.query(index, &args).is_none() {
+            let out = self.func.execute_iter(&args, toplevel, queries);
+            queries.insert_result(index, args, out);
+        }
+    }
+}
+
+type VarMap<F> = Vec<F>;
+struct Frame<'a, F> {
+    index: usize,
+    args: List<F>,
+    ops: Iter<'a, Op<F>>,
+    ctrl: &'a Ctrl<F>,
+    map: VarMap<F>,
+}
+type Stack<'a, F> = Vec<Frame<'a, F>>;
+enum Continuation<F> {
+    Return(Vec<F>),
+    Apply(usize, Vec<F>),
 }
 
 impl<F: PrimeField + Ord> Func<F> {
-    fn execute(&self, args: &[F], toplevel: &Toplevel<F>, record: &mut QueryRecord<F>) -> List<F> {
+    fn execute(&self, args: &[F], toplevel: &Toplevel<F>, queries: &mut QueryRecord<F>) -> List<F> {
         let frame = &mut args.into();
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
-        self.body().execute(frame, toplevel, record)
+        self.body().execute(frame, toplevel, queries)
+    }
+
+    pub fn execute_iter(
+        &self,
+        args: &[F],
+        toplevel: &Toplevel<F>,
+        queries: &mut QueryRecord<F>,
+    ) -> List<F> {
+        assert_eq!(self.input_size(), args.len(), "Argument mismatch");
+        let mut map = args.to_vec();
+        let mut ops = self.body.ops.iter();
+        let mut ctrl = &self.body.ctrl;
+        let mut stack = vec![];
+        loop {
+            let cont = Op::execute_step(ops, ctrl, map, &mut stack, toplevel, queries);
+            match cont {
+                Continuation::Return(out) => {
+                    if let Some(frame) = stack.pop() {
+                        ctrl = frame.ctrl;
+                        ops = frame.ops;
+                        map = frame.map;
+                        map.extend(out.iter());
+                        queries.insert_result(frame.index, frame.args, out.into());
+                    } else {
+                        map = out;
+                        break;
+                    }
+                }
+                Continuation::Apply(idx, args) => {
+                    let func = toplevel.get_by_index(idx).unwrap();
+                    map = args;
+                    ctrl = &func.body.ctrl;
+                    ops = func.body.ops.iter();
+                }
+            }
+        }
+        map.into()
     }
 }
 
 impl<F: PrimeField + Ord> Block<F> {
     fn execute(
         &self,
-        frame: &mut Vec<F>,
+        map: &mut VarMap<F>,
         toplevel: &Toplevel<F>,
-        record: &mut QueryRecord<F>,
+        queries: &mut QueryRecord<F>,
     ) -> List<F> {
         self.ops
             .iter()
-            .for_each(|op| op.execute(frame, toplevel, record));
-        self.ctrl.execute(frame, toplevel, record)
+            .for_each(|op| op.execute(map, toplevel, queries));
+        self.ctrl.execute(map, toplevel, queries)
+    }
+
+    fn execute_step<'a>(
+        &'a self,
+        map: VarMap<F>,
+        stack: &mut Stack<'a, F>,
+        toplevel: &Toplevel<F>,
+        queries: &mut QueryRecord<F>,
+    ) -> Continuation<F> {
+        let ops = self.ops.iter();
+        let ctrl = &self.ctrl;
+        Op::execute_step(ops, ctrl, map, stack, toplevel, queries)
     }
 }
 
 impl<F: PrimeField + Ord> Ctrl<F> {
     fn execute(
         &self,
-        frame: &mut Vec<F>,
+        map: &mut VarMap<F>,
         toplevel: &Toplevel<F>,
-        record: &mut QueryRecord<F>,
+        queries: &mut QueryRecord<F>,
     ) -> List<F> {
         match self {
-            Ctrl::Return(_, vars) => vars.iter().map(|var| frame[*var]).collect(),
+            Ctrl::Return(_, vars) => vars.iter().map(|var| map[*var]).collect(),
             Ctrl::If(b, t, f) => {
-                let b = frame.get(*b).unwrap();
+                let b = map.get(*b).unwrap();
                 if b.is_zero() {
-                    f.execute(frame, toplevel, record)
+                    f.execute(map, toplevel, queries)
                 } else {
-                    t.execute(frame, toplevel, record)
+                    t.execute(map, toplevel, queries)
                 }
             }
             Ctrl::Match(v, cases) => {
-                let v = frame.get(*v).unwrap();
+                let v = map.get(*v).unwrap();
                 cases
                     .match_case(v)
                     .expect("No match")
-                    .execute(frame, toplevel, record)
+                    .execute(map, toplevel, queries)
+            }
+        }
+    }
+
+    fn execute_step<'a>(
+        &'a self,
+        map: VarMap<F>,
+        stack: &mut Stack<'a, F>,
+        toplevel: &Toplevel<F>,
+        queries: &mut QueryRecord<F>,
+    ) -> Continuation<F> {
+        match self {
+            Ctrl::Return(_, vars) => {
+                let out = vars.iter().map(|var| map[*var]).collect();
+                Continuation::Return(out)
+            }
+            Ctrl::If(b, t, f) => {
+                let b = map.get(*b).unwrap();
+                if b.is_zero() {
+                    f.execute_step(map, stack, toplevel, queries)
+                } else {
+                    t.execute_step(map, stack, toplevel, queries)
+                }
+            }
+            Ctrl::Match(v, cases) => {
+                let v = map.get(*v).unwrap();
+                cases
+                    .match_case(v)
+                    .expect("No match")
+                    .execute_step(map, stack, toplevel, queries)
             }
         }
     }
 }
 
 impl<F: PrimeField + Ord> Op<F> {
-    fn execute(&self, frame: &mut Vec<F>, toplevel: &Toplevel<F>, record: &mut QueryRecord<F>) {
+    fn execute(&self, map: &mut VarMap<F>, toplevel: &Toplevel<F>, queries: &mut QueryRecord<F>) {
         match self {
             Op::Const(c) => {
-                frame.push(*c);
+                map.push(*c);
             }
             Op::Add(a, b) => {
-                let a = frame[*a];
-                let b = frame[*b];
-                frame.push(a + b);
+                let a = map[*a];
+                let b = map[*b];
+                map.push(a + b);
             }
             Op::Sub(a, b) => {
-                let a = frame[*a];
-                let b = frame[*b];
-                frame.push(a - b);
+                let a = map[*a];
+                let b = map[*b];
+                map.push(a - b);
             }
             Op::Mul(a, b) => {
-                let a = frame[*a];
-                let b = frame[*b];
-                frame.push(a * b);
+                let a = map[*a];
+                let b = map[*b];
+                map.push(a * b);
             }
             Op::Inv(a) => {
-                let a = frame.get(*a).unwrap();
-                frame.push(a.inverse());
+                let a = map.get(*a).unwrap();
+                map.push(a.inverse());
             }
             Op::Call(idx, inp) => {
-                let args = inp.iter().map(|a| frame[*a]).collect();
-                let out = record.record_event_and_return(toplevel, *idx, args);
-                frame.extend(out.iter());
+                let args = inp.iter().map(|a| map[*a]).collect();
+                let out = queries.record_event_and_return(toplevel, *idx, args);
+                map.extend(out.iter());
             }
             Op::Store(inp) => {
-                let args = inp.iter().map(|a| frame[*a]).collect();
-                let ptr = record.store(args);
-                frame.push(ptr);
+                let args = inp.iter().map(|a| map[*a]).collect();
+                let ptr = queries.store(args);
+                map.push(ptr);
             }
             Op::Load(len, ptr) => {
-                let ptr = frame.get(*ptr).unwrap();
-                let args = record.load(*len, *ptr);
-                frame.extend(args);
+                let ptr = map.get(*ptr).unwrap();
+                let args = queries.load(*len, *ptr);
+                map.extend(args);
             }
         }
+    }
+
+    fn execute_step<'a>(
+        mut ops: Iter<'a, Self>,
+        ctrl: &'a Ctrl<F>,
+        mut map: VarMap<F>,
+        stack: &mut Stack<'a, F>,
+        toplevel: &Toplevel<F>,
+        queries: &mut QueryRecord<F>,
+    ) -> Continuation<F> {
+        while let Some(op) = ops.next() {
+            match op {
+                Op::Const(c) => {
+                    map.push(*c);
+                }
+                Op::Add(a, b) => {
+                    let a = map[*a];
+                    let b = map[*b];
+                    map.push(a + b);
+                }
+                Op::Sub(a, b) => {
+                    let a = map[*a];
+                    let b = map[*b];
+                    map.push(a - b);
+                }
+                Op::Mul(a, b) => {
+                    let a = map[*a];
+                    let b = map[*b];
+                    map.push(a * b);
+                }
+                Op::Inv(a) => {
+                    let a = map.get(*a).unwrap();
+                    map.push(a.inverse());
+                }
+                Op::Store(inp) => {
+                    let args = inp.iter().map(|a| map[*a]).collect();
+                    let ptr = queries.store(args);
+                    map.push(ptr);
+                }
+                Op::Load(len, ptr) => {
+                    let ptr = map.get(*ptr).unwrap();
+                    let args = queries.load(*len, *ptr);
+                    map.extend(args);
+                }
+                Op::Call(index, inp) => {
+                    let args = inp.iter().map(|a| map[*a]).collect::<Vec<_>>();
+                    if let Some(out) = queries.query(*index, &args) {
+                        map.extend(out.iter())
+                    } else {
+                        stack.push(Frame {
+                            index: *index,
+                            args: args.clone().into(),
+                            ops,
+                            ctrl,
+                            map,
+                        });
+                        return Continuation::Apply(*index, args);
+                    }
+                }
+            }
+        }
+        ctrl.execute_step(map, stack, toplevel, queries)
     }
 }
 
@@ -245,6 +409,18 @@ mod tests {
         let out = odd.execute(args, &toplevel, record);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], F::from_canonical_u32(0));
+    }
+
+    #[test]
+    fn lair_execute_iter_test() {
+        let toplevel = demo_toplevel::<_>();
+
+        let fib = toplevel.get_by_name("fib").unwrap();
+        let args = &[F::from_canonical_u32(100000)];
+        let record = &mut QueryRecord::new(&toplevel);
+        let out = fib.execute_iter(args, &toplevel, record);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0], F::from_canonical_u32(309996207));
     }
 
     #[test]
