@@ -56,9 +56,9 @@ pub(crate) fn generate_permutation_trace<F: PrimeField, EF: ExtensionField<F>>(
     multiplicities: &RowMajorMatrix<EF>,
     provides: &[Interaction<F>],
     requires: &[Interaction<F>],
-    challenge_z: &EF,
-    challenge_r: &EF,
-    challenge_gamma: &EF,
+    challenge_z: EF,
+    challenge_r: EF,
+    challenge_gamma: EF,
 ) -> RowMajorMatrix<EF> {
     let height = main.height();
     debug_assert_eq!(preprocessed.height(), height);
@@ -80,8 +80,19 @@ pub(crate) fn generate_permutation_trace<F: PrimeField, EF: ExtensionField<F>>(
 
     let width = 1 + num_interactions;
 
+    // Each row is [s, w_0, w_1, ...], where
+    // - w_k = m_k/(r + ∑j gamma^j v_{k,j})
+    // - s' = s + ∑k w_k, is the running sum of all w_k
+    // v_{k,j} is the j-th value of the k-th interaction
+    // m_k is the multiplicity for the k-th interaction
+    //   if k is a require query
+    //      m_k = -zeta^trace
+    //   else
+    //      m_k is a witness computed by `generate_multiplicities_trace`
     let mut values = RowMajorMatrix::new(vec![EF::zero(); width * height], width);
 
+    // For each interaction k with values [v_{k,j}]_j,
+    // compute all denominators `d_k = r + ∑_j gamma^j v_{k,j}`
     values
         .par_rows_mut()
         .zip(preprocessed.par_row_slices().zip(main.par_row_slices()))
@@ -99,13 +110,15 @@ pub(crate) fn generate_permutation_trace<F: PrimeField, EF: ExtensionField<F>>(
             }
         });
 
+    // map denominators `d_k` to `w_k = m_k/d_k`
+    // compute row sum t = ∑k w_k
     values
         .par_rows_mut()
         .zip(multiplicities.par_row_slices())
         .for_each(|(values, multiplicities)| {
             let (sum, inverses) = values.split_first_mut().unwrap();
-            let multiplicities = multiplicities.iter().chain(iter::repeat(challenge_z));
-            for (inverse, &multiplicity) in zip(inverses, multiplicities) {
+            let multiplicities = multiplicities.iter().copied().chain(iter::repeat(-challenge_z));
+            for (inverse, multiplicity) in zip(inverses, multiplicities) {
                 if inverse.is_zero() {
                     continue;
                 }
@@ -116,13 +129,14 @@ pub(crate) fn generate_permutation_trace<F: PrimeField, EF: ExtensionField<F>>(
         });
 
     // Compute partial sums column
+    // s_0 = 0
+    // s_{i+1} = s_i + t_i
     let mut running_sum = EF::zero();
     for i in 0..height {
         let row = values.row_mut(i);
-        let row_sum = row.first_mut().unwrap();
-
-        running_sum += *row_sum;
-        *row_sum = running_sum;
+        let t = row[0];
+        running_sum += t;
+        row[0] = running_sum;
     }
 
     values
