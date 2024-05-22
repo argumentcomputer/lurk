@@ -29,7 +29,7 @@ macro_rules! block {
         }
     };
     // handle the recursion: as we see a statement, we push it to the limbs position in the pattern
-    (@seq {$($limbs:expr)*}, let $tgt:ident = num($a:literal) ; $($tail:tt)*) => {
+    (@seq {$($limbs:expr)*}, let $tgt:ident = $a:literal ; $($tail:tt)*) => {
         $crate::block! (
             @seq
             {

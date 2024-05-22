@@ -98,9 +98,9 @@ mod tests {
     fn lair_memory_test() {
         let func_e = func!(
         fn test(): 2 {
-            let one = num(1);
-            let two = num(2);
-            let three = num(3);
+            let one = 1;
+            let two = 2;
+            let three = 3;
             let ptr1 = store(one, two, three);
             let ptr2 = store(one, one, one);
             let (_x, y, _z) = load(ptr1);

@@ -66,10 +66,10 @@ impl<F: PrimeField + Ord> QueryRecord<F> {
         &self.func_queries
     }
 
-    pub fn query(&mut self, index: usize, input: &[F]) -> Option<List<F>> {
+    pub fn query(&mut self, index: usize, input: &[F]) -> Option<&List<F>> {
         if let Some(event) = self.func_queries[index].get_mut(input) {
             event.mult += 1;
-            Some(event.output.clone())
+            Some(&event.output)
         } else {
             None
         }
@@ -98,7 +98,7 @@ impl<F: PrimeField + Ord> QueryRecord<F> {
     ) -> List<F> {
         let func = toplevel.get_by_index(func_idx).unwrap();
         if let Some(out) = self.query(func_idx, &args) {
-            out
+            out.clone()
         } else {
             let out = func.execute(&args, toplevel, self);
             self.insert_result(func_idx, args, out.clone());
