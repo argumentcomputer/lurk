@@ -27,17 +27,21 @@ where
 
 impl<F: Sync> BaseAir<F> for MemChip {
     fn width(&self) -> usize {
-        // pointer, multiplicity and arguments
-        2 + self.len
+        self.witdh()
     }
 }
 
 impl MemChip {
+    /// Pointer, multiplicity and arguments
+    fn witdh(&self) -> usize {
+        2 + self.len
+    }
+
     pub fn generate_trace<F: PrimeField>(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let len = self.len;
         let idx = mem_index_from_len(len).unwrap();
         let mem = &queries.mem_queries[idx];
-        let width = 2 + len;
+        let width = self.witdh();
         let height = mem.len().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
         rows.chunks_mut(width).enumerate().for_each(|(ptr, row)| {
@@ -60,8 +64,7 @@ impl MemChip {
         let len = self.len;
         let idx = mem_index_from_len(len).unwrap();
         let mem = queries.mem_queries[idx].iter().collect::<Vec<_>>();
-        // pointer, multiplicity and arguments
-        let width = 2 + len;
+        let width = self.witdh();
         let height = mem.len().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
         rows.par_chunks_mut(width)
