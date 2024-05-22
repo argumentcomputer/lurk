@@ -6,18 +6,18 @@ use p3_matrix::Matrix;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
-    chip::{ColumnLayout, FuncChip, Width},
+    chip::{ColumnLayout, FuncChip, LayoutSizes},
     toplevel::Toplevel,
     trace::ColumnIndex,
 };
 
 pub type ColumnSlice<'a, T> = ColumnLayout<&'a [T]>;
 impl<'a, T> ColumnSlice<'a, T> {
-    pub fn from_slice(slice: &'a [T], width: Width) -> Self {
-        let (input, slice) = slice.split_at(width.input);
-        let (output, slice) = slice.split_at(width.output);
-        let (aux, slice) = slice.split_at(width.aux);
-        let (sel, slice) = slice.split_at(width.sel);
+    pub fn from_slice(slice: &'a [T], layout_sizes: LayoutSizes) -> Self {
+        let (input, slice) = slice.split_at(layout_sizes.input);
+        let (output, slice) = slice.split_at(layout_sizes.output);
+        let (aux, slice) = slice.split_at(layout_sizes.aux);
+        let (sel, slice) = slice.split_at(layout_sizes.sel);
         assert!(slice.is_empty());
         Self {
             input,
@@ -52,7 +52,7 @@ where
     <AB as AirBuilder>::Var: Debug,
 {
     fn eval(&self, builder: &mut AB) {
-        self.func.eval(builder, self.toplevel, self.width)
+        self.func.eval(builder, self.toplevel, self.layout_sizes)
     }
 }
 
@@ -72,14 +72,14 @@ impl<AB: AirBuilder> Val<AB> {
 }
 
 impl<F: Field> Func<F> {
-    fn eval<AB>(&self, builder: &mut AB, toplevel: &Toplevel<F>, width: Width)
+    fn eval<AB>(&self, builder: &mut AB, toplevel: &Toplevel<F>, layout_sizes: LayoutSizes)
     where
         AB: AirBuilder<F = F>,
         <AB as AirBuilder>::Var: Debug,
     {
         let main = builder.main();
         let slice = main.row_slice(0);
-        let local = ColumnSlice::from_slice(&slice, width);
+        let local = ColumnSlice::from_slice(&slice, layout_sizes);
 
         let index = &mut ColumnIndex::default();
         let map = &mut vec![];
