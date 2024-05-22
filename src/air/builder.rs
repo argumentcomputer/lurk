@@ -1,23 +1,29 @@
 use p3_air::{AirBuilder, FilteredAirBuilder};
 use p3_field::AbstractField;
 
+/// Tagged tuple describing an element of a relation
+///
+/// # Example
+/// If we have a ROM with 8 words, then we could create a relation as
+///
+/// ```
+/// struct MemoryRelation<F: Field> {
+///     addr: TracePointer<F>,
+///     values: [F; 8],
+/// }
+/// ```
+/// then the `values()` implementation would return
+///  `[Expr::from_canonical_u32(MEMORY_TAG), addr.trace.into(), addr.index.into(), values.map(Into)]`
 pub trait Relation<T> {
-    /// Tagged tuple describing an element of a relation
-    ///
-    /// # Example
-    /// If we have a ROM with 8 words, then we could create a relation as
-    ///
-    /// ```
-    /// struct MemoryRelation<F: Field> {
-    ///     addr: TracePointer<F>,
-    ///     values: [F; 8],
-    /// }
-    /// ```
-    /// then the `values()` implementation would return
-    ///  `[Expr::from_canonical_u32(MEMORY_TAG), addr.trace.into(), addr.index.into(), values.map(Into)]`
-    fn values(&self) -> impl IntoIterator<Item = T>;
+    fn values(self) -> impl IntoIterator<Item = T>;
 }
 
+/// Default implementation to allow `[AB::Var; N]` and `[AB::Expr; N]` to implement `Relation`.
+impl<T, I: Into<T>, II: IntoIterator<Item = I>> Relation<T> for II {
+    fn values(self) -> impl IntoIterator<Item = T> {
+        self.into_iter().map(Into::into)
+    }
+}
 
 pub trait LairBuilder: AirBuilder + LookupBuilder + AirBuilderExt {}
 
@@ -40,7 +46,7 @@ pub enum QueryType {
     ProvideOnce,
 }
 
-/// TODO: The `once` calls are not fully supported, and defered to their multi-use counterparts.
+/// TODO: The `once` calls are not fully supported, and deferred to their multi-use counterparts.
 pub trait LookupBuilder: AirBuilder {
     /// Generic query that to be added to the global lookup argument.
     fn query(
@@ -65,7 +71,7 @@ pub trait LookupBuilder: AirBuilder {
         self.query(QueryType::Require, relation, None);
     }
 
-    /// Require a query that has been provide for single use.
+    /// Require a query that has been provided for single use.
     fn require_once(&mut self, relation: impl Relation<Self::Expr>) {
         self.query(QueryType::Require, relation, None);
     }
