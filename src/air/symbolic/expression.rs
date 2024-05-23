@@ -41,21 +41,18 @@ impl<F: Field> Expression<F> {
     pub const fn degree_multiple(&self) -> usize {
         match self {
             Expression::Variable(v) => v.degree_multiple(),
-            Expression::Identity => 0,
-            Expression::IsFirstRow => 1,
-            Expression::IsLastRow => 1,
-            Expression::IsTransition => 0,
-            Expression::Constant(_) => 0,
+            Expression::IsFirstRow | Expression::IsLastRow => 1,
+            Expression::Identity | Expression::IsTransition | Expression::Constant(_) => 0,
             Expression::Add {
                 degree_multiple, ..
-            } => *degree_multiple,
-            Expression::Sub {
+            }
+            | Expression::Sub {
                 degree_multiple, ..
-            } => *degree_multiple,
-            Expression::Neg {
+            }
+            | Expression::Neg {
                 degree_multiple, ..
-            } => *degree_multiple,
-            Expression::Mul {
+            }
+            | Expression::Mul {
                 degree_multiple, ..
             } => *degree_multiple,
         }

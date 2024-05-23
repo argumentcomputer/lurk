@@ -6,14 +6,14 @@ use std::ops::{Add, Mul, Neg, Sub};
 use std::rc::Rc;
 
 /// An affine function over columns in a PAIR.
-#[derive(Clone, Debug, PartialEq)]
-pub struct PairColLC<F: Field> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PairColLC<F: Field> {
     column_weights: Vec<(PairCol, F)>,
     constant: F,
 }
 
 #[derive(Debug)]
-pub enum Error {
+pub(crate) enum Error {
     NotAffine,
     ContainsSelector,
     ScaledIdentity,
@@ -82,14 +82,14 @@ impl<F: Field> TryFrom<Expression<F>> for PairColLC<F> {
 
 /// A column in a PAIR, i.e. either a preprocessed column or a main trace column.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub enum PairCol {
+pub(crate) enum PairCol {
     Identity,
     Preprocessed(usize),
     Main(usize),
 }
 
 impl PairCol {
-    pub fn get<E: Clone, V: Copy + Into<E>>(
+    pub(crate) fn get<E: Clone, V: Copy + Into<E>>(
         &self,
         identity: &E,
         preprocessed: &[V],
@@ -119,7 +119,12 @@ impl<F: Field> PairColLC<F> {
         }
     }
 
-    pub fn apply<Expr, Var>(&self, identity: &Expr, preprocessed: &[Var], main: &[Var]) -> Expr
+    pub(crate) fn apply<Expr, Var>(
+        &self,
+        identity: &Expr,
+        preprocessed: &[Var],
+        main: &[Var],
+    ) -> Expr
     where
         F: Into<Expr>,
         Expr: AbstractField + Mul<F, Output = Expr>,
