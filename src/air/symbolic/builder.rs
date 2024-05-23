@@ -17,7 +17,9 @@ pub struct SymbolicAirBuilder<F: Field> {
 
 impl<F: Field> SymbolicAirBuilder<F> {
     pub fn new(num_public_variables: usize, preprocessed_width: usize, main_width: usize) -> Self {
-        let public_variables = (0..num_public_variables).map(move |i| Variable::new(Entry::Public, i)).collect();
+        let public_variables = (0..num_public_variables)
+            .map(move |i| Variable::new(Entry::Public, i))
+            .collect();
         let preprocessed_values = [0, 1]
             .into_iter()
             .flat_map(|offset| {
@@ -110,7 +112,6 @@ impl<F: Field> LookupBuilder for SymbolicAirBuilder<F> {
         }
     }
 }
-
 
 impl<F: Field> AirBuilderWithPublicValues for SymbolicAirBuilder<F> {
     type PublicVar = Variable<F>;

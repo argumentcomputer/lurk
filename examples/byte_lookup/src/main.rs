@@ -44,6 +44,7 @@ impl<AB: AirBuilder + LookupBuilder> Air<AB> for MainChip {
 
         builder.assert_bool(is_byte);
 
+        // TODO: replace with builder.when(is_byte).require([byte]) when plonky3-air is updated
         builder.query(QueryType::Require, [byte], Some(is_byte.into()));
     }
 }
@@ -84,6 +85,7 @@ impl<AB: AirBuilder + LookupBuilder> Air<AB> for BytesChip {
 
         builder.assert_eq(byte_expected, byte);
 
+        // TODO: replace with builder.when(multiplicity).provide([byte]) when plonky3-air is updated
         builder.query(QueryType::Provide, [byte], Some(multiplicity.into()));
     }
 }
