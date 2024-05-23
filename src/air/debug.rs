@@ -13,7 +13,7 @@ pub struct Query<F> {
 }
 
 /// Check the `air` constraints over a given `main` trace.
-pub fn debug_constraints_collecting_interactions<
+pub fn debug_constraints_collecting_queries<
     F: Field,
     A: for<'a> Air<DebugConstraintBuilder<'a, F>>,
     M: Matrix<F>,

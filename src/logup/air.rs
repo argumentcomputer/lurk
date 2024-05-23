@@ -98,6 +98,7 @@ impl<F: Field> Interaction<F> {
             let gamma: ExprEF = gamma_i.into();
             let v: Expr = v_i.apply(identity, preprocessed, main);
             if i == 0 {
+                // gamma[0] should be 1
                 result += v;
             } else {
                 result += gamma * v;
