@@ -531,7 +531,7 @@ impl<AB: AirBuilder + AirBuilderWithPublicValues> Air<AB> for Calculator<AB::F> 
 
 #[cfg(test)]
 mod tests {
-    use loam::air::debug::debug_constraints_collecting_interactions;
+    use loam::air::debug::debug_constraints_collecting_queries;
     use p3_baby_bear::BabyBear;
 
     use super::*;
@@ -560,6 +560,6 @@ mod tests {
         let trace = Calculator::compute_trace(&frames, &store);
         let public_values = store.to_scalar_vector(&[entry, nil, nil, expected_stack]);
 
-        debug_constraints_collecting_interactions(&Calculator::default(), &public_values, &trace);
+        debug_constraints_collecting_queries(&Calculator::default(), &public_values, &trace);
     }
 }

@@ -1,5 +1,5 @@
 use loam::air::builder::{LookupBuilder, QueryType};
-use loam::air::debug::{debug_constraints_collecting_interactions, Query};
+use loam::air::debug::{debug_constraints_collecting_queries, Query};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField};
@@ -117,9 +117,9 @@ fn main() {
         [f(255), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(1)],
     ]);
 
-    let main_interactions = debug_constraints_collecting_interactions(&MainChip, &[], &main_trace);
+    let main_interactions = debug_constraints_collecting_queries(&MainChip, &[], &main_trace);
     let bytes_interactions =
-        debug_constraints_collecting_interactions(&BytesChip, &[], &bytes_trace);
+        debug_constraints_collecting_queries(&BytesChip, &[], &bytes_trace);
 
     assert_zero_sum(vec![main_interactions, bytes_interactions]);
 }

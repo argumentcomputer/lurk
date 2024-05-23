@@ -3,7 +3,7 @@ mod dummy_hasher;
 mod pointers;
 mod store;
 
-use loam::air::debug::debug_constraints_collecting_interactions;
+use loam::air::debug::debug_constraints_collecting_queries;
 use p3_baby_bear::BabyBear;
 use rustyline::{error::ReadlineError, DefaultEditor};
 use std::time::Instant;
@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let now = Instant::now();
                 let public_values = store.to_scalar_vector(&[entry, nil, nil, resulting_stack]);
-                let _ = debug_constraints_collecting_interactions(
+                let _ = debug_constraints_collecting_queries(
                     &Calculator::default(),
                     &public_values,
                     &trace,

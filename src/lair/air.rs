@@ -276,7 +276,7 @@ impl<F: Field> Ctrl<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::air::debug::debug_constraints_collecting_interactions;
+    use crate::air::debug::debug_constraints_collecting_queries;
     use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
     use p3_matrix::dense::RowMajorMatrix;
@@ -330,8 +330,8 @@ mod tests {
             fib_width,
         );
 
-        let _ = debug_constraints_collecting_interactions(&factorial_chip, &[], &factorial_trace);
-        let _ = debug_constraints_collecting_interactions(&fib_chip, &[], &fib_trace);
+        let _ = debug_constraints_collecting_queries(&factorial_chip, &[], &factorial_trace);
+        let _ = debug_constraints_collecting_queries(&fib_chip, &[], &fib_trace);
     }
 
     #[test]
@@ -343,6 +343,6 @@ mod tests {
         fib_chip.execute_iter(args, queries);
         let fib_trace = fib_chip.generate_trace_parallel(queries);
 
-        let _ = debug_constraints_collecting_interactions(&fib_chip, &[], &fib_trace);
+        let _ = debug_constraints_collecting_queries(&fib_chip, &[], &fib_trace);
     }
 }
