@@ -1,14 +1,11 @@
+use std::iter::zip;
 use crate::air::symbolic::Interaction;
 use crate::logup::Multiplicities;
 use itertools::{chain, enumerate, Itertools};
 use p3_field::{ExtensionField, PrimeField};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::Matrix;
-use rayon::iter::IndexedParallelIterator;
-use rayon::iter::ParallelIterator;
-use rayon::prelude::IntoParallelRefIterator;
-use std::iter;
-use std::iter::zip;
+use p3_maybe_rayon::prelude::*;
 
 pub(crate) fn generate_multiplicities_trace<F: PrimeField, EF: ExtensionField<F>>(
     multiplicities: &[Multiplicities],
@@ -126,7 +123,7 @@ pub(crate) fn generate_permutation_trace<F: PrimeField, EF: ExtensionField<F>>(
             let multiplicities = multiplicities
                 .iter()
                 .copied()
-                .chain(iter::repeat(-challenge_z));
+                .chain(std::iter::repeat(-challenge_z));
             for (inverse, multiplicity) in zip(inverses, multiplicities) {
                 if inverse.is_zero() {
                     continue;
