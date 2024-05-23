@@ -57,7 +57,7 @@ pub fn eval_logup_constraints<AB: LogupBuilder>(
                 .when(is_real.clone())
                 .assert_one_ext(d_k * inverse_d_k.clone());
             // Assumes is_real has been boolean checked
-            running_sum +=  m_k * inverse_d_k * is_real;
+            running_sum += m_k * inverse_d_k * is_real;
         } else {
             builder.assert_one_ext(d_k * inverse_d_k.clone());
             running_sum += m_k * inverse_d_k;
