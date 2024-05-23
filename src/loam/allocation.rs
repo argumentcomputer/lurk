@@ -23,7 +23,14 @@ struct Wide([LE; 8]);
 
 impl Wide {
     fn widen(elt: LE) -> Wide {
-        Wide([elt; 8])
+        let mut v = [0u32; 8];
+        v[0] = elt;
+        Wide(v)
+    }
+
+    fn f(&self) -> LE {
+        //        assert_eq!(&[0, 0, 0, 0, 0, 0, 0], &self.0[1..]);
+        self.0[0]
     }
 }
 
@@ -145,7 +152,7 @@ ascent! {
     relation car(Ptr, Ptr); // (cons, car)
     relation cdr(Ptr, Ptr); // (cons, cdr)
     relation hash4(Ptr, Wide, Wide, Wide, Wide); // (a, b, c, d)
-    relation unhash4(LE, Wide); // (tag, digest)
+    relation unhash4(LE, Wide, Ptr); // (tag, digest, ptr)
     relation hash4_rel(Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, digest)
 
     // inclusion triggers *_value relations.
@@ -161,7 +168,6 @@ ascent! {
     // supporting ingress
     // inclusion triggers *_value relations.
     relation ingress(Ptr); // (ptr)
-    relation tag_value_rel(LE, Wide, Wide, Ptr); // (tag, wide-tag, value, ptr)
 
 
 
@@ -174,17 +180,28 @@ ascent! {
 
     // These two lattices and the following rule are a pattern.
     // TODO: make an ascent macro for this?
-    lattice tag_value_mem(LE, Wide, Wide, Dual<LE>); // (tag, wide-tag, value, addr)
-    lattice tag_value_counter(LE) = vec![(0,)]; // addr
+    lattice primary_mem(LE, Wide, Wide, Dual<LE>); // (tag, wide-tag, value, primary-addr)
+    lattice primary_counter(LE) = vec![(0,)]; // addr
     // Memory counter must always holds largest address.
-    tag_value_counter(addr.0) <-- tag_value_mem(_, _, _, addr);
+    primary_counter(addr.0) <-- primary_mem(_, _, _, addr);
 
-    lattice cons_mem(Ptr, Ptr, Dual<LE>);
-    lattice cons_wide_mem(Wide, Wide, Wide, Wide, Dual<LE>); // (car-tag, car-value, cdr-tag, cdr-value)
+    relation primary_rel(LE, Wide, Wide, Ptr); // (tag, wide-tag, value, ptr)
+
+    // Convert addr to ptr.
+    primary_rel(tag, wide_tag, value, Ptr(*tag, addr.0)) <-- primary_mem(tag, wide_tag, value, addr);
+
+    // cons_wide_mem has pointers congruent with those of primary_mem, *not* cons_mem.
+    lattice cons_wide_mem(Wide, Wide, Wide, Wide, Dual<LE>); // (car-tag, car-value, cdr-tag, cdr-value, primary-addr)
+
+    // cons-addr is for this cons type-specific memory.
+    lattice cons_mem(Ptr, Ptr, Dual<LE>); // (car, cdr, cons-addr)
     lattice cons_counter(LE) = vec![(0,)];
-
     cons_mem(car, cdr, Dual(counter + 1)) <-- cons(car, cdr), cons_counter(counter);
-    cons_rel(car, cdr, Ptr(CONS_TAG, addr.0)) <-- cons_mem(car, cdr, addr);
+
+    relation cons_addr_primary_addr(LE, LE);
+    relation cons_mem_primary(Ptr, Ptr, Ptr);
+
+    cons(car, cdr) <-- cons_mem_primary(car, cdr, _);
 
     lattice mem(LE, Wide, Dual<LE>);
 
@@ -196,61 +213,60 @@ ascent! {
     alloc(tag, value, 0) <-- input_expr(wide_tag, value), tag(tag, wide_tag);
 
     // Ingress 2: allocate marked, opaque data.
-    tag_value_mem(tag, wide_tag, value, Dual(addr + 1 + priority)) <--
+    primary_mem(tag, wide_tag, value, Dual(addr + 1 + priority)) <--
         alloc(tag, value, priority),
+        if *tag != F_TAG, // F is immediate
         tag(tag, wide_tag),
-        tag_value_counter(addr);
+        primary_counter(addr);
 
-
-    // Convert addr to ptr.
-    tag_value_rel(tag, wide_tag, value, Ptr(*tag, addr.0)) <-- tag_value_mem(tag, wide_tag, value, addr);
+    primary_rel(F_TAG, F_WIDE_TAG, value, ptr) <-- f_value(ptr, value);
 
     // Register ptr.
-    ptr(ptr) <-- tag_value_rel(_tag, _wide_tag, _value, ptr);
+    ptr(ptr), ptr_tag(ptr, wide_tag), ptr_value(ptr, value) <-- primary_rel(_tag, wide_tag, value, ptr);
 
     // Populate input_ptr.
-    input_ptr(ptr) <-- input_expr(wide_tag, value), tag_value_rel(_, wide_tag, value, ptr);
+    input_ptr(ptr) <-- input_expr(wide_tag, value), primary_rel(_, wide_tag, value, ptr);
 
     // Mark input for ingress.
-    ingress(ptr) <-- input_expr(wide_tag, value), tag_value_rel(_, wide_tag, value, ptr);
+    ingress(ptr) <-- input_expr(wide_tag, value), primary_rel(_, wide_tag, value, ptr);
 
     // mark ingress conses for unhashing.
-    unhash4(CONS_TAG, digest) <--
+    unhash4(CONS_TAG, digest, ptr) <--
         ingress(ptr),
         if ptr.0 == CONS_TAG,
-        tag_value_mem(&CONS_TAG, _, digest, _);
+        ptr_value(ptr, digest),
+        primary_mem(&CONS_TAG, _, digest, _);
 
     // unhash to acquire preimage pointers from digest.
-    hash4_rel(a, b, c, d, digest) <-- unhash4(_, digest), let [a, b, c, d] = allocator().unhash4(digest).unwrap();
+    hash4_rel(a, b, c, d, digest) <-- unhash4(_, digest, ptr), let [a, b, c, d] = allocator().unhash4(digest).unwrap();
 
     // Allocate the car and cdr with appropriate priorities to avoid address conflict.
     alloc(car_tag, car_value, 0),
     alloc(cdr_tag, cdr_value, 1) <--
-        unhash4(&CONS_TAG, digest),
+        unhash4(&CONS_TAG, digest, _),
         hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
 
     // TODO: We need to create an association between type-specific memories, like this one,
     // and the global memory used for opaques.
-    cons_wide_mem(wide_car_tag, car_value, wide_cdr_tag, cdr_value, Dual(counter + 1 + priority)) <--
+    cons_wide_mem(wide_car_tag, car_value, wide_cdr_tag, cdr_value, addr) <--
         alloc(&CONS_TAG, digest, priority),
         hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
+        primary_mem(&CONS_TAG, _, digest, addr);
+
+    f_value(Ptr(F_TAG, f), Wide::widen(f)) <-- alloc(&F_TAG, value, _), let f = value.f();
+
+    cons_addr_primary_addr(cons_addr.0, primary_addr.0) <--
+        cons_mem_primary(car, cdr, primary_addr),
+        cons_mem(car, cdr, cons_addr);
+
+    cons_mem_primary(car, cdr, Ptr(CONS_TAG, addr.0)),
+    cons_mem(car, cdr, Dual(counter + 1)) <--
+        cons_wide_mem(wide_car_tag, car_value, wide_cdr_tag, cdr_value, addr),
+        primary_rel(_, wide_car_tag, car_value, car),
+        primary_rel(_, wide_cdr_tag, cdr_value, cdr),
         cons_counter(counter);
-
-    cons(car, cdr) <--
-        cons_wide_mem(wide_car_tag, car_value, wide_cdr_tag, cdr_value, _),
-        tag_value_rel(_, wide_car_tag, car_value, car),
-        tag_value_rel(_, wide_cdr_tag, cdr_value, cdr);
-
-
-
-
-
-
-    // When a pair is first marked as a cons (and only once), allocate a ptr for it, and populate its
-    // constructor and projector relations.
-//    cons_rel(car, cdr, allocator().alloc(CONS_TAG)) <-- cons(car, cdr);
 
     ptr(cons), car(cons, car), cdr(cons, cdr) <-- cons_rel(car, cdr, cons);
 
@@ -272,7 +288,7 @@ ascent! {
 
     egress(car), egress(cdr) <-- egress(cons), cons_rel(car, cdr, cons);
 
-    output_expr(wide_tag, value) <-- output_ptr(ptr), tag_value_rel(_, wide_tag, value, ptr);
+    output_expr(wide_tag, value) <-- output_ptr(ptr), primary_rel(_, wide_tag, value, ptr);
 
     ////////////////////////////////////////////////////////////////////////////////
 
@@ -290,12 +306,15 @@ ascent! {
     ptr(car),
     ptr(cdr) <--
         hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, _),
-        tag_value_rel(_, wide_car_tag, car_value, car),
-        tag_value_rel(_, wide_cdr_tag, cdr_value, cdr);
+        primary_rel(_, wide_car_tag, car_value, car) ,
+        primary_rel(_, wide_cdr_tag, cdr_value, cdr);
 
     // Provide ptr_tag and ptr_value when known.
     ptr_tag(ptr, wide_tag) <-- ptr(ptr), tag(ptr.0, wide_tag);
-    ptr_value(ptr, value) <-- ptr(ptr), (f_value(ptr, value) || cons_value(ptr, value));}
+    //ptr_value(ptr, value) <-- ptr(ptr), (f_value(ptr, value) || cons_value(ptr, value));
+    ptr_value(ptr, value) <-- ptr(ptr), cons_value(ptr, value);
+    ptr_value(dbg!(ptr.clone()), dbg!(value.clone())) <-- ptr(ptr), f_value(ptr, value);
+}
 
 // This simple allocation program demonstrates how we can use ascent's lattice feature to achieve memoized allocation
 // with an incrementing counter but without mutable state held outside the program (as in the Allocator) above.
@@ -353,16 +372,31 @@ mod test {
         // (3 . 4)
         let c0 = allocator().hash4(F_WIDE_TAG, Wide::widen(3), F_WIDE_TAG, Wide::widen(4));
         // (2 3 . 4)
-        let c1 = allocator().hash4(F_WIDE_TAG, Wide::widen(2), F_WIDE_TAG, c0);
+        let c1 = allocator().hash4(F_WIDE_TAG, Wide::widen(2), CONS_WIDE_TAG, c0);
         // (1 2 3 . 4)
-        let c2 = allocator().hash4(F_WIDE_TAG, Wide::widen(1), F_WIDE_TAG, c1);
+        let c2 = allocator().hash4(F_WIDE_TAG, Wide::widen(1), CONS_WIDE_TAG, c1);
 
         prog.input_expr = vec![(CONS_WIDE_TAG, c1)];
 
         assert_eq!(
             Wide([
-                984013438, 1197425149, 1159937318, 3798776279, 973569340, 2512683482, 591736307,
-                3910791810
+                1293148110, 2402141028, 509705422, 782425695, 3078971211, 3971189782, 958090466,
+                761772301
+            ]),
+            c0
+        );
+        assert_eq!(
+            Wide([
+                248144713, 2177838085, 3145750114, 4129543510, 1108271234, 3833440321, 1267237783,
+                4259360553
+            ]),
+            c1
+        );
+
+        assert_eq!(
+            Wide([
+                2510325143, 2058981605, 3766814192, 1184441934, 4228369995, 3952767779, 3713191526,
+                1219339775
             ]),
             c2
         );
@@ -379,14 +413,19 @@ mod test {
             cons_rel,
             cons_value,
             cons_mem,
+            cons_wide_mem,
+            primary_mem,
             ptr,
             hash4,
             hash4_rel,
             ingress,
             egress,
-            tag_value_rel,
+            primary_rel,
             input_expr,
             output_expr,
+            f_value,
+            alloc,
+            cons_addr_primary_addr,
             ..
         } = prog;
 
@@ -394,16 +433,26 @@ mod test {
 
         dbg!(
             // &ingress,
-            // &cons_rel,
-            // &tag_value_rel,
+            &cons_rel,
+            &cons_wide_mem,
+            &primary_mem,
+            &primary_rel,
             // &ptr,
             // &cons_mem,
-            // &egress,
+            &egress,
             &input_expr,
             &output_expr,
             &hash4,
-            &hash4_rel
+            &hash4_rel,
+            allocator().digest_cache.len(),
+            ptr_value,
+            cons_value,
+            ptr,
+            f_value,
+            alloc,
+            cons_addr_primary_addr
         );
+
         panic!("uiop");
     }
 
