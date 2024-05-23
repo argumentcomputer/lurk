@@ -118,8 +118,7 @@ fn main() {
     ]);
 
     let main_interactions = debug_constraints_collecting_queries(&MainChip, &[], &main_trace);
-    let bytes_interactions =
-        debug_constraints_collecting_queries(&BytesChip, &[], &bytes_trace);
+    let bytes_interactions = debug_constraints_collecting_queries(&BytesChip, &[], &bytes_trace);
 
     assert_zero_sum(vec![main_interactions, bytes_interactions]);
 }

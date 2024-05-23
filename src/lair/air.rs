@@ -91,9 +91,7 @@ impl<F: Field> Func<F> {
         let mult = *local.next_aux(index);
         let toplevel_sel = self.body.eval(builder, local, index, map, toplevel);
         builder.assert_bool(toplevel_sel.clone());
-        builder
-            .when_ne(toplevel_sel, F::one())
-            .assert_zero(mult);
+        builder.when_ne(toplevel_sel, F::one()).assert_zero(mult);
     }
 }
 
