@@ -48,6 +48,8 @@ pub(crate) fn generate_multiplicities_trace<F: PrimeField, EF: ExtensionField<F>
 
     values
 }
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn generate_permutation_trace<F: PrimeField, EF: ExtensionField<F>>(
     identity_col: &[F],
     preprocessed: &RowMajorMatrix<F>,

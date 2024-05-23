@@ -14,8 +14,8 @@ pub fn eval_logup_constraints<AB: LogupBuilder>(
     requires: &[Interaction<AB::F>],
 ) {
     let permutations = builder.permutation();
-    let permutations_local: &[AB::VarEF] = &(*permutations.row_slice(0));
-    let permutations_next: &[AB::VarEF] = &(*permutations.row_slice(1));
+    let permutations_local: &[AB::VarEF] = &permutations.row_slice(0);
+    let permutations_next: &[AB::VarEF] = &permutations.row_slice(1);
 
     let (&partial_sum, inverses) = permutations_local.split_first().unwrap();
     let partial_sum_next = permutations_next.first().unwrap();

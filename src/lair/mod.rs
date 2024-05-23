@@ -13,7 +13,7 @@ mod macros;
 pub mod map;
 pub mod memory;
 #[allow(dead_code)]
-mod pointer;
+pub mod pointer;
 pub mod toplevel;
 pub mod trace;
 

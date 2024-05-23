@@ -92,7 +92,7 @@ impl<F: Field> Func<F> {
         let toplevel_sel = self.body.eval(builder, local, index, map, toplevel);
         builder.assert_bool(toplevel_sel.clone());
         builder
-            .when_ne(toplevel_sel, AB::F::one())
+            .when_ne(toplevel_sel, F::one())
             .assert_zero(mult);
     }
 }
@@ -176,7 +176,7 @@ impl<F: Field> Op<F> {
                     Val::Const(a.inverse())
                 } else {
                     let c = local.next_aux(index);
-                    constraints.push(a.to_expr() * *c - AB::F::one());
+                    constraints.push(a.to_expr() * *c - F::one());
                     Val::Expr((*c).into())
                 };
                 map.push(c);

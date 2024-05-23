@@ -96,7 +96,6 @@ impl PairCol {
         main: &[V],
     ) -> E {
         match self {
-            // TODO: Fix
             PairCol::Identity => identity.clone(),
             PairCol::Preprocessed(i) => preprocessed[*i].into(),
             PairCol::Main(i) => main[*i].into(),
@@ -112,8 +111,7 @@ impl<F: Field> PairColLC<F> {
         if self
             .column_weights
             .iter()
-            .find(|(c, w)| matches!(c, PairCol::Identity) && !w.is_one())
-            .is_some()
+            .any(|(c, w)| matches!(c, PairCol::Identity) && !w.is_one())
         {
             Err(Error::ScaledIdentity)
         } else {
@@ -121,7 +119,6 @@ impl<F: Field> PairColLC<F> {
         }
     }
 
-    // TODO: Handle PairCol::Identity
     pub fn apply<Expr, Var>(&self, identity: &Expr, preprocessed: &[Var], main: &[Var]) -> Expr
     where
         F: Into<Expr>,
@@ -130,7 +127,7 @@ impl<F: Field> PairColLC<F> {
     {
         let mut result = self.constant.into();
         for (column, weight) in self.column_weights.iter() {
-            result += column.get(identity, preprocessed, main) * weight.clone();
+            result += column.get(identity, preprocessed, main) * *weight;
         }
         result
     }

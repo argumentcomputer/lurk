@@ -58,7 +58,7 @@ impl<'a, F: Field> AirBuilderWithPublicValues for DebugConstraintBuilder<'a, F> 
     type PublicVar = F;
 
     fn public_values(&self) -> &'a [Self::PublicVar] {
-        &self.public_values
+        self.public_values
     }
 }
 
@@ -97,7 +97,6 @@ impl<'a, F: Field> LookupBuilder for DebugConstraintBuilder<'a, F> {
         is_real: Option<Self::Expr>,
     ) {
         if let Some(is_real) = is_real {
-            let is_real: F = is_real.into();
             if is_real.is_zero() {
                 return;
             }
