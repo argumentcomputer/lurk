@@ -82,16 +82,13 @@ impl MemChip {
 
 #[cfg(test)]
 mod tests {
+    use crate::air::debug::debug_constraints_collecting_interactions;
     use crate::{
         func,
         lair::{chip::FuncChip, toplevel::Toplevel},
     };
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
-    use wp1_core::{
-        stark::StarkGenericConfig,
-        utils::{uni_stark_prove as prove, uni_stark_verify as verify, BabyBearPoseidon2},
-    };
 
     use super::*;
     #[test]
@@ -138,10 +135,6 @@ mod tests {
         .collect::<Vec<_>>();
         assert_eq!(mem_trace.values, expected_trace);
 
-        let config = BabyBearPoseidon2::new();
-        let challenger = &mut config.challenger();
-        let proof = prove(&config, &mem_chip, challenger, mem_trace);
-        let challenger = &mut config.challenger();
-        verify(&config, &mem_chip, challenger, &proof).unwrap();
+        let _ = debug_constraints_collecting_interactions(&mem_chip, &[], &mem_trace);
     }
 }

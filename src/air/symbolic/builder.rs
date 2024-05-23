@@ -1,21 +1,23 @@
-use crate::air::builder::{AirBuilderExt, LookupBuilder, QueryType, Relation};
+use crate::air::builder::{AirBuilderExt, LairBuilder, LookupBuilder, QueryType, Relation};
 use crate::air::symbolic::expression::Expression;
 use crate::air::symbolic::variable::{Entry, Variable};
 use crate::air::symbolic::virtual_col::PairColLC;
 use crate::air::symbolic::{Interaction, SymbolicAir};
-use p3_air::AirBuilder;
+use p3_air::{AirBuilder, AirBuilderWithPublicValues};
 use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrix;
 
 /// A builder for the lookup table interactions.
 pub struct SymbolicAirBuilder<F: Field> {
+    public_variables: Vec<Variable<F>>,
     preprocessed: RowMajorMatrix<Variable<F>>,
     main: RowMajorMatrix<Variable<F>>,
     pub air: SymbolicAir<F>,
 }
 
 impl<F: Field> SymbolicAirBuilder<F> {
-    pub fn new(preprocessed_width: usize, main_width: usize) -> Self {
+    pub fn new(num_public_variables: usize, preprocessed_width: usize, main_width: usize) -> Self {
+        let public_variables = (0..num_public_variables).map(move |i| Variable::new(Entry::Public, i)).collect();
         let preprocessed_values = [0, 1]
             .into_iter()
             .flat_map(|offset| {
@@ -32,6 +34,7 @@ impl<F: Field> SymbolicAirBuilder<F> {
             .collect();
 
         Self {
+            public_variables,
             preprocessed: RowMajorMatrix::new(preprocessed_values, preprocessed_width),
             main: RowMajorMatrix::new(main_values, main_width),
             air: Default::default(),
@@ -107,3 +110,14 @@ impl<F: Field> LookupBuilder for SymbolicAirBuilder<F> {
         }
     }
 }
+
+
+impl<F: Field> AirBuilderWithPublicValues for SymbolicAirBuilder<F> {
+    type PublicVar = Variable<F>;
+
+    fn public_values(&self) -> &[Self::PublicVar] {
+        &self.public_variables
+    }
+}
+
+impl<F: Field> LairBuilder for SymbolicAirBuilder<F> {}

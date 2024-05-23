@@ -31,10 +31,11 @@ pub struct SymbolicAir<F: Field> {
 impl<F: Field> SymbolicAir<F> {
     pub fn new<A: Air<SymbolicAirBuilder<F>>>(
         air: &A,
+        num_public_values: usize,
         preprocessed_width: usize,
         main_width: usize,
     ) -> Self {
-        let mut builder = SymbolicAirBuilder::new(preprocessed_width, main_width);
+        let mut builder = SymbolicAirBuilder::new(num_public_values, preprocessed_width, main_width);
         air.eval(&mut builder);
         builder.air
     }

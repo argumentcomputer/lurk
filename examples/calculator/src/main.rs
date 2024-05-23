@@ -3,14 +3,10 @@ mod dummy_hasher;
 mod pointers;
 mod store;
 
+use loam::air::debug::debug_constraints_collecting_interactions;
 use p3_baby_bear::BabyBear;
-use p3_uni_stark::{prove, verify};
 use rustyline::{error::ReadlineError, DefaultEditor};
 use std::time::Instant;
-use wp1_core::{
-    stark::{StarkGenericConfig, UniConfig},
-    utils::BabyBearPoseidon2,
-};
 
 use crate::{calculator::Calculator, store::Store};
 
@@ -40,22 +36,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let elapsed = now.elapsed().as_micros();
                 println!("Trace computed ({elapsed}μs)");
 
+                let now = Instant::now();
                 let public_values = store.to_scalar_vector(&[entry, nil, nil, resulting_stack]);
-                let config = BabyBearPoseidon2::new();
-                let chllngr_p = &mut config.challenger();
-                let chllngr_v = &mut config.challenger();
-                let uni_config = UniConfig(config);
-                let calculator = Calculator::default();
-
-                let now = Instant::now();
-                let proof = prove(&uni_config, &calculator, chllngr_p, trace, &public_values);
+                let _ = debug_constraints_collecting_interactions(
+                    &Calculator::default(),
+                    &public_values,
+                    &trace,
+                );
                 let elapsed = now.elapsed().as_millis();
-                println!("Proof generated ({elapsed}ms)");
-
-                let now = Instant::now();
-                verify(&uni_config, &calculator, chllngr_v, &proof, &public_values).unwrap();
-                let elapsed = now.elapsed().as_millis();
-                println!("Proof verified ({elapsed}ms)");
+                println!("Verify constraints ({elapsed}ms)");
             }
             Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
                 println!("Exiting...");

@@ -1,5 +1,5 @@
 use crate::air::builder::{AirBuilderExt, LairBuilder, LookupBuilder, QueryType, Relation};
-use p3_air::{Air, AirBuilder};
+use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues};
 use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrixView;
 use p3_matrix::stack::VerticalPair;
@@ -8,8 +8,8 @@ use p3_matrix::Matrix;
 type LocalRowView<'a, F> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatrixView<'a, F>>;
 
 pub struct Query<F> {
-    query_type: QueryType,
-    values: Vec<F>,
+    pub query_type: QueryType,
+    pub values: Vec<F>,
 }
 
 /// Check the `air` constraints over a given `main` trace.
@@ -19,6 +19,7 @@ pub fn debug_constraints_collecting_interactions<
     M: Matrix<F>,
 >(
     air: &A,
+    public_values: &[F],
     main: &M,
 ) -> Vec<Query<F>> {
     let height = main.height();
@@ -35,7 +36,7 @@ pub fn debug_constraints_collecting_interactions<
                 RowMajorMatrixView::new_row(main_next),
             );
 
-            let mut builder = DebugConstraintBuilder::new(main, row, height);
+            let mut builder = DebugConstraintBuilder::new(public_values, main, row, height);
 
             air.eval(&mut builder);
 
@@ -46,18 +47,28 @@ pub fn debug_constraints_collecting_interactions<
 
 /// A builder for debugging constraints.
 pub struct DebugConstraintBuilder<'a, F> {
+    public_values: &'a [F],
     main: LocalRowView<'a, F>,
     row: usize,
     height: usize,
     queries: Vec<Query<F>>,
 }
 
+impl<'a, F: Field> AirBuilderWithPublicValues for DebugConstraintBuilder<'a, F> {
+    type PublicVar = F;
+
+    fn public_values(&self) -> &'a [Self::PublicVar] {
+        &self.public_values
+    }
+}
+
 impl<'a, F: Field> LairBuilder for DebugConstraintBuilder<'a, F> {}
 
 impl<'a, F: Field> DebugConstraintBuilder<'a, F> {
     #[inline]
-    fn new(main: LocalRowView<'a, F>, row: usize, height: usize) -> Self {
+    fn new(public_values: &'a [F], main: LocalRowView<'a, F>, row: usize, height: usize) -> Self {
         Self {
+            public_values,
             main,
             row,
             height,

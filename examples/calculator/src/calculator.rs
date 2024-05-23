@@ -531,18 +531,16 @@ impl<AB: AirBuilder + AirBuilderWithPublicValues> Air<AB> for Calculator<AB::F> 
 
 #[cfg(test)]
 mod tests {
+    use loam::air::debug::debug_constraints_collecting_interactions;
     use p3_baby_bear::BabyBear;
-    use p3_uni_stark::{prove, verify};
-    use wp1_core::{
-        stark::{StarkGenericConfig, UniConfig},
-        utils::BabyBearPoseidon2,
-    };
 
     use super::*;
 
+    type F = BabyBear;
+
     #[test]
     fn it_works() {
-        let store = Store::<BabyBear>::default();
+        let store = Store::<F>::default();
         let entry = store.parse("1 3 8 + +");
 
         let expected_stack = store.parse("12"); // a cons list with a single element: the number 12
@@ -560,17 +558,8 @@ mod tests {
 
         store.core.hydrate_z_cache();
         let trace = Calculator::compute_trace(&frames, &store);
-
         let public_values = store.to_scalar_vector(&[entry, nil, nil, expected_stack]);
 
-        let config = BabyBearPoseidon2::new();
-
-        let calculator = Calculator::default();
-
-        let chllngr_p = &mut config.challenger();
-        let chllngr_v = &mut config.challenger();
-        let uni_config = UniConfig(config);
-        let proof = prove(&uni_config, &calculator, chllngr_p, trace, &public_values);
-        verify(&uni_config, &calculator, chllngr_v, &proof, &public_values).unwrap();
+        debug_constraints_collecting_interactions(&Calculator::default(), &public_values, &trace);
     }
 }

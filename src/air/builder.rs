@@ -1,4 +1,4 @@
-use p3_air::{AirBuilder, FilteredAirBuilder};
+use p3_air::{AirBuilder, AirBuilderWithPublicValues, FilteredAirBuilder};
 use p3_field::AbstractField;
 
 /// Tagged tuple describing an element of a relation
@@ -6,12 +6,11 @@ use p3_field::AbstractField;
 /// # Example
 /// If we have a ROM with 8 words, then we could create a relation as
 ///
-/// ```
 /// struct MemoryRelation<F: Field> {
 ///     addr: TracePointer<F>,
 ///     values: [F; 8],
 /// }
-/// ```
+///
 /// then the `values()` implementation would return
 ///  `[Expr::from_canonical_u32(MEMORY_TAG), addr.trace.into(), addr.index.into(), values.map(Into)]`
 pub trait Relation<T> {
@@ -25,7 +24,10 @@ impl<T, I: Into<T>, II: IntoIterator<Item = I>> Relation<T> for II {
     }
 }
 
-pub trait LairBuilder: AirBuilder + LookupBuilder + AirBuilderExt {}
+pub trait LairBuilder:
+    AirBuilder + LookupBuilder + AirBuilderExt + AirBuilderWithPublicValues
+{
+}
 
 /// Extension of [`AirBuilder`] for creating [`Pointer`]s
 pub trait AirBuilderExt: AirBuilder {

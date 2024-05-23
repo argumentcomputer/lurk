@@ -1,4 +1,3 @@
-use std::iter::zip;
 use crate::air::symbolic::Interaction;
 use crate::logup::Multiplicities;
 use itertools::{chain, enumerate, Itertools};
@@ -6,6 +5,7 @@ use p3_field::{ExtensionField, PrimeField};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::Matrix;
 use p3_maybe_rayon::prelude::*;
+use std::iter::zip;
 
 pub(crate) fn generate_multiplicities_trace<F: PrimeField, EF: ExtensionField<F>>(
     multiplicities: &[Multiplicities],
