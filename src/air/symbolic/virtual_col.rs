@@ -1,27 +1,34 @@
 use crate::air::symbolic::expression::Expression;
 use crate::air::symbolic::variable::Entry;
-use itertools::chain;
 use p3_field::{AbstractField, Field};
-use std::ops::Mul;
+use std::fmt::Debug;
+use std::ops::{Add, Mul, Neg, Sub};
 use std::rc::Rc;
 
 /// An affine function over columns in a PAIR.
-#[derive(Clone, Debug)]
-pub struct VirtualPairCol<F: Field> {
+#[derive(Clone, Debug, PartialEq)]
+pub struct PairColLC<F: Field> {
     column_weights: Vec<(PairCol, F)>,
     constant: F,
 }
 
-// TODO: Replace with `TryFrom`
-impl<F: Field> From<Expression<F>> for VirtualPairCol<F> {
-    fn from(value: Expression<F>) -> Self {
-        assert!(value.degree_multiple() <= 1);
-        match value {
+#[derive(Debug)]
+pub enum Error {
+    NotAffine,
+    ContainsSelector,
+    ScaledIdentity,
+}
+
+impl<F: Field> TryFrom<Expression<F>> for PairColLC<F> {
+    type Error = Error;
+
+    fn try_from(value: Expression<F>) -> Result<Self, Self::Error> {
+        let lc = match value {
             Expression::Variable(v) => {
                 let col = match v.entry {
                     Entry::Preprocessed { offset: 0 } => PairCol::Preprocessed(v.index),
                     Entry::Main { offset: 0 } => PairCol::Main(v.index),
-                    _ => panic!(),
+                    _ => return Err(Error::NotAffine),
                 };
                 Self {
                     column_weights: vec![(col, F::one())],
@@ -33,107 +40,89 @@ impl<F: Field> From<Expression<F>> for VirtualPairCol<F> {
                 constant: c,
             },
             Expression::Add { x, y, .. } => {
-                let (x, y) = (Rc::unwrap_or_clone(x), Rc::unwrap_or_clone(y));
-                let Self {
-                    column_weights: cols_l,
-                    constant: c_l,
-                } = x.into();
-                let Self {
-                    column_weights: cols_r,
-                    constant: c_r,
-                } = y.into();
-
-                let column_weights = chain(cols_l, cols_r).collect();
-                let constant = c_l + c_r;
-                Self {
-                    column_weights,
-                    constant,
-                }
+                let x: Self = Rc::unwrap_or_clone(x).try_into()?;
+                let y: Self = Rc::unwrap_or_clone(y).try_into()?;
+                x + y
             }
             Expression::Sub { x, y, .. } => {
-                let (x, y) = (Rc::unwrap_or_clone(x), Rc::unwrap_or_clone(y));
-                let Self {
-                    column_weights: cols_l,
-                    constant: c_l,
-                } = x.into();
-                let Self {
-                    column_weights: cols_r,
-                    constant: c_r,
-                } = y.into();
-
-                let neg_cols_r = cols_r.into_iter().map(|(c, w)| (c, -w));
-
-                Self {
-                    column_weights: chain(cols_l, neg_cols_r).collect(),
-                    constant: c_l - c_r,
-                }
+                let x: Self = Rc::unwrap_or_clone(x).try_into()?;
+                let y: Self = Rc::unwrap_or_clone(y).try_into()?;
+                x - y
             }
             Expression::Neg { x, .. } => {
-                let x = Rc::unwrap_or_clone(x);
-                let Self {
-                    column_weights: cols,
-                    constant: c,
-                } = x.into();
-
-                let neg_cols = cols.into_iter().map(|(c, w)| (c, -w));
-                Self {
-                    column_weights: neg_cols.collect(),
-                    constant: -c,
-                }
+                let x: Self = Rc::unwrap_or_clone(x).try_into()?;
+                -x
             }
 
             Expression::Mul { x, y, .. } => {
-                let (x, y) = (Rc::unwrap_or_clone(x), Rc::unwrap_or_clone(y));
-                let Self {
-                    column_weights: cols_l,
-                    constant: c_l,
-                } = x.into();
-                let Self {
-                    column_weights: cols_r,
-                    constant: c_r,
-                } = y.into();
+                let x: Self = Rc::unwrap_or_clone(x).try_into()?;
+                let y: Self = Rc::unwrap_or_clone(y).try_into()?;
 
-                assert!(
-                    !(!cols_l.is_empty() && !cols_r.is_empty()),
-                    "Not an affine expression"
-                );
-
-                let cols_l_c_r = cols_l.into_iter().map(|(c, w)| (c, w * c_r));
-                let cols_r_c_l = cols_r.into_iter().map(|(c, w)| (c, w * c_l));
-
-                Self {
-                    column_weights: chain(cols_l_c_r, cols_r_c_l).collect(),
-                    constant: c_l * c_r,
+                match (x.column_weights.len(), y.column_weights.len()) {
+                    (0, _) => y * x.constant,
+                    (_, 0) => x * y.constant,
+                    // "Can only construct PairColLC from affine expressions"
+                    (_, _) => {
+                        return Err(Error::NotAffine);
+                    }
                 }
             }
-            Expression::Identity
-            | Expression::IsFirstRow
-            | Expression::IsLastRow
-            | Expression::IsTransition => {
-                panic!()
+            Expression::Identity => Self {
+                column_weights: vec![(PairCol::Identity, F::one())],
+                constant: F::zero(),
+            },
+            Expression::IsFirstRow | Expression::IsLastRow | Expression::IsTransition => {
+                return Err(Error::ContainsSelector)
             }
-        }
+        };
+
+        lc.simplify()
     }
 }
 
 /// A column in a PAIR, i.e. either a preprocessed column or a main trace column.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum PairCol {
+    Identity,
     Preprocessed(usize),
     Main(usize),
 }
 
 impl PairCol {
-    pub const fn get<T: Copy>(&self, preprocessed: &[T], main: &[T]) -> T {
+    pub fn get<E: Clone, V: Copy + Into<E>>(
+        &self,
+        identity: &E,
+        preprocessed: &[V],
+        main: &[V],
+    ) -> E {
         match self {
-            PairCol::Preprocessed(i) => preprocessed[*i],
-            PairCol::Main(i) => main[*i],
+            // TODO: Fix
+            PairCol::Identity => identity.clone(),
+            PairCol::Preprocessed(i) => preprocessed[*i].into(),
+            PairCol::Main(i) => main[*i].into(),
         }
     }
 }
 
-impl<F: Field> VirtualPairCol<F> {
-    pub fn apply<Expr, Var>(&self, preprocessed: &[Var], main: &[Var]) -> Expr
+impl<F: Field> PairColLC<F> {
+    fn simplify(mut self) -> Result<Self, Error> {
+        self.column_weights.retain(|(_, w)| !w.is_zero());
+        self.column_weights.sort_by(|(c1, _), (c2, _)| c1.cmp(c2));
+
+        if self
+            .column_weights
+            .iter()
+            .find(|(c, w)| matches!(c, PairCol::Identity) && !w.is_one())
+            .is_some()
+        {
+            Err(Error::ScaledIdentity)
+        } else {
+            Ok(self)
+        }
+    }
+
+    // TODO: Handle PairCol::Identity
+    pub fn apply<Expr, Var>(&self, identity: &Expr, preprocessed: &[Var], main: &[Var]) -> Expr
     where
         F: Into<Expr>,
         Expr: AbstractField + Mul<F, Output = Expr>,
@@ -141,8 +130,56 @@ impl<F: Field> VirtualPairCol<F> {
     {
         let mut result = self.constant.into();
         for (column, weight) in self.column_weights.iter() {
-            result += column.get(preprocessed, main).into() * *weight;
+            result += column.get(identity, preprocessed, main) * weight.clone();
         }
         result
+    }
+}
+
+impl<F: Field> Add for PairColLC<F> {
+    type Output = Self;
+
+    fn add(mut self, rhs: Self) -> Self::Output {
+        for (c_r, w_r) in rhs.column_weights {
+            if let Some((_, w_l)) = self.column_weights.iter_mut().find(|(c_l, _)| *c_l == c_r) {
+                *w_l += w_r
+            } else {
+                self.column_weights.push((c_r, w_r))
+            }
+        }
+        self.constant += rhs.constant;
+        self
+    }
+}
+
+impl<F: Field> Neg for PairColLC<F> {
+    type Output = Self;
+
+    fn neg(mut self) -> Self::Output {
+        self.column_weights.iter_mut().for_each(|(_, w)| {
+            *w = -*w;
+        });
+        self.constant = -self.constant;
+        self
+    }
+}
+
+impl<F: Field> Sub for PairColLC<F> {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self + (-rhs)
+    }
+}
+
+impl<F: Field> Mul<F> for PairColLC<F> {
+    type Output = Self;
+
+    fn mul(mut self, rhs: F) -> Self::Output {
+        self.column_weights.iter_mut().for_each(|(_, w)| {
+            *w *= rhs;
+        });
+        self.constant *= rhs;
+        self
     }
 }

@@ -5,14 +5,14 @@ mod virtual_col;
 
 use crate::air::symbolic::builder::SymbolicAirBuilder;
 use crate::air::symbolic::expression::Expression;
-use crate::air::symbolic::virtual_col::VirtualPairCol;
+use crate::air::symbolic::virtual_col::PairColLC;
 use p3_air::Air;
 use p3_field::Field;
 
 #[derive(Clone)]
 pub struct Interaction<F: Field> {
-    pub(crate) values: Vec<VirtualPairCol<F>>,
-    pub(crate) is_real: Option<VirtualPairCol<F>>,
+    pub(crate) values: Vec<PairColLC<F>>,
+    pub(crate) is_real: Option<PairColLC<F>>,
 }
 
 impl<F: Field> Interaction<F> {

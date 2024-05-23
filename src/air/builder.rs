@@ -31,11 +31,12 @@ pub trait LairBuilder: AirBuilder + LookupBuilder + AirBuilderExt {}
 pub trait AirBuilderExt: AirBuilder {
     /// Returns the constant index of the current trace being proved
     /// Defaults to 0
-    fn trace_index(&self) -> Self::Expr;
+    fn trace_index(&self) -> usize;
 
     /// Return a unique expression for the current row. When using a univariate PCS, this is given
     /// as the i-th root of unity, since the column it would correspond to would be the
     /// interpolations of the identity.
+    /// Note that arithmetic is NOT supported on row indices.
     fn row_index(&self) -> Self::Expr;
 }
 
@@ -49,11 +50,12 @@ pub enum QueryType {
 /// TODO: The `once` calls are not fully supported, and deferred to their multi-use counterparts.
 pub trait LookupBuilder: AirBuilder {
     /// Generic query that to be added to the global lookup argument.
+    /// Note: is_real_bool must be a boolean.
     fn query(
         &mut self,
         query_type: QueryType,
         relation: impl Relation<Self::Expr>,
-        is_real: Option<Self::Expr>,
+        is_real_bool: Option<Self::Expr>,
     );
 
     /// Provide a query that can be required multiple times.

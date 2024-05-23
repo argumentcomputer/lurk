@@ -1,7 +1,8 @@
+use crate::air::builder::AirBuilderExt;
 use p3_air::{ExtensionBuilder, PairBuilder};
 use p3_matrix::Matrix;
 
-pub trait LogupBuilder: ExtensionBuilder + PairBuilder {
+pub trait LogupBuilder: ExtensionBuilder + PairBuilder + AirBuilderExt {
     type MP: Matrix<Self::VarEF>;
 
     type RandomVar: Into<Self::ExprEF> + Copy;

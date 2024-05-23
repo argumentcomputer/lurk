@@ -31,6 +31,7 @@ pub fn eval_logup_constraints<AB: LogupBuilder>(
 
     let r = builder.logup_challenge_r();
     let z_trace: AB::ExprEF = builder.logup_challenge_z_trace().into();
+    let identity = builder.row_index();
 
     let interactions = chain(requires, provides);
 
@@ -46,22 +47,21 @@ pub fn eval_logup_constraints<AB: LogupBuilder>(
     for (interaction, m_k, &inverse_d_k) in izip!(interactions, multiplicities, inverses) {
         let gammas = builder.logup_challenge_gammas();
 
-        let d_k: AB::ExprEF = interaction.apply(preprocessed, main, r, gammas);
+        let d_k: AB::ExprEF = interaction.apply(&identity, preprocessed, main, r, gammas);
         let inverse_d_k: AB::ExprEF = inverse_d_k.into();
-        let mut w_k = m_k * inverse_d_k.clone();
 
         if let Some(is_real) = &interaction.is_real {
-            let is_real: AB::Expr = is_real.apply(preprocessed, main);
+            let is_real: AB::Expr = is_real.apply(&identity, preprocessed, main);
+
             builder
                 .when(is_real.clone())
-                .assert_one_ext(d_k * inverse_d_k);
-            // TODO: this actually requires is_real to be boolean
-            //   Find a way to allow arbitrary selectors
-            w_k *= is_real;
+                .assert_one_ext(d_k * inverse_d_k.clone());
+            // Assumes is_real has been boolean checked
+            running_sum +=  m_k * inverse_d_k * is_real;
         } else {
-            builder.assert_one_ext(d_k * inverse_d_k);
+            builder.assert_one_ext(d_k * inverse_d_k.clone());
+            running_sum += m_k * inverse_d_k;
         };
-        running_sum += w_k;
     }
 
     // s_0 = 0
@@ -79,6 +79,7 @@ pub fn eval_logup_constraints<AB: LogupBuilder>(
 impl<F: Field> Interaction<F> {
     pub fn apply<Expr, ExprEF, Var, Challenge>(
         &self,
+        identity: &Expr,
         preprocessed: &[Var],
         main: &[Var],
         r: Challenge,
@@ -95,7 +96,7 @@ impl<F: Field> Interaction<F> {
 
         for (i, (v_i, &gamma_i)) in enumerate(zip(&self.values, gamma_powers)) {
             let gamma: ExprEF = gamma_i.into();
-            let v: Expr = v_i.apply(preprocessed, main);
+            let v: Expr = v_i.apply(identity, preprocessed, main);
             if i == 0 {
                 result += v;
             } else {

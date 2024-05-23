@@ -98,9 +98,9 @@ impl<'a, F: Field> LookupBuilder for DebugConstraintBuilder<'a, F> {
 }
 
 impl<'a, F: Field> AirBuilderExt for DebugConstraintBuilder<'a, F> {
-    fn trace_index(&self) -> Self::Expr {
+    fn trace_index(&self) -> usize {
         // TODO: fix
-        Self::Expr::zero()
+        0
     }
 
     fn row_index(&self) -> Self::Expr {

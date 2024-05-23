@@ -6,6 +6,7 @@ use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::Matrix;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;
+use rayon::prelude::IntoParallelRefIterator;
 use std::iter;
 use std::iter::zip;
 
@@ -51,6 +52,7 @@ pub(crate) fn generate_multiplicities_trace<F: PrimeField, EF: ExtensionField<F>
     values
 }
 pub(crate) fn generate_permutation_trace<F: PrimeField, EF: ExtensionField<F>>(
+    identity_col: &[F],
     preprocessed: &RowMajorMatrix<F>,
     main: &RowMajorMatrix<F>,
     multiplicities: &RowMajorMatrix<EF>,
@@ -95,18 +97,22 @@ pub(crate) fn generate_permutation_trace<F: PrimeField, EF: ExtensionField<F>>(
     // compute all denominators `d_k = r + ∑_j gamma^j v_{k,j}`
     values
         .par_rows_mut()
-        .zip(preprocessed.par_row_slices().zip(main.par_row_slices()))
-        .for_each(|(values, (preprocessed, main))| {
+        .zip(
+            identity_col
+                .par_iter()
+                .zip(preprocessed.par_row_slices().zip(main.par_row_slices())),
+        )
+        .for_each(|(values, (identity, (preprocessed, main)))| {
             let (_, inverses) = values.split_first_mut().unwrap();
             for (value, interaction) in zip(inverses, &interactions) {
                 if let Some(is_real) = &interaction.is_real {
-                    let is_real: F = is_real.apply(preprocessed, main);
+                    let is_real: F = is_real.apply(identity, preprocessed, main);
                     if is_real.is_zero() {
                         continue;
                     }
                 }
 
-                *value = interaction.apply(preprocessed, main, challenge_r, &gammas);
+                *value = interaction.apply(identity, preprocessed, main, challenge_r, &gammas);
             }
         });
 
@@ -117,7 +123,10 @@ pub(crate) fn generate_permutation_trace<F: PrimeField, EF: ExtensionField<F>>(
         .zip(multiplicities.par_row_slices())
         .for_each(|(values, multiplicities)| {
             let (sum, inverses) = values.split_first_mut().unwrap();
-            let multiplicities = multiplicities.iter().copied().chain(iter::repeat(-challenge_z));
+            let multiplicities = multiplicities
+                .iter()
+                .copied()
+                .chain(iter::repeat(-challenge_z));
             for (inverse, multiplicity) in zip(inverses, multiplicities) {
                 if inverse.is_zero() {
                     continue;

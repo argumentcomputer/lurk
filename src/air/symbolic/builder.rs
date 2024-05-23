@@ -1,10 +1,10 @@
 use crate::air::builder::{AirBuilderExt, LookupBuilder, QueryType, Relation};
 use crate::air::symbolic::expression::Expression;
 use crate::air::symbolic::variable::{Entry, Variable};
-use crate::air::symbolic::virtual_col::VirtualPairCol;
+use crate::air::symbolic::virtual_col::PairColLC;
 use crate::air::symbolic::{Interaction, SymbolicAir};
 use p3_air::AirBuilder;
-use p3_field::{AbstractField, Field};
+use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrix;
 
 /// A builder for the lookup table interactions.
@@ -72,8 +72,8 @@ impl<F: Field> AirBuilder for SymbolicAirBuilder<F> {
 }
 
 impl<F: Field> AirBuilderExt for SymbolicAirBuilder<F> {
-    fn trace_index(&self) -> Self::Expr {
-        Self::Expr::zero()
+    fn trace_index(&self) -> usize {
+        0
     }
 
     fn row_index(&self) -> Self::Expr {
@@ -91,9 +91,11 @@ impl<F: Field> LookupBuilder for SymbolicAirBuilder<F> {
         let values = relation
             .values()
             .into_iter()
-            .map(|v| VirtualPairCol::from(v))
+            .map(|v| PairColLC::try_from(v).expect("queries must contain affine expressions"))
             .collect();
-        let is_real = is_real.map(|is_real| VirtualPairCol::from(is_real));
+        let is_real = is_real.map(|is_real| {
+            PairColLC::try_from(is_real).expect("is_real must be an affine expression")
+        });
 
         match query_type {
             QueryType::Require | QueryType::RequireOnce => {
