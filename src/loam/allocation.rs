@@ -209,6 +209,12 @@ ascent! {
     // Populating cons(...) triggers allocation in cons mem.
     cons_mem(car, cdr, Dual(counter + 1)) <-- cons(car, cdr), primary_counter(counter);
 
+    primary_mem(CONS_TAG, CONS_WIDE_TAG, digest, addr) <--
+        cons_mem(car, cdr, addr),
+        ptr_value(car, car_value), ptr_value(cdr, cdr_value),
+        ptr_tag(car, car_tag), ptr_tag(cdr, cdr_tag),
+        hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest);
+
     // If cons_mem was populated otherwise, still populate cons(...).
     cons(car, cdr), cons_rel(car, cdr, Ptr(CONS_TAG, addr.0)) <-- cons_mem(car, cdr, addr);
 
@@ -266,6 +272,7 @@ ascent! {
     ptr(cons), car(cons, car), cdr(cons, cdr) <-- cons_rel(car, cdr, cons);
 
     f_value(ptr, Wide::widen(ptr.1)) <-- ptr(ptr), if ptr.0 == F_TAG;
+    ptr(ptr) <-- f_value(ptr, _);
 
     // Provide cons_value when known.
     cons_value(ptr, digest)
@@ -292,7 +299,8 @@ ascent! {
     relation map_double_input(Ptr); // (input)
     relation map_double(Ptr, Ptr); // (input-ptr, output-ptr)
 
-    map_double(ptr, Ptr(F_TAG, ptr.1 * 2)) <-- map_double_input(ptr), if ptr.0 == F_TAG;
+    ptr(doubled),
+    map_double(ptr, doubled) <-- map_double_input(ptr), if ptr.0 == F_TAG, let doubled = Ptr(F_TAG, ptr.1 * 2);
 
     map_double_input(ptr) <-- input_ptr(ptr);
 
@@ -397,6 +405,14 @@ mod test {
         let c1 = allocator().hash4(F_WIDE_TAG, Wide::widen(2), F_WIDE_TAG, Wide::widen(4));
         // ((1 . 2) . (2 .4))
         let c2 = allocator().hash4(CONS_WIDE_TAG, c0, CONS_WIDE_TAG, c1);
+        // (4 . 8)
+        let c3 = allocator().hash4(F_WIDE_TAG, Wide::widen(4), F_WIDE_TAG, Wide::widen(8));
+        // ((2 . 4) . (4 .8))
+        let c4 = allocator().hash4(CONS_WIDE_TAG, c1, CONS_WIDE_TAG, c3);
+        let input = (CONS_WIDE_TAG, c2);
+
+        // Mapping (lambda (x) (* 2 x)) over ((1 . 2) . (2 . 4))) yields ((2 . 4) . (4 . 8)).
+        let expected_output = (CONS_WIDE_TAG, c4);
 
         assert_eq!(
             Wide([
@@ -421,7 +437,7 @@ mod test {
             c2
         );
 
-        prog.input_expr = vec![(CONS_WIDE_TAG, c2)];
+        prog.input_expr = vec![input];
 
         dbg!("Running: ------------------------------");
         prog.run();
@@ -463,6 +479,7 @@ mod test {
             cons,
             cons_rel,
             cons_mem,
+            cons_value,
             ptr_value,
             primary_mem,
             // &primary_rel,
@@ -483,10 +500,11 @@ mod test {
             // cons_addr_primary_addr,
             map_double_input,
             map_double,
-            primary_counter
+            primary_counter,
+            f_value
         );
 
-        panic!("uiop");
+        assert_eq!(vec![expected_output], output_expr);
     }
 
     #[test]
