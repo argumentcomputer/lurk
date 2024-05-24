@@ -239,8 +239,8 @@ ascent! {
     // Associates cons memory addresses with primary memory addresses.
     relation cons_addr_primary_addr(LE, Dual<LE>);
 
-    // cons_wide_mem has pointers congruent with those of primary_mem, *not* cons_mem.
-    lattice cons_wide_mem(Wide, Wide, Wide, Wide, Dual<LE>); // (car-tag, car-value, cdr-tag, cdr-value, primary-addr)
+    // // cons_wide_mem has pointers congruent with those of primary_mem, *not* cons_mem.
+    // lattice cons_wide_mem(Wide, Wide, Wide, Wide, Dual<LE>); // (car-tag, car-value, cdr-tag, cdr-value, primary-addr)
 
     // The canonical cons Ptr relation.
     relation cons_rel(Ptr, Ptr, Ptr); // (car, cdr, cons)
@@ -280,11 +280,6 @@ ascent! {
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
 
-    cons_wide_mem(wide_car_tag, car_value, wide_cdr_tag, cdr_value, addr) <--
-        alloc(&CONS_TAG, digest, priority),
-        hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
-        primary_mem(&CONS_TAG, _, digest, addr);
-
     f_value(Ptr(F_TAG, f), Wide::widen(f)) <-- alloc(&F_TAG, value, _), let f = value.f();
 
     cons_addr_primary_addr(cons_addr.0, Dual(cons_ptr.1)) <--
@@ -293,7 +288,11 @@ ascent! {
 
     cons_rel(car, cdr, Ptr(CONS_TAG, addr.0)),
     cons_mem(car, cdr, addr) <--
-        cons_wide_mem(wide_car_tag, car_value, wide_cdr_tag, cdr_value, addr),
+        alloc(&CONS_TAG, digest, priority),
+        hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
+        primary_mem(&CONS_TAG, _, digest, addr),
+
+//        cons_wide_mem(wide_car_tag, car_value, wide_cdr_tag, cdr_value, addr),
         primary_rel(_, wide_car_tag, car_value, car),
         primary_rel(_, wide_cdr_tag, cdr_value, cdr),
         cons_counter(counter);
@@ -337,23 +336,6 @@ ascent! {
         cons_rel(double_car, double_cdr, double_cons);
 
     output_ptr(output) <-- input_ptr(input), map_double(input, output);
-
-//    cons_rel(double_car, double_cdr, Ptr(CONS_TAG, addr.0))
-//        alloc(CONS_TAG, ) <--
-        // map_double_input(ptr), if ptr.0 == CONS_TAG,
-        // cons_rel(car, cdr, ptr);
-        // map_double(car, double_car),
-        // map_double(cdr, double_cdr),
-        // cons_mem(double_car, double_cdr, cons_addr),
-        // tag(double_car.0, wide_double_car_tag),
-        // tag(double_cdr.0, wide_double_cdr_tag),
-        // ptr_value(double_car, double_car_value),
-        // ptr_value(double_cdr, double_cdr_value),
-        // cons_wide_mem(wide_double_car_tag, double_car_value, wide_double_cdr_tag, double_cdr_value, addr);
-
-
-
-//    map_double() <-- cons_rel(car, cdr, cons);
 
     // For now, just copy input straight to output. Later, we will evaluate.
     output_ptr(out) <-- input_ptr(ptr), map_double(ptr, out);
@@ -484,7 +466,6 @@ mod test {
             cons_rel,
             cons_value,
             cons_mem,
-            cons_wide_mem,
             primary_mem,
             ptr,
             hash4,
@@ -514,7 +495,6 @@ mod test {
             cons_mem,
             ptr_value,
             // &cons_rel,
-            &cons_wide_mem,
             primary_mem,
             // &primary_rel,
             // // &ptr,
