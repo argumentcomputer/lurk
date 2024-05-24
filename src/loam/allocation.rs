@@ -147,7 +147,7 @@ ascent! {
     relation output_ptr(Ptr); // (ptr)
 
     // triggers allocation once per unique cons
-    relation cons(Ptr, Ptr); // (car, cdr)
+    relation cons(Ptr, Ptr, LE); // (car, cdr, priority)
     relation car(Ptr, Ptr); // (cons, car)
     relation cdr(Ptr, Ptr); // (cons, cdr)
     relation hash4(Ptr, Wide, Wide, Wide, Wide); // (a, b, c, d)
@@ -207,7 +207,7 @@ ascent! {
     primary_counter(addr.0) <-- cons_mem(_, _, addr);
 
     // Populating cons(...) triggers allocation in cons mem.
-    cons_mem(car, cdr, Dual(counter + 1)) <-- cons(car, cdr), primary_counter(counter);
+    cons_mem(car, cdr, Dual(counter + 1 + priority)) <-- cons(car, cdr, priority), primary_counter(counter);
 
     primary_mem(CONS_TAG, CONS_WIDE_TAG, digest, addr) <--
         cons_mem(car, cdr, addr),
@@ -216,7 +216,7 @@ ascent! {
         hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest);
 
     // If cons_mem was populated otherwise, still populate cons(...).
-    cons(car, cdr), cons_rel(car, cdr, Ptr(CONS_TAG, addr.0)) <-- cons_mem(car, cdr, addr);
+    cons(car, cdr, 0), cons_rel(car, cdr, Ptr(CONS_TAG, addr.0)) <-- cons_mem(car, cdr, addr);
 
     ptr(cons), ptr_tag(cons, CONS_WIDE_TAG) <-- cons_rel(car, cdr, cons);
     ptr_value(cons, value) <-- cons_rel(car, cdr, cons), cons_value(cons, value);
@@ -229,7 +229,7 @@ ascent! {
     // The canonical cons Ptr relation.
     relation cons_rel(Ptr, Ptr, Ptr); // (car, cdr, cons)
 
-    cons(car, cdr) <-- cons_rel(car, cdr, _);
+    cons(car, cdr, 0) <-- cons_rel(car, cdr, _);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Ingress path
@@ -296,23 +296,23 @@ ascent! {
     // This is just a silly input->output function that maps f(x)->2x over the input tree,
     // for use as a development example. This will be replaced by e.g. Lurk eval.
 
-    relation map_double_input(Ptr); // (input)
+    relation map_double_input(Ptr, LE); // (input, priority)
     relation map_double(Ptr, Ptr); // (input-ptr, output-ptr)
 
     ptr(doubled),
-    map_double(ptr, doubled) <-- map_double_input(ptr), if ptr.0 == F_TAG, let doubled = Ptr(F_TAG, ptr.1 * 2);
+    map_double(ptr, doubled) <-- map_double_input(ptr, _), if ptr.0 == F_TAG, let doubled = Ptr(F_TAG, ptr.1 * 2);
 
-    map_double_input(ptr) <-- input_ptr(ptr);
+    map_double_input(ptr, 0) <-- input_ptr(ptr);
 
-    ingress(ptr) <-- map_double_input(ptr), if ptr.0 == CONS_TAG;
+    ingress(ptr) <-- map_double_input(ptr, _), if ptr.0 == CONS_TAG;
 
-    map_double_input(car), map_double_input(cdr) <-- map_double_input(cons), cons_rel(car, cdr, cons);
+    map_double_input(car, 0), map_double_input(cdr, 1) <-- map_double_input(cons, _), cons_rel(car, cdr, cons);
 
     relation map_double_cont(Ptr, Ptr, Ptr); //
 
     map_double_cont(ptr, double_car, double_cdr),
-    cons(double_car, double_cdr) <--
-        map_double_input(ptr), if ptr.0 == CONS_TAG,
+    cons(double_car, double_cdr, priority) <--
+        map_double_input(ptr, priority), if ptr.0 == CONS_TAG,
         cons_rel(car, cdr, ptr),
         map_double(car, double_car),
         map_double(cdr, double_cdr);
@@ -381,52 +381,45 @@ mod test {
 
     #[test]
     fn new_test_cons() {
-        let mut prog = AllocationProgram::default();
         allocator().init();
 
-        let (ptr0, ptr1, ptr2, ptr3, ptr4) = (
-            Ptr(F_TAG, 0),
-            Ptr(F_TAG, 1),
-            Ptr(F_TAG, 2),
-            Ptr(F_TAG, 3),
-            Ptr(F_TAG, 4),
-        );
-        let (cons_ptr0, cons_ptr1, cons_ptr2, cons_ptr3, cons_ptr4) = (
-            Ptr(CONS_TAG, 0),
-            Ptr(CONS_TAG, 1),
-            Ptr(CONS_TAG, 2),
-            Ptr(CONS_TAG, 3),
-            Ptr(CONS_TAG, 4),
-        );
-
         // (1 . 2)
-        let c0 = allocator().hash4(F_WIDE_TAG, Wide::widen(1), F_WIDE_TAG, Wide::widen(2));
+        let c1_2 = allocator().hash4(F_WIDE_TAG, Wide::widen(1), F_WIDE_TAG, Wide::widen(2));
+        // (2 . 3)
+        let c2_3 = allocator().hash4(F_WIDE_TAG, Wide::widen(2), F_WIDE_TAG, Wide::widen(3));
         // (2 . 4)
-        let c1 = allocator().hash4(F_WIDE_TAG, Wide::widen(2), F_WIDE_TAG, Wide::widen(4));
-        // ((1 . 2) . (2 .4))
-        let c2 = allocator().hash4(CONS_WIDE_TAG, c0, CONS_WIDE_TAG, c1);
+        let c2_4 = allocator().hash4(F_WIDE_TAG, Wide::widen(2), F_WIDE_TAG, Wide::widen(4));
+        // (4 . 6)
+        let c4_6 = allocator().hash4(F_WIDE_TAG, Wide::widen(4), F_WIDE_TAG, Wide::widen(6));
         // (4 . 8)
-        let c3 = allocator().hash4(F_WIDE_TAG, Wide::widen(4), F_WIDE_TAG, Wide::widen(8));
-        // ((2 . 4) . (4 .8))
-        let c4 = allocator().hash4(CONS_WIDE_TAG, c1, CONS_WIDE_TAG, c3);
-        let input = (CONS_WIDE_TAG, c2);
+        let c4_8 = allocator().hash4(F_WIDE_TAG, Wide::widen(4), F_WIDE_TAG, Wide::widen(8));
+        // ((1 . 2) . (2 . 4))
+        let c1_2__2_4 = allocator().hash4(CONS_WIDE_TAG, c1_2, CONS_WIDE_TAG, c2_4);
+        // ((1 . 2) . (2 . 3))
+        let c1_2__2_3 = allocator().hash4(CONS_WIDE_TAG, c1_2, CONS_WIDE_TAG, c2_3);
+        // ((2 . 4) . (4 . 8))
+        let c2_4__4_8 = allocator().hash4(CONS_WIDE_TAG, c2_4, CONS_WIDE_TAG, c4_8);
+        // ((2 . 4) . (4 . 6))
+        let c2_4__4_6 = allocator().hash4(CONS_WIDE_TAG, c2_4, CONS_WIDE_TAG, c4_6);
+
+        let input = (CONS_WIDE_TAG, c1_2__2_4);
 
         // Mapping (lambda (x) (* 2 x)) over ((1 . 2) . (2 . 4))) yields ((2 . 4) . (4 . 8)).
-        let expected_output = (CONS_WIDE_TAG, c4);
+        let expected_output = (CONS_WIDE_TAG, c2_4__4_8);
 
         assert_eq!(
             Wide([
                 4038165649, 752447834, 1060359009, 3812570985, 3368674057, 2161975811, 2601257232,
                 1536661076
             ]),
-            c0
+            c1_2
         );
         assert_eq!(
             Wide([
                 3612283221, 1832028404, 1497027099, 2489301282, 1316351861, 200274982, 901424954,
                 3034146026
             ]),
-            c1
+            c2_4
         );
 
         assert_eq!(
@@ -434,13 +427,23 @@ mod test {
                 2025499267, 1838322365, 1110884429, 2931761435, 2978718557, 3907840380, 1112426582,
                 1522367847
             ]),
-            c2
+            c1_2__2_4
         );
 
-        prog.input_expr = vec![input];
+        let mut test = |input, expected_output, cons_count| {
+            let mut prog = AllocationProgram::default();
 
-        dbg!("Running: ------------------------------");
-        prog.run();
+            prog.input_expr = vec![input];
+            prog.run();
+
+            assert_eq!(vec![expected_output], prog.output_expr);
+            assert_eq!(cons_count, prog.cons_mem.len());
+            assert_eq!(cons_count, prog.primary_mem.len());
+            prog
+        };
+
+        let prog = test(input, expected_output, 5);
+        let prog = test((CONS_WIDE_TAG, c1_2__2_3), (CONS_WIDE_TAG, c2_4__4_6), 6);
 
         println!("{}", prog.relation_sizes_summary());
 
@@ -503,8 +506,7 @@ mod test {
             primary_counter,
             f_value
         );
-
-        assert_eq!(vec![expected_output], output_expr);
+        //        panic!("uiop");
     }
 
     #[test]
