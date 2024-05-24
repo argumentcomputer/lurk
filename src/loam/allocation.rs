@@ -402,11 +402,6 @@ mod test {
         // ((2 . 4) . (4 . 6))
         let c2_4__4_6 = allocator().hash4(CONS_WIDE_TAG, c2_4, CONS_WIDE_TAG, c4_6);
 
-        let input = (CONS_WIDE_TAG, c1_2__2_4);
-
-        // Mapping (lambda (x) (* 2 x)) over ((1 . 2) . (2 . 4))) yields ((2 . 4) . (4 . 8)).
-        let expected_output = (CONS_WIDE_TAG, c2_4__4_8);
-
         assert_eq!(
             Wide([
                 4038165649, 752447834, 1060359009, 3812570985, 3368674057, 2161975811, 2601257232,
@@ -433,80 +428,57 @@ mod test {
         let mut test = |input, expected_output, cons_count| {
             let mut prog = AllocationProgram::default();
 
-            prog.input_expr = vec![input];
+            prog.input_expr = vec![(CONS_WIDE_TAG, input)];
             prog.run();
 
-            assert_eq!(vec![expected_output], prog.output_expr);
+            assert_eq!(vec![(CONS_WIDE_TAG, expected_output)], prog.output_expr);
             assert_eq!(cons_count, prog.cons_mem.len());
             assert_eq!(cons_count, prog.primary_mem.len());
             prog
         };
 
-        let prog = test(input, expected_output, 5);
-        let prog = test((CONS_WIDE_TAG, c1_2__2_3), (CONS_WIDE_TAG, c2_4__4_6), 6);
+        // Mapping (lambda (x) (* 2 x)) over ((1 . 2) . (2 . 3))) yields ((2 . 4) . (4 . 6)).
+        // We expect 6 total conses.
+        test(c1_2__2_3, c2_4__4_6, 6);
 
-        println!("{}", prog.relation_sizes_summary());
+        // Mapping (lambda (x) (* 2 x)) over ((1 . 2) . (2 . 4))) yields ((2 . 4) . (4 . 8)).
+        // We expect only 5 total conses, because (2 . 4) is duplicated in the input and output,
+        // so the allocation should be memoized.
+        let prog = test(c1_2__2_4, c2_4__4_8, 5);
 
-        let AllocationProgram {
-            car,
-            cdr,
-            ptr_tag,
-            mut ptr_value,
-            cons,
-            cons_rel,
-            cons_value,
-            cons_mem,
-            primary_mem,
-            ptr,
-            hash4,
-            hash4_rel,
-            ingress,
-            egress,
-            primary_rel,
-            input_expr,
-            output_expr,
-            f_value,
-            alloc,
-            map_double_input,
-            map_double,
-            input_ptr,
-            output_ptr,
-            primary_counter,
-            ..
-        } = prog;
+        // debugging
 
-        ptr_value.sort_by_key(|(key, _)| *key);
+        // println!("{}", prog.relation_sizes_summary());
 
-        dbg!(
-            ingress,
-            cons,
-            cons_rel,
-            cons_mem,
-            cons_value,
-            ptr_value,
-            primary_mem,
-            // &primary_rel,
-            // &ptr,
-            // &cons_mem,
-            egress,
-            input_ptr,
-            output_ptr,
-            // &input_expr,
-            // &output_expr,
-            // &hash4,
-            // &hash4_rel,
-            // allocator().digest_cache.len(),
-            // cons_value,
-            // ptr,
-            // f_value,
-            // alloc,
-            // cons_addr_primary_addr,
-            map_double_input,
-            map_double,
-            primary_counter,
-            f_value
-        );
-        //        panic!("uiop");
+        // let AllocationProgram {
+        //     car,
+        //     cdr,
+        //     ptr_tag,
+        //     mut ptr_value,
+        //     cons,
+        //     cons_rel,
+        //     cons_value,
+        //     cons_mem,
+        //     primary_mem,
+        //     ptr,
+        //     hash4,
+        //     hash4_rel,
+        //     ingress,
+        //     egress,
+        //     primary_rel,
+        //     input_expr,
+        //     output_expr,
+        //     f_value,
+        //     alloc,
+        //     map_double_input,
+        //     map_double,
+        //     input_ptr,
+        //     output_ptr,
+        //     primary_counter,
+        //     ..
+        // } = prog;
+
+        // ptr_value.sort_by_key(|(key, _)| *key);
     }
 
     #[test]
