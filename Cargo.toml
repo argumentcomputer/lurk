@@ -17,6 +17,7 @@ p3-challenger = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1
 p3-maybe-rayon = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
 p3-uni-stark = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
 p3-util = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+wp1-core = { git = "ssh://git@github.com/wormhole-foundation/wp1.git", branch = "dev" }
 
 [dependencies]
 arc-swap = "1.7.1"
