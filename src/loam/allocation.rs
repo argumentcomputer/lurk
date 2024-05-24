@@ -391,37 +391,38 @@ mod test {
             Ptr(CONS_TAG, 4),
         );
 
-        // (3 . 4)
-        let c0 = allocator().hash4(F_WIDE_TAG, Wide::widen(3), F_WIDE_TAG, Wide::widen(4));
-        // (2 3 . 4)
-        let c1 = allocator().hash4(F_WIDE_TAG, Wide::widen(2), CONS_WIDE_TAG, c0);
-        // (1 2 3 . 4)
-        let c2 = allocator().hash4(F_WIDE_TAG, Wide::widen(1), CONS_WIDE_TAG, c1);
-
-        prog.input_expr = vec![(CONS_WIDE_TAG, c1)];
+        // (1 . 2)
+        let c0 = allocator().hash4(F_WIDE_TAG, Wide::widen(1), F_WIDE_TAG, Wide::widen(2));
+        // (2 . 4)
+        let c1 = allocator().hash4(F_WIDE_TAG, Wide::widen(2), F_WIDE_TAG, Wide::widen(4));
+        // ((1 . 2) . (2 .4))
+        let c2 = allocator().hash4(CONS_WIDE_TAG, c0, CONS_WIDE_TAG, c1);
 
         assert_eq!(
             Wide([
-                1293148110, 2402141028, 509705422, 782425695, 3078971211, 3971189782, 958090466,
-                761772301
+                4038165649, 752447834, 1060359009, 3812570985, 3368674057, 2161975811, 2601257232,
+                1536661076
             ]),
             c0
         );
         assert_eq!(
             Wide([
-                248144713, 2177838085, 3145750114, 4129543510, 1108271234, 3833440321, 1267237783,
-                4259360553
+                3612283221, 1832028404, 1497027099, 2489301282, 1316351861, 200274982, 901424954,
+                3034146026
             ]),
             c1
         );
 
         assert_eq!(
             Wide([
-                2510325143, 2058981605, 3766814192, 1184441934, 4228369995, 3952767779, 3713191526,
-                1219339775
+                2025499267, 1838322365, 1110884429, 2931761435, 2978718557, 3907840380, 1112426582,
+                1522367847
             ]),
             c2
         );
+
+        prog.input_expr = vec![(CONS_WIDE_TAG, c2)];
+
         dbg!("Running: ------------------------------");
         prog.run();
 
