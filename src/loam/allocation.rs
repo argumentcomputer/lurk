@@ -323,6 +323,9 @@ ascent! {
 
     map_double_input(car), map_double_input(cdr) <-- map_double_input(cons), cons_rel(car, cdr, cons);
 
+    relation map_double_cont(Ptr, Ptr, Ptr); //
+
+    map_double_cont(ptr, double_car, double_cdr),
     cons(double_car, double_cdr) <--
         map_double_input(ptr), if ptr.0 == CONS_TAG,
         cons_rel(car, cdr, ptr),
@@ -330,10 +333,7 @@ ascent! {
         map_double(cdr, double_cdr);
 
     map_double(ptr, double_cons) <--
-        map_double_input(ptr), if ptr.0 == CONS_TAG,
-        cons_rel(car, cdr, ptr),
-        map_double(car, double_car),
-        map_double(cdr, double_cdr),
+        map_double_cont(ptr, double_car, double_cdr),
         cons_rel(double_car, double_cdr, double_cons);
 
     output_ptr(output) <-- input_ptr(input), map_double(input, output);
