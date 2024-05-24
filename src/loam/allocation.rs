@@ -201,14 +201,6 @@ ascent! {
     // Register ptr.
     ptr(ptr), ptr_tag(ptr, wide_tag), ptr_value(ptr, value) <-- primary_rel(_tag, wide_tag, value, ptr);
 
-    // // Opaque memory
-    // lattice opaque_mem(LE, Dual<LE>); // (tag, opaque-addr)
-    // relation alloc_opaque(LE);
-
-    // opaque_mem(tag, Dual(addr + 1 + priority)) <-- alloc_opaque(tag), primary_counter(addr);
-    // primary_counter(addr.0) <-- opaque_mem(_, addr);
-
-
     // cons-addr is for this cons type-specific memory.
     lattice cons_mem(Ptr, Ptr, Dual<LE>); // (car, cdr, cons-addr)
     lattice cons_counter(LE) = vec![(0,)];
@@ -218,11 +210,7 @@ ascent! {
     primary_counter(addr.0) <-- cons_mem(_, _, addr);
 
     // Populating cons(...) triggers allocation in cons mem.
-    // cons_mem(car, cdr, Dual(counter + 1)) <-- cons(car, cdr), cons_counter(counter);
     cons_mem(car, cdr, Dual(counter + 1)) <-- cons(car, cdr), primary_counter(counter);
-
-//    alloc() <-- cons_mem(car, cdr, addr), !cons_rel_mem(car, cdr, cons);
-
 
     // If cons_mem was populated otherwise, still populate cons(...).
     cons(car, cdr), cons_rel(car, cdr, Ptr(CONS_TAG, addr.0)) <-- cons_mem(car, cdr, addr);
@@ -235,13 +223,6 @@ ascent! {
     ptr_value(ptr, value) <-- ptr(ptr), cons_value(ptr, value);
     ptr_value(ptr, value) <-- ptr(ptr), f_value(ptr, value);
 
-
-    // Associates cons memory addresses with primary memory addresses.
-    relation cons_addr_primary_addr(LE, Dual<LE>);
-
-    // // cons_wide_mem has pointers congruent with those of primary_mem, *not* cons_mem.
-    // lattice cons_wide_mem(Wide, Wide, Wide, Wide, Dual<LE>); // (car-tag, car-value, cdr-tag, cdr-value, primary-addr)
-
     // The canonical cons Ptr relation.
     relation cons_rel(Ptr, Ptr, Ptr); // (car, cdr, cons)
 
@@ -253,9 +234,6 @@ ascent! {
     // Ingress 1: mark input expression for allocation.
     alloc(tag, value, 0) <-- input_expr(wide_tag, value), tag(tag, wide_tag);
 
-    // Ingress 2: allocate marked, opaque data.
-
-
     // Populate input_ptr.
     input_ptr(ptr) <-- input_expr(wide_tag, value), primary_rel(_, wide_tag, value, ptr);
 
@@ -264,8 +242,7 @@ ascent! {
 
     // mark ingress conses for unhashing.
     unhash4(CONS_TAG, digest, ptr) <--
-        ingress(ptr),
-        if ptr.0 == CONS_TAG,
+        ingress(ptr), if ptr.0 == CONS_TAG,
         ptr_value(ptr, digest),
         primary_mem(&CONS_TAG, _, digest, _);
 
@@ -282,20 +259,12 @@ ascent! {
 
     f_value(Ptr(F_TAG, f), Wide::widen(f)) <-- alloc(&F_TAG, value, _), let f = value.f();
 
-    cons_addr_primary_addr(cons_addr.0, Dual(cons_ptr.1)) <--
-        cons_mem(car, cdr, cons_addr), // addr in cons mem
-        cons_rel(car, cdr, cons_ptr); // ptr's addr is primary
-
     cons_rel(car, cdr, Ptr(CONS_TAG, addr.0)),
     cons_mem(car, cdr, addr) <--
-        alloc(&CONS_TAG, digest, priority),
         hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
         primary_mem(&CONS_TAG, _, digest, addr),
-
-//        cons_wide_mem(wide_car_tag, car_value, wide_cdr_tag, cdr_value, addr),
         primary_rel(_, wide_car_tag, car_value, car),
-        primary_rel(_, wide_cdr_tag, cdr_value, cdr),
-        cons_counter(counter);
+        primary_rel(_, wide_cdr_tag, cdr_value, cdr);
 
     ptr(cons), car(cons, car), cdr(cons, cdr) <-- cons_rel(car, cdr, cons);
 
@@ -477,7 +446,6 @@ mod test {
             output_expr,
             f_value,
             alloc,
-            cons_addr_primary_addr,
             map_double_input,
             map_double,
             input_ptr,
@@ -494,11 +462,10 @@ mod test {
             cons_rel,
             cons_mem,
             ptr_value,
-            // &cons_rel,
             primary_mem,
             // &primary_rel,
-            // // &ptr,
-            // // &cons_mem,
+            // &ptr,
+            // &cons_mem,
             egress,
             input_ptr,
             output_ptr,
@@ -511,7 +478,7 @@ mod test {
             // ptr,
             // f_value,
             // alloc,
-            cons_addr_primary_addr,
+            // cons_addr_primary_addr,
             map_double_input,
             map_double,
             primary_counter
