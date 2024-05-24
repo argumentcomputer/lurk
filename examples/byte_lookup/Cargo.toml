@@ -7,8 +7,7 @@ edition = "2021"
 
 [dependencies]
 loam = { path = "../.." }
-p3-air = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-baby-bear = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-field = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-matrix = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-uni-stark = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-air = { workspace = true }
+p3-baby-bear = { workspace = true }
+p3-field = { workspace = true }
+p3-matrix = { workspace = true }

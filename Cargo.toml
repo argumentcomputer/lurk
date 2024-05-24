@@ -5,11 +5,7 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
-arc-swap = "1.7.1"
-match_opt = "0.1.2"
-elsa = { version = "1.9.0", git = "https://github.com/lurk-lab/elsa", branch = "sync_frozen", features = ["indexmap"] }
-indexmap = { version = "2.2.6", features = ["rayon"] }
+[workspace.dependencies]
 rayon = "1.10.0"
 itertools = "0.13.0"
 p3-air = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
@@ -21,6 +17,24 @@ p3-challenger = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1
 p3-maybe-rayon = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
 p3-uni-stark = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
 p3-util = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+wp1-core = { git = "ssh://git@github.com/wormhole-foundation/wp1.git", branch = "dev" }
+
+[dependencies]
+arc-swap = "1.7.1"
+match_opt = "0.1.2"
+elsa = { version = "1.9.0", git = "https://github.com/lurk-lab/elsa", branch = "sync_frozen", features = ["indexmap"] }
+indexmap = { version = "2.2.6", features = ["rayon"] }
+rayon = { workspace = true }
+itertools = { workspace = true }
+p3-air = { workspace = true }
+p3-baby-bear = { workspace = true }
+p3-field = { workspace = true }
+p3-matrix = { workspace = true }
+p3-commit = { workspace = true }
+p3-challenger = { workspace = true }
+p3-maybe-rayon = { workspace = true }
+p3-util = { workspace = true }
+
 
 [workspace]
 members = ["examples/calculator", "examples/byte_lookup"]
