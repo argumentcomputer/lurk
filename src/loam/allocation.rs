@@ -319,7 +319,7 @@ ascent! {
 
     map_double_input(ptr) <-- input_ptr(ptr);
 
-    ingress(dbg!(*ptr)) <-- map_double_input(ptr), if ptr.0 == CONS_TAG;
+    ingress(ptr) <-- map_double_input(ptr), if ptr.0 == CONS_TAG;
 
     map_double_input(car), map_double_input(cdr) <-- map_double_input(cons), cons_rel(car, cdr, cons);
 
@@ -328,6 +328,15 @@ ascent! {
         cons_rel(car, cdr, ptr),
         map_double(car, double_car),
         map_double(cdr, double_cdr);
+
+    map_double(ptr, double_cons) <--
+        map_double_input(ptr), if ptr.0 == CONS_TAG,
+        cons_rel(car, cdr, ptr),
+        map_double(car, double_car),
+        map_double(cdr, double_cdr),
+        cons_rel(double_car, double_cdr, double_cons);
+
+    output_ptr(output) <-- input_ptr(input), map_double(input, output);
 
 //    cons_rel(double_car, double_cdr, Ptr(CONS_TAG, addr.0))
 //        alloc(CONS_TAG, ) <--
