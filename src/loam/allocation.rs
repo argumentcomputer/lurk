@@ -203,9 +203,6 @@ ascent! {
 
     // cons-addr is for this cons type-specific memory.
     lattice cons_mem(Ptr, Ptr, Dual<LE>); // (car, cdr, cons-addr)
-    lattice cons_counter(LE) = vec![(0,)];
-    // Cons counter must always hold largest address.
-    cons_counter(addr.0) <-- cons_mem(_, _, addr);
     // Cons
     primary_counter(addr.0) <-- cons_mem(_, _, addr);
 
@@ -278,11 +275,23 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
     // Egress path
 
+
+    // The output_ptr is marked for egress.
+    egress(ptr) <-- output_ptr(ptr);
+
+    egress(car), egress(cdr) <-- egress(cons), cons_rel(car, cdr, cons);
+
+    output_expr(wide_tag, value) <-- output_ptr(ptr), primary_rel(_, wide_tag, value, ptr);
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // map_double
+    //
+    // This is just a silly input->output function that maps f(x)->2x over the input tree,
+    // for use as a development example. This will be replaced by e.g. Lurk eval.
+
     relation map_double_input(Ptr); // (input)
     relation map_double(Ptr, Ptr); // (input-ptr, output-ptr)
 
-    // This is just a silly input->output function that maps f(x)->2x over the input tree,
-    // for use as a development example.
     map_double(ptr, Ptr(F_TAG, ptr.1 * 2)) <-- map_double_input(ptr), if ptr.0 == F_TAG;
 
     map_double_input(ptr) <-- input_ptr(ptr);
@@ -308,14 +317,6 @@ ascent! {
 
     // For now, just copy input straight to output. Later, we will evaluate.
     output_ptr(out) <-- input_ptr(ptr), map_double(ptr, out);
-
-
-    // The output_ptr is marked for egress.
-    egress(ptr) <-- output_ptr(ptr);
-
-    egress(car), egress(cdr) <-- egress(cons), cons_rel(car, cdr, cons);
-
-    output_expr(wide_tag, value) <-- output_ptr(ptr), primary_rel(_, wide_tag, value, ptr);
 
     ////////////////////////////////////////////////////////////////////////////////
 
