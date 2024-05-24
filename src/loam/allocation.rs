@@ -306,7 +306,7 @@ ascent! {
 
     ingress(ptr) <-- map_double_input(ptr, _), if ptr.0 == CONS_TAG;
 
-    map_double_input(car, 0), map_double_input(cdr, 1) <-- map_double_input(cons, _), cons_rel(car, cdr, cons);
+    map_double_input(car, 2*priority), map_double_input(cdr, (2*priority) + 1) <-- map_double_input(cons, priority), cons_rel(car, cdr, cons);
 
     relation map_double_cont(Ptr, Ptr, Ptr); //
 
