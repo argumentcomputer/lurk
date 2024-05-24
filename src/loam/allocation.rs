@@ -184,6 +184,7 @@ ascent! {
     // Memory counter must always holds largest address.
     primary_counter(addr.0) <-- primary_mem(_, _, _, addr);
 
+
     // Populating alloc(...) triggers allocation in primary_mem.
     primary_mem(tag, wide_tag, value, Dual(addr + 1 + priority)) <--
         alloc(tag, value, priority),
@@ -200,20 +201,31 @@ ascent! {
     // Register ptr.
     ptr(ptr), ptr_tag(ptr, wide_tag), ptr_value(ptr, value) <-- primary_rel(_tag, wide_tag, value, ptr);
 
+    // // Opaque memory
+    // lattice opaque_mem(LE, Dual<LE>); // (tag, opaque-addr)
+    // relation alloc_opaque(LE);
+
+    // opaque_mem(tag, Dual(addr + 1 + priority)) <-- alloc_opaque(tag), primary_counter(addr);
+    // primary_counter(addr.0) <-- opaque_mem(_, addr);
+
+
     // cons-addr is for this cons type-specific memory.
     lattice cons_mem(Ptr, Ptr, Dual<LE>); // (car, cdr, cons-addr)
     lattice cons_counter(LE) = vec![(0,)];
     // Cons counter must always hold largest address.
     cons_counter(addr.0) <-- cons_mem(_, _, addr);
+    // Cons
+    primary_counter(addr.0) <-- cons_mem(_, _, addr);
 
     // Populating cons(...) triggers allocation in cons mem.
-    cons_mem(car, cdr, Dual(counter + 1)) <-- cons(car, cdr), cons_counter(counter);
+    // cons_mem(car, cdr, Dual(counter + 1)) <-- cons(car, cdr), cons_counter(counter);
+    cons_mem(car, cdr, Dual(counter + 1)) <-- cons(car, cdr), primary_counter(counter);
 
 //    alloc() <-- cons_mem(car, cdr, addr), !cons_rel_mem(car, cdr, cons);
 
 
     // If cons_mem was populated otherwise, still populate cons(...).
-    cons(car, cdr) <-- cons_mem(car, cdr, _);
+    cons(car, cdr), cons_rel(car, cdr, Ptr(CONS_TAG, addr.0)) <-- cons_mem(car, cdr, addr);
 
     ptr(cons), ptr_tag(cons, CONS_WIDE_TAG) <-- cons_rel(car, cdr, cons);
     ptr_value(cons, value) <-- cons_rel(car, cdr, cons), cons_value(cons, value);
@@ -280,7 +292,7 @@ ascent! {
         cons_rel(car, cdr, cons_ptr); // ptr's addr is primary
 
     cons_rel(car, cdr, Ptr(CONS_TAG, addr.0)),
-    cons_mem(car, cdr, Dual(counter + 1)) <--
+    cons_mem(car, cdr, addr) <--
         cons_wide_mem(wide_car_tag, car_value, wide_cdr_tag, cdr_value, addr),
         primary_rel(_, wide_car_tag, car_value, car),
         primary_rel(_, wide_cdr_tag, cdr_value, cdr),
@@ -480,6 +492,7 @@ mod test {
             map_double,
             input_ptr,
             output_ptr,
+            primary_counter,
             ..
         } = prog;
 
@@ -512,6 +525,7 @@ mod test {
             cons_addr_primary_addr,
             map_double_input,
             map_double,
+            primary_counter
         );
 
         panic!("uiop");
