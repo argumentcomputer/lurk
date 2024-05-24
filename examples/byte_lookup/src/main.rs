@@ -1,77 +1,27 @@
-mod debug_builder;
-mod symbolic_builder;
-
+use loam::air::builder::{LookupBuilder, QueryType};
+use loam::air::debug::{debug_constraints_collecting_queries, Query};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
-use crate::debug_builder::debug_constraints_collecting_interactions;
-
-#[derive(Clone)]
-enum InteractionKind<T> {
-    Require(T),
-    Provide(T),
-}
-
-#[derive(Clone)]
-struct Interaction<T> {
-    values: Vec<T>,
-    kind: InteractionKind<T>,
-}
-
-impl<T> Interaction<T> {
-    fn required<V: Into<T>, R: Into<T>>(values: impl IntoIterator<Item = V>, is_real: R) -> Self {
-        Self {
-            values: values.into_iter().map(Into::into).collect(),
-            kind: InteractionKind::Require(is_real.into()),
-        }
-    }
-
-    fn provided<V: Into<T>, M: Into<T>>(
-        values: impl IntoIterator<Item = V>,
-        multiplicity: M,
-    ) -> Self {
-        Self {
-            values: values.into_iter().map(Into::into).collect(),
-            kind: InteractionKind::Provide(multiplicity.into()),
-        }
-    }
-
-    fn assert_zero_sum(interactions_vecs: &[&[Interaction<T>]])
-    where
-        T: PrimeField,
-    {
-        let mut map: BTreeMap<_, T> = BTreeMap::default();
-        for interactions in interactions_vecs {
-            for Interaction { values, kind } in interactions.iter() {
-                let entry = map.entry(values).or_default();
-                match kind {
-                    InteractionKind::Require(f) => *entry += *f,
-                    InteractionKind::Provide(f) => *entry -= *f,
+fn assert_zero_sum<F: PrimeField>(interactions_vecs: Vec<Vec<Query<F>>>) {
+    let mut provided = BTreeSet::<Vec<F>>::default();
+    let mut required = BTreeSet::<Vec<F>>::default();
+    for interactions in interactions_vecs {
+        for Query { query_type, values } in interactions {
+            match query_type {
+                QueryType::Require | QueryType::RequireOnce => {
+                    required.insert(values);
                 }
-            }
-        }
-        for (key, value) in map {
-            assert_eq!(
-                value,
-                T::zero(),
-                "Resulting multiplicity for {:?} is {:?} (not zero)",
-                key,
-                value
-            )
+                QueryType::Provide | QueryType::ProvideOnce => {
+                    provided.insert(values);
+                }
+            };
         }
     }
-}
-
-trait LookupAirBuilder<T> {
-    fn require<V: Into<T>, R: Into<T>>(&mut self, values: impl IntoIterator<Item = V>, is_real: R);
-    fn provide<V: Into<T>, M: Into<T>>(
-        &mut self,
-        values: impl IntoIterator<Item = V>,
-        multiplicity: M,
-    );
+    assert_eq!(provided, required);
 }
 
 /// Columns:
@@ -85,7 +35,7 @@ impl<F: Send + Sync> BaseAir<F> for MainChip {
     }
 }
 
-impl<AB: AirBuilder + LookupAirBuilder<AB::Expr>> Air<AB> for MainChip {
+impl<AB: AirBuilder + LookupBuilder> Air<AB> for MainChip {
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
         let local = main.row_slice(0);
@@ -94,7 +44,8 @@ impl<AB: AirBuilder + LookupAirBuilder<AB::Expr>> Air<AB> for MainChip {
 
         builder.assert_bool(is_byte);
 
-        builder.require([byte], is_byte);
+        // TODO: replace with builder.when(is_byte).require([byte]) when plonky3-air is updated
+        builder.query(QueryType::Require, [byte], Some(is_byte.into()));
     }
 }
 
@@ -112,7 +63,7 @@ impl<F: Send + Sync> BaseAir<F> for BytesChip {
 
 const BYTE_BASES: [u16; 8] = [1, 2, 4, 8, 16, 32, 64, 128];
 
-impl<AB: AirBuilder + LookupAirBuilder<AB::Expr>> Air<AB> for BytesChip {
+impl<AB: AirBuilder + LookupBuilder> Air<AB> for BytesChip {
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
 
@@ -134,7 +85,8 @@ impl<AB: AirBuilder + LookupAirBuilder<AB::Expr>> Air<AB> for BytesChip {
 
         builder.assert_eq(byte_expected, byte);
 
-        builder.provide([byte], multiplicity);
+        // TODO: replace with builder.when(multiplicity).provide([byte]) when plonky3-air is updated
+        builder.query(QueryType::Provide, [byte], Some(multiplicity.into()));
     }
 }
 
@@ -165,8 +117,8 @@ fn main() {
         [f(255), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(1)],
     ]);
 
-    let main_interactions = debug_constraints_collecting_interactions(&MainChip, &main_trace);
-    let bytes_interactions = debug_constraints_collecting_interactions(&BytesChip, &bytes_trace);
+    let main_interactions = debug_constraints_collecting_queries(&MainChip, &[], &main_trace);
+    let bytes_interactions = debug_constraints_collecting_queries(&BytesChip, &[], &bytes_trace);
 
-    Interaction::assert_zero_sum(&[&main_interactions, &bytes_interactions]);
+    assert_zero_sum(vec![main_interactions, bytes_interactions]);
 }

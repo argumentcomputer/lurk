@@ -1,4 +1,9 @@
+#[allow(dead_code)]
+pub mod air;
 pub mod lair;
+
+#[allow(dead_code)]
+pub mod logup;
 pub mod store_core;
 
 pub fn add(left: usize, right: usize) -> usize {

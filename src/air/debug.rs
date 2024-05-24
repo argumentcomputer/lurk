@@ -1,20 +1,27 @@
-use p3_air::{Air, AirBuilder};
+use crate::air::builder::{AirBuilderExt, LairBuilder, LookupBuilder, QueryType, Relation};
+use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues};
 use p3_field::Field;
-use p3_matrix::{dense::RowMajorMatrixView, stack::VerticalPair, Matrix};
-
-use crate::{Interaction, LookupAirBuilder};
+use p3_matrix::dense::RowMajorMatrixView;
+use p3_matrix::stack::VerticalPair;
+use p3_matrix::Matrix;
 
 type LocalRowView<'a, F> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatrixView<'a, F>>;
 
+pub struct Query<F> {
+    pub query_type: QueryType,
+    pub values: Vec<F>,
+}
+
 /// Check the `air` constraints over a given `main` trace.
-pub(crate) fn debug_constraints_collecting_interactions<
+pub fn debug_constraints_collecting_queries<
     F: Field,
     A: for<'a> Air<DebugConstraintBuilder<'a, F>>,
     M: Matrix<F>,
 >(
     air: &A,
+    public_values: &[F],
     main: &M,
-) -> Vec<Interaction<F>> {
+) -> Vec<Query<F>> {
     let height = main.height();
 
     (0..height)
@@ -29,39 +36,48 @@ pub(crate) fn debug_constraints_collecting_interactions<
                 RowMajorMatrixView::new_row(main_next),
             );
 
-            let mut builder = DebugConstraintBuilder::new(main, row, height);
+            let mut builder = DebugConstraintBuilder::new(public_values, main, row, height);
 
             air.eval(&mut builder);
 
-            builder.interactions
+            builder.queries
         })
         .collect()
 }
 
 /// A builder for debugging constraints.
-pub(crate) struct DebugConstraintBuilder<'a, F> {
+pub struct DebugConstraintBuilder<'a, F> {
+    public_values: &'a [F],
     main: LocalRowView<'a, F>,
     row: usize,
     height: usize,
-    interactions: Vec<Interaction<F>>,
+    queries: Vec<Query<F>>,
 }
 
-impl<'a, F> DebugConstraintBuilder<'a, F> {
+impl<'a, F: Field> AirBuilderWithPublicValues for DebugConstraintBuilder<'a, F> {
+    type PublicVar = F;
+
+    fn public_values(&self) -> &'a [Self::PublicVar] {
+        self.public_values
+    }
+}
+
+impl<'a, F: Field> LairBuilder for DebugConstraintBuilder<'a, F> {}
+
+impl<'a, F: Field> DebugConstraintBuilder<'a, F> {
     #[inline]
-    fn new(main: LocalRowView<'a, F>, row: usize, height: usize) -> Self {
+    fn new(public_values: &'a [F], main: LocalRowView<'a, F>, row: usize, height: usize) -> Self {
         Self {
+            public_values,
             main,
             row,
             height,
-            interactions: vec![],
+            queries: vec![],
         }
     }
 
     #[inline]
-    fn debug_constraint(&self, x: F, y: F)
-    where
-        F: Field,
-    {
+    fn debug_constraint(&self, x: F, y: F) {
         if x != y {
             let backtrace = std::backtrace::Backtrace::force_capture();
             eprintln!(
@@ -73,21 +89,33 @@ impl<'a, F> DebugConstraintBuilder<'a, F> {
     }
 }
 
-impl<'a, F: Field> LookupAirBuilder<F> for DebugConstraintBuilder<'a, F> {
-    fn require<V: Into<F>, R: Into<F>>(&mut self, values: impl IntoIterator<Item = V>, is_real: R) {
-        let is_real = is_real.into();
-        self.assert_bool(is_real);
-        self.interactions
-            .push(Interaction::required(values, is_real));
+impl<'a, F: Field> LookupBuilder for DebugConstraintBuilder<'a, F> {
+    fn query(
+        &mut self,
+        query_type: QueryType,
+        relation: impl Relation<Self::Expr>,
+        is_real: Option<Self::Expr>,
+    ) {
+        if let Some(is_real) = is_real {
+            if is_real.is_zero() {
+                return;
+            }
+        }
+
+        let values = relation.values().into_iter().collect();
+        self.queries.push(Query { query_type, values });
+    }
+}
+
+impl<'a, F: Field> AirBuilderExt for DebugConstraintBuilder<'a, F> {
+    fn trace_index(&self) -> usize {
+        // TODO: fix
+        0
     }
 
-    fn provide<V: Into<F>, M: Into<F>>(
-        &mut self,
-        values: impl IntoIterator<Item = V>,
-        multiplicity: M,
-    ) {
-        self.interactions
-            .push(Interaction::provided(values, multiplicity))
+    fn row_index(&self) -> Self::Expr {
+        // TODO: roots of unity
+        Self::Expr::from_canonical_usize(self.row)
     }
 }
 

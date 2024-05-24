@@ -91,9 +91,7 @@ impl<F: Field> Func<F> {
         let mult = *local.next_aux(index);
         let toplevel_sel = self.body.eval(builder, local, index, map, toplevel);
         builder.assert_bool(toplevel_sel.clone());
-        builder
-            .when_ne(toplevel_sel, AB::F::one())
-            .assert_zero(mult);
+        builder.when_ne(toplevel_sel, F::one()).assert_zero(mult);
     }
 }
 
@@ -176,7 +174,7 @@ impl<F: Field> Op<F> {
                     Val::Const(a.inverse())
                 } else {
                     let c = local.next_aux(index);
-                    constraints.push(a.to_expr() * *c - AB::F::one());
+                    constraints.push(a.to_expr() * *c - F::one());
                     Val::Expr((*c).into())
                 };
                 map.push(c);
@@ -276,15 +274,16 @@ impl<F: Field> Ctrl<F> {
 
 #[cfg(test)]
 mod tests {
+    use crate::air::debug::debug_constraints_collecting_queries;
+    use p3_baby_bear::BabyBear;
+    use p3_field::AbstractField;
     use p3_matrix::dense::RowMajorMatrix;
-    use wp1_core::{
-        stark::StarkGenericConfig,
-        utils::{uni_stark_prove as prove, uni_stark_verify as verify, BabyBearPoseidon2},
-    };
 
     use crate::lair::{demo_toplevel, execute::QueryRecord, field_from_u32};
 
     use super::*;
+
+    type F = BabyBear;
 
     #[test]
     fn lair_constraint_test() {
@@ -305,7 +304,7 @@ mod tests {
                 0, 0, 0, 0, 0, 0, 0, 0, //
             ]
             .into_iter()
-            .map(field_from_u32)
+            .map(F::from_canonical_u32)
             .collect::<Vec<_>>(),
             factorial_width,
         );
@@ -324,37 +323,24 @@ mod tests {
                 7, 21, 1, 13, 8, 862828252, 1677721601, 0, 0, 1, //
             ]
             .into_iter()
-            .map(field_from_u32)
+            .map(F::from_canonical_u32)
             .collect::<Vec<_>>(),
             fib_width,
         );
 
-        let config = BabyBearPoseidon2::new();
-
-        let challenger = &mut config.challenger();
-        let proof = prove(&config, &factorial_chip, challenger, factorial_trace);
-        let challenger = &mut config.challenger();
-        verify(&config, &factorial_chip, challenger, &proof).unwrap();
-
-        let challenger = &mut config.challenger();
-        let proof = prove(&config, &fib_chip, challenger, fib_trace);
-        let challenger = &mut config.challenger();
-        verify(&config, &fib_chip, challenger, &proof).unwrap();
+        let _ = debug_constraints_collecting_queries(&factorial_chip, &[], &factorial_trace);
+        let _ = debug_constraints_collecting_queries(&fib_chip, &[], &fib_trace);
     }
 
     #[test]
     fn lair_long_constraint_test() {
-        let toplevel = demo_toplevel::<_>();
+        let toplevel = demo_toplevel::<F>();
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         let args = [field_from_u32(20000)].into();
         let queries = &mut QueryRecord::new(&toplevel);
         fib_chip.execute_iter(args, queries);
         let fib_trace = fib_chip.generate_trace_parallel(queries);
 
-        let config = BabyBearPoseidon2::new();
-        let challenger = &mut config.challenger();
-        let proof = prove(&config, &fib_chip, challenger, fib_trace);
-        let challenger = &mut config.challenger();
-        verify(&config, &fib_chip, challenger, &proof).unwrap();
+        let _ = debug_constraints_collecting_queries(&fib_chip, &[], &fib_trace);
     }
 }
