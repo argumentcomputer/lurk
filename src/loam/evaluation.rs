@@ -1,139 +1,21 @@
-use std::collections::BTreeMap;
-use std::hash::Hash;
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use crate::loam::allocation::{
+    allocator, Allocator, Ptr, Wide, WidePtr, CONS_TAG, CONS_WIDE_TAG, ERR_TAG, ERR_WIDE_TAG, F,
+    F_TAG, F_WIDE_TAG, LE, SYM_TAG, SYM_WIDE_TAG,
+};
 
 use ascent::{ascent, Dual};
 
-pub type LE = u32;
-
-pub const F_TAG: LE = 0;
-pub const CONS_TAG: LE = 1;
-pub const SYM_TAG: LE = 2;
-pub const ERR_TAG: LE = 3;
-
-pub const F_WIDE_TAG: Wide = Wide::widen(F_TAG);
-pub const CONS_WIDE_TAG: Wide = Wide::widen(CONS_TAG);
-pub const SYM_WIDE_TAG: Wide = Wide::widen(SYM_TAG);
-pub const ERR_WIDE_TAG: Wide = Wide::widen(ERR_TAG);
-
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
-pub struct F(pub LE);
-
-#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
-pub struct Ptr(pub LE, pub LE);
-
-#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
-pub struct Wide(pub [LE; 8]);
-
-impl Wide {
-    pub const fn widen(elt: LE) -> Wide {
-        let mut v = [0u32; 8];
-        v[0] = elt;
-        Wide(v)
-    }
-
-    pub fn f(&self) -> LE {
-        //        assert_eq!(&[0, 0, 0, 0, 0, 0, 0], &self.0[1..]);
-        self.0[0]
-    }
+pub struct CEK<T> {
+    expr: T,
+    env: T,
+    cont: T, // for simplicity, let continuations be first-class data. make it an error to evaluate one, though.
 }
 
-#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
-pub struct WidePtr(pub Wide, pub Wide);
-
-// Because of how the macros work, it's not easy (or possible) to pass a per-invocation structure like the `Allocator`
-// into the program, while also having access to the program struct itself. However, that access is extremely useful
-// both before and after running the program -- while developing and testing.
-//
-// Eventually, we can switch to using `ascent_run!` or `ascent_run_par!`, and then we can wrap the definition in a
-// function to which the desired allocator and other inputs will be sent. However, this will require somewhat heavy
-// mechanism for accessing inputs and outputs. Until then, we use a global `Allocator` and reinitialize it before each
-// use.
-pub fn allocator() -> MutexGuard<'static, Allocator> {
-    static ALLOCATOR: OnceLock<Mutex<Allocator>> = OnceLock::new();
-    ALLOCATOR
-        .get_or_init(Default::default)
-        .lock()
-        .expect("poisoned")
-}
-
-#[derive(Debug, Default, Hash)]
-pub struct Allocator {
-    allocation_map: BTreeMap<LE, LE>,
-    digest_cache: BTreeMap<Vec<Wide>, Wide>,
-    preimage_cache: BTreeMap<Wide, Vec<Wide>>,
-}
-
-impl Allocator {
-    pub fn init(&mut self) {
-        self.allocation_map = Default::default();
-        self.digest_cache = Default::default();
-        self.preimage_cache = Default::default();
-    }
-
-    pub fn alloc(&mut self, tag: LE) -> Ptr {
-        let idx = self
-            .allocation_map
-            .entry(tag)
-            .and_modify(|x| *x += 1)
-            .or_insert(0);
-
-        Ptr(tag, *idx)
-    }
-
-    pub fn hash4(&mut self, a: Wide, b: Wide, c: Wide, d: Wide) -> Wide {
-        use sha2::{Digest, Sha256};
-
-        let preimage = vec![a, b, c, d];
-
-        let mut h = Sha256::new();
-        if let Some(found) = self.digest_cache.get(&preimage) {
-            return *found;
-        }
-
-        for elt in a.0.iter() {
-            h.update(elt.to_le_bytes());
-        }
-        for elt in b.0.iter() {
-            h.update(elt.to_le_bytes());
-        }
-        for elt in c.0.iter() {
-            h.update(elt.to_le_bytes());
-        }
-        for elt in d.0.iter() {
-            h.update(elt.to_le_bytes());
-        }
-        let hash: [u8; 32] = h.finalize().into();
-
-        let mut buf = [0u8; 4];
-
-        let x: Vec<u32> = hash
-            .chunks(4)
-            .map(|chunk| {
-                buf.copy_from_slice(chunk);
-                u32::from_le_bytes(buf)
-            })
-            .collect();
-
-        let digest = Wide(x.try_into().unwrap());
-
-        self.digest_cache.insert(preimage.clone(), digest);
-        self.preimage_cache.insert(digest, preimage);
-
-        digest
-    }
-    pub fn unhash4(&mut self, digest: &Wide) -> Option<[Wide; 4]> {
-        let mut preimage = [Wide::widen(0); 4];
-
-        self.preimage_cache.get(digest).map(|digest| {
-            preimage.copy_from_slice(&digest[..4]);
-            preimage
-        })
-    }
-}
-
+// Because it's hard to share code between ascent programs, this is a copy of `AllocationProgram`, replacing the `map_double` function
+// with evaluation.
 ascent! {
-    struct AllocationProgram;
+    struct EvaluationProgram;
 
     ////////////////////////////////////////////////////////////////////////////////
     // Relations
@@ -148,10 +30,10 @@ ascent! {
     // is likely unnecessary.
     // relation input_cons(Ptr, Ptr); // (car, cdr)
 
-    relation input_expr(WidePtr); // (tag, value)
-    relation output_expr(WidePtr); // (tag, value)
-    relation input_ptr(Ptr); // (ptr)
-    relation output_ptr(Ptr); // (ptr)
+    relation input_cek(CEK<WidePtr>); // (cek)
+    relation output_cek(CEK<WidePtr>); // (cek)
+    relation input_ptr_cek(CEK<Ptr>); // (cek)
+    relation output_ptr_cek(CEK<Ptr>); // (cek)
 
     // triggers allocation once per unique cons
     relation cons(Ptr, Ptr, LE); // (car, cdr, priority)
@@ -241,12 +123,23 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
     // Ingress path
 
-    // Ingress 1: mark input expression for allocation.
-    alloc(tag, wide_ptr.1, 0) <-- input_expr(wide_ptr), tag(tag, wide_ptr.0);
+    // Ingress 1: mark input CEK for allocation.
+    alloc(expr_tag, cek.expr.1, 0),
+    alloc(env_tag, cek.env.1, 1),
+    alloc(cont_tag, cek.cont.1, 2) <--
+        input_cek(cek),
+        tag(expr_tag, cek.expr.0),
+        tag(env_tag, cek.env.0),
+        tag(cont_tag, cek.cont.0);
 
-    // Populate input_ptr and mark for ingress.
-    ingress(ptr),
-    input_ptr(ptr) <-- input_expr(wide_ptr), primary_rel(_, wide_ptr.0, wide_ptr.1, ptr);
+    // Populate input_ptr_cek.
+    //    ingress(expr), ingress(env), ingress(cont), // TODO: We can defer ingress. For example, no need to destructure an env if expr is self-evaluating.
+    input_ptr_cek(CEK{expr: *expr, env: *env, cont: *cont}) <--
+        input_cek(cek),
+        primary_rel(_, cek.expr.0, cek.expr.1, expr),
+        primary_rel(_, cek.env.0, cek.env.1, env),
+        primary_rel(_, cek.cont.0, cek.cont.1, cont);
+
 
     // mark ingress conses for unhashing.
     unhash4(CONS_TAG, digest, ptr) <--
@@ -288,12 +181,39 @@ ascent! {
     // Egress path
 
 
-    // The output_ptr is marked for egress.
-    egress(ptr) <-- output_ptr(ptr);
+    // The output_ptr_cek is marked for egress.
+    egress(cek.expr), egress(cek.env), egress(cek.cont) <-- output_ptr_cek(cek);
 
     egress(car), egress(cdr) <-- egress(cons), cons_rel(car, cdr, cons);
 
-    output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), primary_rel(_, wide_tag, value, ptr);
+    output_cek(CEK { expr: WidePtr(*expr_wide_tag, *expr_value),
+                     env: WidePtr(*env_wide_tag, *env_value),
+                     cont: WidePtr(*cont_wide_tag, *cont_value)
+                    }) <--
+        output_ptr_cek(cek),
+        primary_rel(cek.expr.0, expr_wide_tag, expr_value, cek.expr),
+        primary_rel(cek.expr.0, env_wide_tag,  env_value, cek.env),
+        primary_rel(cek.expr.0, cont_wide_tag, cont_value, cek.cont);
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // eval
+
+    relation eval_input(CEK<Ptr>, LE); // (input, priority)
+    relation eval(CEK<Ptr>, CEK<Ptr>); // (input-ptr, output-ptr)
+
+    eval_input(cek, 0) <-- input_ptr_cek(cek);
+
+    // expr is F
+    // F is self-evaluating.
+    eval(cek, cek) <-- eval_input(cek, _), if cek.expr.0 == F_TAG;
+
+    // expr is CONS
+
+
+    output_ptr_cek(output) <-- input_ptr_cek(input), eval(input, output);
+
+    ////////////////////////////////////////////////////////////////////////////////
+
 
     ////////////////////////////////////////////////////////////////////////////////
     // map_double
@@ -307,7 +227,7 @@ ascent! {
     ptr(doubled),
     map_double(ptr, doubled) <-- map_double_input(ptr, _), if ptr.0 == F_TAG, let doubled = Ptr(F_TAG, ptr.1 * 2);
 
-    map_double_input(ptr, 0) <-- input_ptr(ptr);
+    // map_double_input(ptr, 0) <-- input_ptr(ptr);
 
     ingress(ptr) <-- map_double_input(ptr, _), if ptr.0 == CONS_TAG;
 
@@ -326,10 +246,8 @@ ascent! {
         map_double_cont(ptr, double_car, double_cdr),
         cons_rel(double_car, double_cdr, double_cons);
 
-    output_ptr(output) <-- input_ptr(input), map_double(input, output);
-
-    // For now, just copy input straight to output. Later, we will evaluate.
-    output_ptr(out) <-- input_ptr(ptr), map_double(ptr, out);
+    // // For now, just copy input straight to output. Later, we will evaluate.
+    // output_ptr(output) <-- input_ptr(input), map_double(input, output);
 
     ////////////////////////////////////////////////////////////////////////////////
 
@@ -351,41 +269,12 @@ ascent! {
         primary_rel(_, wide_cdr_tag, cdr_value, cdr);
 }
 
-// This simple allocation program demonstrates how we can use ascent's lattice feature to achieve memoized allocation
-// with an incrementing counter but without mutable state held outside the program (as in the Allocator) above.
-ascent! {
-    struct SimpleAllocProgram;
-
-    // Input must be added one element at a time, so we do it within the program.
-    relation input(usize, usize); // (a, b)
-
-    // Memory holds two elements, and an address allocated for each unique row. The Dual annotation ensures that if an
-    // (a, b, addr) tuple is added when an (a, b, addr') tuple already exists, the lower (first-allocated) address will
-    // be used.
-    lattice mem(usize, usize, Dual<usize>); // (a, b, addr)
-
-    // The counter holds the value of the most-recently allocated address, initially zero (so there will be no memory
-    // with allocated address 0).
-    lattice counter(usize) = vec![(0,)]; // (addr)
-
-    // Add each new input to mem, using the next counter value as address.
-    mem(a, b, Dual(counter + 1)) <-- input(a, b), counter(counter);
-
-    // The address of every new tuple in mem is added to counter. Since counter has only a single lattice attribute, the
-    // new value will replace the old if greater than the old.
-    counter(max.0) <-- mem(_, _, max);
-
-    // When counter is incremented, generate a new tuple. The generation rules will only produce six unique inputs.
-    input(a, b) <-- counter(x) if *x < 100, let a = *x % 2, let b = *x % 3;
-
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
-    fn new_test_cons() {
+    fn new_test_eval() {
         allocator().init();
 
         // (1 . 2)
@@ -430,29 +319,26 @@ mod test {
             c1_2__2_4
         );
 
-        let mut test = |input, expected_output, cons_count| {
-            let mut prog = AllocationProgram::default();
+        // let mut test = |input, expected_output, cons_count| {
+        //     let mut prog = EvaluationProgram::default();
 
-            prog.input_expr = vec![(WidePtr(CONS_WIDE_TAG, input),)];
-            prog.run();
+        //     prog.input_expr = vec![(CONS_WIDE_TAG, input)];
+        //     prog.run();
 
-            assert_eq!(
-                vec![(WidePtr(CONS_WIDE_TAG, expected_output),)],
-                prog.output_expr
-            );
-            assert_eq!(cons_count, prog.cons_mem.len());
-            assert_eq!(cons_count, prog.primary_mem.len());
-            prog
-        };
+        //     assert_eq!(vec![(CONS_WIDE_TAG, expected_output)], prog.output_expr);
+        //     assert_eq!(cons_count, prog.cons_mem.len());
+        //     assert_eq!(cons_count, prog.primary_mem.len());
+        //     prog
+        // };
 
-        // Mapping (lambda (x) (* 2 x)) over ((1 . 2) . (2 . 3))) yields ((2 . 4) . (4 . 6)).
-        // We expect 6 total conses.
-        test(c1_2__2_3, c2_4__4_6, 6);
+        // // Mapping (lambda (x) (* 2 x)) over ((1 . 2) . (2 . 3))) yields ((2 . 4) . (4 . 6)).
+        // // We expect 6 total conses.
+        // test(c1_2__2_3, c2_4__4_6, 6);
 
-        // Mapping (lambda (x) (* 2 x)) over ((1 . 2) . (2 . 4))) yields ((2 . 4) . (4 . 8)).
-        // We expect only 5 total conses, because (2 . 4) is duplicated in the input and output,
-        // so the allocation should be memoized.
-        let prog = test(c1_2__2_4, c2_4__4_8, 5);
+        // // Mapping (lambda (x) (* 2 x)) over ((1 . 2) . (2 . 4))) yields ((2 . 4) . (4 . 8)).
+        // // We expect only 5 total conses, because (2 . 4) is duplicated in the input and output,
+        // // so the allocation should be memoized.
+        // let prog = test(c1_2__2_4, c2_4__4_8, 5);
 
         // debugging
 
@@ -478,6 +364,8 @@ mod test {
         //     output_expr,
         //     f_value,
         //     alloc,
+        //     map_double_input,
+        //     map_double,
         //     input_ptr,
         //     output_ptr,
         //     primary_counter,
@@ -485,35 +373,5 @@ mod test {
         // } = prog;
 
         // ptr_value.sort_by_key(|(key, _)| *key);
-    }
-
-    #[test]
-    fn test_simple_alloc() {
-        let mut prog = SimpleAllocProgram::default();
-
-        prog.run();
-
-        println!("{}", prog.relation_sizes_summary());
-
-        let SimpleAllocProgram {
-            counter, mut mem, ..
-        } = prog;
-
-        mem.sort_by_key(|(_, _, c)| (*c));
-        mem.reverse();
-
-        assert_eq!(6, mem.len());
-        // Counter relation never grows, but its single value evolves incrementally.
-        assert_eq!(1, counter.len());
-        assert_eq!((6,), counter[0]);
-        assert_eq!((0, 0, Dual(1)), mem[0]);
-        assert_eq!((1, 1, Dual(2)), mem[1]);
-        assert_eq!((0, 2, Dual(3)), mem[2]);
-        assert_eq!((1, 0, Dual(4)), mem[3]);
-        assert_eq!((0, 1, Dual(5)), mem[4]);
-        assert_eq!((1, 2, Dual(6)), mem[5]);
-
-        // NOTE: If memoization were not working, we would expect (0, 1, Dual(7)) next.
-        assert!(mem.get(6).is_none());
     }
 }
