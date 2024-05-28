@@ -1,6 +1,30 @@
-use crate::loam::allocation::{allocator, Allocator, Ptr, Tag, Wide, WidePtr, F, LE};
+use crate::loam::allocation::{allocator, Allocator};
+use crate::loam::{Ptr, Tag, Wide, WidePtr, F, LE};
 
 use ascent::{ascent, Dual};
+
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
+pub enum Cont {
+    Outermost,
+    Terminal,
+    Error,
+}
+
+impl Cont {
+    fn elt(&self) -> LE {
+        match self {
+            Self::Outermost => 0,
+            Self::Terminal => 1,
+            Self::Error => 2,
+        }
+    }
+}
+
+impl From<Cont> for Ptr {
+    fn from(cont: Cont) -> Self {
+        Ptr(Tag::Cont.elt(), cont.elt())
+    }
+}
 
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct CEK<T> {

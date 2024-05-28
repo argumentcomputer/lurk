@@ -4,65 +4,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use ascent::{ascent, Dual};
 
-pub type LE = u32;
-
-// pub const F_TAG: LE = 0;
-// pub const CONS_TAG: LE = 1;
-// pub const SYM_TAG: LE = 2;
-// pub const ERR_TAG: LE = 3;
-
-// pub const F_WIDE_TAG: Wide = Wide::widen(F_TAG);
-// pub const CONS_WIDE_TAG: Wide = Wide::widen(CONS_TAG);
-// pub const SYM_WIDE_TAG: Wide = Wide::widen(SYM_TAG);
-// pub const ERR_WIDE_TAG: Wide = Wide::widen(ERR_TAG);
-
-#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
-pub enum Tag {
-    F,
-    Cons,
-    Sym,
-    Err,
-}
-
-impl Tag {
-    pub fn elt(&self) -> LE {
-        match self {
-            Self::F => 0,
-            Self::Cons => 1,
-            Self::Sym => 2,
-            Self::Err => 3,
-        }
-    }
-
-    pub fn wide(&self) -> Wide {
-        Wide::widen(self.elt())
-    }
-}
-
-#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
-pub struct F(pub LE);
-
-#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
-pub struct Ptr(pub LE, pub LE);
-
-#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
-pub struct Wide(pub [LE; 8]);
-
-impl Wide {
-    pub const fn widen(elt: LE) -> Wide {
-        let mut v = [0u32; 8];
-        v[0] = elt;
-        Wide(v)
-    }
-
-    pub fn f(&self) -> LE {
-        //        assert_eq!(&[0, 0, 0, 0, 0, 0, 0], &self.0[1..]);
-        self.0[0]
-    }
-}
-
-#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
-pub struct WidePtr(pub Wide, pub Wide);
+use crate::loam::{Ptr, Tag, Wide, WidePtr, F, LE};
 
 // Because of how the macros work, it's not easy (or possible) to pass a per-invocation structure like the `Allocator`
 // into the program, while also having access to the program struct itself. However, that access is extremely useful
