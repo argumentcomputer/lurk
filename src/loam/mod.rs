@@ -13,8 +13,16 @@ pub enum Tag {
     Err,
 }
 
-impl Tag {
-    pub fn elt(&self) -> LE {
+trait Elemental {
+    fn elt(&self) -> LE;
+
+    fn wide(&self) -> Wide {
+        Wide::widen(self.elt())
+    }
+}
+
+impl Elemental for Tag {
+    fn elt(&self) -> LE {
         match self {
             Self::F => 0,
             Self::Cons => 1,
@@ -24,11 +32,9 @@ impl Tag {
             Self::Err => 5,
         }
     }
+}
 
-    pub fn wide(&self) -> Wide {
-        Wide::widen(self.elt())
-    }
-
+impl Tag {
     pub fn tag_wide_relation() -> Vec<(LE, Wide)> {
         (0..=5)
             .map(|i| {
@@ -162,17 +168,13 @@ pub enum Cont {
     Error,
 }
 
-impl Cont {
+impl Elemental for Cont {
     fn elt(&self) -> LE {
         match self {
             Self::Outermost => 0,
             Self::Terminal => 1,
             Self::Error => 2,
         }
-    }
-
-    pub fn wide(&self) -> Wide {
-        Wide::widen(self.elt())
     }
 }
 
@@ -181,4 +183,16 @@ pub struct CEK<T> {
     expr: T,
     env: T,
     cont: T, // for simplicity, let continuations be first-class data. make it an error to evaluate one, though.
+}
+
+pub enum Sym {
+    Char(char),
+}
+
+impl Elemental for Sym {
+    fn elt(&self) -> LE {
+        match self {
+            Self::Char(char) => (*char).into(),
+        }
+    }
 }

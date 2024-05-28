@@ -4,7 +4,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use ascent::{ascent, Dual};
 
-use crate::loam::{Ptr, Tag, Wide, WidePtr, F, LE};
+use crate::loam::{Elemental, Ptr, Tag, Wide, WidePtr, F, LE};
 
 // Because of how the macros work, it's not easy (or possible) to pass a per-invocation structure like the `Allocator`
 // into the program, while also having access to the program struct itself. However, that access is extremely useful

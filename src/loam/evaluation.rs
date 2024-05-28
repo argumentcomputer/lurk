@@ -1,7 +1,9 @@
 use crate::loam::allocation::{allocator, Allocator};
-use crate::loam::{Cont, Ptr, Tag, Wide, WidePtr, F, LE};
+use crate::loam::{Elemental, Ptr, Sym, Tag, Wide, WidePtr, F, LE};
 
 use ascent::{ascent, Dual};
+
+impl Sym {}
 
 // Because it's hard to share code between ascent programs, this is a copy of `AllocationProgram`, replacing the `map_double` function
 // with evaluation.
@@ -179,12 +181,13 @@ ascent! {
     // It's fine for now, while env is unused.
     eval_input(expr, Ptr::nil()) <-- input_ptr(expr);
 
-    // expr is F
     // F is self-evaluating.
     eval(expr, env, expr) <-- eval_input(expr, env), if expr.0 == Tag::F.elt();
 
-    // expr is CONS
+    // Nil is self-evaluating. TODO: check value == 0.
+    eval(expr, env, expr) <-- eval_input(expr, env), if expr.0 == Tag::Nil.elt();
 
+    // expr is CONS
 
     output_ptr(output) <-- input_ptr(input), eval(input, _, output);
 
@@ -269,17 +272,14 @@ mod test {
             prog
         };
 
-        let outermost = WidePtr::from(Cont::Outermost);
-        let terminal = WidePtr::from(Cont::Terminal);
-        let error = WidePtr::from(Cont::Error);
-
         let empty_env = WidePtr::nil();
 
-        let self_evaluating = F(123);
-        let self_eval_input = WidePtr::from(self_evaluating);
-        let self_eval_expected = WidePtr::from(self_evaluating);
+        let f = F(123);
+        let prog = test(f.into(), f.into());
 
-        let prog = test(self_eval_input, self_eval_expected);
+        let nil = WidePtr::nil();
+
+        let prog = test(nil.into(), nil.into());
 
         println!("{}", prog.relation_sizes_summary());
 
