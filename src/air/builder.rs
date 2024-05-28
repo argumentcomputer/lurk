@@ -64,7 +64,7 @@ pub trait LookupBuilder: AirBuilder {
         self.query(QueryType::Receive, relation, None);
     }
 
-    /// Send a query (once) to another part of the program. 
+    /// Send a query (once) to another part of the program.
     fn send(&mut self, relation: impl Relation<Self::Expr>) {
         self.query(QueryType::Send, relation, None);
     }
