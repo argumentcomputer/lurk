@@ -1,37 +1,7 @@
 use crate::loam::allocation::{allocator, Allocator};
-use crate::loam::{Ptr, Tag, Wide, WidePtr, F, LE};
+use crate::loam::{Cont, Ptr, Tag, Wide, WidePtr, CEK, F, LE};
 
 use ascent::{ascent, Dual};
-
-#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
-pub enum Cont {
-    Outermost,
-    Terminal,
-    Error,
-}
-
-impl Cont {
-    fn elt(&self) -> LE {
-        match self {
-            Self::Outermost => 0,
-            Self::Terminal => 1,
-            Self::Error => 2,
-        }
-    }
-}
-
-impl From<Cont> for Ptr {
-    fn from(cont: Cont) -> Self {
-        Ptr(Tag::Cont.elt(), cont.elt())
-    }
-}
-
-#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
-pub struct CEK<T> {
-    expr: T,
-    env: T,
-    cont: T, // for simplicity, let continuations be first-class data. make it an error to evaluate one, though.
-}
 
 // Because it's hard to share code between ascent programs, this is a copy of `AllocationProgram`, replacing the `map_double` function
 // with evaluation.
@@ -42,7 +12,7 @@ ascent! {
     // Relations
 
     // The standard tag mapping.
-    relation tag(LE, Wide) = vec![(Tag::F.elt(), Tag::F.wide()), (Tag::Cons.elt(), Tag::Cons.wide())]; // (short-tag, wide-tag)
+    relation tag(LE, Wide) = Tag::tag_wide_relation(); // (short-tag, wide-tag)
 
     relation ptr_value(Ptr, Wide); // (ptr, value)}
     relation ptr_tag(Ptr, Wide); // (ptr, tag)
@@ -213,8 +183,8 @@ ascent! {
                     }) <--
         output_ptr_cek(cek),
         primary_rel(cek.expr.0, expr_wide_tag, expr_value, cek.expr),
-        primary_rel(cek.expr.0, env_wide_tag,  env_value, cek.env),
-        primary_rel(cek.expr.0, cont_wide_tag, cont_value, cek.cont);
+        primary_rel(cek.env.0, env_wide_tag,  env_value, cek.env),
+        primary_rel(cek.cont.0, cont_wide_tag, cont_value, cek.cont);
 
     ////////////////////////////////////////////////////////////////////////////////
     // eval
@@ -226,7 +196,11 @@ ascent! {
 
     // expr is F
     // F is self-evaluating.
-    eval(cek, cek) <-- eval_input(cek, _), if cek.expr.0 == Tag::F.elt();
+    eval(cek, CEK { expr: cek.expr, env: cek.env, cont: Ptr::from(Cont::Terminal) }) <--
+        eval_input(cek, _),
+        if dbg!(cek.expr.0) == dbg!(Tag::F.elt()),
+        if cek.cont.0 == Tag::Cont.elt();
+
 
     // expr is CONS
 
@@ -340,17 +314,43 @@ mod test {
             c1_2__2_4
         );
 
-        // let mut test = |input, expected_output, cons_count| {
-        //     let mut prog = EvaluationProgram::default();
+        let mut test = |input, expected_output: CEK<WidePtr>| {
+            let mut prog = EvaluationProgram::default();
 
-        //     prog.input_expr = vec![(Tag::Cons.wide(), input)];
-        //     prog.run();
+            prog.input_cek = vec![(input,)];
+            prog.run();
 
-        //     assert_eq!(vec![(Tag::Cons.wide(), expected_output)], prog.output_expr);
-        //     assert_eq!(cons_count, prog.cons_mem.len());
-        //     assert_eq!(cons_count, prog.primary_mem.len());
-        //     prog
-        // };
+            println!("{}", prog.relation_sizes_summary());
+
+            //assert_eq!(vec![(expected_output,)], prog.output_cek);
+            prog
+        };
+
+        let outermost = WidePtr::from(Cont::Outermost);
+        let terminal = WidePtr::from(Cont::Terminal);
+        let error = WidePtr::from(Cont::Error);
+
+        let empty_env = WidePtr::nil();
+
+        let self_evaluating = F(123);
+
+        let self_eval_input: CEK<WidePtr> = CEK {
+            expr: self_evaluating.into(),
+            env: empty_env,
+            cont: outermost,
+        };
+
+        let self_eval_expected: CEK<WidePtr> = CEK {
+            expr: self_evaluating.into(),
+            env: empty_env,
+            cont: terminal,
+        };
+
+        let prog = test(self_eval_input, self_eval_expected);
+
+        // let self_evaluating = CEK {
+        //     expr: WidePtr(
+        // }
 
         // // Mapping (lambda (x) (* 2 x)) over ((1 . 2) . (2 . 3))) yields ((2 . 4) . (4 . 6)).
         // // We expect 6 total conses.
@@ -363,36 +363,46 @@ mod test {
 
         // debugging
 
-        // println!("{}", prog.relation_sizes_summary());
+        println!("{}", prog.relation_sizes_summary());
 
-        // let AllocationProgram {
-        //     car,
-        //     cdr,
-        //     ptr_tag,
-        //     mut ptr_value,
-        //     cons,
-        //     cons_rel,
-        //     cons_value,
-        //     cons_mem,
-        //     primary_mem,
-        //     ptr,
-        //     hash4,
-        //     hash4_rel,
-        //     ingress,
-        //     egress,
-        //     primary_rel,
-        //     input_expr,
-        //     output_expr,
-        //     f_value,
-        //     alloc,
-        //     map_double_input,
-        //     map_double,
-        //     input_ptr,
-        //     output_ptr,
-        //     primary_counter,
-        //     ..
-        // } = prog;
+        let EvaluationProgram {
+            car,
+            cdr,
+            ptr_tag,
+            mut ptr_value,
+            cons,
+            cons_rel,
+            cons_value,
+            cons_mem,
+            primary_mem,
+            ptr,
+            hash4,
+            hash4_rel,
+            ingress,
+            egress,
+            primary_rel,
+            input_cek,
+            output_cek,
+            f_value,
+            alloc,
+            input_ptr_cek,
+            output_ptr_cek,
+            primary_counter,
+            eval_input,
+            ..
+        } = prog;
 
-        // ptr_value.sort_by_key(|(key, _)| *key);
+        ptr_value.sort_by_key(|(key, _)| *key);
+
+        dbg!(
+            input_cek,
+            input_ptr_cek,
+            eval_input,
+            output_ptr_cek,
+            output_cek,
+            alloc
+        );
+
+        panic!("uiop");
     }
 }
