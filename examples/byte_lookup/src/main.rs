@@ -72,7 +72,7 @@ impl<AB: AirBuilder + LookupBuilder> Air<AB> for BytesChip {
         let is_real = local[9];
 
         builder.assert_bool(is_real);
-        
+
         for bit in bits {
             builder.when(is_real).assert_bool(*bit);
         }
@@ -117,8 +117,8 @@ fn main() {
         [f(255), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(1)],
         [f(256), f(5), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(0)],
     ]);
-    
-    let _multiplicities = [[1],[2],[1],[1],[0]].map(|row| row.map(f));
+
+    let _multiplicities = [[1], [2], [1], [1], [0]].map(|row| row.map(f));
 
     let main_interactions = debug_constraints_collecting_queries(&MainChip, &[], &main_trace);
     let bytes_interactions = debug_constraints_collecting_queries(&BytesChip, &[], &bytes_trace);

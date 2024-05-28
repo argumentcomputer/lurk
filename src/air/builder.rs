@@ -48,8 +48,6 @@ pub enum QueryType {
     Require,
 }
 
-
-
 /// TODO: The `once` calls are not fully supported, and deferred to their multi-use counterparts.
 pub trait LookupBuilder: AirBuilder {
     /// Generic query that to be added to the global lookup argument.
@@ -61,12 +59,12 @@ pub trait LookupBuilder: AirBuilder {
         is_real_bool: Option<Self::Expr>,
     );
 
-    /// Require a query that has been provided for single use.
+    /// Receive a query (once) that has been sent in another part of the program.
     fn receive(&mut self, relation: impl Relation<Self::Expr>) {
         self.query(QueryType::Receive, relation, None);
     }
 
-    /// Send a query to another 
+    /// Send a query (once) to another part of the program. 
     fn send(&mut self, relation: impl Relation<Self::Expr>) {
         self.query(QueryType::Send, relation, None);
     }
