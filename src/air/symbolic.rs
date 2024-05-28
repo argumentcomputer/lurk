@@ -24,8 +24,8 @@ impl<F: Field> Interaction<F> {
 #[derive(Default, Clone)]
 pub struct SymbolicAir<F: Field> {
     pub constraints: Vec<Expression<F>>,
-    pub requires: Vec<Interaction<F>>,
     pub provides: Vec<Interaction<F>>,
+    pub requires: Vec<Interaction<F>>,
 }
 
 impl<F: Field> SymbolicAir<F> {
