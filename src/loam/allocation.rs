@@ -113,8 +113,8 @@ ascent! {
     // is likely unnecessary.
     // relation input_cons(Ptr, Ptr); // (car, cdr)
 
-    relation input_expr(WidePtr); // (tag, value)
-    relation output_expr(WidePtr); // (tag, value)
+    relation input_expr(WidePtr); // (wide-ptr)
+    relation output_expr(WidePtr); // (wide-ptr)
     relation input_ptr(Ptr); // (ptr)
     relation output_ptr(Ptr); // (ptr)
 

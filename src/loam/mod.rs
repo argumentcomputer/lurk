@@ -176,12 +176,6 @@ impl Cont {
     }
 }
 
-// impl From<Cont> for Ptr {
-//     fn from(cont: Cont) -> Self {
-//         Ptr(Tag::Cont.elt(), cont.elt())
-//     }
-// }
-
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct CEK<T> {
     expr: T,

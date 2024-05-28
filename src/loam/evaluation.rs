@@ -1,5 +1,5 @@
 use crate::loam::allocation::{allocator, Allocator};
-use crate::loam::{Cont, Ptr, Tag, Wide, WidePtr, CEK, F, LE};
+use crate::loam::{Cont, Ptr, Tag, Wide, WidePtr, F, LE};
 
 use ascent::{ascent, Dual};
 
@@ -21,10 +21,14 @@ ascent! {
     // is likely unnecessary.
     // relation input_cons(Ptr, Ptr); // (car, cdr)
 
-    relation input_cek(CEK<WidePtr>); // (cek)
-    relation output_cek(CEK<WidePtr>); // (cek)
-    relation input_ptr_cek(CEK<Ptr>); // (cek)
-    relation output_ptr_cek(CEK<Ptr>); // (cek)
+    relation input_expr(WidePtr); // (wide-ptr)
+    relation output_expr(WidePtr); // (wide-ptr)
+    relation input_ptr(Ptr); // (wide-ptr)
+    relation output_ptr(Ptr); // (wide-ptr)
+    // relation input_cek(CEK<WidePtr>); // (cek)
+    // relation output_cek(CEK<WidePtr>); // (cek)
+    // relation input_ptr_cek(CEK<Ptr>); // (cek)
+    // relation output_ptr_cek(CEK<Ptr>); // (cek)
 
     // triggers allocation once per unique cons
     relation cons(Ptr, Ptr, LE); // (car, cdr, priority)
@@ -114,23 +118,10 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
     // Ingress path
 
-    // Ingress 1: mark input CEK for allocation.
-    alloc(expr_tag, cek.expr.1, 0),
-    alloc(env_tag, cek.env.1, 1),
-    alloc(cont_tag, cek.cont.1, 2) <--
-        input_cek(cek),
-        tag(expr_tag, cek.expr.0),
-        tag(env_tag, cek.env.0),
-        tag(cont_tag, cek.cont.0);
+    // Ingress 1: mark input expression for allocation.
+    alloc(tag, wide_ptr.1, 0) <-- input_expr(wide_ptr), tag(tag, wide_ptr.0);
 
-    // Populate input_ptr_cek.
-    //    ingress(expr), ingress(env), ingress(cont), // TODO: We can defer ingress. For example, no need to destructure an env if expr is self-evaluating.
-    input_ptr_cek(CEK{expr: *expr, env: *env, cont: *cont}) <--
-        input_cek(cek),
-        primary_rel(_, cek.expr.0, cek.expr.1, expr),
-        primary_rel(_, cek.env.0, cek.env.1, env),
-        primary_rel(_, cek.cont.0, cek.cont.1, cont);
-
+    input_ptr(ptr) <-- input_expr(wide_ptr), primary_rel(_, wide_ptr.0, wide_ptr.1, ptr);
 
     // mark ingress conses for unhashing.
     unhash4(Tag::Cons.elt(), digest, ptr) <--
@@ -171,81 +162,33 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
     // Egress path
 
-
-    // The output_ptr_cek is marked for egress.
-    egress(cek.expr), egress(cek.env), egress(cek.cont) <-- output_ptr_cek(cek);
+    // The output_ptr is marked for egress.
+    egress(ptr) <-- output_ptr(ptr);
 
     egress(car), egress(cdr) <-- egress(cons), cons_rel(car, cdr, cons);
 
-    output_cek(CEK { expr: WidePtr(*expr_wide_tag, *expr_value),
-                     env: WidePtr(*env_wide_tag, *env_value),
-                     cont: WidePtr(*cont_wide_tag, *cont_value)
-                    }) <--
-        output_ptr_cek(cek),
-        primary_rel(cek.expr.0, expr_wide_tag, expr_value, cek.expr),
-        primary_rel(cek.env.0, env_wide_tag,  env_value, cek.env),
-        primary_rel(cek.cont.0, cont_wide_tag, cont_value, cek.cont);
+    output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), primary_rel(_, wide_tag, value, ptr);
 
     ////////////////////////////////////////////////////////////////////////////////
     // eval
 
-    relation eval_input(CEK<Ptr>, LE); // (input, priority)
-    relation eval(CEK<Ptr>, CEK<Ptr>); // (input-ptr, output-ptr)
+    relation eval_input(Ptr, Ptr); // (expr, env)
+    relation eval(Ptr, Ptr, Ptr); // (input-expr, env, output-expr)
 
-    eval_input(cek, 0) <-- input_ptr_cek(cek);
+    // FIXME: We need to actually allocate, or otherwise define this Nil Ptr.
+    // It's fine for now, while env is unused.
+    eval_input(expr, Ptr::nil()) <-- input_ptr(expr);
 
     // expr is F
     // F is self-evaluating.
-    eval(cek, CEK { expr: cek.expr, env: cek.env, cont: Ptr::from(Cont::Terminal) }) <--
-        eval_input(cek, _),
-        if dbg!(cek.expr.0) == dbg!(Tag::F.elt()),
-        if cek.cont.0 == Tag::Cont.elt();
-
+    eval(expr, env, expr) <-- eval_input(expr, env), if expr.0 == Tag::F.elt();
 
     // expr is CONS
 
 
-    output_ptr_cek(output) <-- input_ptr_cek(input), eval(input, output);
+    output_ptr(output) <-- input_ptr(input), eval(input, _, output);
 
     ////////////////////////////////////////////////////////////////////////////////
-
-
-    ////////////////////////////////////////////////////////////////////////////////
-    // map_double
-    //
-    // This is just a silly input->output function that maps f(x)->2x over the input tree,
-    // for use as a development example. This will be replaced by e.g. Lurk eval.
-
-    relation map_double_input(Ptr, LE); // (input, priority)
-    relation map_double(Ptr, Ptr); // (input-ptr, output-ptr)
-
-    ptr(doubled),
-    map_double(ptr, doubled) <-- map_double_input(ptr, _), if ptr.0 == Tag::F.elt(), let doubled = Ptr(Tag::F.elt(), ptr.1 * 2);
-
-    // map_double_input(ptr, 0) <-- input_ptr(ptr);
-
-    ingress(ptr) <-- map_double_input(ptr, _), if ptr.0 == Tag::Cons.elt();
-
-    map_double_input(car, 2*priority), map_double_input(cdr, (2*priority) + 1) <-- map_double_input(cons, priority), cons_rel(car, cdr, cons);
-
-    relation map_double_cont(Ptr, Ptr, Ptr); //
-
-    map_double_cont(ptr, double_car, double_cdr),
-    cons(double_car, double_cdr, priority) <--
-        map_double_input(ptr, priority), if ptr.0 == Tag::Cons.elt(),
-        cons_rel(car, cdr, ptr),
-        map_double(car, double_car),
-        map_double(cdr, double_cdr);
-
-    map_double(ptr, double_cons) <--
-        map_double_cont(ptr, double_car, double_cdr),
-        cons_rel(double_car, double_cdr, double_cons);
-
-    // // For now, just copy input straight to output. Later, we will evaluate.
-    // output_ptr(output) <-- input_ptr(input), map_double(input, output);
-
-    ////////////////////////////////////////////////////////////////////////////////
-
 
     hash4(cons, car_tag, car_value, cdr_tag, cdr_value) <--
         egress(cons),
@@ -314,15 +257,15 @@ mod test {
             c1_2__2_4
         );
 
-        let mut test = |input, expected_output: CEK<WidePtr>| {
+        let mut test = |input, expected_output: WidePtr| {
             let mut prog = EvaluationProgram::default();
 
-            prog.input_cek = vec![(input,)];
+            prog.input_expr = vec![(input,)];
             prog.run();
 
             println!("{}", prog.relation_sizes_summary());
 
-            //assert_eq!(vec![(expected_output,)], prog.output_cek);
+            assert_eq!(vec![(expected_output,)], prog.output_expr);
             prog
         };
 
@@ -333,35 +276,10 @@ mod test {
         let empty_env = WidePtr::nil();
 
         let self_evaluating = F(123);
-
-        let self_eval_input: CEK<WidePtr> = CEK {
-            expr: self_evaluating.into(),
-            env: empty_env,
-            cont: outermost,
-        };
-
-        let self_eval_expected: CEK<WidePtr> = CEK {
-            expr: self_evaluating.into(),
-            env: empty_env,
-            cont: terminal,
-        };
+        let self_eval_input = WidePtr::from(self_evaluating);
+        let self_eval_expected = WidePtr::from(self_evaluating);
 
         let prog = test(self_eval_input, self_eval_expected);
-
-        // let self_evaluating = CEK {
-        //     expr: WidePtr(
-        // }
-
-        // // Mapping (lambda (x) (* 2 x)) over ((1 . 2) . (2 . 3))) yields ((2 . 4) . (4 . 6)).
-        // // We expect 6 total conses.
-        // test(c1_2__2_3, c2_4__4_6, 6);
-
-        // // Mapping (lambda (x) (* 2 x)) over ((1 . 2) . (2 . 4))) yields ((2 . 4) . (4 . 8)).
-        // // We expect only 5 total conses, because (2 . 4) is duplicated in the input and output,
-        // // so the allocation should be memoized.
-        // let prog = test(c1_2__2_4, c2_4__4_8, 5);
-
-        // debugging
 
         println!("{}", prog.relation_sizes_summary());
 
@@ -381,12 +299,12 @@ mod test {
             ingress,
             egress,
             primary_rel,
-            input_cek,
-            output_cek,
+            input_expr,
+            output_expr,
             f_value,
             alloc,
-            input_ptr_cek,
-            output_ptr_cek,
+            input_ptr,
+            output_ptr,
             primary_counter,
             eval_input,
             ..
@@ -395,14 +313,14 @@ mod test {
         ptr_value.sort_by_key(|(key, _)| *key);
 
         dbg!(
-            input_cek,
-            input_ptr_cek,
+            input_expr,
+            input_ptr,
             eval_input,
-            output_ptr_cek,
-            output_cek,
+            output_ptr,
+            output_expr,
             alloc
         );
 
-        panic!("uiop");
+        // panic!("uiop");
     }
 }
