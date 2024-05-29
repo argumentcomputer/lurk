@@ -92,14 +92,8 @@ ascent! {
         tag(tag, wide_tag),
         primary_counter(addr);
 
-    relation primary_rel(LE, Wide, Wide, Ptr); // (tag, wide-tag, value, ptr)
-
-    // Convert addr to ptr.
-    primary_rel(tag, wide_tag, value, Ptr(*tag, addr.0)) <-- primary_mem(tag, wide_tag, value, addr);
-    //primary_rel(Tag::F.elt(), Tag::F.value(), value, ptr) <-- f_value(ptr, value);
-
-    // Register ptr.
-    ptr(ptr), ptr_tag(ptr, wide_tag), ptr_value(ptr, value) <-- primary_rel(_tag, wide_tag, value, ptr);
+    // Convert addr to ptr and register ptr relations.
+    ptr(ptr), ptr_tag(ptr, wide_tag), ptr_value(ptr, value) <-- primary_mem(tag, wide_tag, value, addr), let ptr = Ptr(*tag, addr.0);
 
     // cons-addr is for this cons type-specific memory.
     lattice cons_mem(Ptr, Ptr, Dual<LE>); // (car, cdr, cons-addr)
@@ -137,7 +131,7 @@ ascent! {
     // Ingress 1: mark input expression for allocation.
     alloc(tag, wide_ptr.1, 0) <-- input_expr(wide_ptr), tag(tag, wide_ptr.0);
 
-    input_ptr(ptr) <-- input_expr(wide_ptr), primary_rel(_, wide_ptr.0, wide_ptr.1, ptr);
+    input_ptr(ptr) <-- input_expr(wide_ptr), ptr_tag(ptr, wide_ptr.0), ptr_value(ptr, wide_ptr.1);
 
     // mark ingress conses for unhashing.
     unhash4(Tag::Cons.elt(), digest, ptr) <--
@@ -162,8 +156,8 @@ ascent! {
     cons_mem(car, cdr, addr) <--
         hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
         primary_mem(&Tag::Cons.elt(), _, digest, addr),
-        primary_rel(_, wide_car_tag, car_value, car),
-        primary_rel(_, wide_cdr_tag, cdr_value, cdr);
+        ptr_tag(car, wide_car_tag), ptr_tag(cdr, wide_cdr_tag),
+        ptr_value(car, car_value), ptr_value(cdr, cdr_value);
 
     ptr(cons), car(cons, car), cdr(cons, cdr) <-- cons_rel(car, cdr, cons);
 
@@ -183,7 +177,7 @@ ascent! {
 
     egress(car), egress(cdr) <-- egress(cons), cons_rel(car, cdr, cons);
 
-    output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), primary_rel(_, wide_tag, value, ptr);
+    output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), ptr_value(ptr, value), ptr_tag(ptr, wide_tag);
 
     ////////////////////////////////////////////////////////////////////////////////
     // eval
@@ -225,11 +219,11 @@ ascent! {
 
     hash4_rel(a, b, c, d, allocator().hash4(*a, *b, *c, *d)) <-- hash4(ptr, a, b, c, d);
 
-    ptr(car),
-    ptr(cdr) <--
+    ptr(Ptr(*car_tag, car_addr.0)),
+    ptr(Ptr(*cdr_tag, cdr_addr.0)) <--
         hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, _),
-        primary_rel(_, wide_car_tag, car_value, car) ,
-        primary_rel(_, wide_cdr_tag, cdr_value, cdr);
+        primary_mem(car_tag, wide_car_tag, car_value, car_addr),
+        primary_mem(cdr_tag, wide_cdr_tag, cdr_value, cdr_addr);
 }
 
 #[cfg(test)]
@@ -264,7 +258,7 @@ mod test {
 
             println!("{}", prog.relation_sizes_summary());
 
-            //            assert_eq!(vec![(expected_output,)], prog.output_expr);
+            // assert_eq!(vec![(expected_output,)], prog.output_expr);
             prog
         };
 
@@ -311,7 +305,6 @@ mod test {
             hash4_rel,
             ingress,
             egress,
-            primary_rel,
             input_expr,
             output_expr,
             f_value,
@@ -332,10 +325,9 @@ mod test {
             output_ptr,
             output_expr,
             alloc,
-            primary_rel,
             primary_mem,
         );
 
-        panic!("uiop");
+        //        panic!("uiop");
     }
 }

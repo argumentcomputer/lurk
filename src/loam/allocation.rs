@@ -104,7 +104,7 @@ ascent! {
     // Relations
 
     // The standard tag mapping.
-    relation tag(LE, Wide) = vec![(Tag::F.elt(), Tag::F.value()), (Tag::Cons.elt(), Tag::Cons.value())]; // (short-tag, wide-tag)
+    relation tag(LE, Wide) = Tag::tag_wide_relation(); // (short-tag, wide-tag)
 
     relation ptr_value(Ptr, Wide); // (ptr, value)}
     relation ptr_tag(Ptr, Wide); // (ptr, tag)
@@ -164,14 +164,8 @@ ascent! {
         tag(tag, wide_tag),
         primary_counter(addr);
 
-    relation primary_rel(LE, Wide, Wide, Ptr); // (tag, wide-tag, value, ptr)
-
-    // Convert addr to ptr.
-    primary_rel(tag, wide_tag, value, Ptr(*tag, addr.0)) <-- primary_mem(tag, wide_tag, value, addr);
-    primary_rel(Tag::F.elt(), Tag::F.value(), value, ptr) <-- f_value(ptr, value);
-
-    // Register ptr.
-    ptr(ptr), ptr_tag(ptr, wide_tag), ptr_value(ptr, value) <-- primary_rel(_tag, wide_tag, value, ptr);
+    // Convert addr to ptr and register ptr relations.
+    ptr(ptr), ptr_tag(ptr, wide_tag), ptr_value(ptr, value) <-- primary_mem(tag, wide_tag, value, addr), let ptr = Ptr(*tag, addr.0);
 
     // cons-addr is for this cons type-specific memory.
     lattice cons_mem(Ptr, Ptr, Dual<LE>); // (car, cdr, cons-addr)
@@ -211,11 +205,11 @@ ascent! {
 
     // Populate input_ptr and mark for ingress.
     ingress(ptr),
-    input_ptr(ptr) <-- input_expr(wide_ptr), primary_rel(_, wide_ptr.0, wide_ptr.1, ptr);
+    input_ptr(ptr) <-- input_expr(wide_ptr), ptr_tag(ptr, wide_ptr.0), ptr_value(ptr, wide_ptr.1);
 
     // mark ingress conses for unhashing.
     unhash4(Tag::Cons.elt(), digest, ptr) <--
-        ingress(ptr), if ptr.0 == Tag::Cons.elt(),
+        ingress(ptr), if ptr.is_cons(),
         ptr_value(ptr, digest),
         primary_mem(&Tag::Cons.elt(), _, digest, _);
 
@@ -230,18 +224,19 @@ ascent! {
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
 
+    ptr(Ptr(Tag::F.elt(), f)),
     f_value(Ptr(Tag::F.elt(), f), Wide::widen(f)) <-- alloc(&Tag::F.elt(), value, _), let f = value.f();
 
     cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0)),
     cons_mem(car, cdr, addr) <--
         hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
         primary_mem(&Tag::Cons.elt(), _, digest, addr),
-        primary_rel(_, wide_car_tag, car_value, car),
-        primary_rel(_, wide_cdr_tag, cdr_value, cdr);
+        ptr_tag(car, wide_car_tag), ptr_tag(cdr, wide_cdr_tag),
+        ptr_value(car, car_value), ptr_value(cdr, cdr_value);
 
     ptr(cons), car(cons, car), cdr(cons, cdr) <-- cons_rel(car, cdr, cons);
 
-    f_value(ptr, Wide::widen(ptr.1)) <-- ptr(ptr), if ptr.0 == Tag::F.elt();
+    f_value(ptr, Wide::widen(ptr.1)) <-- ptr(ptr), if ptr.is_f();
     ptr(ptr) <-- f_value(ptr, _);
 
     // Provide cons_value when known.
@@ -258,7 +253,7 @@ ascent! {
 
     egress(car), egress(cdr) <-- egress(cons), cons_rel(car, cdr, cons);
 
-    output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), primary_rel(_, wide_tag, value, ptr);
+    output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), ptr_value(ptr, value), ptr_tag(ptr, wide_tag);
 
     ////////////////////////////////////////////////////////////////////////////////
     // map_double
@@ -270,11 +265,11 @@ ascent! {
     relation map_double(Ptr, Ptr); // (input-ptr, output-ptr)
 
     ptr(doubled),
-    map_double(ptr, doubled) <-- map_double_input(ptr, _), if ptr.0 == Tag::F.elt(), let doubled = Ptr(Tag::F.elt(), ptr.1 * 2);
+    map_double(ptr, doubled) <-- map_double_input(ptr, _), if ptr.is_f(), let doubled = Ptr(Tag::F.elt(), ptr.1 * 2);
 
     map_double_input(ptr, 0) <-- input_ptr(ptr);
 
-    ingress(ptr) <-- map_double_input(ptr, _), if ptr.0 == Tag::Cons.elt();
+    ingress(ptr) <-- map_double_input(ptr, _), if ptr.is_cons();
 
     map_double_input(car, 2*priority), map_double_input(cdr, (2*priority) + 1) <-- map_double_input(cons, priority), cons_rel(car, cdr, cons);
 
@@ -282,7 +277,7 @@ ascent! {
 
     map_double_cont(ptr, double_car, double_cdr),
     cons(double_car, double_cdr, priority) <--
-        map_double_input(ptr, priority), if ptr.0 == Tag::Cons.elt(),
+        map_double_input(ptr, priority), if ptr.is_cons(),
         cons_rel(car, cdr, ptr),
         map_double(car, double_car),
         map_double(cdr, double_cdr);
@@ -309,11 +304,12 @@ ascent! {
 
     hash4_rel(a, b, c, d, allocator().hash4(*a, *b, *c, *d)) <-- hash4(ptr, a, b, c, d);
 
-    ptr(car),
-    ptr(cdr) <--
+    ptr(Ptr(*car_tag, car_addr.0)),
+    ptr(Ptr(*cdr_tag, cdr_addr.0)) <--
         hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, _),
-        primary_rel(_, wide_car_tag, car_value, car) ,
-        primary_rel(_, wide_cdr_tag, cdr_value, cdr);
+        primary_mem(car_tag, wide_car_tag, car_value, car_addr),
+        primary_mem(cdr_tag, wide_cdr_tag, cdr_value, cdr_addr);
+
 }
 
 // This simple allocation program demonstrates how we can use ascent's lattice feature to achieve memoized allocation
@@ -426,6 +422,8 @@ mod test {
             prog.input_expr = vec![(WidePtr(Tag::Cons.value(), input),)];
             prog.run();
 
+            println!("{}", prog.relation_sizes_summary());
+
             assert_eq!(
                 vec![(WidePtr(Tag::Cons.value(), expected_output),)],
                 prog.output_expr
@@ -448,33 +446,35 @@ mod test {
 
         // println!("{}", prog.relation_sizes_summary());
 
-        // let AllocationProgram {
-        //     car,
-        //     cdr,
-        //     ptr_tag,
-        //     mut ptr_value,
-        //     cons,
-        //     cons_rel,
-        //     cons_value,
-        //     cons_mem,
-        //     primary_mem,
-        //     ptr,
-        //     hash4,
-        //     hash4_rel,
-        //     ingress,
-        //     egress,
-        //     primary_rel,
-        //     input_expr,
-        //     output_expr,
-        //     f_value,
-        //     alloc,
-        //     input_ptr,
-        //     output_ptr,
-        //     primary_counter,
-        //     ..
-        // } = prog;
+        let AllocationProgram {
+            car,
+            cdr,
+            ptr_tag,
+            mut ptr_value,
+            cons,
+            cons_rel,
+            cons_value,
+            cons_mem,
+            primary_mem,
+            ptr,
+            hash4,
+            hash4_rel,
+            ingress,
+            egress,
+            input_expr,
+            output_expr,
+            f_value,
+            alloc,
+            input_ptr,
+            output_ptr,
+            primary_counter,
+            map_double_input,
+            ..
+        } = prog;
 
-        // ptr_value.sort_by_key(|(key, _)| *key);
+        ptr_value.sort_by_key(|(key, _)| *key);
+
+        dbg!(ingress, ptr_value, map_double_input, cons_rel, primary_mem,);
     }
 
     #[test]
