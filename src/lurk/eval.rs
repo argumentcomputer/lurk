@@ -28,7 +28,7 @@ impl EvalErr {
     }
 }
 
-pub fn eval<F: PrimeField + Ord, H: Hasher<F = F>>(
+pub fn eval<F: PrimeField, H: Hasher<F = F>>(
     mem: &mut Memory<F, H>,
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
@@ -296,11 +296,12 @@ pub fn eval<F: PrimeField + Ord, H: Hasher<F = F>>(
     )
 }
 
-pub fn eval_binop_num<F: PrimeField + Ord, H: Hasher<F = F>>(
+pub fn eval_binop_num<F: PrimeField, H: Hasher<F = F>>(
     mem: &mut Memory<F, H>,
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
     let nil = mem.read_and_ingress("nil", store).unwrap().raw;
+    let t = mem.read_and_ingress("t", store).unwrap().raw;
     let add = mem.read_and_ingress("+", store).unwrap().raw;
     let sub = mem.read_and_ingress("-", store).unwrap().raw;
     let mul = mem.read_and_ingress("*", store).unwrap().raw;
@@ -382,8 +383,9 @@ pub fn eval_binop_num<F: PrimeField + Ord, H: Hasher<F = F>>(
                 Const(equal) => {
                     let diff = sub(val1, val2);
                     if !diff {
-                        let one = 1;
-                        return (num_tag, one)
+                        let sym_tag = Tag::Sym;
+                        let t = Const(t);
+                        return (sym_tag, t)
                     }
                     let nil = Const(nil);
                     return (nil_tag, nil)
@@ -393,7 +395,7 @@ pub fn eval_binop_num<F: PrimeField + Ord, H: Hasher<F = F>>(
     )
 }
 
-pub fn eval_let<F: PrimeField + Ord>() -> FuncE<F> {
+pub fn eval_let<F: PrimeField>() -> FuncE<F> {
     func!(
         fn eval_let(binds_tag, binds, body_tag, body, env): 2 {
             let err_tag = Tag::Err;
@@ -448,7 +450,7 @@ pub fn eval_let<F: PrimeField + Ord>() -> FuncE<F> {
     )
 }
 
-pub fn eval_letrec<F: PrimeField + Ord>() -> FuncE<F> {
+pub fn eval_letrec<F: PrimeField>() -> FuncE<F> {
     func!(
         fn eval_letrec(binds_tag, binds, body_tag, body, env): 2 {
             let err_tag = Tag::Err;
@@ -504,7 +506,7 @@ pub fn eval_letrec<F: PrimeField + Ord>() -> FuncE<F> {
     )
 }
 
-pub fn apply<F: PrimeField + Ord>() -> FuncE<F> {
+pub fn apply<F: PrimeField>() -> FuncE<F> {
     func!(
         fn apply(head_tag, head, args_tag, args, args_env): 2 {
             // Constants, tags, etc
@@ -575,7 +577,7 @@ pub fn apply<F: PrimeField + Ord>() -> FuncE<F> {
     )
 }
 
-pub fn env_lookup<F: Field + Ord>() -> FuncE<F> {
+pub fn env_lookup<F: Field>() -> FuncE<F> {
     func!(
         fn env_lookup(x, env): 2 {
             if !env {
@@ -597,7 +599,7 @@ pub fn env_lookup<F: Field + Ord>() -> FuncE<F> {
     )
 }
 
-pub fn list_to_env<F: Field + Ord>() -> FuncE<F> {
+pub fn list_to_env<F: PrimeField>() -> FuncE<F> {
     func!(
         fn list_to_env(list_tag, list): 2 {
             let err_tag = Tag::Err;
@@ -756,6 +758,8 @@ mod test {
         eval_aux("(letrec ((x 1) (y 2) (z 3)) y)", "2");
         eval_aux("(+ 1 2)", "3");
         eval_aux("(+ (* 2 2) (* 2 3))", "10");
+        eval_aux("(= 0 1)", "nil");
+        eval_aux("(= 0 0)", "t");
         eval_aux("(begin 1 2 3)", "3");
         eval_aux("'x", "x");
         eval_aux("'(+ 1 2)", "(+ 1 2)");

@@ -8,7 +8,7 @@ use super::{
 };
 
 use indexmap::IndexMap;
-use p3_field::PrimeField;
+use p3_field::{Field, PrimeField};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QueryResult<T> {
@@ -21,7 +21,7 @@ pub(crate) type InvQueryMap<F> = BTreeMap<List<F>, List<F>>;
 pub(crate) type MemMap<F> = IndexMap<List<F>, u32>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct QueryRecord<F: PrimeField> {
+pub struct QueryRecord<F: Field> {
     pub(crate) func_queries: Vec<QueryMap<F>>,
     pub(crate) inv_func_queries: Vec<Option<InvQueryMap<F>>>,
     pub(crate) mem_queries: Vec<MemMap<F>>,
@@ -42,7 +42,7 @@ pub fn mem_init<F: Clone>() -> Vec<MemMap<F>> {
     vec![IndexMap::new(); NUM_MEM_TABLES]
 }
 
-pub fn mem_store<F: PrimeField + Ord>(mem: &mut [MemMap<F>], args: List<F>) -> F {
+pub fn mem_store<F: Field>(mem: &mut [MemMap<F>], args: List<F>) -> F {
     let len = args.len();
     let idx = mem_index_from_len(len)
         .unwrap_or_else(|| panic!("There are no mem tables of size {}", len));
@@ -55,7 +55,7 @@ pub fn mem_store<F: PrimeField + Ord>(mem: &mut [MemMap<F>], args: List<F>) -> F
     }
 }
 
-pub fn mem_load<F: PrimeField + Ord>(mem: &mut [MemMap<F>], len: usize, ptr: F) -> &[F] {
+pub fn mem_load<F: PrimeField>(mem: &mut [MemMap<F>], len: usize, ptr: F) -> &[F] {
     let ptr_f: usize = ptr
         .as_canonical_biguint()
         .try_into()
@@ -67,7 +67,7 @@ pub fn mem_load<F: PrimeField + Ord>(mem: &mut [MemMap<F>], len: usize, ptr: F) 
     args
 }
 
-impl<F: PrimeField + Ord> QueryRecord<F> {
+impl<F: Field> QueryRecord<F> {
     #[inline]
     pub fn new(toplevel: &Toplevel<F>) -> Self {
         Self::new_with_init_mem(toplevel, mem_init())
@@ -98,7 +98,9 @@ impl<F: PrimeField + Ord> QueryRecord<F> {
     pub fn func_queries(&self) -> &Vec<QueryMap<F>> {
         &self.func_queries
     }
+}
 
+impl<F: Field + Ord> QueryRecord<F> {
     pub fn query(&mut self, index: usize, input: &[F]) -> Option<&List<F>> {
         if let Some(event) = self.func_queries[index].get_mut(input) {
             event.mult += 1;
@@ -123,6 +125,12 @@ impl<F: PrimeField + Ord> QueryRecord<F> {
         assert!(self.func_queries[index].insert(input, result).is_none());
     }
 
+    pub fn store(&mut self, args: List<F>) -> F {
+        mem_store(&mut self.mem_queries, args)
+    }
+}
+
+impl<F: PrimeField> QueryRecord<F> {
     fn record_event_and_return(
         &mut self,
         toplevel: &Toplevel<F>,
@@ -139,16 +147,12 @@ impl<F: PrimeField + Ord> QueryRecord<F> {
         }
     }
 
-    pub fn store(&mut self, args: List<F>) -> F {
-        mem_store(&mut self.mem_queries, args)
-    }
-
     pub fn load(&mut self, len: usize, ptr: F) -> &[F] {
         mem_load(&mut self.mem_queries, len, ptr)
     }
 }
 
-impl<'a, F: PrimeField + Ord> FuncChip<'a, F> {
+impl<'a, F: PrimeField> FuncChip<'a, F> {
     pub fn execute(&self, args: List<F>, queries: &mut QueryRecord<F>) {
         let index = self.func.index;
         let toplevel = self.toplevel;
@@ -182,7 +186,7 @@ enum Continuation<F> {
     Apply(usize, Vec<F>),
 }
 
-impl<F: PrimeField + Ord> Func<F> {
+impl<F: PrimeField> Func<F> {
     fn execute(&self, args: &[F], toplevel: &Toplevel<F>, queries: &mut QueryRecord<F>) -> List<F> {
         let frame = &mut args.into();
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
@@ -227,7 +231,7 @@ impl<F: PrimeField + Ord> Func<F> {
     }
 }
 
-impl<F: PrimeField + Ord> Block<F> {
+impl<F: PrimeField> Block<F> {
     fn execute(
         &self,
         map: &mut VarMap<F>,
@@ -253,7 +257,7 @@ impl<F: PrimeField + Ord> Block<F> {
     }
 }
 
-impl<F: PrimeField + Ord> Ctrl<F> {
+impl<F: PrimeField> Ctrl<F> {
     fn execute(
         &self,
         map: &mut VarMap<F>,
@@ -311,7 +315,7 @@ impl<F: PrimeField + Ord> Ctrl<F> {
     }
 }
 
-impl<F: PrimeField + Ord> Op<F> {
+impl<F: PrimeField> Op<F> {
     fn execute(&self, map: &mut VarMap<F>, toplevel: &Toplevel<F>, queries: &mut QueryRecord<F>) {
         match self {
             Op::Const(c) => {

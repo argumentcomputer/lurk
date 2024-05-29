@@ -48,7 +48,7 @@ impl<'a, T> ColumnMutSlice<'a, T> {
     }
 }
 
-impl<'a, F: PrimeField + Ord> FuncChip<'a, F> {
+impl<'a, F: PrimeField> FuncChip<'a, F> {
     pub fn generate_trace(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let query_map = &queries.func_queries()[self.func.index];
         let width = self.width();
@@ -85,7 +85,7 @@ impl<'a, F: PrimeField + Ord> FuncChip<'a, F> {
     }
 }
 
-impl<F: PrimeField + Ord> Func<F> {
+impl<F: PrimeField> Func<F> {
     pub fn populate_row(
         &self,
         args: &[F],
@@ -102,7 +102,7 @@ impl<F: PrimeField + Ord> Func<F> {
     }
 }
 
-impl<F: PrimeField + Ord> Block<F> {
+impl<F: PrimeField> Block<F> {
     fn populate_row(
         &self,
         map: &mut Vec<(F, Degree)>,
@@ -117,7 +117,7 @@ impl<F: PrimeField + Ord> Block<F> {
     }
 }
 
-impl<F: PrimeField + Ord> Ctrl<F> {
+impl<F: PrimeField> Ctrl<F> {
     fn populate_row(
         &self,
         map: &mut Vec<(F, Degree)>,
@@ -155,7 +155,7 @@ impl<F: PrimeField + Ord> Ctrl<F> {
     }
 }
 
-impl<F: PrimeField + Ord> Op<F> {
+impl<F: PrimeField> Op<F> {
     fn populate_row(
         &self,
         map: &mut Vec<(F, Degree)>,

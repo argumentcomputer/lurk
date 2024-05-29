@@ -24,7 +24,7 @@ pub struct Memory<F, H> {
     pub _p: PhantomData<H>,
 }
 
-impl<F: PrimeField + Ord, H: Hasher<F = F>> Memory<F, H> {
+impl<F: PrimeField, H: Hasher<F = F>> Memory<F, H> {
     pub fn init() -> Self {
         let map = mem_init();
         let cache = BTreeMap::new();

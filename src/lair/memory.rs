@@ -1,5 +1,5 @@
 use p3_air::{Air, AirBuilder, BaseAir};
-use p3_field::PrimeField;
+use p3_field::Field;
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
@@ -38,7 +38,7 @@ impl MemChip {
         2 + self.len
     }
 
-    pub fn generate_trace<F: PrimeField>(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
+    pub fn generate_trace<F: Field>(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let len = self.len;
         let idx = mem_index_from_len(len).unwrap();
         let mem = &queries.mem_queries[idx];
@@ -59,10 +59,7 @@ impl MemChip {
         RowMajorMatrix::new(rows, width)
     }
 
-    pub fn generate_trace_parallel<F: PrimeField>(
-        &self,
-        queries: &QueryRecord<F>,
-    ) -> RowMajorMatrix<F> {
+    pub fn generate_trace_parallel<F: Field>(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let len = self.len;
         let idx = mem_index_from_len(len).unwrap();
         let mem = queries.mem_queries[idx].iter().collect::<Vec<_>>();
