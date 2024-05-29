@@ -3,7 +3,21 @@ use crate::loam::{Cons, Elemental, Ptr, Sexp, Sym, Tag, Valuable, Wide, WidePtr,
 
 use ascent::{ascent, Dual};
 
-impl Sym {}
+struct Memory {}
+
+impl Memory {
+    fn initial_relation() -> Vec<(LE, Wide, Wide, Dual<LE>)> {
+        let syms = Sym::built_in();
+
+        syms.iter()
+            .enumerate()
+            .map(|(i, sym)| (Tag::Sym.elt(), Tag::Sym.value(), sym.value(), Dual(i as LE)))
+            .collect()
+    }
+    fn initial_counter() -> Vec<(LE,)> {
+        vec![(Self::initial_relation().len() as LE,)]
+    }
+}
 
 // Because it's hard to share code between ascent programs, this is a copy of `AllocationProgram`, replacing the `map_double` function
 // with evaluation.
@@ -65,8 +79,8 @@ ascent! {
 
     // These two lattices and the following rule are a pattern.
     // TODO: make an ascent macro for this?
-    lattice primary_mem(LE, Wide, Wide, Dual<LE>); // (tag, wide-tag, value, primary-addr)
-    lattice primary_counter(LE) = vec![(0,)]; // addr
+    lattice primary_mem(LE, Wide, Wide, Dual<LE>) = Memory::initial_relation(); // (tag, wide-tag, value, primary-addr)
+    lattice primary_counter(LE) = Memory::initial_counter(); // addr
     // Memory counter must always holds largest address.
     primary_counter(addr.0) <-- primary_mem(_, _, _, addr);
 
@@ -82,7 +96,7 @@ ascent! {
 
     // Convert addr to ptr.
     primary_rel(tag, wide_tag, value, Ptr(*tag, addr.0)) <-- primary_mem(tag, wide_tag, value, addr);
-    primary_rel(Tag::F.elt(), Tag::F.value(), value, ptr) <-- f_value(ptr, value);
+    //primary_rel(Tag::F.elt(), Tag::F.value(), value, ptr) <-- f_value(ptr, value);
 
     // Register ptr.
     ptr(ptr), ptr_tag(ptr, wide_tag), ptr_value(ptr, value) <-- primary_rel(_tag, wide_tag, value, ptr);
@@ -127,7 +141,7 @@ ascent! {
 
     // mark ingress conses for unhashing.
     unhash4(Tag::Cons.elt(), digest, ptr) <--
-        ingress(ptr), if ptr.0 == Tag::Cons.elt(),
+        ingress(ptr), if ptr.is_cons(),
         ptr_value(ptr, digest),
         primary_mem(&Tag::Cons.elt(), _, digest, _);
 
@@ -153,7 +167,7 @@ ascent! {
 
     ptr(cons), car(cons, car), cdr(cons, cdr) <-- cons_rel(car, cdr, cons);
 
-    f_value(ptr, Wide::widen(ptr.1)) <-- ptr(ptr), if ptr.0 == Tag::F.elt();
+    f_value(ptr, Wide::widen(ptr.1)) <-- ptr(ptr), if ptr.is_f();
     ptr(ptr) <-- f_value(ptr, _);
 
     // Provide cons_value when known.
@@ -182,13 +196,21 @@ ascent! {
     eval_input(expr, Ptr::nil()) <-- input_ptr(expr);
 
     // F is self-evaluating.
-    eval(expr, env, expr) <-- eval_input(expr, env), if expr.0 == Tag::F.elt();
+    eval(expr, env, expr) <-- eval_input(expr, env), if expr.is_f();
 
     // Nil is self-evaluating. TODO: check value == 0.
-    eval(expr, env, expr) <-- eval_input(expr, env), if expr.0 == Tag::Nil.elt();
+    eval(expr, env, expr) <-- eval_input(expr, env), if expr.is_nil();
 
     // expr is CONS
 
+    ingress(expr) <-- eval_input(expr, env), if expr.is_cons();
+
+    // TODO: make a function for these ptr type tests, so this can be something like:
+    // if car.is_sym();
+    //<-- cons_rel(car, cdr, expr), if car.is_sym();
+
+
+    // output
     output_ptr(output) <-- input_ptr(input), eval(input, _, output);
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -242,7 +264,7 @@ mod test {
 
             println!("{}", prog.relation_sizes_summary());
 
-            assert_eq!(vec![(expected_output,)], prog.output_expr);
+            //            assert_eq!(vec![(expected_output,)], prog.output_expr);
             prog
         };
 
@@ -253,7 +275,7 @@ mod test {
             let f = F(123);
             test(f.into(), f.into());
         }
-        {
+        let prog = {
             // Nil is self-evaluating.
             let nil = WidePtr::nil();
 
@@ -309,9 +331,11 @@ mod test {
             eval_input,
             output_ptr,
             output_expr,
-            alloc
+            alloc,
+            primary_rel,
+            primary_mem,
         );
 
-        // panic!("uiop");
+        panic!("uiop");
     }
 }

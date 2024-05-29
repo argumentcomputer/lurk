@@ -86,6 +86,21 @@ impl Ptr {
     fn f(val: LE) -> Self {
         Self(Tag::F.elt(), val)
     }
+    fn is_f(&self) -> bool {
+        self.0 == Tag::F.elt()
+    }
+    fn is_cons(&self) -> bool {
+        self.0 == Tag::Cons.elt()
+    }
+    fn is_nil(&self) -> bool {
+        self.0 == Tag::Nil.elt()
+    }
+    fn is_sym(&self) -> bool {
+        self.0 == Tag::Sym.elt()
+    }
+    fn is_err(&self) -> bool {
+        self.0 == Tag::Err.elt()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
@@ -142,20 +157,22 @@ impl<T: Valuable + Tagged> From<&T> for WidePtr {
     }
 }
 
-// impl<T: Valuable + Tagged> From<T> for WidePtr {
-//     fn from(t: T) -> Self {
-//         &t.into()
-//     }
-// }
-
 pub enum Sym {
     Char(char),
 }
 
-impl Elemental for Sym {
-    fn elt(&self) -> LE {
+const BUILT_IN_CHAR_SYMS: [char; 5] = ['+', '-', '*', '/', '%'];
+
+impl Sym {
+    fn built_in() -> Vec<Self> {
+        BUILT_IN_CHAR_SYMS.iter().map(|c| Self::Char(*c)).collect()
+    }
+}
+
+impl Valuable for Sym {
+    fn value(&self) -> Wide {
         match self {
-            Self::Char(char) => (*char).into(),
+            Self::Char(char) => Wide::widen((*char).into()),
         }
     }
 }
