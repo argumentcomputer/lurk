@@ -1,6 +1,8 @@
 mod allocation;
 mod evaluation;
 
+use allocation::allocator;
+
 pub type LE = u32;
 
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
@@ -9,14 +11,23 @@ pub enum Tag {
     Cons,
     Nil,
     Sym,
-    Cont,
     Err,
 }
 
 trait Elemental {
     fn elt(&self) -> LE;
+}
 
-    fn wide(&self) -> Wide {
+trait Valuable {
+    fn value(&self) -> Wide;
+}
+
+trait Tagged {
+    fn tag(&self) -> Tag;
+}
+
+impl<T: Elemental> Valuable for T {
+    fn value(&self) -> Wide {
         Wide::widen(self.elt())
     }
 }
@@ -28,18 +39,17 @@ impl Elemental for Tag {
             Self::Cons => 1,
             Self::Nil => 2,
             Self::Sym => 3,
-            Self::Cont => 4,
-            Self::Err => 5,
+            Self::Err => 4,
         }
     }
 }
 
 impl Tag {
     pub fn tag_wide_relation() -> Vec<(LE, Wide)> {
-        (0..=5)
+        (0..=4)
             .map(|i| {
                 let tag = Tag::from(i);
-                (tag.elt(), tag.wide())
+                (tag.elt(), tag.value())
             })
             .collect()
     }
@@ -47,14 +57,7 @@ impl Tag {
 
 impl From<usize> for Tag {
     fn from(n: usize) -> Self {
-        [
-            Self::F,
-            Self::Cons,
-            Self::Nil,
-            Self::Sym,
-            Self::Cont,
-            Self::Err,
-        ][n]
+        [Self::F, Self::Cons, Self::Nil, Self::Sym, Self::Err][n]
     }
 }
 
@@ -64,14 +67,14 @@ impl From<&F> for Tag {
     }
 }
 
-impl From<&Cont> for Tag {
-    fn from(cont: &Cont) -> Self {
-        Self::Cont
-    }
-}
-
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct F(pub LE);
+
+impl Elemental for F {
+    fn elt(&self) -> LE {
+        self.0
+    }
+}
 
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct Ptr(pub LE, pub LE);
@@ -112,34 +115,18 @@ impl From<F> for Wide {
     }
 }
 
-impl From<Cont> for Wide {
-    fn from(cont: Cont) -> Self {
-        (&cont).into()
-    }
-}
-impl From<&Cont> for Wide {
-    fn from(cont: &Cont) -> Self {
-        let simple = match cont {
-            Cont::Outermost => 0,
-            Cont::Terminal => 1,
-            Cont::Error => 2,
-        };
-        Wide::widen(simple)
-    }
-}
-
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct WidePtr(pub Wide, pub Wide);
 
 impl WidePtr {
     fn nil() -> Self {
-        Self(Tag::Nil.wide(), Wide::widen(0))
+        Self(Tag::Nil.value(), Wide::widen(0))
     }
 }
 
 impl From<&F> for WidePtr {
     fn from(f: &F) -> Self {
-        WidePtr(Tag::F.wide(), f.into())
+        WidePtr(Tag::F.value(), f.into())
     }
 }
 
@@ -149,41 +136,17 @@ impl From<F> for WidePtr {
     }
 }
 
-impl From<&Cont> for WidePtr {
-    fn from(cont: &Cont) -> Self {
-        WidePtr(Tag::Cont.wide(), cont.wide())
+impl<T: Valuable + Tagged> From<&T> for WidePtr {
+    fn from(t: &T) -> Self {
+        Self(t.tag().value(), t.value())
     }
 }
 
-impl From<Cont> for WidePtr {
-    fn from(cont: Cont) -> Self {
-        (&cont).into()
-    }
-}
-
-#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
-pub enum Cont {
-    Outermost,
-    Terminal,
-    Error,
-}
-
-impl Elemental for Cont {
-    fn elt(&self) -> LE {
-        match self {
-            Self::Outermost => 0,
-            Self::Terminal => 1,
-            Self::Error => 2,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
-pub struct CEK<T> {
-    expr: T,
-    env: T,
-    cont: T, // for simplicity, let continuations be first-class data. make it an error to evaluate one, though.
-}
+// impl<T: Valuable + Tagged> From<T> for WidePtr {
+//     fn from(t: T) -> Self {
+//         &t.into()
+//     }
+// }
 
 pub enum Sym {
     Char(char),
@@ -194,5 +157,110 @@ impl Elemental for Sym {
         match self {
             Self::Char(char) => (*char).into(),
         }
+    }
+}
+
+pub struct Cons {
+    car: WidePtr,
+    cdr: WidePtr,
+}
+
+impl Valuable for Cons {
+    // Morally, this should need to take an Allocator argument, so this trait structure will need to be reworked when
+    // Allocator becomes explicit.
+    fn value(&self) -> Wide {
+        allocator().hash4(self.car.0, self.car.1, self.cdr.0, self.cdr.1)
+    }
+}
+
+impl Tagged for Cons {
+    fn tag(&self) -> Tag {
+        Tag::Cons
+    }
+}
+
+pub enum Sexp {
+    F(F),
+    Sym(Sym),
+    Cons(Cons),
+    Nil,
+}
+
+impl Valuable for Sexp {
+    fn value(&self) -> Wide {
+        match self {
+            Self::F(f) => f.value(),
+            Self::Sym(sym) => sym.value(),
+            Self::Cons(cons) => cons.value(),
+            Self::Nil => Wide::widen(0),
+        }
+    }
+}
+
+impl Tagged for Sexp {
+    fn tag(&self) -> Tag {
+        match self {
+            Self::F(f) => Tag::F,
+            Self::Sym(sym) => Tag::Sym,
+            Self::Cons(cons) => Tag::Cons,
+            Self::Nil => Tag::Nil,
+        }
+    }
+}
+
+impl Cons {
+    fn list(elts: Vec<Sexp>) -> WidePtr {
+        elts.iter().fold(WidePtr::nil(), |acc, elt| {
+            WidePtr::from(&Cons {
+                car: WidePtr::from(elt),
+                cdr: acc,
+            })
+        })
+    }
+}
+
+pub struct TypeError {}
+
+impl TryFrom<WidePtr> for Cons {
+    type Error = TypeError;
+
+    fn try_from(p: WidePtr) -> Result<Self, Self::Error> {
+        if p.0 == Tag::Cons.value() {
+            if let Some([car_tag, car_value, cdr_tag, cdr_value]) = allocator().unhash4(&p.1) {
+                Ok(Cons {
+                    car: WidePtr(car_tag, car_value),
+                    cdr: WidePtr(cdr_tag, cdr_value),
+                })
+            } else {
+                Err(TypeError {})
+            }
+        } else {
+            Err(TypeError {})
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_cons_list() {
+        let l = Cons::list(vec![
+            Sexp::Sym(Sym::Char('+')),
+            Sexp::F(F(1)),
+            Sexp::F(F(2)),
+        ]);
+
+        assert_eq!(
+            WidePtr(
+                Wide([1, 0, 0, 0, 0, 0, 0, 0]),
+                Wide([
+                    3879315624, 673861253, 1270968490, 282187193, 1099824750, 808467285,
+                    4142306444, 714167558
+                ])
+            ),
+            l
+        );
     }
 }

@@ -4,7 +4,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use ascent::{ascent, Dual};
 
-use crate::loam::{Elemental, Ptr, Tag, Wide, WidePtr, F, LE};
+use crate::loam::{Elemental, Ptr, Tag, Valuable, Wide, WidePtr, F, LE};
 
 // Because of how the macros work, it's not easy (or possible) to pass a per-invocation structure like the `Allocator`
 // into the program, while also having access to the program struct itself. However, that access is extremely useful
@@ -104,7 +104,7 @@ ascent! {
     // Relations
 
     // The standard tag mapping.
-    relation tag(LE, Wide) = vec![(Tag::F.elt(), Tag::F.wide()), (Tag::Cons.elt(), Tag::Cons.wide())]; // (short-tag, wide-tag)
+    relation tag(LE, Wide) = vec![(Tag::F.elt(), Tag::F.value()), (Tag::Cons.elt(), Tag::Cons.value())]; // (short-tag, wide-tag)
 
     relation ptr_value(Ptr, Wide); // (ptr, value)}
     relation ptr_tag(Ptr, Wide); // (ptr, tag)
@@ -168,7 +168,7 @@ ascent! {
 
     // Convert addr to ptr.
     primary_rel(tag, wide_tag, value, Ptr(*tag, addr.0)) <-- primary_mem(tag, wide_tag, value, addr);
-    primary_rel(Tag::F.elt(), Tag::F.wide(), value, ptr) <-- f_value(ptr, value);
+    primary_rel(Tag::F.elt(), Tag::F.value(), value, ptr) <-- f_value(ptr, value);
 
     // Register ptr.
     ptr(ptr), ptr_tag(ptr, wide_tag), ptr_value(ptr, value) <-- primary_rel(_tag, wide_tag, value, ptr);
@@ -181,7 +181,7 @@ ascent! {
     // Populating cons(...) triggers allocation in cons mem.
     cons_mem(car, cdr, Dual(counter + 1 + priority)) <-- cons(car, cdr, priority), primary_counter(counter);
 
-    primary_mem(Tag::Cons.elt(), Tag::Cons.wide(), digest, addr) <--
+    primary_mem(Tag::Cons.elt(), Tag::Cons.value(), digest, addr) <--
         cons_mem(car, cdr, addr),
         ptr_value(car, car_value), ptr_value(cdr, cdr_value),
         ptr_tag(car, car_tag), ptr_tag(cdr, cdr_tag),
@@ -190,7 +190,7 @@ ascent! {
     // If cons_mem was populated otherwise, still populate cons(...).
     cons(car, cdr, 0), cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0)) <-- cons_mem(car, cdr, addr);
 
-    ptr(cons), ptr_tag(cons, Tag::Cons.wide()) <-- cons_rel(car, cdr, cons);
+    ptr(cons), ptr_tag(cons, Tag::Cons.value()) <-- cons_rel(car, cdr, cons);
     ptr_value(cons, value) <-- cons_rel(car, cdr, cons), cons_value(cons, value);
 
     // Provide ptr_tag and ptr_value when known.
@@ -354,23 +354,48 @@ mod test {
         allocator().init();
 
         // (1 . 2)
-        let c1_2 = allocator().hash4(Tag::F.wide(), Wide::widen(1), Tag::F.wide(), Wide::widen(2));
+        let c1_2 = allocator().hash4(
+            Tag::F.value(),
+            Wide::widen(1),
+            Tag::F.value(),
+            Wide::widen(2),
+        );
         // (2 . 3)
-        let c2_3 = allocator().hash4(Tag::F.wide(), Wide::widen(2), Tag::F.wide(), Wide::widen(3));
+        let c2_3 = allocator().hash4(
+            Tag::F.value(),
+            Wide::widen(2),
+            Tag::F.value(),
+            Wide::widen(3),
+        );
         // (2 . 4)
-        let c2_4 = allocator().hash4(Tag::F.wide(), Wide::widen(2), Tag::F.wide(), Wide::widen(4));
+        let c2_4 = allocator().hash4(
+            Tag::F.value(),
+            Wide::widen(2),
+            Tag::F.value(),
+            Wide::widen(4),
+        );
         // (4 . 6)
-        let c4_6 = allocator().hash4(Tag::F.wide(), Wide::widen(4), Tag::F.wide(), Wide::widen(6));
+        let c4_6 = allocator().hash4(
+            Tag::F.value(),
+            Wide::widen(4),
+            Tag::F.value(),
+            Wide::widen(6),
+        );
         // (4 . 8)
-        let c4_8 = allocator().hash4(Tag::F.wide(), Wide::widen(4), Tag::F.wide(), Wide::widen(8));
+        let c4_8 = allocator().hash4(
+            Tag::F.value(),
+            Wide::widen(4),
+            Tag::F.value(),
+            Wide::widen(8),
+        );
         // ((1 . 2) . (2 . 4))
-        let c1_2__2_4 = allocator().hash4(Tag::Cons.wide(), c1_2, Tag::Cons.wide(), c2_4);
+        let c1_2__2_4 = allocator().hash4(Tag::Cons.value(), c1_2, Tag::Cons.value(), c2_4);
         // ((1 . 2) . (2 . 3))
-        let c1_2__2_3 = allocator().hash4(Tag::Cons.wide(), c1_2, Tag::Cons.wide(), c2_3);
+        let c1_2__2_3 = allocator().hash4(Tag::Cons.value(), c1_2, Tag::Cons.value(), c2_3);
         // ((2 . 4) . (4 . 8))
-        let c2_4__4_8 = allocator().hash4(Tag::Cons.wide(), c2_4, Tag::Cons.wide(), c4_8);
+        let c2_4__4_8 = allocator().hash4(Tag::Cons.value(), c2_4, Tag::Cons.value(), c4_8);
         // ((2 . 4) . (4 . 6))
-        let c2_4__4_6 = allocator().hash4(Tag::Cons.wide(), c2_4, Tag::Cons.wide(), c4_6);
+        let c2_4__4_6 = allocator().hash4(Tag::Cons.value(), c2_4, Tag::Cons.value(), c4_6);
 
         assert_eq!(
             Wide([
@@ -398,11 +423,11 @@ mod test {
         let mut test = |input, expected_output, cons_count| {
             let mut prog = AllocationProgram::default();
 
-            prog.input_expr = vec![(WidePtr(Tag::Cons.wide(), input),)];
+            prog.input_expr = vec![(WidePtr(Tag::Cons.value(), input),)];
             prog.run();
 
             assert_eq!(
-                vec![(WidePtr(Tag::Cons.wide(), expected_output),)],
+                vec![(WidePtr(Tag::Cons.value(), expected_output),)],
                 prog.output_expr
             );
             assert_eq!(cons_count, prog.cons_mem.len());

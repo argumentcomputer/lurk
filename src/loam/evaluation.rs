@@ -1,5 +1,5 @@
 use crate::loam::allocation::{allocator, Allocator};
-use crate::loam::{Elemental, Ptr, Sym, Tag, Wide, WidePtr, F, LE};
+use crate::loam::{Cons, Elemental, Ptr, Sexp, Sym, Tag, Valuable, Wide, WidePtr, F, LE};
 
 use ascent::{ascent, Dual};
 
@@ -82,7 +82,7 @@ ascent! {
 
     // Convert addr to ptr.
     primary_rel(tag, wide_tag, value, Ptr(*tag, addr.0)) <-- primary_mem(tag, wide_tag, value, addr);
-    primary_rel(Tag::F.elt(), Tag::F.wide(), value, ptr) <-- f_value(ptr, value);
+    primary_rel(Tag::F.elt(), Tag::F.value(), value, ptr) <-- f_value(ptr, value);
 
     // Register ptr.
     ptr(ptr), ptr_tag(ptr, wide_tag), ptr_value(ptr, value) <-- primary_rel(_tag, wide_tag, value, ptr);
@@ -95,7 +95,7 @@ ascent! {
     // Populating cons(...) triggers allocation in cons mem.
     cons_mem(car, cdr, Dual(counter + 1 + priority)) <-- cons(car, cdr, priority), primary_counter(counter);
 
-    primary_mem(Tag::Cons.elt(), Tag::Cons.wide(), digest, addr) <--
+    primary_mem(Tag::Cons.elt(), Tag::Cons.value(), digest, addr) <--
         cons_mem(car, cdr, addr),
         ptr_value(car, car_value), ptr_value(cdr, cdr_value),
         ptr_tag(car, car_tag), ptr_tag(cdr, cdr_tag),
@@ -104,7 +104,7 @@ ascent! {
     // If cons_mem was populated otherwise, still populate cons(...).
     cons(car, cdr, 0), cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0)) <-- cons_mem(car, cdr, addr);
 
-    ptr(cons), ptr_tag(cons, Tag::Cons.wide()) <-- cons_rel(car, cdr, cons);
+    ptr(cons), ptr_tag(cons, Tag::Cons.value()) <-- cons_rel(car, cdr, cons);
     ptr_value(cons, value) <-- cons_rel(car, cdr, cons), cons_value(cons, value);
 
     // Provide ptr_tag and ptr_value when known.
@@ -219,23 +219,12 @@ mod test {
         allocator().init();
 
         // (1 . 2)
-        let c1_2 = allocator().hash4(Tag::F.wide(), Wide::widen(1), Tag::F.wide(), Wide::widen(2));
-        // (2 . 3)
-        let c2_3 = allocator().hash4(Tag::F.wide(), Wide::widen(2), Tag::F.wide(), Wide::widen(3));
-        // (2 . 4)
-        let c2_4 = allocator().hash4(Tag::F.wide(), Wide::widen(2), Tag::F.wide(), Wide::widen(4));
-        // (4 . 6)
-        let c4_6 = allocator().hash4(Tag::F.wide(), Wide::widen(4), Tag::F.wide(), Wide::widen(6));
-        // (4 . 8)
-        let c4_8 = allocator().hash4(Tag::F.wide(), Wide::widen(4), Tag::F.wide(), Wide::widen(8));
-        // ((1 . 2) . (2 . 4))
-        let c1_2__2_4 = allocator().hash4(Tag::Cons.wide(), c1_2, Tag::Cons.wide(), c2_4);
-        // ((1 . 2) . (2 . 3))
-        let c1_2__2_3 = allocator().hash4(Tag::Cons.wide(), c1_2, Tag::Cons.wide(), c2_3);
-        // ((2 . 4) . (4 . 8))
-        let c2_4__4_8 = allocator().hash4(Tag::Cons.wide(), c2_4, Tag::Cons.wide(), c4_8);
-        // ((2 . 4) . (4 . 6))
-        let c2_4__4_6 = allocator().hash4(Tag::Cons.wide(), c2_4, Tag::Cons.wide(), c4_6);
+        let c1_2 = allocator().hash4(
+            Tag::F.value(),
+            Wide::widen(1),
+            Tag::F.value(),
+            Wide::widen(2),
+        );
 
         assert_eq!(
             Wide([
@@ -243,21 +232,6 @@ mod test {
                 1536661076
             ]),
             c1_2
-        );
-        assert_eq!(
-            Wide([
-                3612283221, 1832028404, 1497027099, 2489301282, 1316351861, 200274982, 901424954,
-                3034146026
-            ]),
-            c2_4
-        );
-
-        assert_eq!(
-            Wide([
-                2025499267, 1838322365, 1110884429, 2931761435, 2978718557, 3907840380, 1112426582,
-                1522367847
-            ]),
-            c1_2__2_4
         );
 
         let mut test = |input, expected_output: WidePtr| {
@@ -274,12 +248,29 @@ mod test {
 
         let empty_env = WidePtr::nil();
 
-        let f = F(123);
-        let prog = test(f.into(), f.into());
+        {
+            // F is self-evaluating.
+            let f = F(123);
+            test(f.into(), f.into());
+        }
+        {
+            // Nil is self-evaluating.
+            let nil = WidePtr::nil();
 
-        let nil = WidePtr::nil();
+            test(nil.into(), nil.into())
+        };
 
-        let prog = test(nil.into(), nil.into());
+        let prog = {
+            // (+ 1 2)
+            let plus = Cons::list(vec![
+                Sexp::Sym(Sym::Char('+')),
+                Sexp::F(F(1)),
+                Sexp::F(F(2)),
+            ]);
+
+            // fixme
+            test(plus.into(), plus.into())
+        };
 
         println!("{}", prog.relation_sizes_summary());
 
