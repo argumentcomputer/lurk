@@ -4,31 +4,12 @@ from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildIrred_list
 from math import *
 import itertools
 
-###########################################################################
-# p = 18446744069414584321 # GoldiLocks
-p = 2013265921 # BabyBear
-# p = 52435875175126190479447740508185965837690552500527637822603658699938581184513 # BLS12-381
-# p = 21888242871839275222246405745257275088548364400416034343698204186575808495617 # BN254/BN256
-# p = 28948022309329048855892746252171976963363056481941560715954676764349967630337 # Pasta (Pallas)
-# p = 28948022309329048855892746252171976963363056481941647379679742748393362948097 # Pasta (Vesta)
-
-n = len(p.bits()) # bit
-# t = 12 # GoldiLocks (t = 12 for sponge, t = 8 for compression)
-t = 16 # BabyBear (t = 24 for sponge, t = 16 for compression)
-# t = 3 # BN254/BN256, BLS12-381, Pallas, Vesta (t = 3 for sponge, t = 2 for compression)
-
-FIELD = 1
-SBOX = 0
-FIELD_SIZE = n
-NUM_CELLS = t
 
 def get_alpha(p):
     for alpha in range(3, p):
         if gcd(alpha, p-1) == 1:
             break
     return alpha
-
-alpha = get_alpha(p)
 
 def get_sbox_cost(R_F, R_P, N, t):
     return int(t * R_F + R_P)
@@ -37,13 +18,13 @@ def get_size_cost(R_F, R_P, N, t):
     n = ceil(float(N) / t)
     return int((N * R_F) + (n * R_P))
 
-def poseidon_calc_final_numbers_fixed(p, t, alpha, M, security_margin):
+def poseidon_calc_final_numbers_fixed(p, t, alpha, M, security_margin, FIELD_SIZE, NUM_CELLS):
     # [Min. S-boxes] Find best possible for t and N
     n = ceil(log(p, 2))
     N = int(n * t)
     cost_function = get_sbox_cost
     ret_list = []
-    (R_F, R_P) = find_FD_round_numbers(p, t, alpha, M, cost_function, security_margin)
+    (R_F, R_P) = find_FD_round_numbers(p, t, alpha, M, cost_function, security_margin, FIELD_SIZE, NUM_CELLS)
     min_sbox_cost = cost_function(R_F, R_P, N, t)
     ret_list.append(R_F)
     ret_list.append(R_P)
@@ -56,7 +37,7 @@ def poseidon_calc_final_numbers_fixed(p, t, alpha, M, security_margin):
 
     return ret_list # [R_F, R_P, min_sbox_cost, min_size_cost]
 
-def find_FD_round_numbers(p, t, alpha, M, cost_function, security_margin):
+def find_FD_round_numbers(p, t, alpha, M, cost_function, security_margin, FIELD_SIZE, NUM_CELLS):
     n = ceil(log(p, 2))
     N = int(n * t)
 
@@ -70,7 +51,7 @@ def find_FD_round_numbers(p, t, alpha, M, cost_function, security_margin):
     for R_P_t in range(1, 500):
         for R_F_t in range(4, 100):
             if R_F_t % 2 == 0:
-                if (sat_inequiv(p, t, R_F_t, R_P_t, alpha, M) == True):
+                if (sat_inequiv(p, t, R_F_t, R_P_t, alpha, M, FIELD_SIZE, NUM_CELLS) == True):
                     if security_margin == True:
                         R_F_t += 2
                         R_P_t = int(ceil(float(R_P_t) * 1.075))
@@ -82,7 +63,7 @@ def find_FD_round_numbers(p, t, alpha, M, cost_function, security_margin):
                         max_cost_rf = R_F
     return (int(R_F), int(R_P))
 
-def sat_inequiv_alpha(p, t, R_F, R_P, alpha, M):
+def sat_inequiv_alpha(p, t, R_F, R_P, alpha, M, FIELD_SIZE, NUM_CELLS):
     N = int(FIELD_SIZE * NUM_CELLS)
 
     if alpha > 0:
@@ -107,9 +88,6 @@ def sat_inequiv_alpha(p, t, R_F, R_P, alpha, M):
         print("Invalid value for alpha!")
         exit(1)
 
-R_F_FIXED, R_P_FIXED, _, _ = poseidon_calc_final_numbers_fixed(p, t, alpha, 128, True)
-print("// +++ t = {0} R_F = {1}, R_P = {2} +++".format(t, R_F_FIXED, R_P_FIXED))
-
 # For STARK TODO
 # r_p_mod = R_P_FIXED % NUM_CELLS
 # if r_p_mod != 0:
@@ -117,18 +95,13 @@ print("// +++ t = {0} R_F = {1}, R_P = {2} +++".format(t, R_F_FIXED, R_P_FIXED))
 
 ###########################################################################
 
-INIT_SEQUENCE = []
-
-PRIME_NUMBER = p
 # if FIELD == 1 and len(sys.argv) != 8:
 #     print("Please specify a prime number (in hex format)!")
 #     exit()
 # elif FIELD == 1 and len(sys.argv) == 8:
 #     PRIME_NUMBER = int(sys.argv[7], 16) # e.g. 0xa7, 0xFFFFFFFFFFFFFEFF, 0xa1a42c3efd6dbfe08daa6041b36322ef
 
-F = GF(PRIME_NUMBER)
-
-def grain_sr_generator():
+def grain_sr_generator(INIT_SEQUENCE):
     bit_sequence = INIT_SEQUENCE
     for _ in range(0, 160):
         new_bit = bit_sequence[62] ^^ bit_sequence[51] ^^ bit_sequence[38] ^^ bit_sequence[23] ^^ bit_sequence[13] ^^ bit_sequence[0]
@@ -150,15 +123,14 @@ def grain_sr_generator():
         bit_sequence.pop(0)
         bit_sequence.append(new_bit)
         yield new_bit
-grain_gen = grain_sr_generator()
 
-def grain_random_bits(num_bits):
+def grain_random_bits(grain_gen, num_bits):
     random_bits = [next(grain_gen) for i in range(0, num_bits)]
     # random_bits.reverse() ## Remove comment to start from least significant bit
     random_int = int("".join(str(i) for i in random_bits), 2)
     return random_int
 
-def init_generator(field, sbox, n, t, R_F, R_P):
+def init_generator(field, sbox, n, t, R_F, R_P, FIELD, SBOX, FIELD_SIZE, NUM_CELLS):
     # Generate initial sequence based on parameters
     bit_list_field = [_ for _ in (bin(FIELD)[2:].zfill(2))]
     bit_list_sbox = [_ for _ in (bin(SBOX)[2:].zfill(4))]
@@ -167,30 +139,34 @@ def init_generator(field, sbox, n, t, R_F, R_P):
     bit_list_R_F = [_ for _ in (bin(R_F)[2:].zfill(10))]
     bit_list_R_P = [_ for _ in (bin(R_P)[2:].zfill(10))]
     bit_list_1 = [1] * 30
-    global INIT_SEQUENCE
     INIT_SEQUENCE = bit_list_field + bit_list_sbox + bit_list_n + bit_list_t + bit_list_R_F + bit_list_R_P + bit_list_1
     INIT_SEQUENCE = [int(_) for _ in INIT_SEQUENCE]
 
-def generate_constants(field, n, t, R_F, R_P, prime_number):
+    return INIT_SEQUENCE
+
+def generate_constants(field, n, t, R_F, R_P, prime_number, grain_gen):
     round_constants = []
+    full_round_constants = []
+    partial_round_constants = []
     # num_constants = (R_F + R_P) * t # Poseidon
     num_constants = (R_F * t) + R_P # Poseidon2
 
     if field == 0:
         for i in range(0, num_constants):
-            random_int = grain_random_bits(n)
+            random_int = grain_random_bits(grain_gen, n)
             round_constants.append(random_int)
     elif field == 1:
         for i in range(0, num_constants):
-            random_int = grain_random_bits(n)
+            random_int = grain_random_bits(grain_gen, n)
             while random_int >= prime_number:
                 # print("[Info] Round constant is not in prime field! Taking next one.")
-                random_int = grain_random_bits(n)
-            round_constants.append(random_int)
+                random_int = grain_random_bits(grain_gen, n)
             # Add (t-1) zeroes for Poseidon2 if partial round
             if i >= ((R_F/2) * t) and i < (((R_F/2) * t) + R_P):
-                round_constants.extend([0] * (t-1))
-    return round_constants
+                partial_round_constants.append(random_int)
+            else:
+                full_round_constants.append(random_int)
+    return (full_round_constants, partial_round_constants)
 
 def print_round_constants(round_constants, n, field):
     print("Number of round constants:", len(round_constants))
@@ -202,15 +178,15 @@ def print_round_constants(round_constants, n, field):
     hex_length = int(ceil(float(n) / 4)) + 2 # +2 for "0x"
     print(["{0:#0{1}x}".format(entry, hex_length) for entry in round_constants])
 
-def create_mds_p(n, t):
+def create_mds_p(n, t, grain_gen, F):
     M = matrix(F, t, t)
 
     # Sample random distinct indices and assign to xs and ys
     while True:
         flag = True
-        rand_list = [F(grain_random_bits(n)) for _ in range(0, 2*t)]
+        rand_list = [F(grain_random_bits(grain_gen, n)) for _ in range(0, 2*t)]
         while len(rand_list) != len(set(rand_list)): # Check for duplicates
-            rand_list = [F(grain_random_bits(n)) for _ in range(0, 2*t)]
+            rand_list = [F(grain_random_bits(grain_gen, n)) for _ in range(0, 2*t)]
         xs = rand_list[:t]
         ys = rand_list[t:]
         # xs = [F(ele) for ele in range(0, t)]
@@ -226,7 +202,7 @@ def create_mds_p(n, t):
             continue
         return M
 
-def generate_vectorspace(round_num, M, M_round, NUM_CELLS):
+def generate_vectorspace(round_num, M, M_round, NUM_CELLS, F):
     t = NUM_CELLS
     s = 1
     V = VectorSpace(F, t)
@@ -249,7 +225,7 @@ def generate_vectorspace(round_num, M, M_round, NUM_CELLS):
 
         return S
 
-def subspace_times_matrix(subspace, M, NUM_CELLS):
+def subspace_times_matrix(subspace, M, NUM_CELLS, F):
     t = NUM_CELLS
     V = VectorSpace(F, t)
     subspace_basis = subspace.basis()
@@ -260,7 +236,7 @@ def subspace_times_matrix(subspace, M, NUM_CELLS):
     return new_subspace
 
 # Returns True if the matrix is considered secure, False otherwise
-def algorithm_1(M, NUM_CELLS):
+def algorithm_1(M, NUM_CELLS, F):
     t = NUM_CELLS
     s = 1
     r = floor((t - s) / float(s))
@@ -278,7 +254,7 @@ def algorithm_1(M, NUM_CELLS):
         if (mat_test - mat_target) == matrix.circulant(vector([F(0)] * (t))):
             return [False, 1]
 
-        S = generate_vectorspace(i, M, M_round, t)
+        S = generate_vectorspace(i, M, M_round, t, F)
         V = VectorSpace(F, t)
 
         basis_vectors= []
@@ -293,7 +269,7 @@ def algorithm_1(M, NUM_CELLS):
         if IS.dimension() >= 1 and IS != V:
             return [False, 2]
         for j in range(1, i+1):
-            S_mat_mul = subspace_times_matrix(S, M^j, t)
+            S_mat_mul = subspace_times_matrix(S, M^j, t, F)
             if S == S_mat_mul:
                 print("S.basis():\n", S.basis())
                 return [False, 3]
@@ -301,7 +277,7 @@ def algorithm_1(M, NUM_CELLS):
     return [True, 0]
 
 # Returns True if the matrix is considered secure, False otherwise
-def algorithm_2(M, NUM_CELLS):
+def algorithm_2(M, NUM_CELLS, F):
     t = NUM_CELLS
     s = 1
 
@@ -339,7 +315,7 @@ def algorithm_2(M, NUM_CELLS):
     return [True, None]
 
 # Returns True if the matrix is considered secure, False otherwise
-def algorithm_3(M, NUM_CELLS):
+def algorithm_3(M, NUM_CELLS, F):
     t = NUM_CELLS
     s = 1
 
@@ -348,7 +324,7 @@ def algorithm_3(M, NUM_CELLS):
     l = 4*t
     for r in range(2, l+1):
         next_r = False
-        res_alg_2 = algorithm_2(M^r, t)
+        res_alg_2 = algorithm_2(M^r, t, F)
         if res_alg_2[0] == False:
             return [False, None]
 
@@ -391,23 +367,23 @@ def check_minpoly_condition(M, NUM_CELLS):
         M_temp = M * M_temp
     return all_fulfilled
 
-def generate_matrix(FIELD, FIELD_SIZE, NUM_CELLS):
+def generate_matrix(FIELD, FIELD_SIZE, NUM_CELLS, grain_gen, F):
     if FIELD == 0:
         print("Matrix generation not implemented for GF(2^n).")
         exit(1)
     elif FIELD == 1:
-        mds_matrix = create_mds_p(FIELD_SIZE, NUM_CELLS)
-        result_1 = algorithm_1(mds_matrix, NUM_CELLS)
-        result_2 = algorithm_2(mds_matrix, NUM_CELLS)
-        result_3 = algorithm_3(mds_matrix, NUM_CELLS)
+        mds_matrix = create_mds_p(FIELD_SIZE, NUM_CELLS, grain_gen, F)
+        result_1 = algorithm_1(mds_matrix, NUM_CELLS, F)
+        result_2 = algorithm_2(mds_matrix, NUM_CELLS, F)
+        result_3 = algorithm_3(mds_matrix, NUM_CELLS, F)
         while result_1[0] == False or result_2[0] == False or result_3[0] == False:
-            mds_matrix = create_mds_p(FIELD_SIZE, NUM_CELLS)
-            result_1 = algorithm_1(mds_matrix, NUM_CELLS)
-            result_2 = algorithm_2(mds_matrix, NUM_CELLS)
-            result_3 = algorithm_3(mds_matrix, NUM_CELLS)
+            mds_matrix = create_mds_p(FIELD_SIZE, NUM_CELLS, grain_gen, F)
+            result_1 = algorithm_1(mds_matrix, NUM_CELLS, F)
+            result_2 = algorithm_2(mds_matrix, NUM_CELLS, F)
+            result_3 = algorithm_3(mds_matrix, NUM_CELLS, F)
         return mds_matrix
 
-def generate_matrix_full(NUM_CELLS):
+def generate_matrix_full(t, NUM_CELLS, F):
     M = None
     if t == 2:
         M = matrix.circulant(vector([F(2), F(1)]))
@@ -431,7 +407,7 @@ def generate_matrix_full(NUM_CELLS):
         exit()
     return M
 
-def generate_matrix_partial(FIELD, FIELD_SIZE, NUM_CELLS): ## TODO: Prioritize small entries
+def generate_matrix_partial(FIELD, FIELD_SIZE, NUM_CELLS, t, grain_gen, F): ## TODO: Prioritize small entries
     entry_max_bit_size = FIELD_SIZE
     if FIELD == 0:
         print("Matrix generation not implemented for GF(2^n).")
@@ -444,19 +420,19 @@ def generate_matrix_partial(FIELD, FIELD_SIZE, NUM_CELLS): ## TODO: Prioritize s
             M = matrix(F, [[F(2), F(1), F(1)], [F(1), F(2), F(1)], [F(1), F(1), F(3)]])
         else:
             M_circulant = matrix.circulant(vector([F(0)] + [F(1) for _ in range(0, NUM_CELLS - 1)]))
-            M_diagonal = matrix.diagonal([F(grain_random_bits(entry_max_bit_size)) for _ in range(0, NUM_CELLS)])
+            M_diagonal = matrix.diagonal([F(grain_random_bits(grain_gen, entry_max_bit_size)) for _ in range(0, NUM_CELLS)])
             M = M_circulant + M_diagonal
             # while algorithm_1(M, NUM_CELLS)[0] == False or algorithm_2(M, NUM_CELLS)[0] == False or algorithm_3(M, NUM_CELLS)[0] == False:
             while check_minpoly_condition(M, NUM_CELLS) == False:
-                M_diagonal = matrix.diagonal([F(grain_random_bits(entry_max_bit_size)) for _ in range(0, NUM_CELLS)])
+                M_diagonal = matrix.diagonal([F(grain_random_bits(grain_gen, entry_max_bit_size)) for _ in range(0, NUM_CELLS)])
                 M = M_circulant + M_diagonal
 
-        if(algorithm_1(M, NUM_CELLS)[0] == False or algorithm_2(M, NUM_CELLS)[0] == False or algorithm_3(M, NUM_CELLS)[0] == False):
+        if(algorithm_1(M, NUM_CELLS, F)[0] == False or algorithm_2(M, NUM_CELLS, F)[0] == False or algorithm_3(M, NUM_CELLS, F)[0] == False):
             print("Error: Generated partial matrix is not secure w.r.t. subspace trails.")
             exit()
         return M
 
-def generate_matrix_partial_small_entries(FIELD, FIELD_SIZE, NUM_CELLS):
+def generate_matrix_partial_small_entries(FIELD, FIELD_SIZE, NUM_CELLS, F):
     if FIELD == 0:
         print("Matrix generation not implemented for GF(2^n).")
         exit(1)
@@ -471,11 +447,11 @@ def generate_matrix_partial_small_entries(FIELD, FIELD_SIZE, NUM_CELLS):
                 continue
             return M
 
-def matrix_partial_m_1(matrix_partial, NUM_CELLS):
+def matrix_partial_m_1(matrix_partial, NUM_CELLS, F):
     M_circulant = matrix.identity(F, NUM_CELLS)
     return matrix_partial - M_circulant
 
-def print_linear_layer(M, n, t):
+def print_linear_layer(M, n, t, NUM_CELLS, PRIME_NUMBER):
     print("n:", n)
     print("t:", t)
     print("N:", (n * t))
@@ -492,7 +468,7 @@ def print_linear_layer(M, n, t):
     matrix_string += "]"
     print("MDS matrix:\n", matrix_string)
 
-def calc_equivalent_matrices(MDS_matrix_field):
+def calc_equivalent_matrices(MDS_matrix_field, R_P_FIXED, F, t):
     # Following idea: Split M into M' * M'', where M'' is "cheap" and M' can move before the partial nonlinear layer
     # The "previous" matrix layer is then M * M'. Due to the construction of M', the M[0,0] and v values will be the same for the new M' (and I also, obviously)
     # Thus: Compute the matrices, store the w_hat and v_hat values
@@ -520,7 +496,7 @@ def calc_equivalent_matrices(MDS_matrix_field):
 
     return M_i, v_collection, w_hat_collection, MDS_matrix_field_transpose[0, 0]
 
-def calc_equivalent_constants(constants, MDS_matrix_field):
+def calc_equivalent_constants(constants, MDS_matrix_field, t, R_F_FIXED, R_P_FIXED):
     constants_temp = [constants[index:index+t] for index in range(0, len(constants), t)]
 
     MDS_matrix_field_transpose = MDS_matrix_field.transpose()
@@ -538,7 +514,7 @@ def calc_equivalent_constants(constants, MDS_matrix_field):
 
     return constants_temp
 
-def poseidon(input_words, matrix, round_constants):
+def poseidon(input_words, matrix, round_constants, R_F_FIXED, t, R_P_FIXED, alpha):
 
     R_f = int(R_F_FIXED / 2)
 
@@ -577,7 +553,7 @@ def poseidon(input_words, matrix, round_constants):
 
     return state_words
 
-def poseidon2(input_words, matrix_full, matrix_partial, round_constants):
+def poseidon2(input_words, matrix_full, matrix_partial, round_constants, R_F_FIXED, t, alpha):
 
     R_f = int(R_F_FIXED / 2)
 
@@ -619,20 +595,7 @@ def poseidon2(input_words, matrix_full, matrix_partial, round_constants):
 
     return state_words
 
-# Init
-init_generator(FIELD, SBOX, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED)
-
-# Round constants
-round_constants = generate_constants(FIELD, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED, PRIME_NUMBER)
-# print_round_constants(round_constants, FIELD_SIZE, FIELD)
-
-# Matrix
-# MDS = generate_matrix(FIELD, FIELD_SIZE, NUM_CELLS)
-MATRIX_FULL = generate_matrix_full(NUM_CELLS)
-MATRIX_PARTIAL = generate_matrix_partial(FIELD, FIELD_SIZE, NUM_CELLS)
-MATRIX_PARTIAL_DIAGONAL_M_1 = [matrix_partial_m_1(MATRIX_PARTIAL, NUM_CELLS)[i,i] for i in range(0, NUM_CELLS)]
-
-def to_hex(value):
+def to_hex(value, p):
     l = len(hex(p - 1))
     if l % 2 == 1:
         l = l + 1
@@ -641,54 +604,68 @@ def to_hex(value):
     # print("from_hex(\"{}\"),".format(value))
     print(f"{value},")
 
-# print("use super::poseidon::PoseidonParams;")
-# print("use bellman_ce::pairing::{bls12_381::Bls12, ff::ScalarEngine, from_hex};")
-# print("type Scalar = <Bls12 as ScalarEngine>::Fr;")
-# print("use lazy_static::lazy_static;")
-# print("use std::sync::Arc;")
-print()
-# print("lazy_static! {")
+
+def generate_constants_file():
+    for t in range(4, 44, 4):
+        p = 2013265921 # BabyBear
+        n = len(p.bits())
+        FIELD = 1
+        SBOX = 0
+        FIELD_SIZE = n
+        NUM_CELLS = t
+        alpha = get_alpha(p)
+        R_F_FIXED, R_P_FIXED, _, _ = poseidon_calc_final_numbers_fixed(p, t, alpha, 128, True, FIELD_SIZE, NUM_CELLS)
+        print("// +++ t = {0} R_F = {1}, R_P = {2} +++".format(t, R_F_FIXED, R_P_FIXED))
+
+        INIT_SEQUENCE = init_generator(FIELD, SBOX, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED, FIELD, SBOX, FIELD_SIZE, NUM_CELLS)
+
+        PRIME_NUMBER = p
+        F = GF(PRIME_NUMBER)
+        grain_gen = grain_sr_generator(INIT_SEQUENCE)
+
+        # Round constants
+        (full_round_constants, partial_round_constants) = generate_constants(FIELD, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED, PRIME_NUMBER, grain_gen)
+        # print_round_constants(round_constants, FIELD_SIZE, FIELD)
+
+        # Matrix
+        # MDS = generate_matrix(FIELD, FIELD_SIZE, NUM_CELLS)
+        MATRIX_FULL = generate_matrix_full(t, NUM_CELLS, F)
+        MATRIX_PARTIAL = generate_matrix_partial(FIELD, FIELD_SIZE, NUM_CELLS, t, grain_gen, F)
+        MATRIX_PARTIAL_DIAGONAL_M_1 = [matrix_partial_m_1(MATRIX_PARTIAL, NUM_CELLS, F)[i,i] for i in range(0, NUM_CELLS)]
+
+        print()
 
 
-# # MDS
-# print("pub static ref MDS{}: Vec<Vec<Scalar>> = vec![".format(t))
-# for vec in MDS:
-#     print("vec![", end="")
-#     for val in vec:
-#         to_hex(val)
-#     print("],")
-# print("];")
-# print()
 
-# Efficient partial matrix (diagonal - 1)
-print("pub const MATRIX_DIAG_{}_BABYBEAR_U32: [u32; {}]= [".format(t, t))
-for val in MATRIX_PARTIAL_DIAGONAL_M_1:
-    to_hex(val)
-print("];")
-print()
+        # Efficient partial matrix (diagonal - 1)
+        print("pub const MATRIX_DIAG_{}_BABYBEAR_U32: [u32; {}]= [".format(t, t))
+        for val in MATRIX_PARTIAL_DIAGONAL_M_1:
+            to_hex(val, p)
+        print("];")
+        print()
 
-# # Efficient partial matrix (full)
-# print("pub static ref MAT_INTERNAL{}: Vec<Vec<Scalar>> = vec![".format(t))
-# for vec in MATRIX_PARTIAL:
-#     print("vec![", end="")
-#     for val in vec:
-#         to_hex(val)
-#     print("],")
-# print("];")
-# print()
 
-# Round constants
-R = R_F_FIXED + R_P_FIXED
+        # Round constants
+        R = R_F_FIXED + R_P_FIXED
 
-print("pub const RC_{}_{}_U32: [[u32; {}]; {}] = [".format(t, R, t, R))
-for (i,val) in enumerate(round_constants):
-    if i % t == 0:
-        print("[", end="")
-    to_hex(val)
-    if i % t == t - 1:
-        print("],")
-print("];")
-print()
+        print("pub const FULL_RC_{}_{}_U32: [[u32; {}]; {}] = [".format(t, R_F_FIXED, t, R_F_FIXED))
+        for (i,val) in enumerate(full_round_constants):
+            if i % t == 0:
+                print("[", end="")
+            to_hex(val, p)
+            if i % t == t - 1:
+                print("],")
+        print("];")
+
+        print()
+
+        print("pub const PART_RC_{}_{}_U32: [u32; {}] = [".format(t, R_P_FIXED, R_P_FIXED))
+        for val in partial_round_constants:
+            to_hex(val, p)
+        print("];")
+        print()
+
+generate_constants_file()
 
 ### TODO: find a way of uncommenting this to get the test cases
 
