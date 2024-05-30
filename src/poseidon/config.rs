@@ -1,4 +1,5 @@
 use hybrid_array::{typenum::*, Array, ArraySize};
+use p3_field::Field;
 // use p3_baby_bear::BabyBear;
 
 use super::constants::{
@@ -16,6 +17,7 @@ trait ConstantsProvided {}
 
 #[allow(private_bounds)]
 pub trait PoseidonConfig: Clone + Copy + Sync + ConstantsProvided {
+    type F: Field;
     type WIDTH: ArraySize;
     const R_P: usize;
     const R_F: usize;
@@ -27,6 +29,9 @@ pub trait PoseidonConfig: Clone + Copy + Sync + ConstantsProvided {
 
     fn matrix_diag() -> Array<u32, Self::WIDTH>;
 
+    /// Ret
+    fn round_constants() -> impl IntoIterator<Item = &'static Array<Self::F, Self::WIDTH>>;
+    
     // fn permute(&self, mut input: Array<BabyBear, Self::WIDTH>) -> Array<BabyBear, Self::WIDTH> {
     //     self.permute_mut(&mut input);
     //     input

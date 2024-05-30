@@ -2,8 +2,10 @@
 use core::mem::size_of;
 
 use std::borrow::Borrow;
+use std::iter::zip;
 
 use hybrid_array::{typenum::Unsigned, Array};
+use itertools::{chain, izip};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::AbstractField;
 use p3_matrix::Matrix;
@@ -27,106 +29,116 @@ where
 impl<AB, C> Air<AB> for Poseidon2Chip<C>
 where
     AB: AirBuilder,
-    C: PoseidonConfig,
+    C: PoseidonConfig<F = AB::F>,
 {
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
         let local = main.row_slice(0);
         let local: &Poseidon2Cols<AB::Var, C> = (*local).borrow();
+        let next = main.row_slice(1);
+        let next: &Poseidon2Cols<AB::Var, C> = (*next).borrow();
 
-        let width = <C::WIDTH as Unsigned>::USIZE;
-        let rounds_f = C::R_F;
-        let rounds_p = C::R_P;
-        let rounds = <C::R as Unsigned>::USIZE;
+        let W = <C::WIDTH as Unsigned>::USIZE;
+        let R_F = C::R_F;
+        let R_P = C::R_P;
 
-        // Convert the u32 round constants to field elements.
-        let full_constants: Vec<_> = C::full_round_constants()
-            .into_iter()
-            .map(|round| round.map(AB::F::from_wrapped_u32))
-            .collect();
+        let RF_HALF = R_F / 2;
 
-        let partial_constants: Vec<_> = C::partial_round_constants()
-            .into_iter()
-            .map(AB::F::from_wrapped_u32)
-            .collect();
+        let R_E1_START = 0;
+        let R_P_START = R_E1_START + RF_HALF;
+        let R_E2_START = R_P_START + R_P;
+
+        let ROUNDS_E1 = R_E1_START..(R_E1_START + RF_HALF);
+        let ROUNDS_P = R_P_START..(R_P_START + R_P);
+        let ROUNDS_E2 = R_E2_START..(R_E2_START + RF_HALF);
+
+        // Computes the sum of boolean flags
+        let round_flag_sum =
+            |flags: &[AB::Var]| flags.iter().map(|&flag| flag.into()).sum::<AB::Expr>();
+
+        let rounds_external_first = &local.rounds[ROUNDS_E1.clone()];
+        let rounds_internal = &local.rounds[ROUNDS_P.clone()];
+        let rounds_external_second = &local.rounds[ROUNDS_E2.clone()];
+
+        let is_init = local.is_init.into();
+        let is_external_first = round_flag_sum(rounds_external_first);
+        let is_internal = round_flag_sum(rounds_internal);
+        let is_external_second = round_flag_sum(rounds_external_second);
+        let is_external: AB::Expr = is_external_first.clone() + is_external_second.clone();
+
+        // Range check all flags.
+        builder.assert_bool(is_init);
+        for &round_flag in &local.rounds {
+            builder.assert_bool(round_flag);
+        }
+        let is_real: AB::Expr = is_init.clone() + is_internal.clone() + is_external.clone();
+        builder.assert_bool(is_real.clone());
 
         // Apply the round constants.
         // External Layers: Apply the round constants.
         // Internal Layers: Only apply the round constants to the first element.
-        for i in 0..width {
-            let mut result: AB::Expr = local.input[i].into();
-            for r in 0..rounds {
-                let offset = rounds_f / 2;
-                let is_first_full_rounds = r < offset;
-                let is_second_full_rounds = r >= offset + rounds_p;
-                // let is_external = is_first_full_rounds || is_second_full_rounds;
+        let mut add_rc = local.input.clone().map(Into::into);
+        for (&round_flag, round_constants) in zip(&local.rounds, C::round_constants()) {
+            // Select the constants only if they are those for this round.
+            let round_constants = round_constants
+                .iter()
+                .map(|&constant| round_flag.into() * constant);
+            for (i, (result, constant)) in zip(add_rc.iter_mut(), round_constants).enumerate() {
+                // Always apply if external layer
+                let mut should_add = is_external.clone();
+                // Only apply to the first element if internal layer
                 if i == 0 {
-                    if is_first_full_rounds {
-                        result += local.rounds[r] * full_constants[r][i];
-                    } else if is_second_full_rounds {
-                        result += local.rounds[r] * full_constants[r + offset][i];
-                    } else {
-                        result += local.rounds[r] * partial_constants[r - offset];
-                    }
-                } else {
-                    // FIX: Not sure this is right
-                    if is_first_full_rounds {
-                        result += local.rounds[r] * full_constants[r][i] // * local.is_external;
-                    } else if is_second_full_rounds {
-                        result += local.rounds[r] * full_constants[r + offset][i]
-                    // * local...
-                    } else {
-                        result += local.rounds[r].into() // * partial_constants[r] * local.is_external;
-                    }
+                    should_add += is_internal.clone();
                 }
+                *result += should_add * constant;
             }
-            builder.assert_eq(result, local.add_rc[i]);
+        }
+        // Enforce round constant computation.
+        // When is_real.is_zero(), `add_rc` is zero.
+        for (add_rc, &add_rc_expected) in zip(add_rc, &local.add_rc) {
+            builder
+                .when(is_real.clone())
+                .assert_eq(add_rc, add_rc_expected);
         }
 
-        // Apply the sbox.
-        // To differentiate between external and internal layers, we use a masking operation
-        // to only apply the state change to the first element for internal layers.
-        for i in 0..width {
-            let sbox_deg_3 = local.add_rc[i] * local.add_rc[i] * local.add_rc[i];
-            builder.assert_eq(sbox_deg_3, local.sbox_deg_3[i]);
-            let sbox_deg_7 = local.sbox_deg_3[i] * local.sbox_deg_3[i] * local.add_rc[i];
-            builder.assert_eq(sbox_deg_7, local.sbox_deg_7[i]);
+        // Verify sbox computations
+        for (&input, &sbox_deg_3_expected, &sbox_deg_7_expected) in
+            izip!(&local.add_rc, &local.sbox_deg_3, &local.sbox_deg_7)
+        {
+            let sbox_deg_3 = input * input * input;
+            let sbox_deg_7 = sbox_deg_3_expected * sbox_deg_3_expected * input;
+            builder.assert_eq(sbox_deg_3, sbox_deg_3_expected);
+            builder.assert_eq(sbox_deg_7, sbox_deg_7_expected);
         }
-        let sbox_result: Vec<AB::Expr> = local
-            .sbox_deg_7
-            .iter()
-            .enumerate()
-            .map(|(i, x)| {
-                // The masked first result of the sbox.
-                //
-                // All Layers: Pass through the result of the sbox layer.
-                if i == 0 {
-                    (*x).into()
-                }
-                // The masked result of the rest of the sbox.
-                //
-                // External layer: Pass through the result of the sbox layer.
-                // Internal layer: Pass through the result of the round constant layer.
-                else {
-                    local.is_internal * local.add_rc[i] + (AB::Expr::one() - local.is_internal) * *x
-                }
-            })
-            .collect::<Vec<_>>();
 
-        // EXTERNAL LAYER
+        // Only apply sbox to
+        // - First element in internal and external rounds
+        // - All elements in external rounds
+        let sbox_result = Array::<AB::Expr, C::WIDTH>::from_fn(|i| {
+            if i == 0 {
+                is_init.clone() * local.add_rc[i]
+                    + (is_internal.clone() + is_external.clone()) * local.sbox_deg_7[i]
+            } else {
+                (is_init.clone() + is_internal.clone()) * local.add_rc[i]
+                    + is_external * local.sbox_deg_7[i]
+            }
+        });
+
+        // EXTERNAL + INITIAL LAYER = Linear Layer
+        let is_linear = is_init.clone() + is_external.clone();
         {
             // First, we apply M_4 to each consecutive four elements of the state.
             // In Appendix B's terminology, this replaces each x_i with x_i'.
-            let mut state: Vec<_> = sbox_result.clone();
-            for i in (0..width).step_by(4) {
-                apply_m_4(&mut state[i..i + 4]);
+            let mut state = sbox_result.clone();
+            for state_chunk in state.chunks_mut(4) {
+                apply_m_4(state_chunk);
             }
 
             // Now, we apply the outer circulant matrix (to compute the y_i values).
             //
             // We first precompute the four sums of every four elements.
             let sums: [AB::Expr; 4] = core::array::from_fn(|k| {
-                (0..width)
+                (0..W)
                     .step_by(4)
                     .map(|j| state[j + k].clone())
                     .sum::<AB::Expr>()
@@ -134,65 +146,36 @@ where
 
             // The formula for each y_i involves 2x_i' term and x_j' terms for each j that equals i mod 4.
             // In other words, we can add a single copy of x_i' to the appropriate one of our precomputed sums.
-            for i in 0..width {
-                state[i] += sums[i % 4].clone();
+            for (state, sum, &output_expected) in
+                izip!(state, sums.into_iter().cycle(), &local.output)
+            {
+                let output = state + sum;
                 builder
-                    .when(local.is_external)
-                    .assert_eq(state[i].clone(), local.output[i]);
+                    .when(is_linear.clone())
+                    .assert_eq(output, output_expected);
             }
         }
 
         // INTERNAL LAYER
         {
             // Use a simple matrix multiplication as the permutation.
-            let mut state: Vec<AB::Expr> = sbox_result.clone();
+            let mut state = sbox_result;
             let matmul_constants: Array<<<AB as AirBuilder>::Expr as AbstractField>::F, C::WIDTH> =
                 C::matrix_diag()
                     .map(<<AB as AirBuilder>::Expr as AbstractField>::F::from_wrapped_u32);
             matmul_generic(&mut state, matmul_constants);
-            for i in 0..width {
+
+            for (state, &output_expected) in zip(state, &local.output) {
                 builder
-                    .when(local.is_internal)
-                    .assert_eq(state[i].clone(), local.output[i]);
+                    .when(is_internal.clone())
+                    .assert_eq(state, output_expected);
             }
         }
 
         // When not the final layer, constrain the output to be the input of the next layer.
-        let next_input = main.row_slice(1);
-        let next_input: &Poseidon2Cols<AB::Var, C> = (*next_input).borrow();
-        for i in 0..width {
-            builder
-                .when(AB::Expr::one() - local.rounds[width - 1])
-                .assert_eq(local.output[i], next_input.input[i]);
+        let is_not_last_round = is_real - *local.rounds.last().unwrap();
+        for (&local_output, &next_input) in zip(&local.output, &next.input) {
+            builder.when(is_not_last_round.clone()).assert_eq(local_output, next_input);
         }
-
-        // Range check all flags.
-        for i in 0..local.rounds.len() {
-            builder.assert_bool(local.rounds[i]);
-        }
-        builder.assert_bool(local.is_external);
-        builder.assert_bool(local.is_internal);
-        builder.assert_bool(local.is_external + local.is_internal);
-
-        let external_end = rounds_f / 2;
-        let internal_end = external_end + rounds_p;
-
-        // Constrain the external flag.
-        let is_external_first_half = (0..external_end)
-            .map(|i| local.rounds[i + 1].into())
-            .sum::<AB::Expr>();
-        let is_external_second_half = (internal_end..rounds)
-            .map(|i| local.rounds[i + 1].into())
-            .sum::<AB::Expr>();
-        builder.assert_eq(
-            local.is_external,
-            is_external_first_half + is_external_second_half,
-        );
-
-        // Constrain the internal flag.
-        let is_internal = (external_end..internal_end)
-            .map(|i| local.rounds[i + 1].into())
-            .sum::<AB::Expr>();
-        builder.assert_eq(local.is_internal, is_internal);
     }
 }

@@ -19,7 +19,7 @@ where
 }
 
 pub(crate) fn matmul_generic<F, AF, WIDTH>(
-    state: &mut Vec<AF>,
+    state: &mut [AF],
     mat_internal_diag_m_1: Array<F, WIDTH>,
 ) where
     F: Field,

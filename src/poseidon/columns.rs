@@ -15,12 +15,11 @@ where
     C: PoseidonConfig,
 {
     pub input: Array<T, C::WIDTH>,
+    pub is_init: T,
     pub rounds: Array<T, C::R>,
     pub add_rc: Array<T, C::WIDTH>,
     pub sbox_deg_3: Array<T, C::WIDTH>,
     pub sbox_deg_7: Array<T, C::WIDTH>,
     pub output: Array<T, C::WIDTH>,
-    pub is_internal: T,
-    pub is_external: T,
     _p: PhantomData<C>,
 }
