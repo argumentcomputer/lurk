@@ -160,8 +160,7 @@ where
         {
             // Use a simple matrix multiplication as the permutation.
             let mut state = sbox_result;
-            let matmul_constants: Array<<<AB as AirBuilder>::Expr as AbstractField>::F, C::WIDTH> =
-                C::matrix_diag().map(|u| <AB::Expr as AbstractField>::F::from_f(u));
+            let matmul_constants = C::matrix_diag().map(AB::F::from);
             matmul_generic(&mut state, &matmul_constants);
 
             for (state, &output_expected) in zip(state, &local.output) {

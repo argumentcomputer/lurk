@@ -1,8 +1,9 @@
 use hybrid_array::{typenum::*, Array, ArraySize};
+use itertools::Itertools;
 use p3_baby_bear::BabyBear;
-use p3_field::Field;
+use p3_field::{AbstractField, Field};
 
-use super::constants::MATRIX_DIAG_4_BABYBEAR;
+use super::constants::{FULL_RC_4_8, MATRIX_DIAG_4_BABYBEAR, PART_RC_4_21};
 // use p3_baby_bear::BabyBear;
 
 trait ConstantsProvided {}
@@ -41,7 +42,20 @@ impl PoseidonConfig for BabyBearConfig4 {
     }
 
     fn round_constants() -> impl IntoIterator<Item = &'static Array<Self::F, Self::WIDTH>> {
-        todo!()
+        let first_half = FULL_RC_4_8
+            .iter()
+            .map(|u| Array::from_slice(u).as_ref())
+            .take(4);
+        let second_half = FULL_RC_4_8
+            .iter()
+            .map(|u| Array::from_slice(u).as_ref())
+            .skip(4);
+
+        let partial_round_constants = PART_RC_4_21
+            .into_iter()
+            .map(|v| Array::from_fn(|i| if i == 0 { v } else { BabyBear::zero() }).as_ref());
+
+        first_half.chain(partial_round_constants).chain(second_half)
     }
 }
 
