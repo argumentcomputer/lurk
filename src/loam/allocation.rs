@@ -125,7 +125,7 @@ ascent! {
     relation output_ptr(Ptr); // (ptr)
 
     // triggers allocation once per unique cons
-    relation cons(Ptr, Ptr, LE); // (car, cdr, priority)
+    relation cons(Ptr, Ptr); // (car, cdr)
     relation car(Ptr, Ptr); // (cons, car)
     relation cdr(Ptr, Ptr); // (cons, cdr)
     relation hash4(Ptr, Wide, Wide, Wide, Wide); // (a, b, c, d)
@@ -148,7 +148,7 @@ ascent! {
 
 
 
-    relation alloc(LE, Wide, LE); // (tag, value, priority)
+    relation alloc(LE, Wide); // (tag, value)
 
     ////////////////////////////////////////////////////////////////////////////////
     // Memory
@@ -165,7 +165,7 @@ ascent! {
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
     cons_digest_mem(value, Dual(allocator().alloc_addr(Tag::Cons.elt(), "cons_digest_mem"))) <--
-        alloc(tag, value, priority),
+        alloc(tag, value),
         if *tag == Tag::Cons.elt(),
         tag(tag, wide_tag);
 
@@ -173,7 +173,7 @@ ascent! {
     ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0);
 
     // Populating cons(...) triggers allocation in cons mem.
-    cons_mem(car, cdr, Dual(allocator().alloc_addr(Tag::Cons.elt(), "cons_mem"))) <-- cons(car, cdr, priority);
+    cons_mem(car, cdr, Dual(allocator().alloc_addr(Tag::Cons.elt(), "cons_mem"))) <-- cons(car, cdr);
 
     // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
     cons_digest_mem(digest, addr) <--
@@ -197,7 +197,7 @@ ascent! {
     // Ingress path
 
     // Ingress 1: mark input expression for allocation.
-    alloc(tag, wide_ptr.1, 0) <-- input_expr(wide_ptr), tag(tag, wide_ptr.0);
+    alloc(tag, wide_ptr.1) <-- input_expr(wide_ptr), tag(tag, wide_ptr.0);
 
     // Populate input_ptr and mark for ingress.
     ingress(ptr),
@@ -211,16 +211,15 @@ ascent! {
     // unhash to acquire preimage pointers from digest.
     hash4_rel(a, b, c, d, digest) <-- unhash4(_, digest, ptr), let [a, b, c, d] = allocator().unhash4(digest).unwrap();
 
-    // Allocate the car and cdr with appropriate priorities to avoid address conflict.
-    alloc(car_tag, car_value, 0),
-    alloc(cdr_tag, cdr_value, 1) <--
+    alloc(car_tag, car_value),
+    alloc(cdr_tag, cdr_value) <--
         unhash4(&Tag::Cons.elt(), digest, _),
         hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
 
     ptr(Ptr(Tag::F.elt(), f)),
-    f_value(Ptr(Tag::F.elt(), f), Wide::widen(f)) <-- alloc(&Tag::F.elt(), value, _), let f = value.f();
+    f_value(Ptr(Tag::F.elt(), f), Wide::widen(f)) <-- alloc(&Tag::F.elt(), value), let f = value.f();
 
     cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0)),
     cons_mem(car, cdr, addr) <--
@@ -271,23 +270,23 @@ ascent! {
     // This is just a silly input->output function that maps f(x)->2x over the input tree,
     // for use as a development example. This will be replaced by e.g. Lurk eval.
 
-    relation map_double_input(Ptr, LE); // (input, priority)
+    relation map_double_input(Ptr); // (input)
     relation map_double(Ptr, Ptr); // (input-ptr, output-ptr)
 
     ptr(doubled),
-    map_double(ptr, doubled) <-- map_double_input(ptr, _), if ptr.is_f(), let doubled = Ptr(Tag::F.elt(), ptr.1 * 2);
+    map_double(ptr, doubled) <-- map_double_input(ptr), if ptr.is_f(), let doubled = Ptr(Tag::F.elt(), ptr.1 * 2);
 
-    map_double_input(ptr, 0) <-- input_ptr(ptr);
+    map_double_input(ptr) <-- input_ptr(ptr);
 
-    ingress(ptr) <-- map_double_input(ptr, _), if ptr.is_cons();
+    ingress(ptr) <-- map_double_input(ptr), if ptr.is_cons();
 
-    map_double_input(car, 2*priority), map_double_input(cdr, (2*priority) + 1) <-- map_double_input(cons, priority), cons_rel(car, cdr, cons);
+    map_double_input(car), map_double_input(cdr) <-- map_double_input(cons), cons_rel(car, cdr, cons);
 
     relation map_double_cont(Ptr, Ptr, Ptr); //
 
     map_double_cont(ptr, double_car, double_cdr),
-    cons(double_car, double_cdr, priority) <--
-        map_double_input(ptr, priority), if ptr.is_cons(),
+    cons(double_car, double_cdr) <--
+        map_double_input(ptr), if ptr.is_cons(),
         cons_rel(car, cdr, ptr),
         map_double(car, double_car),
         map_double(cdr, double_cdr);

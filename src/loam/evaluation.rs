@@ -58,7 +58,7 @@ ascent! {
     // relation output_ptr_cek(CEK<Ptr>); // (cek)
 
     // triggers allocation once per unique cons
-    relation cons(Ptr, Ptr, LE); // (car, cdr, priority)
+    relation cons(Ptr, Ptr); // (car, cdr)
     relation car(Ptr, Ptr); // (cons, car)
     relation cdr(Ptr, Ptr); // (cons, cdr)
     relation hash4(Ptr, Wide, Wide, Wide, Wide); // (a, b, c, d)
@@ -81,7 +81,7 @@ ascent! {
 
 
 
-    relation alloc(LE, Wide, LE); // (tag, value, priority)
+    relation alloc(LE, Wide); // (tag, value)
 
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -99,7 +99,7 @@ ascent! {
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
     cons_digest_mem(value, Dual(allocator().alloc_addr(Tag::Cons.elt(), "cons_digest_mem"))) <--
-        alloc(tag, value, priority),
+        alloc(tag, value),
         if *tag == Tag::Cons.elt(),
         tag(tag, wide_tag);
 
@@ -107,7 +107,7 @@ ascent! {
     ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0);
 
     // Populating cons(...) triggers allocation in cons mem.
-    cons_mem(car, cdr, Dual(allocator().alloc_addr(Tag::Cons.elt(), "cons_mem"))) <-- cons(car, cdr, priority);
+    cons_mem(car, cdr, Dual(allocator().alloc_addr(Tag::Cons.elt(), "cons_mem"))) <-- cons(car, cdr);
 
     // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
     cons_digest_mem(digest, addr) <--
@@ -141,7 +141,7 @@ ascent! {
     // Ingress path
 
     // Ingress 1: mark input expression for allocation.
-    alloc(tag, wide_ptr.1, 0) <-- input_expr(wide_ptr), tag(tag, wide_ptr.0);
+    alloc(tag, wide_ptr.1) <-- input_expr(wide_ptr), tag(tag, wide_ptr.0);
 
     ingress(ptr),
     input_ptr(ptr) <-- input_expr(wide_ptr), ptr_tag(ptr, wide_ptr.0), ptr_value(ptr, wide_ptr.1);
@@ -154,17 +154,16 @@ ascent! {
     // unhash to acquire preimage pointers from digest.
     hash4_rel(a, b, c, d, digest) <-- unhash4(_, digest, ptr), let [a, b, c, d] = allocator().unhash4(digest).unwrap();
 
-    // Allocate the car and cdr with appropriate priorities to avoid address conflict.
-    alloc(car_tag, car_value, 0),
-    alloc(cdr_tag, cdr_value, 1) <--
+    alloc(car_tag, car_value),
+    alloc(cdr_tag, cdr_value) <--
         unhash4(&Tag::Cons.elt(), digest, _),
         hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
 
-    f_value(Ptr(Tag::F.elt(),f), Wide::widen(f)) <-- alloc(&Tag::F.elt(), value, _), let f = value.f();
+    f_value(Ptr(Tag::F.elt(),f), Wide::widen(f)) <-- alloc(&Tag::F.elt(), value), let f = value.f();
     ptr(ptr), ptr_value(ptr, Wide::widen(f)) <--
-        alloc(&Tag::Nil.elt(), value, _), let f = value.f(), let ptr = Ptr(Tag::Nil.elt(), f);
+        alloc(&Tag::Nil.elt(), value), let f = value.f(), let ptr = Ptr(Tag::Nil.elt(), f);
 
     cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0)),
     cons_mem(car, cdr, addr) <--
