@@ -5,7 +5,7 @@ use std::borrow::Borrow;
 use std::iter::zip;
 
 use hybrid_array::{typenum::Unsigned, Array};
-use itertools::{chain, izip};
+use itertools::izip;
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::AbstractField;
 use p3_matrix::Matrix;
@@ -161,9 +161,8 @@ where
             // Use a simple matrix multiplication as the permutation.
             let mut state = sbox_result;
             let matmul_constants: Array<<<AB as AirBuilder>::Expr as AbstractField>::F, C::WIDTH> =
-                C::matrix_diag()
-                    .map(<<AB as AirBuilder>::Expr as AbstractField>::F::from_wrapped_u32);
-            matmul_generic(&mut state, matmul_constants);
+                C::matrix_diag().map(|u| <AB::Expr as AbstractField>::F::from_f(u));
+            matmul_generic(&mut state, &matmul_constants);
 
             for (state, &output_expected) in zip(state, &local.output) {
                 builder
@@ -175,7 +174,9 @@ where
         // When not the final layer, constrain the output to be the input of the next layer.
         let is_not_last_round = is_real - *local.rounds.last().unwrap();
         for (&local_output, &next_input) in zip(&local.output, &next.input) {
-            builder.when(is_not_last_round.clone()).assert_eq(local_output, next_input);
+            builder
+                .when(is_not_last_round.clone())
+                .assert_eq(local_output, next_input);
         }
     }
 }

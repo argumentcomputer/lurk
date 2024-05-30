@@ -595,17 +595,27 @@ def poseidon2(input_words, matrix_full, matrix_partial, round_constants, R_F_FIX
 
     return state_words
 
-def to_hex(value, p):
+def to_field(value, p):
     l = len(hex(p - 1))
     if l % 2 == 1:
         l = l + 1
     value = hex(int(value))[2:]
     value = "0x" + value.zfill(l - 2)
     # print("from_hex(\"{}\"),".format(value))
-    print(f"{value},")
+    print(f"f({value}),")
 
 
 def generate_constants_file():
+    print("use lazy_static::*;")
+    print("use p3_baby_bear::BabyBear;")
+    print("use p3_field::AbstractField;")
+    print()
+    print("""
+fn f(u: u32) -> BabyBear {
+    BabyBear::from_canonical_u32(u)
+}
+          """
+          )
     for t in range(4, 44, 4):
         p = 2013265921 # BabyBear
         n = len(p.bits())
@@ -615,8 +625,9 @@ def generate_constants_file():
         NUM_CELLS = t
         alpha = get_alpha(p)
         R_F_FIXED, R_P_FIXED, _, _ = poseidon_calc_final_numbers_fixed(p, t, alpha, 128, True, FIELD_SIZE, NUM_CELLS)
-        print("// +++ t = {0} R_F = {1}, R_P = {2} +++".format(t, R_F_FIXED, R_P_FIXED))
 
+        print("// +++ t = {0} R_F = {1}, R_P = {2} +++".format(t, R_F_FIXED, R_P_FIXED))
+        print("lazy_static! {")
         INIT_SEQUENCE = init_generator(FIELD, SBOX, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED, FIELD, SBOX, FIELD_SIZE, NUM_CELLS)
 
         PRIME_NUMBER = p
@@ -633,14 +644,10 @@ def generate_constants_file():
         MATRIX_PARTIAL = generate_matrix_partial(FIELD, FIELD_SIZE, NUM_CELLS, t, grain_gen, F)
         MATRIX_PARTIAL_DIAGONAL_M_1 = [matrix_partial_m_1(MATRIX_PARTIAL, NUM_CELLS, F)[i,i] for i in range(0, NUM_CELLS)]
 
-        print()
-
-
-
         # Efficient partial matrix (diagonal - 1)
-        print("pub const MATRIX_DIAG_{}_BABYBEAR_U32: [u32; {}]= [".format(t, t))
+        print("pub static ref MATRIX_DIAG_{}_BABYBEAR: [BabyBear; {}]= [".format(t, t))
         for val in MATRIX_PARTIAL_DIAGONAL_M_1:
-            to_hex(val, p)
+            to_field(val, p)
         print("];")
         print()
 
@@ -648,21 +655,22 @@ def generate_constants_file():
         # Round constants
         R = R_F_FIXED + R_P_FIXED
 
-        print("pub const FULL_RC_{}_{}_U32: [[u32; {}]; {}] = [".format(t, R_F_FIXED, t, R_F_FIXED))
+        print("pub static ref FULL_RC_{}_{}: [[BabyBear; {}]; {}] = [".format(t, R_F_FIXED, t, R_F_FIXED))
         for (i,val) in enumerate(full_round_constants):
             if i % t == 0:
                 print("[", end="")
-            to_hex(val, p)
+            to_field(val, p)
             if i % t == t - 1:
                 print("],")
         print("];")
 
         print()
 
-        print("pub const PART_RC_{}_{}_U32: [u32; {}] = [".format(t, R_P_FIXED, R_P_FIXED))
+        print("pub static ref PART_RC_{}_{}: [BabyBear; {}] = [".format(t, R_P_FIXED, R_P_FIXED))
         for val in partial_round_constants:
-            to_hex(val, p)
+            to_field(val, p)
         print("];")
+        print("}")
         print()
 
 generate_constants_file()

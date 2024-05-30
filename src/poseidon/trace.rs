@@ -1,5 +1,6 @@
 //! This module defines the trace generation for the Poseidon2 AIR Chip
 use core::iter;
+use std::iter::once;
 
 use hybrid_array::{typenum::Unsigned, Array};
 use itertools::Itertools;
@@ -17,14 +18,16 @@ use super::{
 
 type F = BabyBear;
 
-impl<C: PoseidonConfig> Poseidon2Chip<C> {
+impl<C: PoseidonConfig> Poseidon2Chip<C>
+where
+    C: PoseidonConfig<F = F>,
+{
     pub fn generate_trace(&self, inputs: Vec<Array<F, C::WIDTH>>) -> RowMajorMatrix<F> {
-        let width = <C::WIDTH as Unsigned>::USIZE;
-        let rounds = <C::R as Unsigned>::USIZE;
+        let width = C::WIDTH;
+        let rounds = C::R_F + C::R_P;
         let num_cols = <Poseidon2Chip<C> as BaseAir<F>>::width(self);
 
-        let full_trace_len = inputs.len() * num_cols * rounds;
-
+        let full_trace_len = inputs.len() * num_cols * (rounds + 1);
         let full_trace_len = full_trace_len.next_power_of_two();
 
         let mut trace = RowMajorMatrix::new(vec![F::zero(); full_trace_len], width);
@@ -37,28 +40,22 @@ impl<C: PoseidonConfig> Poseidon2Chip<C> {
         let zero_row: Array<F, C::WIDTH> = Array::clone_from_slice(&vec![F::zero(); width]);
 
         let padded_inputs = inputs.into_iter().chain(iter::repeat(zero_row));
-        for (rounds_row, input) in rows.chunks_mut(rounds).zip_eq(padded_inputs) {
+        for (rounds_row, input) in rows.chunks_mut(rounds + 1).zip_eq(padded_inputs) {
             self.generate_round_trace(rounds_row.to_vec(), input);
         }
         trace
     }
 
     fn generate_round_trace(&self, mut rows: Vec<Poseidon2Cols<F, C>>, input: Array<F, C::WIDTH>) {
-        let full_constants = C::full_round_constants()
-            .into_iter()
-            .map(|round| round.map(F::from_wrapped_u32))
-            .collect::<Vec<_>>();
-        let partial_constants = C::partial_round_constants()
-            .into_iter()
-            .map(F::from_wrapped_u32)
-            .collect::<Vec<_>>();
-
-        let width = <C::WIDTH as Unsigned>::USIZE;
+        let width = C::WIDTH;
         let rounds_f = C::R_F;
         let rounds_p = C::R_P;
         let mut input = input.clone();
 
-        for (round, row) in rows.iter_mut().enumerate() {
+        let first_row: Array<F, C::WIDTH> = Array::from_fn(|_| F::zero());
+        let constants = once(&first_row).chain(C::round_constants());
+
+        for (round, (row, constants)) in rows.iter_mut().zip_eq(constants).enumerate() {
             // Trick to get lsp to recognize everything?
             let round: usize = round;
             let row: &mut Poseidon2Cols<BabyBear, C> = row;
@@ -72,31 +69,15 @@ impl<C: PoseidonConfig> Poseidon2Chip<C> {
             let is_external = is_external_first_half || is_external_second_half;
             let is_internal = !is_external;
 
-            row.rounds[round] = F::one();
-
-            if is_external {
-                row.is_external = F::one();
-            } else if is_internal {
-                row.is_internal = F::one();
+            if round == 0 {
+                row.is_init = F::one()
+            } else {
+                row.rounds[round - 1] = F::one();
             }
 
             // Apply the round constants
             for i in 0..width {
-                if is_external_first_half {
-                    row.add_rc[i] = input[i] + full_constants[round][i];
-                } else if is_external_second_half {
-                    let offset = rounds_f / 2;
-                    row.add_rc[i] = input[i] + full_constants[offset + round][i];
-                } else if is_internal {
-                    let offset = rounds_f / 2;
-                    if i == 0 {
-                        row.add_rc[i] = input[i] + partial_constants[round - offset];
-                    } else {
-                        row.add_rc[i] = input[i];
-                    }
-                } else {
-                    panic!("This shouldn't happen")
-                }
+                row.add_rc[i] = input[i] + constants[i];
             }
 
             // Apply the degree 3 sbox
@@ -119,7 +100,7 @@ impl<C: PoseidonConfig> Poseidon2Chip<C> {
                         row.add_rc[i]
                     }
                 })
-                .collect::<Vec<BabyBear>>();
+                .collect::<Vec<F>>();
 
             // Apply the linear layer
             if is_external {
@@ -139,7 +120,7 @@ impl<C: PoseidonConfig> Poseidon2Chip<C> {
                     linear_input[i] += sums[i % 4];
                 }
             } else {
-                let matmul_constants = C::matrix_diag().map(F::from_wrapped_u32);
+                let matmul_constants = C::matrix_diag();
                 matmul_generic(&mut linear_input, matmul_constants);
             }
             for i in 0..width {

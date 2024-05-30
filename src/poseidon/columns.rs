@@ -1,7 +1,5 @@
 //! This module defines the Poseidon 2 column
 
-use std::marker::PhantomData;
-
 use hybrid_array::Array;
 use loam_macros::AlignedBorrow;
 
@@ -21,5 +19,4 @@ where
     pub sbox_deg_3: Array<T, C::WIDTH>,
     pub sbox_deg_7: Array<T, C::WIDTH>,
     pub output: Array<T, C::WIDTH>,
-    _p: PhantomData<C>,
 }
