@@ -103,11 +103,11 @@ impl<F: Field> LookupBuilder for SymbolicAirBuilder<F> {
         });
 
         match query_type {
-            QueryType::Require | QueryType::RequireOnce => {
-                self.air.requires.push(Interaction { values, is_real })
-            }
-            QueryType::Provide | QueryType::ProvideOnce => {
+            QueryType::Receive | QueryType::Provide => {
                 self.air.provides.push(Interaction { values, is_real })
+            }
+            QueryType::Send | QueryType::Require => {
+                self.air.requires.push(Interaction { values, is_real })
             }
         }
     }

@@ -1,5 +1,4 @@
 use p3_air::{AirBuilder, AirBuilderWithPublicValues, FilteredAirBuilder};
-use p3_field::AbstractField;
 
 /// Tagged tuple describing an element of a relation
 ///
@@ -43,10 +42,10 @@ pub trait AirBuilderExt: AirBuilder {
 }
 
 pub enum QueryType {
-    Require,
-    RequireOnce,
+    Receive,
+    Send,
     Provide,
-    ProvideOnce,
+    Require,
 }
 
 /// TODO: The `once` calls are not fully supported, and deferred to their multi-use counterparts.
@@ -60,23 +59,23 @@ pub trait LookupBuilder: AirBuilder {
         is_real_bool: Option<Self::Expr>,
     );
 
+    /// Receive a query (once) that has been sent in another part of the program.
+    fn receive(&mut self, relation: impl Relation<Self::Expr>) {
+        self.query(QueryType::Receive, relation, None);
+    }
+
+    /// Send a query (once) to another part of the program.
+    fn send(&mut self, relation: impl Relation<Self::Expr>) {
+        self.query(QueryType::Send, relation, None);
+    }
+
     /// Provide a query that can be required multiple times.
     fn provide(&mut self, relation: impl Relation<Self::Expr>) {
         self.query(QueryType::Provide, relation, None);
     }
 
-    /// Provide a query that will be required exactly once.
-    fn provide_once(&mut self, relation: impl Relation<Self::Expr>) {
-        self.query(QueryType::Provide, relation, None);
-    }
-
     /// Require a query that has been provided.
     fn require(&mut self, relation: impl Relation<Self::Expr>) {
-        self.query(QueryType::Require, relation, None);
-    }
-
-    /// Require a query that has been provided for single use.
-    fn require_once(&mut self, relation: impl Relation<Self::Expr>) {
         self.query(QueryType::Require, relation, None);
     }
 }
@@ -89,12 +88,11 @@ impl<'a, AB: LookupBuilder> LookupBuilder for FilteredAirBuilder<'a, AB> {
         is_real: Option<Self::Expr>,
     ) {
         // TODO: This requires FilteredAirBuilder.condition to be made public
-        // let condition = if let Some(is_real) = is_real {
-        //     is_real * self.condition.clone()
-        // } else {
-        //     self.condition.clone()
-        // };
-        let condition = is_real.unwrap_or(Self::Expr::one());
+        let condition = if let Some(is_real) = is_real {
+            is_real * self.condition().clone()
+        } else {
+            self.condition().clone()
+        };
         self.inner.query(query_type, relation, Some(condition))
     }
 }

@@ -12,11 +12,11 @@ fn assert_zero_sum<F: PrimeField>(interactions_vecs: Vec<Vec<Query<F>>>) {
     for interactions in interactions_vecs {
         for Query { query_type, values } in interactions {
             match query_type {
-                QueryType::Require | QueryType::RequireOnce => {
-                    required.insert(values);
-                }
-                QueryType::Provide | QueryType::ProvideOnce => {
+                QueryType::Receive | QueryType::Provide => {
                     provided.insert(values);
+                }
+                QueryType::Send | QueryType::Require => {
+                    required.insert(values);
                 }
             };
         }
@@ -44,15 +44,14 @@ impl<AB: AirBuilder + LookupBuilder> Air<AB> for MainChip {
 
         builder.assert_bool(is_byte);
 
-        // TODO: replace with builder.when(is_byte).require([byte]) when plonky3-air is updated
-        builder.query(QueryType::Require, [byte], Some(is_byte.into()));
+        builder.when(is_byte).require([byte]);
     }
 }
 
 /// Columns:
 /// * byte[1]
 /// * bits[8]
-/// * multiplicity[1]
+/// * is_real[1]
 struct BytesChip;
 
 impl<F: Send + Sync> BaseAir<F> for BytesChip {
@@ -70,10 +69,12 @@ impl<AB: AirBuilder + LookupBuilder> Air<AB> for BytesChip {
         let local = main.row_slice(0);
         let byte = local[0];
         let bits = &local[1..9];
-        let multiplicity = local[9];
+        let is_real = local[9];
+
+        builder.assert_bool(is_real);
 
         for bit in bits {
-            builder.assert_bool(*bit);
+            builder.when(is_real).assert_bool(*bit);
         }
 
         let bases = BYTE_BASES.map(AB::Expr::from_canonical_u16);
@@ -83,10 +84,9 @@ impl<AB: AirBuilder + LookupBuilder> Air<AB> for BytesChip {
             byte_expected += *bit * base;
         }
 
-        builder.assert_eq(byte_expected, byte);
+        builder.when(is_real).assert_eq(byte_expected, byte);
 
-        // TODO: replace with builder.when(multiplicity).provide([byte]) when plonky3-air is updated
-        builder.query(QueryType::Provide, [byte], Some(multiplicity.into()));
+        builder.when(is_real).provide([byte]);
     }
 }
 
@@ -112,10 +112,13 @@ fn main() {
 
     let bytes_trace = mk_matrix([
         [f(0), f(0), f(0), f(0), f(0), f(0), f(0), f(0), f(0), f(1)],
-        [f(4), f(0), f(0), f(1), f(0), f(0), f(0), f(0), f(0), f(2)],
+        [f(4), f(0), f(0), f(1), f(0), f(0), f(0), f(0), f(0), f(1)],
         [f(5), f(1), f(0), f(1), f(0), f(0), f(0), f(0), f(0), f(1)],
         [f(255), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(1)],
+        [f(256), f(5), f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(0)],
     ]);
+
+    let _multiplicities = [[1], [2], [1], [1], [0]].map(|row| row.map(f));
 
     let main_interactions = debug_constraints_collecting_queries(&MainChip, &[], &main_trace);
     let bytes_interactions = debug_constraints_collecting_queries(&BytesChip, &[], &bytes_trace);
