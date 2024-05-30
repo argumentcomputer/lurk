@@ -27,13 +27,13 @@ where
 
 impl<F: Sync> BaseAir<F> for MemChip {
     fn width(&self) -> usize {
-        self.witdh()
+        self.width()
     }
 }
 
 impl MemChip {
     /// Pointer, multiplicity and arguments
-    fn witdh(&self) -> usize {
+    fn width(&self) -> usize {
         2 + self.len
     }
 
@@ -41,7 +41,7 @@ impl MemChip {
         let len = self.len;
         let idx = mem_index_from_len(len).unwrap();
         let mem = &queries.mem_queries[idx];
-        let width = self.witdh();
+        let width = self.width();
         let height = mem.len().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
         rows.chunks_mut(width).enumerate().for_each(|(ptr, row)| {
@@ -64,7 +64,7 @@ impl MemChip {
         let len = self.len;
         let idx = mem_index_from_len(len).unwrap();
         let mem = queries.mem_queries[idx].iter().collect::<Vec<_>>();
-        let width = self.witdh();
+        let width = self.width();
         let height = mem.len().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
         rows.par_chunks_mut(width)
