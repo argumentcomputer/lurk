@@ -6,16 +6,27 @@ use ascent::{ascent, Dual};
 struct Memory {}
 
 impl Memory {
-    fn initial_relation() -> Vec<(LE, Wide, Wide, Dual<LE>)> {
+    fn initial_sym_relation() -> Vec<(Wide, Dual<LE>)> {
         let syms = Sym::built_in();
 
         syms.iter()
             .enumerate()
-            .map(|(i, sym)| (Tag::Sym.elt(), Tag::Sym.value(), sym.value(), Dual(i as LE)))
+            .map(|(i, sym)| (sym.value(), Dual(i as LE)))
             .collect()
     }
-    fn initial_counter() -> Vec<(LE,)> {
-        vec![(Self::initial_relation().len() as LE,)]
+    fn initial_sym_counter() -> Vec<(LE,)> {
+        vec![(Sym::built_in().len() as LE,)]
+    }
+    fn sym_ptr(sym: Sym) -> Ptr {
+        let addr = Sym::built_in()
+            .iter()
+            .position(|s| *s == sym)
+            .expect("not a built-in symbol");
+        dbg!(Ptr(Tag::Sym.elt(), addr as u32))
+    }
+
+    fn initial_tag_relation() -> Vec<(LE, Wide)> {
+        Tag::tag_wide_relation()
     }
 }
 
@@ -28,7 +39,7 @@ ascent! {
     // Relations
 
     // The standard tag mapping.
-    relation tag(LE, Wide) = Tag::tag_wide_relation(); // (short-tag, wide-tag)
+    relation tag(LE, Wide) = Memory::initial_tag_relation(); // (short-tag, wide-tag)
 
     relation ptr_value(Ptr, Wide); // (ptr, value)}
     relation ptr_tag(Ptr, Wide); // (ptr, tag)
@@ -85,7 +96,7 @@ ascent! {
     // Memory to support conses allocated by digest or contents.
     lattice cons_digest_mem(Wide, Dual<LE>); // (tag, wide-tag, value, addr)
     lattice cons_mem(Ptr, Ptr, Dual<LE>); // (car, cdr, addr)
-    lattice cons_counter(LE) = vec![(0,)]; // addr
+    lattice cons_counter(LE) = vec![(0,)]; // (addr)
 
     // Counter must always holds largest address of either mem.
     cons_counter(addr.0) <-- cons_digest_mem(_, addr);
@@ -114,7 +125,16 @@ ascent! {
     cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0)) <-- cons_mem(car, cdr, addr);
 
     ptr(cons), ptr_tag(cons, Tag::Cons.value()) <-- cons_rel(car, cdr, cons);
-    ptr_value(cons, value) <-- cons_rel(car, cdr, cons), cons_value(cons, value);
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // Sym
+
+    lattice sym_digest_mem(Wide, Dual<LE>) = Memory::initial_sym_relation(); // (digest, addr)
+    lattice cons_counter(LE) = Memory::initial_sym_counter(); // (addr)
+    // Convert addr to ptr and register ptr relations.
+    ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), addr.0);
+    // todo: sym_value
+
 
     ////////////////////////////////////////////////////////////////////////////////
 
@@ -122,6 +142,7 @@ ascent! {
     ptr_tag(ptr, wide_tag) <-- ptr(ptr), tag(ptr.0, wide_tag);
     ptr_value(ptr, value) <-- ptr(ptr), cons_value(ptr, value);
     ptr_value(ptr, value) <-- ptr(ptr), f_value(ptr, value);
+    // todo: sym_value
 
     ////////////////////////////////////////////////////////////////////////////////
     // Ingress path
@@ -129,6 +150,7 @@ ascent! {
     // Ingress 1: mark input expression for allocation.
     alloc(tag, wide_ptr.1, 0) <-- input_expr(wide_ptr), tag(tag, wide_ptr.0);
 
+    ingress(ptr),
     input_ptr(ptr) <-- input_expr(wide_ptr), ptr_tag(ptr, wide_ptr.0), ptr_value(ptr, wide_ptr.1);
 
     // mark ingress conses for unhashing.
@@ -147,7 +169,9 @@ ascent! {
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
 
-    f_value(Ptr(Tag::F.elt(), f), Wide::widen(f)) <-- alloc(&Tag::F.elt(), value, _), let f = value.f();
+    f_value(Ptr(Tag::F.elt(),f), Wide::widen(f)) <-- alloc(&Tag::F.elt(), value, _), let f = value.f();
+    ptr(ptr), ptr_value(ptr, Wide::widen(f)) <--
+        alloc(&Tag::Nil.elt(), value, _), let f = value.f(), let ptr = Ptr(Tag::Nil.elt(), f);
 
     cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0)),
     cons_mem(car, cdr, addr) <--
@@ -176,6 +200,21 @@ ascent! {
 
     output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), ptr_value(ptr, value), ptr_tag(ptr, wide_tag);
 
+    hash4(cons, car_tag, car_value, cdr_tag, cdr_value) <--
+        egress(cons),
+        cons_rel(car, cdr, cons),
+        ptr_tag(car, car_tag),
+        ptr_value(car, car_value),
+        ptr_tag(cdr, cdr_tag),
+        ptr_value(cdr, cdr_value);
+
+    hash4_rel(a, b, c, d, allocator().hash4(*a, *b, *c, *d)) <-- hash4(ptr, a, b, c, d);
+
+    ptr(car), ptr(cdr) <--
+        hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, _),
+        ptr_tag(car, wide_car_tag), ptr_tag(cdr, wide_cdr_tag),
+        ptr_value(car, car_value), ptr_value(cdr, cdr_value);
+
     ////////////////////////////////////////////////////////////////////////////////
     // eval
 
@@ -196,30 +235,13 @@ ascent! {
 
     ingress(expr) <-- eval_input(expr, env), if expr.is_cons();
 
-    // TODO: make a function for these ptr type tests, so this can be something like:
-    // if car.is_sym();
-    //<-- cons_rel(car, cdr, expr), if car.is_sym();
+    eval(expr, env, expr) <-- eval_input(expr, env), cons_rel(car, cdr, expr), if dbg!(*car) == Memory::sym_ptr(Sym::Char('+'));
 
 
     // output
     output_ptr(output) <-- input_ptr(input), eval(input, _, output);
 
     ////////////////////////////////////////////////////////////////////////////////
-
-    hash4(cons, car_tag, car_value, cdr_tag, cdr_value) <--
-        egress(cons),
-        cons_rel(car, cdr, cons),
-        ptr_tag(car, car_tag),
-        ptr_value(car, car_value),
-        ptr_tag(cdr, cdr_tag),
-        ptr_value(cdr, cdr_value);
-
-    hash4_rel(a, b, c, d, allocator().hash4(*a, *b, *c, *d)) <-- hash4(ptr, a, b, c, d);
-
-    ptr(car), ptr(cdr) <--
-        hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, _),
-        ptr_tag(car, wide_car_tag), ptr_tag(cdr, wide_cdr_tag),
-        ptr_value(car, car_value), ptr_value(cdr, cdr_value);
 
 }
 
@@ -255,7 +277,7 @@ mod test {
 
             println!("{}", prog.relation_sizes_summary());
 
-            // assert_eq!(vec![(expected_output,)], prog.output_expr);
+            //assert_eq!(vec![(expected_output,)], prog.output_expr);
             prog
         };
 
@@ -308,6 +330,8 @@ mod test {
             input_ptr,
             output_ptr,
             eval_input,
+            eval,
+            cons_digest_mem,
             ..
         } = prog;
 
@@ -317,11 +341,18 @@ mod test {
             input_expr,
             input_ptr,
             eval_input,
+            eval,
+            hash4,
+            hash4_rel,
             output_ptr,
             output_expr,
-            alloc,
+            ptr_value,
+            ptr_tag,
+            cons_mem,
+            cons_digest_mem,
+            alloc
         );
 
-        //        panic!("uiop");
+        panic!("uiop");
     }
 }

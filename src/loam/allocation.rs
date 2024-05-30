@@ -156,7 +156,7 @@ ascent! {
     // Memory to support conses allocated by digest or contents.
     lattice cons_digest_mem(Wide, Dual<LE>); // (tag, wide-tag, value, addr)
     lattice cons_mem(Ptr, Ptr, Dual<LE>); // (car, cdr, addr)
-    lattice cons_counter(LE) = vec![(0,)]; // addr
+    lattice cons_counter(LE) = vec![(0,)]; // (addr)
 
     // Counter must always holds largest address of either mem.
     cons_counter(addr.0) <-- cons_digest_mem(_, addr);
@@ -185,7 +185,6 @@ ascent! {
     cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0)) <-- cons_mem(car, cdr, addr);
 
     ptr(cons), ptr_tag(cons, Tag::Cons.value()) <-- cons_rel(car, cdr, cons);
-    ptr_value(cons, value) <-- cons_rel(car, cdr, cons), cons_value(cons, value);
 
     ////////////////////////////////////////////////////////////////////////////////
 
@@ -251,6 +250,21 @@ ascent! {
 
     output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), ptr_value(ptr, value), ptr_tag(ptr, wide_tag);
 
+    hash4(cons, car_tag, car_value, cdr_tag, cdr_value) <--
+        egress(cons),
+        cons_rel(car, cdr, cons),
+        ptr_tag(car, car_tag),
+        ptr_value(car, car_value),
+        ptr_tag(cdr, cdr_tag),
+        ptr_value(cdr, cdr_value);
+
+    hash4_rel(a, b, c, d, allocator().hash4(*a, *b, *c, *d)) <-- hash4(ptr, a, b, c, d);
+
+    ptr(car), ptr(cdr) <--
+        hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, _),
+        ptr_tag(car, wide_car_tag), ptr_tag(cdr, wide_cdr_tag),
+        ptr_value(car, car_value), ptr_value(cdr, cdr_value);
+
     ////////////////////////////////////////////////////////////////////////////////
     // map_double
     //
@@ -288,22 +302,6 @@ ascent! {
     output_ptr(out) <-- input_ptr(ptr), map_double(ptr, out);
 
     ////////////////////////////////////////////////////////////////////////////////
-
-
-    hash4(cons, car_tag, car_value, cdr_tag, cdr_value) <--
-        egress(cons),
-        cons_rel(car, cdr, cons),
-        ptr_tag(car, car_tag),
-        ptr_value(car, car_value),
-        ptr_tag(cdr, cdr_tag),
-        ptr_value(cdr, cdr_value);
-
-    hash4_rel(a, b, c, d, allocator().hash4(*a, *b, *c, *d)) <-- hash4(ptr, a, b, c, d);
-
-    ptr(car), ptr(cdr) <--
-        hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, _),
-        ptr_tag(car, wide_car_tag), ptr_tag(cdr, wide_cdr_tag),
-        ptr_value(car, car_value), ptr_value(cdr, cdr_value);
 }
 
 // This simple allocation program demonstrates how we can use ascent's lattice feature to achieve memoized allocation

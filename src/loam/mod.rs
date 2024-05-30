@@ -157,6 +157,7 @@ impl<T: Valuable + Tagged> From<&T> for WidePtr {
     }
 }
 
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub enum Sym {
     Char(char),
 }
@@ -227,7 +228,7 @@ impl Tagged for Sexp {
 
 impl Cons {
     fn list(elts: Vec<Sexp>) -> WidePtr {
-        elts.iter().fold(WidePtr::nil(), |acc, elt| {
+        elts.iter().rev().fold(WidePtr::nil(), |acc, elt| {
             WidePtr::from(&Cons {
                 car: WidePtr::from(elt),
                 cdr: acc,
@@ -273,8 +274,8 @@ mod test {
             WidePtr(
                 Wide([1, 0, 0, 0, 0, 0, 0, 0]),
                 Wide([
-                    3879315624, 673861253, 1270968490, 282187193, 1099824750, 808467285,
-                    4142306444, 714167558
+                    3864046529, 430932103, 4182774374, 1056266594, 3890674019, 2613686248,
+                    848015655, 4249421387
                 ])
             ),
             l
