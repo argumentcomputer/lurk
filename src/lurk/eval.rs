@@ -642,6 +642,7 @@ pub fn list_to_env<F: PrimeField>() -> FuncE<F> {
 
 #[cfg(test)]
 mod test {
+    use expect_test::{expect, Expect};
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
 
@@ -731,7 +732,25 @@ mod test {
             env_lookup(),
         ]);
         let queries = &mut QueryRecord::new_with_init_mem(toplevel, take(&mut mem.map));
+
+        // Chips
         let eval = FuncChip::from_name("eval", toplevel);
+        let eval_binop_num = FuncChip::from_name("eval_binop_num", toplevel);
+        let eval_let = FuncChip::from_name("eval_let", toplevel);
+        let eval_letrec = FuncChip::from_name("eval_letrec", toplevel);
+        let apply = FuncChip::from_name("apply", toplevel);
+        let env_lookup = FuncChip::from_name("env_lookup", toplevel);
+
+        // Widths
+        let expect_eq = |computed: usize, expected: Expect| {
+            expected.assert_eq(&computed.to_string());
+        };
+        expect_eq(eval.width(), expect!["75"]);
+        expect_eq(eval_binop_num.width(), expect!["42"]);
+        expect_eq(eval_let.width(), expect!["34"]);
+        expect_eq(eval_letrec.width(), expect!["33"]);
+        expect_eq(apply.width(), expect!["36"]);
+        expect_eq(env_lookup.width(), expect!["16"]);
 
         let mut eval_aux = |expr: &str, res: &str| {
             mem.map = take(&mut queries.mem_queries);
