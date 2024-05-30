@@ -9,19 +9,20 @@ use crate::lair::execute::mem_index_from_len;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
-    chip::{ColumnLayout, Degree, FuncChip, Width},
+    chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
     execute::QueryRecord,
     List,
 };
+
 pub type ColumnIndex = ColumnLayout<usize>;
 pub type ColumnMutSlice<'a, T> = ColumnLayout<&'a mut [T]>;
 
 impl<'a, T> ColumnMutSlice<'a, T> {
-    pub fn from_slice(slice: &'a mut [T], width: Width) -> Self {
-        let (input, slice) = slice.split_at_mut(width.input);
-        let (output, slice) = slice.split_at_mut(width.output);
-        let (aux, slice) = slice.split_at_mut(width.aux);
-        let (sel, slice) = slice.split_at_mut(width.sel);
+    pub fn from_slice(slice: &'a mut [T], layout_sizes: LayoutSizes) -> Self {
+        let (input, slice) = slice.split_at_mut(layout_sizes.input);
+        let (output, slice) = slice.split_at_mut(layout_sizes.output);
+        let (aux, slice) = slice.split_at_mut(layout_sizes.aux);
+        let (sel, slice) = slice.split_at_mut(layout_sizes.sel);
         assert!(slice.is_empty());
         Self {
             input,
@@ -57,7 +58,7 @@ impl<'a, F: PrimeField + Ord> FuncChip<'a, F> {
             let start = i * width;
             let index = &mut ColumnIndex::default();
             let row = &mut rows[start..start + width];
-            let slice = &mut ColumnMutSlice::from_slice(row, self.width);
+            let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
             slice.push_aux(index, F::from_canonical_u32(res.mult));
             self.func.populate_row(args, index, slice, queries);
         }
@@ -76,7 +77,7 @@ impl<'a, F: PrimeField + Ord> FuncChip<'a, F> {
             .for_each(|(i, row)| {
                 let (args, res) = func_queries[i];
                 let index = &mut ColumnIndex::default();
-                let slice = &mut ColumnMutSlice::from_slice(row, self.width);
+                let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 slice.push_aux(index, F::from_canonical_u32(res.mult));
                 self.func.populate_row(args, index, slice, queries);
             });
@@ -249,7 +250,8 @@ mod tests {
     use crate::{
         func,
         lair::{
-            demo_toplevel, execute::QueryRecord, field_from_u32, toplevel::Toplevel, trace::Width,
+            demo_toplevel, execute::QueryRecord, field_from_u32, toplevel::Toplevel,
+            trace::LayoutSizes,
         },
     };
 
@@ -259,18 +261,18 @@ mod tests {
     use super::FuncChip;
 
     #[test]
-    fn lair_width_test() {
+    fn lair_layout_sizes_test() {
         let toplevel = demo_toplevel::<F>();
 
         let factorial = toplevel.get_by_name("factorial").unwrap();
-        let out = factorial.compute_width(&toplevel);
-        let expected_width = Width {
+        let out = factorial.compute_layout_sizes(&toplevel);
+        let expected_layout_sizes = LayoutSizes {
             input: 1,
             output: 1,
             aux: 4,
             sel: 2,
         };
-        assert_eq!(out, expected_width);
+        assert_eq!(out, expected_layout_sizes);
     }
 
     #[test]
@@ -350,13 +352,13 @@ mod tests {
         let toplevel = Toplevel::<F>::new(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
 
-        let expected_width = Width {
+        let expected_layout_sizes = LayoutSizes {
             input: 2,
             output: 1,
             aux: 6,
             sel: 5,
         };
-        assert_eq!(test_chip.width, expected_width);
+        assert_eq!(test_chip.layout_sizes, expected_layout_sizes);
 
         let args = [F::from_canonical_u32(5), F::from_canonical_u32(2)].into();
         let queries = &mut QueryRecord::new(&toplevel);
@@ -413,13 +415,13 @@ mod tests {
         let toplevel = Toplevel::<F>::new(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
 
-        let expected_width = Width {
+        let expected_layout_sizes = LayoutSizes {
             input: 2,
             output: 1,
             aux: 1,
             sel: 4,
         };
-        assert_eq!(test_chip.width, expected_width);
+        assert_eq!(test_chip.layout_sizes, expected_layout_sizes);
 
         let zero = [F::from_canonical_u32(0), F::from_canonical_u32(0)].into();
         let one = [F::from_canonical_u32(0), F::from_canonical_u32(1)].into();

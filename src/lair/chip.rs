@@ -12,11 +12,12 @@ pub struct ColumnLayout<T> {
     pub(crate) aux: T,
     pub(crate) sel: T,
 }
-pub type Width = ColumnLayout<usize>;
 
-impl Width {
+pub type LayoutSizes = ColumnLayout<usize>;
+
+impl LayoutSizes {
     #[inline]
-    fn len(&self) -> usize {
+    fn total(&self) -> usize {
         self.input + self.output + self.aux + self.sel
     }
 }
@@ -24,33 +25,33 @@ impl Width {
 pub struct FuncChip<'a, F> {
     pub(crate) func: &'a Func<F>,
     pub(crate) toplevel: &'a Toplevel<F>,
-    pub(crate) width: Width,
+    pub(crate) layout_sizes: LayoutSizes,
 }
 
 impl<'a, F> FuncChip<'a, F> {
     pub fn from_name(name: &'static str, toplevel: &'a Toplevel<F>) -> Self {
         let func = toplevel.get_by_name(name).unwrap();
-        let width = func.compute_width(toplevel);
+        let layout_sizes = func.compute_layout_sizes(toplevel);
         Self {
             func,
             toplevel,
-            width,
+            layout_sizes,
         }
     }
 
     pub fn from_index(idx: usize, toplevel: &'a Toplevel<F>) -> Self {
         let func = toplevel.get_by_index(idx).unwrap();
-        let width = func.compute_width(toplevel);
+        let layout_sizes = func.compute_layout_sizes(toplevel);
         Self {
             func,
             toplevel,
-            width,
+            layout_sizes,
         }
     }
 
     #[inline]
     pub fn width(&self) -> usize {
-        self.width.len()
+        self.layout_sizes.total()
     }
 
     #[inline]
@@ -73,7 +74,7 @@ impl<'a, F: Sync> BaseAir<F> for FuncChip<'a, F> {
 pub type Degree = u8;
 
 impl<F> Func<F> {
-    pub fn compute_width(&self, toplevel: &Toplevel<F>) -> Width {
+    pub fn compute_layout_sizes(&self, toplevel: &Toplevel<F>) -> LayoutSizes {
         let input = self.input_size;
         let output = self.output_size;
         // first auxiliary is multiplicity
@@ -81,8 +82,8 @@ impl<F> Func<F> {
         let mut sel = 0;
         let degrees = &mut vec![1; input];
         self.body
-            .compute_width(degrees, toplevel, &mut aux, &mut sel);
-        Width {
+            .compute_layout_sizes(degrees, toplevel, &mut aux, &mut sel);
+        LayoutSizes {
             input,
             output,
             aux,
@@ -92,7 +93,7 @@ impl<F> Func<F> {
 }
 
 impl<F> Block<F> {
-    fn compute_width(
+    fn compute_layout_sizes(
         &self,
         degrees: &mut Vec<Degree>,
         toplevel: &Toplevel<F>,
@@ -101,13 +102,13 @@ impl<F> Block<F> {
     ) {
         self.ops
             .iter()
-            .for_each(|op| op.compute_width(degrees, toplevel, aux));
-        self.ctrl.compute_width(degrees, toplevel, aux, sel);
+            .for_each(|op| op.compute_layout_sizes(degrees, toplevel, aux));
+        self.ctrl.compute_layout_sizes(degrees, toplevel, aux, sel);
     }
 }
 
 impl<F> Ctrl<F> {
-    fn compute_width(
+    fn compute_layout_sizes(
         &self,
         degrees: &mut Vec<Degree>,
         toplevel: &Toplevel<F>,
@@ -121,14 +122,14 @@ impl<F> Ctrl<F> {
                 let mut max_aux = *aux;
                 for (_, block) in cases.branches.iter() {
                     let block_aux = &mut aux.clone();
-                    block.compute_width(degrees, toplevel, block_aux, sel);
+                    block.compute_layout_sizes(degrees, toplevel, block_aux, sel);
                     degrees.truncate(degrees_len);
                     max_aux = max_aux.max(*block_aux);
                 }
                 if let Some(block) = &cases.default {
                     let block_aux = &mut aux.clone();
                     *block_aux += cases.branches.size();
-                    block.compute_width(degrees, toplevel, block_aux, sel);
+                    block.compute_layout_sizes(degrees, toplevel, block_aux, sel);
                     degrees.truncate(degrees_len);
                     max_aux = max_aux.max(*block_aux);
                 }
@@ -139,10 +140,10 @@ impl<F> Ctrl<F> {
                 let t_aux = &mut aux.clone();
                 // for proof of inequality we need inversion
                 *t_aux += 1;
-                t.compute_width(degrees, toplevel, t_aux, sel);
+                t.compute_layout_sizes(degrees, toplevel, t_aux, sel);
                 degrees.truncate(degrees_len);
                 let f_aux = &mut aux.clone();
-                f.compute_width(degrees, toplevel, f_aux, sel);
+                f.compute_layout_sizes(degrees, toplevel, f_aux, sel);
                 degrees.truncate(degrees_len);
                 *aux = (*t_aux).max(*f_aux);
             }
@@ -151,7 +152,12 @@ impl<F> Ctrl<F> {
 }
 
 impl<F> Op<F> {
-    fn compute_width(&self, degrees: &mut Vec<Degree>, toplevel: &Toplevel<F>, aux: &mut usize) {
+    fn compute_layout_sizes(
+        &self,
+        degrees: &mut Vec<Degree>,
+        toplevel: &Toplevel<F>,
+        aux: &mut usize,
+    ) {
         match self {
             Op::Const(..) => {
                 degrees.push(0);
