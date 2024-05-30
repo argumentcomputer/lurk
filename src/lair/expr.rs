@@ -29,6 +29,8 @@ pub enum OpE<F> {
     Div(Var, Var, Var),
     /// `Inv(x, y)` binds `x` to the inversion of the binding of `y`
     Inv(Var, Var),
+    /// `Not(x, y)` binds `x` to `y == 0`
+    Not(Var, Var),
     /// `Call([x, ...], foo, [y, ...])` binds `x, ...` to the output of `foo`
     /// when applied to the arguments `y, ...`
     Call(List<Var>, Name, List<Var>),

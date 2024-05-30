@@ -336,6 +336,11 @@ impl<F: PrimeField + Ord> Op<F> {
                 let a = map.get(*a).unwrap();
                 map.push(a.inverse());
             }
+            Op::Not(a) => {
+                let a = map.get(*a).unwrap();
+                let b = if a.is_zero() { F::one() } else { F::zero() };
+                map.push(b);
+            }
             Op::Call(idx, inp) => {
                 let args = inp.iter().map(|a| map[*a]).collect();
                 let out = queries.record_event_and_return(toplevel, *idx, args);
@@ -393,6 +398,11 @@ impl<F: PrimeField + Ord> Op<F> {
                 Op::Inv(a) => {
                     let a = map.get(*a).unwrap();
                     map.push(a.inverse());
+                }
+                Op::Not(a) => {
+                    let a = map.get(*a).unwrap();
+                    let b = if a.is_zero() { F::one() } else { F::zero() };
+                    map.push(b);
                 }
                 Op::Store(inp) => {
                     let args = inp.iter().map(|a| map[*a]).collect();

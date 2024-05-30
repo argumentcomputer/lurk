@@ -19,6 +19,8 @@ pub enum Op<F> {
     Mul(usize, usize),
     /// `Inv(i)` pushes `1 / stack[i]` to the stack
     Inv(usize),
+    /// `Not(i)` pushes `stack[i] == 0` to the stack
+    Not(usize),
     /// `Call(i, [a, b, ...])` extends the stack with the output of the function
     /// at index `i` in the toplevel when applied to the arguments at positions
     /// `[a, b, ...]` in the stack

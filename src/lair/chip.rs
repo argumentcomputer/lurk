@@ -185,6 +185,15 @@ impl<F> Op<F> {
                     *aux += 1;
                 }
             }
+            Op::Not(a) => {
+                let a_deg = degrees[*a];
+                if a_deg == 0 {
+                    degrees.push(0);
+                } else {
+                    degrees.push(1);
+                    *aux += 2;
+                }
+            }
             Op::Call(f_idx, ..) => {
                 let func = toplevel.get_by_index(*f_idx).unwrap();
                 let out_size = func.output_size;

@@ -162,9 +162,9 @@ impl<F: Field> Op<F> {
                 let c = if let (Val::Const(a), Val::Const(b)) = (a, b) {
                     Val::Const(*a * *b)
                 } else {
-                    let c = local.next_aux(index);
-                    constraints.push(a.to_expr() * b.to_expr() - *c);
-                    Val::Expr((*c).into())
+                    let c = *local.next_aux(index);
+                    constraints.push(a.to_expr() * b.to_expr() - c);
+                    Val::Expr(c.into())
                 };
                 map.push(c);
             }
@@ -173,11 +173,30 @@ impl<F: Field> Op<F> {
                 let c = if let Val::Const(a) = a {
                     Val::Const(a.inverse())
                 } else {
-                    let c = local.next_aux(index);
-                    constraints.push(a.to_expr() * *c - F::one());
-                    Val::Expr((*c).into())
+                    let c = *local.next_aux(index);
+                    constraints.push(a.to_expr() * c - F::one());
+                    Val::Expr(c.into())
                 };
                 map.push(c);
+            }
+            Op::Not(a) => {
+                let a = &map[*a];
+                let x = if let Val::Const(a) = a {
+                    let x = if a.is_zero() { F::one() } else { F::zero() };
+                    Val::Const(x)
+                } else {
+                    let d = *local.next_aux(index);
+                    let x = *local.next_aux(index);
+                    // The two constraints
+                    //   a*x = 0
+                    //   a*d + x = 1, for some d
+                    // means that a = 0 implies x = 1 and that a != 0 implies x = 0
+                    // i.e. x = not(a)
+                    constraints.push(a.to_expr() * x);
+                    constraints.push(a.to_expr() * d + x - F::one());
+                    Val::Expr(x.into())
+                };
+                map.push(x);
             }
             // Call, PreImg, Store, Load TODO: lookup argument
             Op::Call(idx, _) => {
@@ -282,7 +301,7 @@ impl<F: Field> Ctrl<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::air::debug::debug_constraints_collecting_queries;
+    use crate::{air::debug::debug_constraints_collecting_queries, func};
     use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
     use p3_matrix::dense::RowMajorMatrix;
@@ -350,5 +369,42 @@ mod tests {
         let fib_trace = fib_chip.generate_trace_parallel(queries);
 
         let _ = debug_constraints_collecting_queries(&fib_chip, &[], &fib_trace);
+    }
+
+    #[test]
+    fn lair_not_test() {
+        let func_e = func!(
+        fn not(a): 1 {
+            let x = not(a);
+            return x
+        });
+        let toplevel = Toplevel::<F>::new(&[func_e]);
+        let not_chip = FuncChip::from_name("not", &toplevel);
+
+        let queries = &mut QueryRecord::new(&toplevel);
+        let args = [field_from_u32(4)].into();
+        not_chip.execute_iter(args, queries);
+        let args = [field_from_u32(8)].into();
+        not_chip.execute_iter(args, queries);
+        let args = [field_from_u32(0)].into();
+        not_chip.execute_iter(args, queries);
+        let args = [field_from_u32(1)].into();
+        not_chip.execute_iter(args, queries);
+
+        let not_width = not_chip.width();
+        let not_trace = RowMajorMatrix::new(
+            [
+                0, 1, 1, 0, 1, 1, //
+                1, 0, 1, 1, 0, 1, //
+                4, 0, 1, 1509949441, 0, 1, //
+                8, 0, 1, 1761607681, 0, 1, //
+            ]
+            .into_iter()
+            .map(F::from_canonical_u32)
+            .collect::<Vec<_>>(),
+            not_width,
+        );
+
+        let _ = debug_constraints_collecting_queries(&not_chip, &[], &not_trace);
     }
 }

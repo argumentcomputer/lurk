@@ -180,6 +180,11 @@ impl<F: Clone + Ord> BlockE<F> {
                     ops.push(Op::Inv(a));
                     bind(tgt, ctx);
                 }
+                OpE::Not(tgt, a) => {
+                    let a = use_var(a, ctx);
+                    ops.push(Op::Not(a));
+                    bind(tgt, ctx);
+                }
                 OpE::Call(out, name, inp) => {
                     let name_idx = ctx
                         .info_map
