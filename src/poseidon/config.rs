@@ -1,3 +1,4 @@
+use std::slice;
 use hybrid_array::{typenum::*, Array, ArraySize};
 use itertools::Itertools;
 use p3_baby_bear::BabyBear;
@@ -20,7 +21,7 @@ pub trait PoseidonConfig: Clone + Copy + Sync + ConstantsProvided {
     fn matrix_diag() -> &'static Array<Self::F, Self::WIDTH>;
 
     /// Returns an iterator of the hasher's round constants
-    fn round_constants() -> impl IntoIterator<Item = &'static Array<Self::F, Self::WIDTH>>;
+    fn round_constants() ->impl IntoIterator<Item = &'static [Self::F]>;
 }
 
 #[derive(Clone, Copy)]
@@ -41,19 +42,19 @@ impl PoseidonConfig for BabyBearConfig4 {
         &Array::from(*MATRIX_DIAG_4_BABYBEAR) // Is this less cursed?
     }
 
-    fn round_constants() -> impl IntoIterator<Item = &'static Array<Self::F, Self::WIDTH>> {
+    fn round_constants() -> impl IntoIterator<Item = &'static [Self::F]> {
         let first_half = FULL_RC_4_8
             .iter()
-            .map(|u| Array::from_slice(u).as_ref())
+            .map(|c| c.as_slice())
             .take(4);
         let second_half = FULL_RC_4_8
             .iter()
-            .map(|u| Array::from_slice(u).as_ref())
+            .map(|c| c.as_slice())
             .skip(4);
 
-        let partial_round_constants = PART_RC_4_21
-            .into_iter()
-            .map(|v| Array::from_fn(|i| if i == 0 { v } else { BabyBear::zero() }).as_ref());
+        let partial_round_constants = 
+            PART_RC_4_21
+            .iter().map(slice::from_ref);
 
         first_half.chain(partial_round_constants).chain(second_half)
     }

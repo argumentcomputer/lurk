@@ -120,7 +120,7 @@ where
                     linear_input[i] += sums[i % 4];
                 }
             } else {
-                let matmul_constants = C::matrix_diag();
+                let matmul_constants = C::matrix_diag().iter().copied();
                 matmul_generic(&mut linear_input, matmul_constants);
             }
             for i in 0..width {

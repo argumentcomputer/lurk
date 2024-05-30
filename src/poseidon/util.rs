@@ -1,5 +1,5 @@
-use hybrid_array::{typenum::Unsigned, Array, ArraySize};
-use p3_field::{AbstractField, Field};
+use std::iter::zip;
+use p3_field::{AbstractField};
 
 // TODO: Make this public inside Plonky3 and import directly.
 pub fn apply_m_4<AF>(x: &mut [AF])
@@ -18,17 +18,13 @@ where
     x[2] = t01233 + t23; // x[0] + x[1] + 2*x[2] + 3*x[3]
 }
 
-pub(crate) fn matmul_generic<F, AF, WIDTH>(
+pub(crate) fn matmul_generic<AF: AbstractField>(
     state: &mut [AF],
-    mat_internal_diag_m_1: &Array<F, WIDTH>,
-) where
-    F: Field,
-    AF: AbstractField<F = F>,
-    WIDTH: ArraySize,
-{
+    mat_internal_diag_m_1: impl IntoIterator<Item=AF>
+){
     let sum: AF = state.iter().cloned().sum();
-    for i in 0..<WIDTH as Unsigned>::USIZE {
-        state[i] *= AF::from_f(mat_internal_diag_m_1[i]);
-        state[i] += sum.clone();
+    for (state, diag) in zip(state.iter_mut(), mat_internal_diag_m_1) {
+        *state *= diag;
+        *state += sum.clone();
     }
 }

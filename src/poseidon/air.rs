@@ -160,8 +160,8 @@ where
         {
             // Use a simple matrix multiplication as the permutation.
             let mut state = sbox_result;
-            let matmul_constants = C::matrix_diag().map(AB::F::from);
-            matmul_generic(&mut state, &matmul_constants);
+            let matmul_constants = C::matrix_diag().iter().copied().map(AB::Expr::from);
+            matmul_generic(&mut state, matmul_constants);
 
             for (state, &output_expected) in zip(state, &local.output) {
                 builder
