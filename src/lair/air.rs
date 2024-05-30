@@ -179,10 +179,17 @@ impl<F: Field> Op<F> {
                 };
                 map.push(c);
             }
-            // Call, Store, Load TODO: lookup argument
+            // Call, PreImg, Store, Load TODO: lookup argument
             Op::Call(idx, _) => {
                 let func = toplevel.get_by_index(*idx).unwrap();
                 for _ in 0..func.output_size {
+                    let o = *local.next_aux(index);
+                    map.push(Val::Expr(o.into()));
+                }
+            }
+            Op::PreImg(idx, _) => {
+                let func = toplevel.get_by_index(*idx).unwrap();
+                for _ in 0..func.input_size {
                     let o = *local.next_aux(index);
                     map.push(Val::Expr(o.into()));
                 }
@@ -197,6 +204,7 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(o.into()));
                 }
             }
+            Op::Debug(..) => (),
         }
     }
 }

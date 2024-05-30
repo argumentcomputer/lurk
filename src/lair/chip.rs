@@ -185,6 +185,12 @@ impl<F> Op<F> {
                 *aux += out_size;
                 degrees.extend(vec![1; out_size]);
             }
+            Op::PreImg(f_idx, ..) => {
+                let func = toplevel.get_by_index(*f_idx).unwrap();
+                let out_size = func.input_size;
+                *aux += out_size;
+                degrees.extend(vec![1; out_size]);
+            }
             Op::Store(..) => {
                 *aux += 1;
                 degrees.push(1);
@@ -193,6 +199,7 @@ impl<F> Op<F> {
                 *aux += *ptr_size;
                 degrees.extend(vec![1; *ptr_size]);
             }
+            Op::Debug(..) => (),
         }
     }
 }

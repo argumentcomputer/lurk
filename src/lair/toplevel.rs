@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use super::{bytecode::*, expr::*, map::Map, Name};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Toplevel<F>(Map<Name, Func<F>>);
+pub struct Toplevel<F> {
+    pub(crate) map: Map<Name, Func<F>>,
+}
 
 pub(crate) struct FuncInfo {
     input_size: usize,
@@ -24,29 +26,31 @@ impl<F: Clone + Ord> Toplevel<F> {
             })
             .collect();
         let info_map = Map::from_vec_unsafe(info_vec);
-        let map = ordered_funcs
-            .iter()
-            .enumerate()
-            .map(|(i, (name, func))| (*name, func.check_and_link(i, &info_map)))
-            .collect();
-        Toplevel(Map::from_vec_unsafe(map))
+        let map = Map::from_vec_unsafe(
+            ordered_funcs
+                .iter()
+                .enumerate()
+                .map(|(i, (name, func))| (*name, func.check_and_link(i, &info_map)))
+                .collect(),
+        );
+        Toplevel { map }
     }
 }
 
 impl<F> Toplevel<F> {
     #[inline]
     pub fn get_by_index(&self, i: usize) -> Option<&Func<F>> {
-        self.0.get_index(i).map(|(_, func)| func)
+        self.map.get_index(i).map(|(_, func)| func)
     }
 
     #[inline]
     pub fn get_by_name(&self, name: &'static str) -> Option<&Func<F>> {
-        self.0.get(&Name(name))
+        self.map.get(&Name(name))
     }
 
     #[inline]
     pub fn size(&self) -> usize {
-        self.0.size()
+        self.map.size()
     }
 }
 
@@ -127,6 +131,7 @@ impl<F: Clone + Ord> FuncE<F> {
         }
         Func {
             name: self.name,
+            invertible: self.invertible,
             index: func_index,
             body,
             input_size: self.input_params.len(),
@@ -190,6 +195,21 @@ impl<F: Clone + Ord> BlockE<F> {
                     ops.push(Op::Call(name_idx, inp));
                     out.iter().for_each(|t| bind(t, ctx));
                 }
+                OpE::PreImg(out, name, inp) => {
+                    let name_idx = ctx
+                        .info_map
+                        .get_index_of(name)
+                        .unwrap_or_else(|| panic!("Unknown function {name}"));
+                    let FuncInfo {
+                        input_size,
+                        output_size,
+                    } = ctx.info_map.get_index(name_idx).unwrap().1;
+                    assert_eq!(out.len(), input_size);
+                    assert_eq!(inp.len(), output_size);
+                    let inp = inp.iter().map(|a| use_var(a, ctx)).collect();
+                    ops.push(Op::PreImg(name_idx, inp));
+                    out.iter().for_each(|t| bind(t, ctx));
+                }
                 OpE::Store(ptr, vals) => {
                     let vals = vals.iter().map(|a| use_var(a, ctx)).collect();
                     ops.push(Op::Store(vals));
@@ -201,6 +221,7 @@ impl<F: Clone + Ord> BlockE<F> {
                     ops.push(Op::Load(size, ptr));
                     vals.iter().for_each(|val| bind(val, ctx));
                 }
+                OpE::Debug(s) => ops.push(Op::Debug(s)),
             }
         }
         let ops = ops.into();

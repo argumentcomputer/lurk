@@ -3,6 +3,16 @@ macro_rules! func {
     (fn $name:ident($( $in:ident ),*): $size:literal $lair:tt) => {
         $crate::lair::expr::FuncE {
             name: $crate::lair::Name(stringify!($name)),
+            invertible: false,
+            input_params: [$($crate::var!($in)),*].into(),
+            output_size: $size,
+            body: $crate::block!($lair),
+        }
+    };
+    (invertible fn $name:ident($( $in:ident ),*): $size:literal $lair:tt) => {
+        $crate::lair::expr::FuncE {
+            name: $crate::lair::Name(stringify!($name)),
+            invertible: true,
             input_params: [$($crate::var!($in)),*].into(),
             output_size: $size,
             body: $crate::block!($lair),
@@ -19,7 +29,7 @@ macro_rules! block {
         }
     };
     // handle the recursion: as we see a statement, we push it to the limbs position in the pattern
-    (@seq {$($limbs:expr)*}, let $tgt:ident = num($a:literal) ; $($tail:tt)*) => {
+    (@seq {$($limbs:expr)*}, let $tgt:ident = $a:literal ; $($tail:tt)*) => {
         $crate::block! (
             @seq
             {
@@ -131,6 +141,36 @@ macro_rules! block {
             $($tail)*
         )
     };
+    (@seq {$($limbs:expr)*}, let ($($tgt:ident),*) = preimg($func:ident, $($arg:ident),*) ; $($tail:tt)*) => {
+        $crate::block! (
+            @seq
+            {
+                $($limbs)*
+                {
+                    let func = $crate::lair::Name(stringify!($func));
+                    let out = [$($crate::var!($tgt)),*].into();
+                    let inp = [$($crate::var!($arg)),*].into();
+                    $crate::lair::expr::OpE::PreImg(out, func, inp)
+                }
+            },
+            $($tail)*
+        )
+    };
+    (@seq {$($limbs:expr)*}, let $tgt:ident = preimg($func:ident, $($arg:ident),*) ; $($tail:tt)*) => {
+        $crate::block! (
+            @seq
+            {
+                $($limbs)*
+                {
+                    let func = $crate::lair::Name(stringify!($func));
+                    let out = [$crate::var!($tgt)].into();
+                    let inp = [$($crate::var!($arg)),*].into();
+                    $crate::lair::expr::OpE::PreImg(out, func, inp)
+                }
+            },
+            $($tail)*
+        )
+    };
     (@seq {$($limbs:expr)*}, let $tgt:ident = store($($arg:ident),*) ; $($tail:tt)*) => {
         $crate::block! (
             @seq
@@ -155,6 +195,16 @@ macro_rules! block {
                     let inp = $crate::var!($arg);
                     $crate::lair::expr::OpE::Load(out, inp)
                 }
+            },
+            $($tail)*
+        )
+    };
+    (@seq {$($limbs:expr)*}, debug!($s:literal) ; $($tail:tt)*) => {
+        $crate::block! (
+            @seq
+            {
+                $($limbs)*
+                $crate::lair::expr::OpE::Debug($s)
             },
             $($tail)*
         )
