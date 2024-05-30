@@ -31,6 +31,8 @@ pub enum OpE<F> {
     Inv(Var, Var),
     /// `Not(x, y)` binds `x` to `y == 0`
     Not(Var, Var),
+    /// `Not(x, y, z)` binds `x` to `y == z`
+    Eq(Var, Var, Var),
     /// `Call([x, ...], foo, [y, ...])` binds `x, ...` to the output of `foo`
     /// when applied to the arguments `y, ...`
     Call(List<Var>, Name, List<Var>),

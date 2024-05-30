@@ -372,13 +372,19 @@ mod tests {
     }
 
     #[test]
-    fn lair_not_test() {
-        let func_e = func!(
+    fn lair_not_eq_test() {
+        let not_func = func!(
         fn not(a): 1 {
             let x = not(a);
             return x
         });
-        let toplevel = Toplevel::<F>::new(&[func_e]);
+        let eq_func = func!(
+        fn eq(a, b): 1 {
+            let x = eq(a, b);
+            return x
+        });
+        let toplevel = Toplevel::<F>::new(&[eq_func, not_func]);
+        let eq_chip = FuncChip::from_name("eq", &toplevel);
         let not_chip = FuncChip::from_name("not", &toplevel);
 
         let queries = &mut QueryRecord::new(&toplevel);
@@ -405,6 +411,30 @@ mod tests {
             not_width,
         );
 
+        let args = [field_from_u32(4), field_from_u32(2)].into();
+        eq_chip.execute_iter(args, queries);
+        let args = [field_from_u32(4), field_from_u32(4)].into();
+        eq_chip.execute_iter(args, queries);
+        let args = [field_from_u32(0), field_from_u32(3)].into();
+        eq_chip.execute_iter(args, queries);
+        let args = [field_from_u32(0), field_from_u32(0)].into();
+        eq_chip.execute_iter(args, queries);
+
+        let eq_width = eq_chip.width();
+        let eq_trace = RowMajorMatrix::new(
+            [
+                0, 0, 1, 1, 0, 1, 1, //
+                0, 3, 0, 1, 671088640, 0, 1, //
+                4, 2, 0, 1, 1006632961, 0, 1, //
+                4, 4, 1, 1, 0, 1, 1, //
+            ]
+            .into_iter()
+            .map(F::from_canonical_u32)
+            .collect::<Vec<_>>(),
+            eq_width,
+        );
+
         let _ = debug_constraints_collecting_queries(&not_chip, &[], &not_trace);
+        let _ = debug_constraints_collecting_queries(&eq_chip, &[], &eq_trace);
     }
 }

@@ -97,6 +97,20 @@ macro_rules! block {
             $($tail)*
         )
     };
+    (@seq {$($limbs:expr)*}, let $tgt:ident = eq($a:ident, $b:ident) ; $($tail:tt)*) => {
+        $crate::block! (
+            @seq
+            {
+                $($limbs)*
+                $crate::lair::expr::OpE::Eq(
+                    $crate::var!($tgt),
+                    $crate::var!($a),
+                    $crate::var!($b),
+                )
+            },
+            $($tail)*
+        )
+    };
     (@seq {$($limbs:expr)*}, let $tgt:ident = inv($a:ident) ; $($tail:tt)*) => {
         $crate::block! (
             @seq
