@@ -27,8 +27,8 @@ pub struct QueryRecord<F: PrimeField> {
     pub(crate) mem_queries: Vec<MemMap<F>>,
 }
 
-const NUM_MEM_TABLES: usize = 4;
-const MEM_TABLE_SIZES: [usize; NUM_MEM_TABLES] = [3, 4, 6, 8];
+const NUM_MEM_TABLES: usize = 5;
+const MEM_TABLE_SIZES: [usize; NUM_MEM_TABLES] = [3, 4, 5, 6, 8];
 
 pub fn mem_index_to_len(idx: usize) -> Option<usize> {
     MEM_TABLE_SIZES.get(idx).copied()
@@ -38,9 +38,43 @@ pub fn mem_index_from_len(len: usize) -> Option<usize> {
     MEM_TABLE_SIZES.iter().position(|&i| len == i)
 }
 
+pub fn mem_init<F: Clone>() -> Vec<MemMap<F>> {
+    vec![IndexMap::new(); NUM_MEM_TABLES]
+}
+
+pub fn mem_store<F: PrimeField + Ord>(mem: &mut [MemMap<F>], args: List<F>) -> F {
+    let len = args.len();
+    let idx = mem_index_from_len(len)
+        .unwrap_or_else(|| panic!("There are no mem tables of size {}", len));
+    if let Some((ptr, _, mult)) = mem[idx].get_full_mut(&args) {
+        *mult += 1;
+        F::from_canonical_usize(ptr)
+    } else {
+        let (ptr, _) = mem[idx].insert_full(args, 1);
+        F::from_canonical_usize(ptr)
+    }
+}
+
+pub fn mem_load<F: PrimeField + Ord>(mem: &mut [MemMap<F>], len: usize, ptr: F) -> &[F] {
+    let ptr_f: usize = ptr
+        .as_canonical_biguint()
+        .try_into()
+        .expect("Field element is too big for a pointer");
+    let idx = mem_index_from_len(len)
+        .unwrap_or_else(|| panic!("There are no mem tables of size {}", len));
+    let (args, mult) = mem[idx].get_index_mut(ptr_f).expect("Unbound pointer");
+    *mult += 1;
+    args
+}
+
 impl<F: PrimeField + Ord> QueryRecord<F> {
     #[inline]
     pub fn new(toplevel: &Toplevel<F>) -> Self {
+        Self::new_with_init_mem(toplevel, mem_init())
+    }
+
+    #[inline]
+    pub fn new_with_init_mem(toplevel: &Toplevel<F>, mem_queries: Vec<MemMap<F>>) -> Self {
         let func_queries = vec![BTreeMap::new(); toplevel.size()];
         let inv_func_queries = toplevel
             .map
@@ -53,14 +87,13 @@ impl<F: PrimeField + Ord> QueryRecord<F> {
                 }
             })
             .collect();
-        let mem_queries = vec![IndexMap::new(); NUM_MEM_TABLES];
+        assert_eq!(mem_queries.len(), NUM_MEM_TABLES);
         Self {
             func_queries,
             inv_func_queries,
             mem_queries,
         }
     }
-
     #[inline]
     pub fn func_queries(&self) -> &Vec<QueryMap<F>> {
         &self.func_queries
@@ -107,30 +140,11 @@ impl<F: PrimeField + Ord> QueryRecord<F> {
     }
 
     pub fn store(&mut self, args: List<F>) -> F {
-        let len = args.len();
-        let idx = mem_index_from_len(len)
-            .unwrap_or_else(|| panic!("There are no mem tables of size {}", len));
-        if let Some((ptr, _, mult)) = self.mem_queries[idx].get_full_mut(&args) {
-            *mult += 1;
-            F::from_canonical_usize(ptr)
-        } else {
-            let (ptr, _) = self.mem_queries[idx].insert_full(args, 1);
-            F::from_canonical_usize(ptr)
-        }
+        mem_store(&mut self.mem_queries, args)
     }
 
     pub fn load(&mut self, len: usize, ptr: F) -> &[F] {
-        let ptr_f: usize = ptr
-            .as_canonical_biguint()
-            .try_into()
-            .expect("Field element is too big for a pointer");
-        let idx = mem_index_from_len(len)
-            .unwrap_or_else(|| panic!("There are no mem tables of size {}", len));
-        let (args, mult) = self.mem_queries[idx]
-            .get_index_mut(ptr_f)
-            .expect("Unbound pointer");
-        *mult += 1;
-        args
+        mem_load(&mut self.mem_queries, len, ptr)
     }
 }
 
