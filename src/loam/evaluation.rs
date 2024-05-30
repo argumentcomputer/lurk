@@ -96,24 +96,18 @@ ascent! {
     // Memory to support conses allocated by digest or contents.
     lattice cons_digest_mem(Wide, Dual<LE>); // (tag, wide-tag, value, addr)
     lattice cons_mem(Ptr, Ptr, Dual<LE>); // (car, cdr, addr)
-    lattice cons_counter(LE) = vec![(0,)]; // (addr)
-
-    // Counter must always holds largest address of either mem.
-    cons_counter(addr.0) <-- cons_digest_mem(_, addr);
-    cons_counter(addr.0) <-- cons_mem(_, _, addr);
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
-    cons_digest_mem(value, Dual(addr + 1 + priority)) <--
+    cons_digest_mem(value, Dual(allocator().alloc_addr(Tag::Cons.elt(), "cons_digest_mem"))) <--
         alloc(tag, value, priority),
         if *tag == Tag::Cons.elt(),
-        tag(tag, wide_tag),
-        cons_counter(addr);
+        tag(tag, wide_tag);
 
     // Convert addr to ptr and register ptr relations.
     ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0);
 
     // Populating cons(...) triggers allocation in cons mem.
-    cons_mem(car, cdr, Dual(counter + 1 + priority)) <-- cons(car, cdr, priority), cons_counter(counter);
+    cons_mem(car, cdr, Dual(allocator().alloc_addr(Tag::Cons.elt(), "cons_mem"))) <-- cons(car, cdr, priority);
 
     // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
     cons_digest_mem(digest, addr) <--
@@ -130,7 +124,6 @@ ascent! {
     // Sym
 
     lattice sym_digest_mem(Wide, Dual<LE>) = Memory::initial_sym_relation(); // (digest, addr)
-    lattice cons_counter(LE) = Memory::initial_sym_counter(); // (addr)
     // Convert addr to ptr and register ptr relations.
     ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), addr.0);
     // todo: sym_value

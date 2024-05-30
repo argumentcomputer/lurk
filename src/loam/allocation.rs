@@ -37,13 +37,19 @@ impl Allocator {
     }
 
     pub fn alloc(&mut self, tag: LE) -> Ptr {
-        let idx = self
+        let idx = self.alloc_addr(tag, "alloc");
+
+        Ptr(tag, idx)
+    }
+
+    pub fn alloc_addr(&mut self, tag: LE, annotation: &str) -> LE {
+        let idx = *self
             .allocation_map
             .entry(tag)
             .and_modify(|x| *x += 1)
             .or_insert(0);
-
-        Ptr(tag, *idx)
+        dbg!(&idx, annotation);
+        idx
     }
 
     pub fn hash4(&mut self, a: Wide, b: Wide, c: Wide, d: Wide) -> Wide {
@@ -156,24 +162,18 @@ ascent! {
     // Memory to support conses allocated by digest or contents.
     lattice cons_digest_mem(Wide, Dual<LE>); // (tag, wide-tag, value, addr)
     lattice cons_mem(Ptr, Ptr, Dual<LE>); // (car, cdr, addr)
-    lattice cons_counter(LE) = vec![(0,)]; // (addr)
-
-    // Counter must always holds largest address of either mem.
-    cons_counter(addr.0) <-- cons_digest_mem(_, addr);
-    cons_counter(addr.0) <-- cons_mem(_, _, addr);
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
-    cons_digest_mem(value, Dual(addr + 1 + priority)) <--
+    cons_digest_mem(value, Dual(allocator().alloc_addr(Tag::Cons.elt(), "cons_digest_mem"))) <--
         alloc(tag, value, priority),
         if *tag == Tag::Cons.elt(),
-        tag(tag, wide_tag),
-        cons_counter(addr);
+        tag(tag, wide_tag);
 
     // Convert addr to ptr and register ptr relations.
     ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0);
 
     // Populating cons(...) triggers allocation in cons mem.
-    cons_mem(car, cdr, Dual(counter + 1 + priority)) <-- cons(car, cdr, priority), cons_counter(counter);
+    cons_mem(car, cdr, Dual(allocator().alloc_addr(Tag::Cons.elt(), "cons_mem"))) <-- cons(car, cdr, priority);
 
     // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
     cons_digest_mem(digest, addr) <--
@@ -304,6 +304,45 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
 }
 
+impl AllocationProgram {
+    fn cons_mem_is_contiguous(&self) -> bool {
+        let mut addrs1 = self
+            .cons_mem
+            .iter()
+            .map(|(_, _, addr)| addr.0)
+            .collect::<Vec<_>>();
+
+        let mut addrs2 = self
+            .cons_digest_mem
+            .iter()
+            .map(|(_, addr)| addr.0)
+            .collect::<Vec<_>>();
+
+        addrs1.sort();
+        addrs2.sort();
+        dbg!(&addrs1, &addrs2);
+
+        let len1 = addrs1.len();
+        let len2 = addrs2.len();
+        addrs1.dedup();
+        addrs2.dedup();
+
+        dbg!("deduped", &addrs1, &addrs2);
+
+        let no_duplicates = addrs1.len() == len1 && addrs2.len() == len2;
+
+        let mut addrs = Vec::with_capacity(addrs1.len() + addrs2.len());
+
+        addrs.extend(addrs1);
+        addrs.extend(addrs2);
+        addrs.sort();
+        addrs.dedup();
+
+        let len = addrs.len();
+        no_duplicates && addrs[0] == 0 && addrs[len - 1] as usize == len - 1
+    }
+}
+
 // This simple allocation program demonstrates how we can use ascent's lattice feature to achieve memoized allocation
 // with an incrementing counter but without mutable state held outside the program (as in the Allocator) above.
 ascent! {
@@ -322,6 +361,7 @@ ascent! {
     lattice counter(usize) = vec![(0,)]; // (addr)
 
     // Add each new input to mem, using the next counter value as address.
+//    mem(a, b, Dual(counter + 1)) <-- input(a, b), counter(counter);
     mem(a, b, Dual(counter + 1)) <-- input(a, b), counter(counter);
 
     // The address of every new tuple in mem is added to counter. Since counter has only a single lattice attribute, the
@@ -422,6 +462,11 @@ mod test {
             );
             assert_eq!(cons_count, prog.cons_mem.len());
             assert_eq!(cons_count, prog.cons_digest_mem.len());
+
+            // This will often fail in the first pass. We need to fix up the memory and provide it as a hint to the
+            // second pass.
+            //assert!(prog.cons_mem_is_contiguous());
+
             prog
         };
 
@@ -459,7 +504,6 @@ mod test {
             alloc,
             input_ptr,
             output_ptr,
-            cons_counter,
             map_double_input,
             ..
         } = prog;
