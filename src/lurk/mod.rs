@@ -1,3 +1,4 @@
+pub mod memory;
 pub mod package;
 pub mod parser;
 pub mod state;
