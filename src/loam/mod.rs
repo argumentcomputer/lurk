@@ -178,6 +178,7 @@ impl Valuable for Sym {
     }
 }
 
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct Cons {
     car: WidePtr,
     cdr: WidePtr,
@@ -234,6 +235,18 @@ impl Cons {
                 cdr: acc,
             })
         })
+    }
+
+    fn list_x(elts: Vec<Sexp>) -> Self {
+        let mut result = None;
+        elts.iter().rev().fold(WidePtr::nil(), |acc, elt| {
+            result = Some(Cons {
+                car: WidePtr::from(elt),
+                cdr: acc,
+            });
+            WidePtr::from(&result.unwrap().clone())
+        });
+        result.unwrap()
     }
 }
 

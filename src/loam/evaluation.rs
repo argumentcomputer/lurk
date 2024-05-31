@@ -22,11 +22,40 @@ impl Memory {
             .iter()
             .position(|s| *s == sym)
             .expect("not a built-in symbol");
-        dbg!(Ptr(Tag::Sym.elt(), addr as u32))
+        Ptr(Tag::Sym.elt(), addr as u32)
+    }
+
+    fn ptr_sym(ptr: Ptr) -> Sym {
+        assert_eq!(Tag::Sym.elt(), ptr.0);
+
+        Sym::built_in()[ptr.1 as usize]
     }
 
     fn initial_tag_relation() -> Vec<(LE, Wide)> {
         Tag::tag_wide_relation()
+    }
+}
+
+impl Sym {
+    fn is_arith(&self) -> bool {
+        // Note, all of these will be variadic.
+        matches!(self, Self::Char('+' | '-' | '*' | '/' | '%'))
+    }
+
+    fn neutral_element(&self) -> F {
+        match self {
+            Self::Char('+') => F(0),
+            Self::Char('*') => F(1),
+            _ => unimplemented!(),
+        }
+    }
+
+    fn apply_op(&self, a: F, b: F) -> F {
+        match self {
+            Self::Char('+') => F(a.0 + b.0),
+            Self::Char('*') => F(a.0 * b.0),
+            _ => unimplemented!(),
+        }
     }
 }
 
@@ -98,7 +127,7 @@ ascent! {
     lattice cons_mem(Ptr, Ptr, Dual<LE>); // (car, cdr, addr)
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
-    cons_digest_mem(value, Dual(allocator().alloc_addr(Tag::Cons.elt(), "cons_digest_mem"))) <--
+    cons_digest_mem(value, Dual(allocator().alloc_addr(Tag::Cons.elt()))) <--
         alloc(tag, value),
         if *tag == Tag::Cons.elt(),
         tag(tag, wide_tag);
@@ -107,7 +136,7 @@ ascent! {
     ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0);
 
     // Populating cons(...) triggers allocation in cons mem.
-    cons_mem(car, cdr, Dual(allocator().alloc_addr(Tag::Cons.elt(), "cons_mem"))) <-- cons(car, cdr);
+    cons_mem(car, cdr, Dual(allocator().alloc_addr(Tag::Cons.elt()))) <-- cons(car, cdr);
 
     // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
     cons_digest_mem(digest, addr) <--
@@ -125,7 +154,7 @@ ascent! {
 
     lattice sym_digest_mem(Wide, Dual<LE>) = Memory::initial_sym_relation(); // (digest, addr)
     // Convert addr to ptr and register ptr relations.
-    ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), addr.0);
+    ptr(ptr), ptr_tag(ptr, Tag::Sym.value()), ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), addr.0);
     // todo: sym_value
 
 
@@ -190,6 +219,8 @@ ascent! {
 
     egress(car), egress(cdr) <-- egress(cons), cons_rel(car, cdr, cons);
 
+    ptr_tag(ptr, Tag::F.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_f();
+
     output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), ptr_value(ptr, value), ptr_tag(ptr, wide_tag);
 
     hash4(cons, car_tag, car_value, cdr_tag, cdr_value) <--
@@ -217,21 +248,35 @@ ascent! {
     // It's fine for now, while env is unused.
     eval_input(expr, Ptr::nil()) <-- input_ptr(expr);
 
-    // F is self-evaluating.
+    // expr is F: self-evaluating.
     eval(expr, env, expr) <-- eval_input(expr, env), if expr.is_f();
 
-    // Nil is self-evaluating. TODO: check value == 0.
+    // expr is Nil: self-evaluating. TODO: check value == 0.
     eval(expr, env, expr) <-- eval_input(expr, env), if expr.is_nil();
 
     // expr is CONS
-
     ingress(expr) <-- eval_input(expr, env), if expr.is_cons();
 
-    eval(expr, env, expr) <-- eval_input(expr, env), cons_rel(car, cdr, expr), if dbg!(*car) == Memory::sym_ptr(Sym::Char('+'));
+    relation reduce_arith(Ptr, Ptr, Sym, F, Ptr); // (expr, env, op, acc, tail)
 
+    // If head is arithmetic op, reduce it with its neutral element.
+    ingress(tail), reduce_arith(expr, env, op, op.neutral_element(), tail) <--
+        eval_input(expr, env), cons_rel(head, tail, expr), let op = Memory::ptr_sym(*head), if op.is_arith();
+
+    // When reducing arithmetic with tail that is a cons, ingress its car and cdr, and eval the car.
+    eval_input(car, env), ingress(car), ingress(cdr) <--
+        reduce_arith(expr, env, op, acc, tail), cons_rel(car, cdr, tail);
+
+    // When reducing arithmetic, if car has been evaled and is F, apply the op to it and the acc, then recursively
+    // reduce the acc and new tail.
+    ingress(cdr), reduce_arith(expr, env, op, op.apply_op(*acc, F(evaled_car.1)), cdr) <--
+        reduce_arith(expr, env, op, acc, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car), if evaled_car.is_f();
+
+    // reducing arithmetic operation with an empty (nil) tail
+    eval(expr, env, Ptr(Tag::F.elt(), acc.0)) <-- reduce_arith(expr, env, _, acc, tail), if tail.is_nil();
 
     // output
-    output_ptr(output) <-- input_ptr(input), eval(input, _, output);
+    output_ptr(output) <-- input_ptr(input), eval(input, Ptr::nil(), output);
 
     ////////////////////////////////////////////////////////////////////////////////
 
@@ -243,24 +288,6 @@ mod test {
 
     #[test]
     fn new_test_eval() {
-        allocator().init();
-
-        // (1 . 2)
-        let c1_2 = allocator().hash4(
-            Tag::F.value(),
-            Wide::widen(1),
-            Tag::F.value(),
-            Wide::widen(2),
-        );
-
-        assert_eq!(
-            Wide([
-                4038165649, 752447834, 1060359009, 3812570985, 3368674057, 2161975811, 2601257232,
-                1536661076
-            ]),
-            c1_2
-        );
-
         let mut test = |input, expected_output: WidePtr| {
             let mut prog = EvaluationProgram::default();
 
@@ -269,18 +296,22 @@ mod test {
 
             println!("{}", prog.relation_sizes_summary());
 
-            //assert_eq!(vec![(expected_output,)], prog.output_expr);
+            assert_eq!(vec![(expected_output,)], prog.output_expr);
             prog
         };
 
         let empty_env = WidePtr::nil();
 
         {
+            allocator().init();
+
             // F is self-evaluating.
             let f = F(123);
             test(f.into(), f.into());
         }
         let prog = {
+            allocator().init();
+
             // Nil is self-evaluating.
             let nil = WidePtr::nil();
 
@@ -288,15 +319,110 @@ mod test {
         };
 
         let prog = {
+            allocator().init();
+
+            // (+)
+            let add = Cons::list(vec![Sexp::Sym(Sym::Char('+'))]);
+
+            test(add.into(), F(0).into())
+        };
+
+        let prog = {
+            allocator().init();
+
+            // (+ 1)
+            let add = Cons::list(vec![Sexp::Sym(Sym::Char('+')), Sexp::F(F(1))]);
+
+            test(add.into(), F(1).into())
+        };
+
+        let prog = {
+            allocator().init();
+
             // (+ 1 2)
-            let plus = Cons::list(vec![
+            let add = Cons::list(vec![
                 Sexp::Sym(Sym::Char('+')),
                 Sexp::F(F(1)),
                 Sexp::F(F(2)),
             ]);
 
-            // fixme
-            test(plus.into(), plus.into())
+            test(add.into(), F(3).into())
+        };
+
+        let prog = {
+            allocator().init();
+
+            // (+ 1 2 3)
+            let add = Cons::list(vec![
+                Sexp::Sym(Sym::Char('+')),
+                Sexp::F(F(1)),
+                Sexp::F(F(2)),
+                Sexp::F(F(3)),
+            ]);
+
+            test(add.into(), F(6).into())
+        };
+
+        let prog = {
+            allocator().init();
+
+            // (*)
+            let mul = Cons::list(vec![Sexp::Sym(Sym::Char('*'))]);
+
+            test(mul.into(), F(1).into())
+        };
+
+        let prog = {
+            allocator().init();
+
+            // (* 2)
+            let mul = Cons::list(vec![Sexp::Sym(Sym::Char('*')), Sexp::F(F(2))]);
+
+            test(mul.into(), F(2).into())
+        };
+
+        let prog = {
+            allocator().init();
+
+            // (* 2 3)
+            let mul = Cons::list(vec![
+                Sexp::Sym(Sym::Char('*')),
+                Sexp::F(F(2)),
+                Sexp::F(F(3)),
+            ]);
+
+            test(mul.into(), F(6).into())
+        };
+
+        let prog = {
+            allocator().init();
+
+            // (+ 2 3 4)
+            let mul = Cons::list(vec![
+                Sexp::Sym(Sym::Char('*')),
+                Sexp::F(F(2)),
+                Sexp::F(F(3)),
+                Sexp::F(F(4)),
+            ]);
+
+            test(mul.into(), F(24).into())
+        };
+
+        let prog = {
+            allocator().init();
+
+            // (+ 5 (* 3 4))
+            let mul = Cons::list(vec![
+                Sexp::Sym(Sym::Char('+')),
+                Sexp::F(F(5)),
+                Sexp::Cons(Cons::list_x(vec![
+                    Sexp::Sym(Sym::Char('*')),
+                    Sexp::F(F(3)),
+                    Sexp::F(F(4)),
+                ])),
+            ]);
+
+            test(mul.into(), F(17).into())
         };
 
         println!("{}", prog.relation_sizes_summary());
@@ -312,6 +438,7 @@ mod test {
             cons_mem,
             ptr,
             hash4,
+            unhash4,
             hash4_rel,
             ingress,
             egress,
@@ -338,13 +465,14 @@ mod test {
             hash4_rel,
             output_ptr,
             output_expr,
-            ptr_value,
-            ptr_tag,
+            //ptr_value,
+            cons_rel,
             cons_mem,
             cons_digest_mem,
-            alloc
+            alloc,
+            egress
         );
 
-        panic!("uiop");
+        // panic!("uiop");
     }
 }

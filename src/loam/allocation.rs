@@ -37,18 +37,17 @@ impl Allocator {
     }
 
     pub fn alloc(&mut self, tag: LE) -> Ptr {
-        let idx = self.alloc_addr(tag, "alloc");
+        let idx = self.alloc_addr(tag);
 
         Ptr(tag, idx)
     }
 
-    pub fn alloc_addr(&mut self, tag: LE, annotation: &str) -> LE {
+    pub fn alloc_addr(&mut self, tag: LE) -> LE {
         let idx = *self
             .allocation_map
             .entry(tag)
             .and_modify(|x| *x += 1)
             .or_insert(0);
-        dbg!(&idx, annotation);
         idx
     }
 
@@ -164,7 +163,7 @@ ascent! {
     lattice cons_mem(Ptr, Ptr, Dual<LE>); // (car, cdr, addr)
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
-    cons_digest_mem(value, Dual(allocator().alloc_addr(Tag::Cons.elt(), "cons_digest_mem"))) <--
+    cons_digest_mem(value, Dual(allocator().alloc_addr(Tag::Cons.elt()))) <--
         alloc(tag, value),
         if *tag == Tag::Cons.elt(),
         tag(tag, wide_tag);
@@ -173,7 +172,7 @@ ascent! {
     ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0);
 
     // Populating cons(...) triggers allocation in cons mem.
-    cons_mem(car, cdr, Dual(allocator().alloc_addr(Tag::Cons.elt(), "cons_mem"))) <-- cons(car, cdr);
+    cons_mem(car, cdr, Dual(allocator().alloc_addr(Tag::Cons.elt()))) <-- cons(car, cdr);
 
     // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
     cons_digest_mem(digest, addr) <--
@@ -247,6 +246,8 @@ ascent! {
 
     egress(car), egress(cdr) <-- egress(cons), cons_rel(car, cdr, cons);
 
+    ptr_tag(ptr, Tag::F.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_f();
+
     output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), ptr_value(ptr, value), ptr_tag(ptr, wide_tag);
 
     hash4(cons, car_tag, car_value, cdr_tag, cdr_value) <--
@@ -319,14 +320,11 @@ impl AllocationProgram {
 
         addrs1.sort();
         addrs2.sort();
-        dbg!(&addrs1, &addrs2);
 
         let len1 = addrs1.len();
         let len2 = addrs2.len();
         addrs1.dedup();
         addrs2.dedup();
-
-        dbg!("deduped", &addrs1, &addrs2);
 
         let no_duplicates = addrs1.len() == len1 && addrs2.len() == len2;
 
