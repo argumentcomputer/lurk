@@ -37,15 +37,20 @@ impl Memory {
 }
 
 impl Sym {
-    fn is_arith(&self) -> bool {
+    fn is_left_foldable(&self) -> bool {
         // Note, all of these will be variadic.
-        matches!(self, Self::Char('+' | '-' | '*' | '/' | '%'))
+        matches!(self, Self::Char('+' | '*'))
+    }
+
+    fn is_right_foldable(&self) -> bool {
+        // Note, all of these will be variadic.
+        matches!(self, Self::Char('-' | '/'))
     }
 
     fn neutral_element(&self) -> F {
         match self {
-            Self::Char('+') => F(0),
-            Self::Char('*') => F(1),
+            Self::Char('+' | '-') => F(0),
+            Self::Char('*' | '/') => F(1),
             _ => unimplemented!(),
         }
     }
@@ -53,7 +58,9 @@ impl Sym {
     fn apply_op(&self, a: F, b: F) -> F {
         match self {
             Self::Char('+') => F(a.0 + b.0),
+            Self::Char('-') => F(a.0 - b.0),
             Self::Char('*') => F(a.0 * b.0),
+            Self::Char('/') => F(a.0 / b.0),
             _ => unimplemented!(),
         }
     }
@@ -254,26 +261,50 @@ ascent! {
     // expr is Nil: self-evaluating. TODO: check value == 0.
     eval(expr, env, expr) <-- eval_input(expr, env), if expr.is_nil();
 
+    ////////////////////////////////////////
     // expr is CONS
     ingress(expr) <-- eval_input(expr, env), if expr.is_cons();
 
-    relation reduce_arith(Ptr, Ptr, Sym, F, Ptr); // (expr, env, op, acc, tail)
+    ////////////////////
+    // fold -- default folding is fold_left
+    relation fold(Ptr, Ptr, Sym, F, Ptr); // (expr, env, op, acc, tail)
 
-    // If head is arithmetic op, reduce it with its neutral element.
-    ingress(tail), reduce_arith(expr, env, op, op.neutral_element(), tail) <--
-        eval_input(expr, env), cons_rel(head, tail, expr), let op = Memory::ptr_sym(*head), if op.is_arith();
+    // If head is left-foldable op, reduce it with its neutral element.
+    ingress(tail), fold(expr, env, op, op.neutral_element(), tail) <--
+        eval_input(expr, env), cons_rel(head, tail, expr), let op = Memory::ptr_sym(*head), if op.is_left_foldable();
 
-    // When reducing arithmetic with tail that is a cons, ingress its car and cdr, and eval the car.
+    // When left-folding with tail that is a cons, ingress its car and cdr, and eval the car.
     eval_input(car, env), ingress(car), ingress(cdr) <--
-        reduce_arith(expr, env, op, acc, tail), cons_rel(car, cdr, tail);
+        fold(expr, env, op, _, tail), cons_rel(car, cdr, tail);
 
-    // When reducing arithmetic, if car has been evaled and is F, apply the op to it and the acc, then recursively
-    // reduce the acc and new tail.
-    ingress(cdr), reduce_arith(expr, env, op, op.apply_op(*acc, F(evaled_car.1)), cdr) <--
-        reduce_arith(expr, env, op, acc, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car), if evaled_car.is_f();
+    // When left-folding, if car has been evaled and is F, apply the op to it and the acc, then recursively
+    // fold acc and new tail.
+    ingress(cdr), fold(expr, env, op, op.apply_op(*acc, F(evaled_car.1)), cdr) <--
+        fold(expr, env, op, acc, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car), if evaled_car.is_f();
 
-    // reducing arithmetic operation with an empty (nil) tail
-    eval(expr, env, Ptr(Tag::F.elt(), acc.0)) <-- reduce_arith(expr, env, _, acc, tail), if tail.is_nil();
+    // left-folding operation with an empty (nil) tail
+    eval(expr, env, Ptr(Tag::F.elt(), acc.0)) <-- fold(expr, env, _, acc, tail), if tail.is_nil();
+
+    ////////////////////
+    // fold_right
+
+    relation fold_right(Ptr, Ptr, Sym, Ptr); // (expr, env, op, tail)
+
+    // If head is right-foldable op, initiate fold_right.
+    ingress(tail), fold_right(expr, env, op, tail) <--
+        eval_input(expr, env), cons_rel(head, tail, expr), let op = Memory::ptr_sym(*head), if op.is_right_foldable();
+
+    // When right-folding with tail that is a cons, ingress its car and cdr, and eval the car.
+    eval_input(car, env), ingress(car), ingress(cdr) <-- fold_right(expr, env, op, tail), cons_rel(car, cdr, tail);
+
+    // When right-folding an empty list, return the neutral element.
+    eval(expr, env, Ptr(Tag::F.elt(), op.neutral_element().0)) <-- fold_right(expr, env, op, tail), if tail.is_nil();
+
+    // When right-folding, if tail is a cons (not empty), revert to a (left) fold with evaled car as initial acc.
+    ingress(cdr), fold(expr, env, op, F(evaled_car.1), cdr) <--
+        fold_right(expr, env, op, tail),
+        cons_rel(car, cdr, tail),
+        eval(car, env, evaled_car), if evaled_car.is_f();
 
     // output
     output_ptr(output) <-- input_ptr(input), eval(input, Ptr::nil(), output);
@@ -423,6 +454,53 @@ mod test {
             ]);
 
             test(mul.into(), F(17).into())
+        };
+
+        let prog = {
+            allocator().init();
+
+            // (/ 10 2 5)
+            let x = Cons::list(vec![
+                Sexp::Sym(Sym::Char('/')),
+                Sexp::F(F(10)),
+                Sexp::F(F(2)),
+                Sexp::F(F(5)),
+            ]);
+
+            test(x.into(), F(1).into())
+        };
+
+        let prog = {
+            allocator().init();
+
+            // (+ 5 (-) (*) (/) (+) (* 3 4 (- 7 2 1)) (/ 10 2 5))
+            let x = Cons::list(vec![
+                Sexp::Sym(Sym::Char('+')),
+                Sexp::F(F(5)),
+                Sexp::Cons(Cons::list_x(vec![Sexp::Sym(Sym::Char('-'))])),
+                Sexp::Cons(Cons::list_x(vec![Sexp::Sym(Sym::Char('*'))])),
+                Sexp::Cons(Cons::list_x(vec![Sexp::Sym(Sym::Char('/'))])),
+                Sexp::Cons(Cons::list_x(vec![Sexp::Sym(Sym::Char('+'))])),
+                Sexp::Cons(Cons::list_x(vec![
+                    Sexp::Sym(Sym::Char('*')),
+                    Sexp::F(F(3)),
+                    Sexp::F(F(4)),
+                    Sexp::Cons(Cons::list_x(vec![
+                        Sexp::Sym(Sym::Char('-')),
+                        Sexp::F(F(7)),
+                        Sexp::F(F(2)),
+                        Sexp::F(F(1)),
+                    ])),
+                ])),
+                Sexp::Cons(Cons::list_x(vec![
+                    Sexp::Sym(Sym::Char('/')),
+                    Sexp::F(F(10)),
+                    Sexp::F(F(2)),
+                    Sexp::F(F(5)),
+                ])),
+            ]);
+
+            test(x.into(), F(56).into())
         };
 
         println!("{}", prog.relation_sizes_summary());

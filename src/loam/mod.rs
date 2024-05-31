@@ -103,6 +103,12 @@ impl Ptr {
     }
 }
 
+impl From<&F> for Ptr {
+    fn from(f: &F) -> Self {
+        Self(Tag::F.elt(), f.0)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct Wide(pub [LE; 8]);
 
