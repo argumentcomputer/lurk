@@ -20,6 +20,9 @@ enum EvalErr {
     DivByZero,
     GenericError,
     NotEnv,
+    NotChar,
+    NotString,
+    Todo,
 }
 
 impl EvalErr {
@@ -48,6 +51,21 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
     let mul = mem.read_and_ingress("*", store).unwrap().raw;
     let div = mem.read_and_ingress("/", store).unwrap().raw;
     let equal = mem.read_and_ingress("=", store).unwrap().raw;
+    let cons = mem.read_and_ingress("cons", store).unwrap().raw;
+    let strcons = mem.read_and_ingress("strcons", store).unwrap().raw;
+    let hide = mem.read_and_ingress("hide", store).unwrap().raw;
+    let eq = mem.read_and_ingress("eq", store).unwrap().raw;
+    let car = mem.read_and_ingress("car", store).unwrap().raw;
+    let cdr = mem.read_and_ingress("cdr", store).unwrap().raw;
+    let commit = mem.read_and_ingress("commit", store).unwrap().raw;
+    let num = mem.read_and_ingress("num", store).unwrap().raw;
+    let u64_ = mem.read_and_ingress("u64", store).unwrap().raw;
+    let comm = mem.read_and_ingress("comm", store).unwrap().raw;
+    let char_ = mem.read_and_ingress("char", store).unwrap().raw;
+    let open = mem.read_and_ingress("open", store).unwrap().raw;
+    let secret = mem.read_and_ingress("secret", store).unwrap().raw;
+    let atom = mem.read_and_ingress("atom", store).unwrap().raw;
+    let emit = mem.read_and_ingress("emit", store).unwrap().raw;
     func!(
         fn eval(expr_tag, expr, env): 2 {
             // Constants, tags, etc
@@ -180,7 +198,8 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                                                     return (res_tag, res)
                                                 }
                                             };
-                                            return (err_tag, invalid_form)
+                                            let err = EvalErr::NotEnv;
+                                            return (err_tag, err)
                                         }
                                     };
                                     let not_env = EvalErr::NotEnv;
@@ -205,6 +224,11 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                                     }
                                     let (expr_tag, expr, rest_tag, rest) = load(rest);
                                     let (val_tag, val) = call(eval, expr_tag, expr, env);
+                                    match val_tag {
+                                        Tag::Err => {
+                                            return (val_tag, val)
+                                        }
+                                    };
                                     match rest_tag {
                                         Tag::Nil => {
                                             return (val_tag, val)
@@ -233,14 +257,6 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                                     }
                                     let env_tag = Tag::Env;
                                     return (env_tag, env)
-                                }
-                                Const(add)
-                                | Const(sub)
-                                | Const(mul)
-                                | Const(div)
-                                | Const(equal) => {
-                                    let (res_tag, res) = call(eval_binop_num, head, rest_tag, rest, env);
-                                    return (res_tag, res)
                                 }
                                 Const(if_) => {
                                     // An if expression is a list of 4 elements
@@ -275,6 +291,35 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                                         }
                                     };
                                     let (res_tag, res) = call(eval, t_branch_tag, t_branch, env);
+                                    return (res_tag, res)
+                                }
+                                Const(add)
+                                | Const(sub)
+                                | Const(mul)
+                                | Const(div)
+                                | Const(equal) => {
+                                    let (res_tag, res) = call(eval_binop_num, head, rest_tag, rest, env);
+                                    return (res_tag, res)
+                                }
+                                Const(cons)
+                                | Const(strcons)
+                                | Const(hide)
+                                | Const(eq) => {
+                                    let (res_tag, res) = call(eval_binop_misc, head, rest_tag, rest, env);
+                                    return (res_tag, res)
+                                }
+                                Const(car)
+                                | Const(cdr)
+                                | Const(commit)
+                                | Const(num)
+                                | Const(u64_)
+                                | Const(comm)
+                                | Const(char_)
+                                | Const(open)
+                                | Const(secret)
+                                | Const(atom)
+                                | Const(emit) => {
+                                    let (res_tag, res) = call(eval_unop, head, rest_tag, rest, env);
                                     return (res_tag, res)
                                 }
                                 // TODO: other keywords
@@ -389,6 +434,155 @@ pub fn eval_binop_num<F: PrimeField, H: Hasher<F = F>>(
                     return (nil_tag, nil)
                 }
             }
+        }
+    )
+}
+
+pub fn eval_binop_misc<F: PrimeField, H: Hasher<F = F>>(
+    mem: &mut Memory<F, H>,
+    store: &ZStore<F, H>,
+) -> FuncE<F> {
+    let nil = mem.read_and_ingress("nil", store).unwrap().raw;
+    let t = mem.read_and_ingress("t", store).unwrap().raw;
+    let cons = mem.read_and_ingress("cons", store).unwrap().raw;
+    let strcons = mem.read_and_ingress("strcons", store).unwrap().raw;
+    let hide = mem.read_and_ingress("hide", store).unwrap().raw;
+    let eq = mem.read_and_ingress("eq", store).unwrap().raw;
+    func!(
+        fn eval_binop_misc(head, rest_tag, rest, env): 2 {
+            let err_tag = Tag::Err;
+            let cons_tag = Tag::Cons;
+            let nil_tag = Tag::Nil;
+            let invalid_form = EvalErr::InvalidForm;
+            let rest_not_cons = sub(rest_tag, cons_tag);
+            if rest_not_cons {
+                return (err_tag, invalid_form)
+            }
+            let (exp1_tag, exp1, rest_tag, rest) = load(rest);
+            let rest_not_cons = sub(rest_tag, cons_tag);
+            if rest_not_cons {
+                return (err_tag, invalid_form)
+            }
+            let (exp2_tag, exp2, rest_tag, _rest) = load(rest);
+            let rest_not_nil = sub(rest_tag, nil_tag);
+            if rest_not_nil {
+                return (err_tag, invalid_form)
+            }
+            let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
+            let (val2_tag, val2) = call(eval, exp2_tag, exp2, env);
+            match val1_tag {
+                Tag::Err => {
+                    return (val1_tag, val1)
+                }
+            };
+            match val2_tag {
+                Tag::Err => {
+                    return (val2_tag, val2)
+                }
+            };
+            match head {
+                Const(cons) => {
+                    let cons = store(val1_tag, val1, val2_tag, val2);
+                    return (cons_tag, cons)
+                }
+                Const(strcons) => {
+                    let char_tag = Tag::Char;
+                    let str_tag = Tag::Str;
+                    let strcons = store(val1_tag, val1, val2_tag, val2);
+                    let not_char = sub(val1_tag, char_tag);
+                    let not_str = sub(val2_tag, str_tag);
+                    if not_char {
+                        let err = EvalErr::NotChar;
+                        return (err_tag, err)
+                    }
+                    if not_str {
+                        let err = EvalErr::NotString;
+                        return (err_tag, err)
+                    }
+                    return (str_tag, strcons)
+                }
+                Const(hide) => {
+                    match val1_tag {
+                        Tag::Num => {
+                            let comm_tag = Tag::Comm;
+                            let comm = store(val1, val2_tag, val2);
+                            return (comm_tag, comm)
+                        }
+                    };
+                    return (err_tag, invalid_form)
+                }
+                Const(eq) => {
+                    let sym_tag = Tag::Sym;
+                    let t = Const(t);
+                    let nil = Const(nil);
+                    let eq_tag = eq(val1_tag, val2_tag);
+                    let eq_val = eq(val1, val2);
+                    let eq = mul(eq_tag, eq_val);
+                    if eq {
+                        return (sym_tag, t)
+                    }
+                    return (nil_tag, nil)
+               }
+            };
+            return (err_tag, invalid_form)
+        }
+    )
+}
+
+pub fn eval_unop<F: PrimeField, H: Hasher<F = F>>(
+    mem: &mut Memory<F, H>,
+    store: &ZStore<F, H>,
+) -> FuncE<F> {
+    let car = mem.read_and_ingress("car", store).unwrap().raw;
+    let cdr = mem.read_and_ingress("cdr", store).unwrap().raw;
+    let commit = mem.read_and_ingress("commit", store).unwrap().raw;
+    let num = mem.read_and_ingress("num", store).unwrap().raw;
+    let u64_ = mem.read_and_ingress("u64", store).unwrap().raw;
+    let comm = mem.read_and_ingress("comm", store).unwrap().raw;
+    let char_ = mem.read_and_ingress("char", store).unwrap().raw;
+    let open = mem.read_and_ingress("open", store).unwrap().raw;
+    let secret = mem.read_and_ingress("secret", store).unwrap().raw;
+    let atom = mem.read_and_ingress("atom", store).unwrap().raw;
+    let emit = mem.read_and_ingress("emit", store).unwrap().raw;
+    func!(
+        fn eval_unop(head, _rest_tag, _rest, _env): 2 {
+            let err_tag = Tag::Err;
+            let todo = EvalErr::Todo;
+            match head {
+                Const(car) => {
+                    return (err_tag, todo)
+                }
+                Const(cdr) => {
+                    return (err_tag, todo)
+                }
+                Const(commit) => {
+                    return (err_tag, todo)
+                }
+                Const(num) => {
+                    return (err_tag, todo)
+                }
+                Const(u64_) => {
+                    return (err_tag, todo)
+                }
+                Const(comm) => {
+                    return (err_tag, todo)
+                }
+                Const(char_) => {
+                    return (err_tag, todo)
+                }
+                Const(open) => {
+                    return (err_tag, todo)
+                }
+                Const(secret) => {
+                    return (err_tag, todo)
+                }
+                Const(atom) => {
+                    return (err_tag, todo)
+                }
+                Const(emit) => {
+                    return (err_tag, todo)
+                }
+             }
         }
     )
 }
@@ -709,7 +903,9 @@ mod test {
         let store = &ZStore::<F, PoseidonBabyBearHasher>::new();
         let toplevel = &Toplevel::new(&[
             eval(mem, store),
+            eval_unop(mem, store),
             eval_binop_num(mem, store),
+            eval_binop_misc(mem, store),
             eval_let(),
             eval_letrec(),
             apply(),
@@ -719,7 +915,9 @@ mod test {
 
         // Chips
         let eval = FuncChip::from_name("eval", toplevel);
+        let eval_unop = FuncChip::from_name("eval_unop", toplevel);
         let eval_binop_num = FuncChip::from_name("eval_binop_num", toplevel);
+        let eval_binop_misc = FuncChip::from_name("eval_binop_misc", toplevel);
         let eval_let = FuncChip::from_name("eval_let", toplevel);
         let eval_letrec = FuncChip::from_name("eval_letrec", toplevel);
         let apply = FuncChip::from_name("apply", toplevel);
@@ -729,8 +927,10 @@ mod test {
         let expect_eq = |computed: usize, expected: Expect| {
             expected.assert_eq(&computed.to_string());
         };
-        expect_eq(eval.width(), expect!["75"]);
+        expect_eq(eval.width(), expect!["106"]);
+        expect_eq(eval_unop.width(), expect!["18"]);
         expect_eq(eval_binop_num.width(), expect!["42"]);
+        expect_eq(eval_binop_misc.width(), expect!["41"]);
         expect_eq(eval_let.width(), expect!["34"]);
         expect_eq(eval_letrec.width(), expect!["33"]);
         expect_eq(apply.width(), expect!["36"]);
@@ -768,6 +968,10 @@ mod test {
         eval_aux("'(+ 1 2)", "(+ 1 2)");
         eval_aux("(eval 'x (let ((x 1)) (current-env)))", "1");
         eval_aux("(eval '(+ 1 2) (empty-env))", "3");
+        eval_aux("(cons 1 2)", "(1 . 2)");
+        eval_aux("(strcons 'a' \"bc\")", "\"abc\"");
+        eval_aux("(eq (cons 1 2) '(1 . 2))", "t");
+        eval_aux("(eq (cons 1 3) '(1 . 2))", "nil");
         eval_aux(
             "
 (letrec ((factorial
