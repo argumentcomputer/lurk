@@ -199,6 +199,18 @@ impl<F: PrimeField + Ord> Op<F> {
                     slice.push_aux(index, f);
                 }
             }
+            Op::Not(a) => {
+                let (a, a_deg) = map[*a];
+                let d = if a.is_zero() { F::zero() } else { a.inverse() };
+                let f = if a.is_zero() { F::one() } else { F::zero() };
+                if a_deg == 0 {
+                    map.push((f, 0));
+                } else {
+                    map.push((f, 1));
+                    slice.push_aux(index, d);
+                    slice.push_aux(index, f);
+                }
+            }
             Op::Call(idx, inp) => {
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let query_map = &queries.func_queries()[*idx];
