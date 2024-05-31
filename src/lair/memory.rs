@@ -21,6 +21,7 @@ where
         let (local, next) = (main.row_slice(0), main.row_slice(1));
         let local_ptr = local[0];
         let next_ptr = next[0];
+        builder.when_first_row().assert_one(local_ptr);
         builder.when_transition().assert_one(next_ptr - local_ptr);
     }
 }
@@ -44,13 +45,14 @@ impl MemChip {
         let width = self.width();
         let height = mem.len().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
-        rows.chunks_mut(width).enumerate().for_each(|(ptr, row)| {
-            row[0] = F::from_canonical_usize(ptr);
-            if let Some((args, &mult)) = mem.get_index(ptr) {
+        rows.chunks_mut(width).enumerate().for_each(|(i, row)| {
+            // We skip the address 0 as to leave room for null pointers
+            row[0] = F::from_canonical_usize(i + 1);
+            if let Some((args, &mult)) = mem.get_index(i) {
                 assert_eq!(args.len(), len);
                 row[1] = F::from_canonical_u32(mult);
-                args.iter().enumerate().for_each(|(idx, arg)| {
-                    row[idx + 2] = *arg;
+                args.iter().enumerate().for_each(|(j, arg)| {
+                    row[j + 2] = *arg;
                 });
             }
         });
@@ -67,18 +69,17 @@ impl MemChip {
         let width = self.width();
         let height = mem.len().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
-        rows.par_chunks_mut(width)
-            .enumerate()
-            .for_each(|(ptr, row)| {
-                row[0] = F::from_canonical_usize(ptr);
-                if let Some((args, &mult)) = mem.get(ptr) {
-                    assert_eq!(args.len(), len);
-                    row[1] = F::from_canonical_u32(mult);
-                    args.iter().enumerate().for_each(|(idx, arg)| {
-                        row[idx + 2] = *arg;
-                    });
-                }
-            });
+        rows.par_chunks_mut(width).enumerate().for_each(|(i, row)| {
+            // We skip the address 0 as to leave room for null pointers
+            row[0] = F::from_canonical_usize(i + 1);
+            if let Some((args, &mult)) = mem.get(i) {
+                assert_eq!(args.len(), len);
+                row[1] = F::from_canonical_u32(mult);
+                args.iter().enumerate().for_each(|(j, arg)| {
+                    row[j + 2] = *arg;
+                });
+            }
+        });
         RowMajorMatrix::new(rows, width)
     }
 }
@@ -113,7 +114,8 @@ mod tests {
         let func_trace = test_chip.generate_trace(queries);
 
         let expected_trace = [
-            1, 2, 1, 0, 1, 1, 2, 3, 1, //
+            // ptr2, y, mult, ptr1, ptr2, one, two, three, selector
+            2, 2, 1, 1, 2, 1, 2, 3, 1, //
             0, 0, 0, 0, 0, 0, 0, 0, 0, //
             0, 0, 0, 0, 0, 0, 0, 0, 0, //
             0, 0, 0, 0, 0, 0, 0, 0, 0, //
@@ -128,10 +130,11 @@ mod tests {
         let mem_trace = mem_chip.generate_trace(queries);
 
         let expected_trace = [
-            0, 2, 1, 2, 3, //
-            1, 1, 1, 1, 1, //
-            2, 0, 0, 0, 0, //
+            // index, mult, memory values
+            1, 2, 1, 2, 3, //
+            2, 1, 1, 1, 1, //
             3, 0, 0, 0, 0, //
+            4, 0, 0, 0, 0, //
         ]
         .into_iter()
         .map(F::from_canonical_u32)

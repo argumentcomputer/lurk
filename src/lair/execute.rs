@@ -46,12 +46,12 @@ pub fn mem_store<F: PrimeField + Ord>(mem: &mut [MemMap<F>], args: List<F>) -> F
     let len = args.len();
     let idx = mem_index_from_len(len)
         .unwrap_or_else(|| panic!("There are no mem tables of size {}", len));
-    if let Some((ptr, _, mult)) = mem[idx].get_full_mut(&args) {
+    if let Some((i, _, mult)) = mem[idx].get_full_mut(&args) {
         *mult += 1;
-        F::from_canonical_usize(ptr)
+        F::from_canonical_usize(i + 1)
     } else {
-        let (ptr, _) = mem[idx].insert_full(args, 1);
-        F::from_canonical_usize(ptr)
+        let (i, _) = mem[idx].insert_full(args, 1);
+        F::from_canonical_usize(i + 1)
     }
 }
 
@@ -62,7 +62,7 @@ pub fn mem_load<F: PrimeField + Ord>(mem: &mut [MemMap<F>], len: usize, ptr: F) 
         .expect("Field element is too big for a pointer");
     let idx = mem_index_from_len(len)
         .unwrap_or_else(|| panic!("There are no mem tables of size {}", len));
-    let (args, mult) = mem[idx].get_index_mut(ptr_f).expect("Unbound pointer");
+    let (args, mult) = mem[idx].get_index_mut(ptr_f - 1).expect("Unbound pointer");
     *mult += 1;
     args
 }
