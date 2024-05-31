@@ -223,18 +223,20 @@ impl<F: PrimeField + Ord> Op<F> {
                 let idx = mem_index_from_len(args.len()).unwrap();
                 let query_map = &queries.mem_queries[idx];
                 let args = args.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let ptr = query_map
+                let i = query_map
                     .get_index_of(&args)
                     .expect("Cannot find query result");
-                let f = F::from_canonical_usize(ptr);
+                let f = F::from_canonical_usize(i + 1);
                 map.push((f, 1));
                 slice.push_aux(index, f);
             }
             Op::Load(len, ptr) => {
                 let idx = mem_index_from_len(*len).unwrap();
                 let query_map = &queries.mem_queries[idx];
-                let ptr = map[*ptr].0.as_canonical_biguint().try_into().unwrap();
-                let (args, _) = query_map.get_index(ptr).expect("Cannot find query result");
+                let ptr: usize = map[*ptr].0.as_canonical_biguint().try_into().unwrap();
+                let (args, _) = query_map
+                    .get_index(ptr - 1)
+                    .expect("Cannot find query result");
                 for f in args.iter() {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
