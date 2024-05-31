@@ -1,4 +1,4 @@
-//! This module defines the Poseidon 2 column
+//! This module defines the columns for the Poseidon 2 chip
 
 use hybrid_array::Array;
 use loam_macros::AlignedBorrow;
@@ -6,7 +6,7 @@ use loam_macros::AlignedBorrow;
 use super::config::PoseidonConfig;
 
 /// The column layout for the chip.
-#[derive(AlignedBorrow, Clone)]
+#[derive(AlignedBorrow, Clone, Debug)]
 #[repr(C)]
 pub struct Poseidon2Cols<T, C>
 where

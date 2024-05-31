@@ -1,3 +1,8 @@
+//! This module defines all of the constants
+//! The constants are generated using the `poseidon2_rust_params.sage` script which is a
+//! modified version of the script found at
+//! https://github.com/HorizenLabs/poseidon2/blob/main/poseidon2_rust_params.sage
+
 use lazy_static::*;
 use p3_baby_bear::BabyBear;
 use p3_field::AbstractField;

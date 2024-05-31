@@ -1,3 +1,6 @@
+//! This module defines the Poseidon2 configurations and implements the traits for all the supported
+//! widths between 4 and 40.
+
 use std::slice;
 
 use hybrid_array::{typenum::*, Array, ArraySize};
@@ -6,11 +9,12 @@ use p3_field::{AbstractField, Field};
 use p3_poseidon2::{DiffusionPermutation, Poseidon2, Poseidon2ExternalMatrixGeneral};
 use p3_symmetric::Permutation;
 
-use super::constants::*;
-use super::Poseidon2Chip;
+use super::{constants::*, Poseidon2Chip};
 
+/// A sealed trait that provides the constants required for the Poseidon configuration
 trait ConstantsProvided {}
 
+/// The Poseidon configuration trait storing the data needed for
 #[allow(private_bounds)]
 pub trait PoseidonConfig: Clone + Copy + Sync + ConstantsProvided {
     type F: Field;
@@ -20,12 +24,15 @@ pub trait PoseidonConfig: Clone + Copy + Sync + ConstantsProvided {
     const R_F: usize;
     type R: ArraySize;
 
+    /// Returns the diagonal matrix for the internal Poseidon permutation
     fn matrix_diag() -> &'static Array<Self::F, Self::WIDTH>;
 
     /// Returns an iterator of the hasher's round constants
     fn round_constants() -> impl IntoIterator<Item = &'static [Self::F]>;
 }
 
+/// The internal diffusion layer for the Poseidon chip, implements the `Permutation` and
+/// `DiffusionPermutation` traits needed to compute the Poseidon permutation.
 #[derive(Clone)]
 pub struct InternalDiffusion {}
 
@@ -72,6 +79,7 @@ macro_rules! impl_poseidon_config {
         impl Poseidon2Chip<$name> {
             /// Returns a Poseidon 2 hasher
             pub fn hasher(
+                &self,
             ) -> Poseidon2<BabyBear, Poseidon2ExternalMatrixGeneral, InternalDiffusion, $width, 7>
             {
                 let rounds_f = $name::R_F;

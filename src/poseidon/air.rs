@@ -1,4 +1,5 @@
 //! This module defines the AIR constraints for the Poseidon2Chip
+
 use core::mem::size_of;
 
 use std::borrow::Borrow;
@@ -30,6 +31,7 @@ where
     AB: AirBuilder,
     C: PoseidonConfig<F = AB::F>,
 {
+    #[allow(non_snake_case)]
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
         let local = main.row_slice(0);

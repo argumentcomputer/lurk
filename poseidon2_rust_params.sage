@@ -606,6 +606,13 @@ def to_field(value, p):
 
 
 def generate_constants_file():
+    print("""
+//! This module defines all of the constants
+//! The constants are generated using the `poseidon2_rust_params.sage` script which is a
+//! modified version of the script found at
+//! https://github.com/HorizenLabs/poseidon2/blob/main/poseidon2_rust_params.sage
+    """)
+    print()
     print("use lazy_static::*;")
     print("use p3_baby_bear::BabyBear;")
     print("use p3_field::AbstractField;")
@@ -626,7 +633,7 @@ fn f(u: u32) -> BabyBear {
         alpha = get_alpha(p)
         R_F_FIXED, R_P_FIXED, _, _ = poseidon_calc_final_numbers_fixed(p, t, alpha, 128, True, FIELD_SIZE, NUM_CELLS)
 
-        print("// +++ t = {0} R_F = {1}, R_P = {2} +++".format(t, R_F_FIXED, R_P_FIXED))
+        print("// +++ t = {0}, R_F = {1}, R_P = {2} +++".format(t, R_F_FIXED, R_P_FIXED))
         print("lazy_static! {")
         INIT_SEQUENCE = init_generator(FIELD, SBOX, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED, FIELD, SBOX, FIELD_SIZE, NUM_CELLS)
 

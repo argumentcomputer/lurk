@@ -1,6 +1,4 @@
 //! This module defines the trace generation for the Poseidon2 AIR Chip
-use core::iter;
-
 use hybrid_array::Array;
 use itertools::Itertools;
 use p3_air::BaseAir;
@@ -22,30 +20,27 @@ where
     C: PoseidonConfig<F = F>,
 {
     pub fn generate_trace(&self, inputs: Vec<Array<F, C::WIDTH>>) -> RowMajorMatrix<F> {
-        let width = C::WIDTH;
+        // let width = C::WIDTH;
         let rounds = C::R_F + C::R_P;
         let num_cols = <Poseidon2Chip<C> as BaseAir<F>>::width(self);
 
-        let full_trace_len = inputs.len() * num_cols * (rounds + 1);
-        let full_trace_len = full_trace_len.next_power_of_two();
+        let full_num_rows = inputs.len() * (rounds + 1);
+        let full_trace_len_padded = full_num_rows.next_power_of_two() * num_cols;
 
-        let mut trace = RowMajorMatrix::new(vec![F::zero(); full_trace_len], width);
+        let mut trace = RowMajorMatrix::new(vec![F::zero(); full_trace_len_padded], num_cols);
 
         let (prefix, rows, suffix) = unsafe { trace.values.align_to_mut::<Poseidon2Cols<F, C>>() };
         assert!(prefix.is_empty(), "Alignment should match");
         assert!(suffix.is_empty(), "Alignment should match");
-        assert_eq!(rows.len(), full_trace_len);
+        assert_eq!(rows.len(), full_num_rows.next_power_of_two());
 
-        let zero_row: Array<F, C::WIDTH> = Array::clone_from_slice(&vec![F::zero(); width]);
-
-        let padded_inputs = inputs.into_iter().chain(iter::repeat(zero_row));
-        for (rounds_row, input) in rows.chunks_mut(rounds + 1).zip_eq(padded_inputs) {
-            self.generate_round_trace(rounds_row.to_vec(), input);
+        for (input, rounds_row) in inputs.into_iter().zip(rows.chunks_mut(rounds + 1)) {
+            self.generate_round_trace(rounds_row, input);
         }
         trace
     }
 
-    fn generate_round_trace(&self, mut rows: Vec<Poseidon2Cols<F, C>>, input: Array<F, C::WIDTH>) {
+    fn generate_round_trace(&self, rows: &mut [Poseidon2Cols<F, C>], input: Array<F, C::WIDTH>) {
         let width = C::WIDTH;
         let rounds_f = C::R_F;
         let rounds_p = C::R_P;
@@ -58,10 +53,6 @@ where
         let mut input = rows[0].output.clone();
 
         for (round, (row, constants)) in rows.iter_mut().skip(1).zip_eq(constants).enumerate() {
-            // Trick to get lsp to recognize everything?
-            let round: usize = round;
-            let row: &mut Poseidon2Cols<BabyBear, C> = row;
-
             // let row: &mut Poseidon2Cols<BabyBear, _> = &mut row;
             row.input = input.clone();
 
