@@ -74,9 +74,7 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                             // body in the extended environment
                             let (body_tag, body, body_env) = load(res);
                             // `expr` is the symbol
-                            let ptr = store(expr, res_tag, res, body_env);
-                            let one = 1;
-                            let thunk_env = add(ptr, one);
+                            let thunk_env = store(expr, res_tag, res, body_env);
                             let (res_tag, res) = call(eval, body_tag, body, thunk_env);
                             return (res_tag, res)
                         }
@@ -432,9 +430,7 @@ pub fn eval_let<F: PrimeField>() -> FuncE<F> {
                     }
 
                     let (val_tag, val) = call(eval, expr_tag, expr, env);
-                    let ptr = store(param, val_tag, val, env);
-                    let one = 1;
-                    let ext_env = add(ptr, one);
+                    let ext_env = store(param, val_tag, val, env);
                     match rest_binds_tag {
                         Tag::Nil => {
                             let (res_tag, res) = call(eval, body_tag, body, ext_env);
@@ -488,9 +484,7 @@ pub fn eval_letrec<F: PrimeField>() -> FuncE<F> {
 
                     let thunk_tag = Tag::Thunk;
                     let thunk = store(expr_tag, expr, env);
-                    let ptr = store(param, thunk_tag, thunk, env);
-                    let one = 1;
-                    let ext_env = add(ptr, one);
+                    let ext_env = store(param, thunk_tag, thunk, env);
                     match rest_binds_tag {
                         Tag::Nil => {
                             let (res_tag, res) = call(eval, body_tag, body, ext_env);
@@ -556,11 +550,7 @@ pub fn apply<F: PrimeField>() -> FuncE<F> {
                             // evaluate the argument
                             let (arg_tag, arg) = call(eval, arg_tag, arg, args_env);
                             // and store it in the environment
-                            let ptr = store(param, arg_tag, arg, func_env);
-                            // environments are either 0, for the empty environment
-                            // or a pointer plus 1
-                            let one = 1;
-                            let ext_env = add(ptr, one);
+                            let ext_env = store(param, arg_tag, arg, func_env);
                             let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
                             let (res_tag, res) = call(apply, fun_tag, ext_fun, rest_args_tag, rest_args, args_env);
 
@@ -585,10 +575,7 @@ pub fn env_lookup<F: Field>() -> FuncE<F> {
                 let err = EvalErr::UnboundVar;
                 return (err_tag, err)
             }
-            // the pointer is the environment minus one
-            let one = 1;
-            let ptr = sub(env, one);
-            let (y, val_tag, val, tail_env) = load(ptr);
+            let (y, val_tag, val, tail_env) = load(env);
             let not_eq = sub(x, y);
             if !not_eq {
                 return (val_tag, val)
@@ -622,10 +609,7 @@ pub fn list_to_env<F: PrimeField>() -> FuncE<F> {
                                     if not_env {
                                         return (err_tag, generic_err)
                                     }
-                                    // the environment is the pointer plus one
-                                    let ptr = store(y, val_tag, val, tail_env);
-                                    let one = 1;
-                                    let env = add(ptr, one);
+                                    let env = store(y, val_tag, val, tail_env);
                                     return (env_tag, env)
                                 }
                             };
