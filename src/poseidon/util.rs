@@ -1,5 +1,5 @@
+use p3_field::{AbstractField, Field};
 use std::iter::zip;
-use p3_field::{AbstractField};
 
 // TODO: Make this public inside Plonky3 and import directly.
 pub fn apply_m_4<AF>(x: &mut [AF])
@@ -18,10 +18,30 @@ where
     x[2] = t01233 + t23; // x[0] + x[1] + 2*x[2] + 3*x[3]
 }
 
+pub(crate) fn matmul_exterior<F: Field>(state: &mut [F]) {
+    let width = state.len();
+
+    for i in (0..width).step_by(4) {
+        apply_m_4(&mut state[i..i + 4]);
+    }
+    let sums = (0..4)
+        .map(|k| {
+            (0..width)
+                .step_by(4)
+                .map(|j| state[j + k].clone())
+                .sum::<F>()
+        })
+        .collect::<Vec<F>>();
+
+    for i in 0..width {
+        state[i] += sums[i % 4];
+    }
+}
+
 pub(crate) fn matmul_generic<AF: AbstractField>(
     state: &mut [AF],
-    mat_internal_diag_m_1: impl IntoIterator<Item=AF>
-){
+    mat_internal_diag_m_1: impl IntoIterator<Item = AF>,
+) {
     let sum: AF = state.iter().cloned().sum();
     for (state, diag) in zip(state.iter_mut(), mat_internal_diag_m_1) {
         *state *= diag;

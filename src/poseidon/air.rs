@@ -7,7 +7,6 @@ use std::iter::zip;
 use hybrid_array::{typenum::Unsigned, Array};
 use itertools::izip;
 use p3_air::{Air, AirBuilder, BaseAir};
-use p3_field::AbstractField;
 use p3_matrix::Matrix;
 
 use super::{
@@ -60,7 +59,7 @@ where
         let rounds_internal = &local.rounds[ROUNDS_P.clone()];
         let rounds_external_second = &local.rounds[ROUNDS_E2.clone()];
 
-        let is_init = local.is_init.into();
+        let is_init = local.is_init.clone();
         let is_external_first = round_flag_sum(rounds_external_first);
         let is_internal = round_flag_sum(rounds_internal);
         let is_external_second = round_flag_sum(rounds_external_second);
@@ -120,7 +119,7 @@ where
                     + (is_internal.clone() + is_external.clone()) * local.sbox_deg_7[i]
             } else {
                 (is_init.clone() + is_internal.clone()) * local.add_rc[i]
-                    + is_external * local.sbox_deg_7[i]
+                    + is_external.clone() * local.sbox_deg_7[i]
             }
         });
 

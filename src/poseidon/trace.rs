@@ -1,8 +1,7 @@
 //! This module defines the trace generation for the Poseidon2 AIR Chip
 use core::iter;
-use std::iter::once;
 
-use hybrid_array::{typenum::Unsigned, Array};
+use hybrid_array::Array;
 use itertools::Itertools;
 use p3_air::BaseAir;
 use p3_baby_bear::BabyBear;
@@ -12,7 +11,7 @@ use p3_matrix::dense::RowMajorMatrix;
 use super::{
     columns::Poseidon2Cols,
     config::PoseidonConfig,
-    util::{apply_m_4, matmul_generic},
+    util::{matmul_exterior, matmul_generic},
     Poseidon2Chip,
 };
 
@@ -50,12 +49,15 @@ where
         let width = C::WIDTH;
         let rounds_f = C::R_F;
         let rounds_p = C::R_P;
-        let mut input = input.clone();
 
-        let first_row: Array<F, C::WIDTH> = Array::from_fn(|_| F::zero());
-        let constants = once(&first_row).chain(C::round_constants());
+        let constants = C::round_constants();
 
-        for (round, (row, constants)) in rows.iter_mut().zip_eq(constants).enumerate() {
+        // Generate the initial round
+        self.generate_initial_round(&mut rows[0], input);
+
+        let mut input = rows[0].output.clone();
+
+        for (round, (row, constants)) in rows.iter_mut().skip(1).zip_eq(constants).enumerate() {
             // Trick to get lsp to recognize everything?
             let round: usize = round;
             let row: &mut Poseidon2Cols<BabyBear, C> = row;
@@ -69,15 +71,17 @@ where
             let is_external = is_external_first_half || is_external_second_half;
             let is_internal = !is_external;
 
-            if round == 0 {
-                row.is_init = F::one()
-            } else {
-                row.rounds[round - 1] = F::one();
-            }
+            row.rounds[round] = F::one();
 
             // Apply the round constants
             for i in 0..width {
-                row.add_rc[i] = input[i] + constants[i];
+                if i == 0 {
+                    row.add_rc[i] = input[i] + constants[i];
+                } else if is_external {
+                    row.add_rc[i] = input[i] + constants[i];
+                } else if is_internal {
+                    row.add_rc[i] = input[i];
+                }
             }
 
             // Apply the degree 3 sbox
@@ -104,25 +108,12 @@ where
 
             // Apply the linear layer
             if is_external {
-                for i in (0..width).step_by(4) {
-                    apply_m_4(&mut linear_input[i..i + 4]);
-                }
-                let sums = (0..4)
-                    .map(|k| {
-                        (0..width)
-                            .step_by(4)
-                            .map(|j| linear_input[j + k].clone())
-                            .sum::<BabyBear>()
-                    })
-                    .collect::<Vec<BabyBear>>();
-
-                for i in 0..width {
-                    linear_input[i] += sums[i % 4];
-                }
+                matmul_exterior(&mut linear_input)
             } else {
                 let matmul_constants = C::matrix_diag().iter().copied();
                 matmul_generic(&mut linear_input, matmul_constants);
             }
+
             for i in 0..width {
                 row.output[i] = linear_input[i];
             }
@@ -130,5 +121,16 @@ where
             // Update the input for the next round
             input = row.output.clone();
         }
+    }
+
+    fn generate_initial_round(&self, row: &mut Poseidon2Cols<F, C>, input: Array<F, C::WIDTH>) {
+        row.input = input.clone();
+        row.is_init = F::one();
+        row.add_rc = input.clone();
+        row.sbox_deg_3 = Array::from_fn(|_| F::zero());
+        row.sbox_deg_7 = Array::from_fn(|_| F::zero());
+        row.output = input;
+
+        matmul_exterior(&mut row.output);
     }
 }
