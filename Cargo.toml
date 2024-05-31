@@ -94,5 +94,3 @@ lto = "thin"
 incremental = false
 codegen-units = 16
 
-[dev-dependencies]
-itertools = "0.12.1"
