@@ -12,7 +12,7 @@ use p3_matrix::Matrix;
 use super::{
     columns::Poseidon2Cols,
     config::PoseidonConfig,
-    util::{apply_m_4, matmul_generic},
+    util::{apply_m_4, matmul_internal},
     Poseidon2Chip,
 };
 
@@ -160,7 +160,7 @@ where
             // Use a simple matrix multiplication as the permutation.
             let mut state = sbox_result;
             let matmul_constants = C::matrix_diag().iter().copied().map(AB::Expr::from);
-            matmul_generic(&mut state, matmul_constants);
+            matmul_internal(&mut state, matmul_constants);
 
             for (state, &output_expected) in zip(state, &local.output) {
                 builder

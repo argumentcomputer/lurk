@@ -11,7 +11,7 @@ use p3_matrix::dense::RowMajorMatrix;
 use super::{
     columns::Poseidon2Cols,
     config::PoseidonConfig,
-    util::{matmul_exterior, matmul_generic},
+    util::{matmul_exterior, matmul_internal},
     Poseidon2Chip,
 };
 
@@ -111,7 +111,7 @@ where
                 matmul_exterior(&mut linear_input)
             } else {
                 let matmul_constants = C::matrix_diag().iter().copied();
-                matmul_generic(&mut linear_input, matmul_constants);
+                matmul_internal(&mut linear_input, matmul_constants);
             }
 
             for i in 0..width {

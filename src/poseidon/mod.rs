@@ -6,7 +6,6 @@ mod air;
 mod columns;
 mod config;
 mod constants;
-mod eval;
 mod trace;
 mod util;
 
@@ -16,6 +15,13 @@ where
     C: PoseidonConfig,
 {
     _p: PhantomData<C>,
+}
+
+impl<C: PoseidonConfig> Poseidon2Chip<C> {
+    /// Creates a new Poseidon2 chip.
+    pub fn new() -> Self {
+        Self { _p: PhantomData }
+    }
 }
 
 // TODO: Add tests

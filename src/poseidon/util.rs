@@ -18,32 +18,32 @@ where
     x[2] = t01233 + t23; // x[0] + x[1] + 2*x[2] + 3*x[3]
 }
 
+// Apply the MDS matrix to the external state.
 pub(crate) fn matmul_exterior<F: Field>(state: &mut [F]) {
     let width = state.len();
 
-    for i in (0..width).step_by(4) {
-        apply_m_4(&mut state[i..i + 4]);
+    for state_chunk in state.chunks_exact_mut(4) {
+        apply_m_4(state_chunk);
     }
-    let sums = (0..4)
-        .map(|k| {
-            (0..width)
-                .step_by(4)
-                .map(|j| state[j + k].clone())
-                .sum::<F>()
-        })
-        .collect::<Vec<F>>();
+    let sums = state
+        .chunks_exact_mut(4)
+        .fold([F::zero(); 4], |mut sums, chunk| {
+            zip(sums.iter_mut(), chunk).for_each(|(s, &mut v)| *s += v);
+            sums
+        });
 
     for i in 0..width {
         state[i] += sums[i % 4];
     }
 }
 
-pub(crate) fn matmul_generic<AF: AbstractField>(
+// Apply the diffusion matrix to the internal state.
+pub(crate) fn matmul_internal<AF: AbstractField>(
     state: &mut [AF],
-    mat_internal_diag_m_1: impl IntoIterator<Item = AF>,
+    mat_internal_diag: impl IntoIterator<Item = AF>,
 ) {
     let sum: AF = state.iter().cloned().sum();
-    for (state, diag) in zip(state.iter_mut(), mat_internal_diag_m_1) {
+    for (state, diag) in zip(state.iter_mut(), mat_internal_diag) {
         *state *= diag;
         *state += sum.clone();
     }
