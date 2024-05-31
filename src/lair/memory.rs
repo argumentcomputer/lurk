@@ -40,8 +40,8 @@ impl MemChip {
 
     pub fn generate_trace<F: Field>(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let len = self.len;
-        let idx = mem_index_from_len(len).unwrap();
-        let mem = &queries.mem_queries[idx];
+        let mem_idx = mem_index_from_len(len);
+        let mem = &queries.mem_queries[mem_idx];
         let width = self.width();
         let height = mem.len().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
@@ -61,8 +61,8 @@ impl MemChip {
 
     pub fn generate_trace_parallel<F: Field>(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let len = self.len;
-        let idx = mem_index_from_len(len).unwrap();
-        let mem = queries.mem_queries[idx].iter().collect::<Vec<_>>();
+        let mem_idx = mem_index_from_len(len);
+        let mem = queries.mem_queries[mem_idx].iter().collect::<Vec<_>>();
         let width = self.width();
         let height = mem.len().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];

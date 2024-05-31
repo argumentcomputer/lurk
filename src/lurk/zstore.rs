@@ -78,7 +78,7 @@ impl Tag {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Payload<F>(pub(crate) [F; DIGEST]);
 
 impl<F: Field> Payload<F> {
@@ -86,6 +86,11 @@ impl<F: Field> Payload<F> {
         let mut pay = [F::zero(); DIGEST];
         pay[0] = f;
         Self(pay)
+    }
+
+    #[inline]
+    pub fn first_field(&self) -> &F {
+        &self.0[0]
     }
 
     #[allow(clippy::assertions_on_constants)]
@@ -120,15 +125,15 @@ pub struct ZPtr<F> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ZExpr<F> {
     // Atoms
-    Num(F),
-    U64(u64),
-    Char(char),
+    Num,
+    U64,
+    Char,
     Nil,
     EmptyStr,
     RootSym,
     RootKey,
     // TODO better error value
-    Err(F),
+    Err,
     // Compound data
     Cons {
         head: ZPtr<F>,
@@ -186,16 +191,14 @@ impl<F: Field + Ord, H: Hasher<F = F>> ZStore<F, H> {
                 let tag = Tag::Num;
                 let raw = Payload::from_field(*x);
                 let ptr = ZPtr { tag, raw };
-                let expr = ZExpr::Num(*x);
-                self.map.insert(ptr, expr.into());
+                self.map.insert(ptr, ZExpr::Num.into());
                 ptr
             }
             Syntax::U64(_, x) => {
                 let tag = Tag::U64;
                 let raw = Payload::from_u64(*x);
                 let ptr = ZPtr { tag, raw };
-                let expr = ZExpr::U64(*x);
-                self.map.insert(ptr, expr.into());
+                self.map.insert(ptr, ZExpr::U64.into());
                 ptr
             }
             Syntax::Char(_, x) => self.intern_char(*x),
@@ -223,16 +226,16 @@ impl<F: Field + Ord, H: Hasher<F = F>> ZStore<F, H> {
     pub fn intern_list(&self, xs: Vec<ZPtr<F>>, y: ZPtr<F>) -> ZPtr<F> {
         xs.into_iter()
             .rev()
-            .fold(y, |acc, elt| self.intern_cons(Tag::Cons, elt, acc))
+            .fold(y, |acc, elt| self.intern_pair(Tag::Cons, elt, acc))
     }
 
-    pub fn intern_cons(&self, tag: Tag, head: ZPtr<F>, tail: ZPtr<F>) -> ZPtr<F> {
+    pub fn intern_pair(&self, tag: Tag, head: ZPtr<F>, tail: ZPtr<F>) -> ZPtr<F> {
         let expr = match tag {
             Tag::Cons => ZExpr::Cons { head, tail },
             Tag::Sym => ZExpr::Sym { head, tail },
             Tag::Str => ZExpr::Str { head, tail },
             Tag::Nil => ZExpr::Nil,
-            _ => panic!("Not a cons tag"),
+            _ => panic!("Not a pair tag"),
         };
         let raw = H::hash_ptrs(vec![head, tail]);
         let ptr = ZPtr { tag, raw };
@@ -240,6 +243,7 @@ impl<F: Field + Ord, H: Hasher<F = F>> ZStore<F, H> {
         ptr
     }
 
+    #[inline]
     pub fn intern_nil(&self) -> ZPtr<F> {
         self.intern_symbol(&lurk_sym("nil"))
     }
@@ -251,15 +255,16 @@ impl<F: Field + Ord, H: Hasher<F = F>> ZStore<F, H> {
         };
         let is_nil = sym == &lurk_sym("nil");
         let mut ptr = self.intern_null(Tag::Sym);
-        let mut iter = sym.path().iter().rev().peekable();
+        let mut iter = sym.path().iter().peekable();
         while let Some(s) = iter.next() {
             let s = self.intern_string(s);
-            if sym.is_keyword() && iter.peek().is_none() {
-                ptr = self.intern_cons(Tag::Key, s, ptr);
-            } else if is_nil && iter.peek().is_none() {
-                ptr = self.intern_cons(Tag::Nil, s, ptr);
+            let is_last = iter.peek().is_none();
+            if sym.is_keyword() && is_last {
+                ptr = self.intern_pair(Tag::Key, s, ptr);
+            } else if is_nil && is_last {
+                ptr = self.intern_pair(Tag::Nil, s, ptr);
             } else {
-                ptr = self.intern_cons(Tag::Sym, s, ptr);
+                ptr = self.intern_pair(Tag::Sym, s, ptr);
             }
         }
         ptr
@@ -269,8 +274,7 @@ impl<F: Field + Ord, H: Hasher<F = F>> ZStore<F, H> {
         let tag = Tag::Char;
         let raw = Payload::from_char(c);
         let ptr = ZPtr { tag, raw };
-        let expr = ZExpr::Char(c);
-        self.map.insert(ptr, expr.into());
+        self.map.insert(ptr, ZExpr::Char.into());
         ptr
     }
 
@@ -279,9 +283,9 @@ impl<F: Field + Ord, H: Hasher<F = F>> ZStore<F, H> {
             Tag::Str => ZExpr::EmptyStr,
             Tag::Sym => ZExpr::RootSym,
             Tag::Key => ZExpr::RootKey,
-            _ => panic!("Not a string/symbol tag"),
+            _ => panic!("Not a Str/Sym/Key tag"),
         };
-        let raw = Payload([F::zero(); DIGEST]);
+        let raw = Payload::default();
         let ptr = ZPtr { tag, raw };
         self.map.insert(ptr, expr.into());
         ptr
@@ -291,8 +295,7 @@ impl<F: Field + Ord, H: Hasher<F = F>> ZStore<F, H> {
         let tag = Tag::Str;
         let empty_str = self.intern_null(tag);
         s.chars().rev().fold(empty_str, |acc, c| {
-            let c = self.intern_char(c);
-            self.intern_cons(tag, c, acc)
+            self.intern_pair(tag, self.intern_char(c), acc)
         })
     }
 
@@ -364,5 +367,48 @@ impl Hasher for PoseidonBabyBearHasher {
             &mut rng,
         );
         poseidon.permute_mut(state);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use p3_baby_bear::BabyBear;
+
+    use super::*;
+
+    #[test]
+    fn test_intern_string() {
+        let store = &ZStore::<BabyBear, PoseidonBabyBearHasher>::new();
+        let hi = store.intern_string("hi");
+
+        let hi_manual = store.intern_pair(
+            Tag::Str,
+            store.intern_char('h'),
+            store.intern_pair(
+                Tag::Str,
+                store.intern_char('i'),
+                store.intern_null(Tag::Str),
+            ),
+        );
+
+        assert_eq!(hi, hi_manual);
+    }
+
+    #[test]
+    fn test_intern_symbol() {
+        let store = &ZStore::<BabyBear, PoseidonBabyBearHasher>::new();
+        let foo_bar = store.intern_symbol(&Symbol::sym(&["foo", "bar"]));
+
+        let foo_bar_manual = store.intern_pair(
+            Tag::Sym,
+            store.intern_string("bar"),
+            store.intern_pair(
+                Tag::Sym,
+                store.intern_string("foo"),
+                store.intern_null(Tag::Sym),
+            ),
+        );
+
+        assert_eq!(foo_bar, foo_bar_manual);
     }
 }

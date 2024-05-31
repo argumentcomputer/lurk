@@ -232,7 +232,7 @@ impl<F: PrimeField> Op<F> {
                 }
             }
             Op::Store(args) => {
-                let idx = mem_index_from_len(args.len()).unwrap();
+                let idx = mem_index_from_len(args.len());
                 let query_map = &queries.mem_queries[idx];
                 let args = args.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let i = query_map
@@ -243,7 +243,7 @@ impl<F: PrimeField> Op<F> {
                 slice.push_aux(index, f);
             }
             Op::Load(len, ptr) => {
-                let idx = mem_index_from_len(*len).unwrap();
+                let idx = mem_index_from_len(*len);
                 let query_map = &queries.mem_queries[idx];
                 let ptr: usize = map[*ptr].0.as_canonical_biguint().try_into().unwrap();
                 let (args, _) = query_map

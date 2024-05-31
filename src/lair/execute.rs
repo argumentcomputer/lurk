@@ -30,29 +30,34 @@ pub struct QueryRecord<F: Field> {
 const NUM_MEM_TABLES: usize = 5;
 const MEM_TABLE_SIZES: [usize; NUM_MEM_TABLES] = [3, 4, 5, 6, 8];
 
-pub fn mem_index_to_len(idx: usize) -> Option<usize> {
-    MEM_TABLE_SIZES.get(idx).copied()
+#[inline]
+pub fn mem_index_to_len(idx: usize) -> usize {
+    MEM_TABLE_SIZES[idx]
 }
 
-pub fn mem_index_from_len(len: usize) -> Option<usize> {
-    MEM_TABLE_SIZES.iter().position(|&i| len == i)
+#[inline]
+pub fn mem_index_from_len(len: usize) -> usize {
+    MEM_TABLE_SIZES
+        .iter()
+        .position(|&i| len == i)
+        .unwrap_or_else(|| panic!("There are no mem tables of size {}", len))
 }
 
+#[inline]
 pub fn mem_init<F: Clone>() -> Vec<MemMap<F>> {
     vec![IndexMap::new(); NUM_MEM_TABLES]
 }
 
 pub fn mem_store<F: Field>(mem: &mut [MemMap<F>], args: List<F>) -> F {
     let len = args.len();
-    let idx = mem_index_from_len(len)
-        .unwrap_or_else(|| panic!("There are no mem tables of size {}", len));
-    if let Some((i, _, mult)) = mem[idx].get_full_mut(&args) {
+    let mem_idx = mem_index_from_len(len);
+    let mem_map_idx = if let Some((i, _, mult)) = mem[mem_idx].get_full_mut(&args) {
         *mult += 1;
-        F::from_canonical_usize(i + 1)
+        i
     } else {
-        let (i, _) = mem[idx].insert_full(args, 1);
-        F::from_canonical_usize(i + 1)
-    }
+        mem[mem_idx].insert_full(args, 1).0
+    };
+    F::from_canonical_usize(mem_map_idx + 1)
 }
 
 pub fn mem_load<F: PrimeField>(mem: &mut [MemMap<F>], len: usize, ptr: F) -> &[F] {
@@ -60,9 +65,10 @@ pub fn mem_load<F: PrimeField>(mem: &mut [MemMap<F>], len: usize, ptr: F) -> &[F
         .as_canonical_biguint()
         .try_into()
         .expect("Field element is too big for a pointer");
-    let idx = mem_index_from_len(len)
-        .unwrap_or_else(|| panic!("There are no mem tables of size {}", len));
-    let (args, mult) = mem[idx].get_index_mut(ptr_f - 1).expect("Unbound pointer");
+    let mem_idx = mem_index_from_len(len);
+    let (args, mult) = mem[mem_idx]
+        .get_index_mut(ptr_f - 1)
+        .expect("Unbound pointer");
     *mult += 1;
     args
 }
