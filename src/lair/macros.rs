@@ -42,6 +42,33 @@ macro_rules! block {
             $($tail)*
         )
     };
+    (@seq {$($limbs:expr)*}, let $tgt:ident = Const($e:expr) ; $($tail:tt)*) => {
+        $crate::block! (
+            @seq
+            {
+                $($limbs)*
+                $crate::lair::expr::OpE::Const(
+                    $crate::var!($tgt),
+                    $e,
+                )
+            },
+            $($tail)*
+        )
+    };
+    // lurk specific operation
+    (@seq {$($limbs:expr)*}, let $tgt:ident = intern_sym($sym:ident, $store:ident, $mem:ident) ; $($tail:tt)*) => {
+        $crate::block! (
+            @seq
+            {
+                $($limbs)*
+                $crate::lair::expr::OpE::Const(
+                    $crate::var!($tgt),
+                    $store.read_and_ingress(stringify!($sym), $mem).unwrap().raw,
+                )
+            },
+            $($tail)*
+        )
+    };
     (@seq {$($limbs:expr)*}, let $tgt:ident = add($a:ident, $b:ident) ; $($tail:tt)*) => {
         $crate::block! (
             @seq
@@ -236,6 +263,19 @@ macro_rules! block {
             $($tail)*
         )
     };
+    (@seq {$($limbs:expr)*}, let $tgt:ident = $e:expr ; $($tail:tt)*) => {
+        $crate::block! (
+            @seq
+            {
+                $($limbs)*
+                $crate::lair::expr::OpE::Const(
+                    $crate::var!($tgt),
+                    $e.to_field(),
+                )
+            },
+            $($tail)*
+        )
+    };
     (@seq {$($limbs:expr)*}, match $var:ident { $( $num:literal $(| $other_num:literal)* => $branch:tt )* } $(; $($def:tt)*)?) => {
         $crate::block! (
             @end
@@ -253,6 +293,64 @@ macro_rules! block {
                         $(
                             vec.push((
                                 $crate::lair::field_from_i32($other_num),
+                                $crate::block!( $branch ),
+                            ));
+                        )*
+                    )*
+                }
+                let branches = $crate::lair::map::Map::from_vec(vec);
+                let default = None $( .or (Some(Box::new($crate::block!( @seq {} , $($def)* )))) )?;
+                let cases = $crate::lair::expr::CasesE { branches, default };
+                $crate::lair::expr::CtrlE::Match($crate::var!($var), cases)
+            }
+        )
+    };
+    (@seq {$($limbs:expr)*}, match $var:ident { $( Tag::$tag:ident $(| Tag::$other_tag:ident)* => $branch:tt )* } $(; $($def:tt)*)?) => {
+        $crate::block! (
+            @end
+            {
+                $($limbs)*
+            },
+            {
+                let mut vec = Vec::new();
+                {
+                    $(
+                        vec.push((
+                            $crate::lurk::store::Tag::$tag.to_field(),
+                            $crate::block!( $branch )
+                        ));
+                        $(
+                            vec.push((
+                                $crate::lurk::store::Tag::$other_tag.to_field(),
+                                $crate::block!( $branch ),
+                            ));
+                        )*
+                    )*
+                }
+                let branches = $crate::lair::map::Map::from_vec(vec);
+                let default = None $( .or (Some(Box::new($crate::block!( @seq {} , $($def)* )))) )?;
+                let cases = $crate::lair::expr::CasesE { branches, default };
+                $crate::lair::expr::CtrlE::Match($crate::var!($var), cases)
+            }
+        )
+    };
+    (@seq {$($limbs:expr)*}, match $var:ident { $( Const($e:expr) $(| Const($other_e:expr))* => $branch:tt )* } $(; $($def:tt)*)?) => {
+        $crate::block! (
+            @end
+            {
+                $($limbs)*
+            },
+            {
+                let mut vec = Vec::new();
+                {
+                    $(
+                        vec.push((
+                            $e,
+                            $crate::block!( $branch )
+                        ));
+                        $(
+                            vec.push((
+                                $other_e,
                                 $crate::block!( $branch ),
                             ));
                         )*

@@ -24,7 +24,7 @@ pub struct Memory<F, H> {
     pub _p: PhantomData<H>,
 }
 
-impl<F: PrimeField + Ord, H: Hasher<F = F>> Memory<F, H> {
+impl<F: PrimeField, H: Hasher<F = F>> Memory<F, H> {
     pub fn init() -> Self {
         let map = mem_init();
         let cache = BTreeMap::new();
@@ -81,7 +81,7 @@ impl<F: PrimeField + Ord, H: Hasher<F = F>> Memory<F, H> {
                 let head = self.ingress(*head, store);
                 let tail = self.ingress(*tail, store);
                 let args = [head.tag, head.raw, tail.tag, tail.raw].into();
-                let raw = self.store(args) + F::one();
+                let raw = self.store(args);
                 assert_ne!(raw, F::zero());
                 MPtr { tag, raw }
             }
@@ -161,9 +161,8 @@ impl<F: PrimeField + Ord, H: Hasher<F = F>> Memory<F, H> {
                     let raw = Payload::from_field(F::zero());
                     return ZPtr { tag, raw };
                 }
-                let idx = ptr.raw - F::one();
                 let [head_tag, head_raw, tail_tag, tail_raw] =
-                    self.load(4, idx).try_into().unwrap();
+                    self.load(4, ptr.raw).try_into().unwrap();
                 let head = self.egress(
                     MPtr {
                         tag: head_tag,
