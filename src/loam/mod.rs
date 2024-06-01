@@ -166,13 +166,18 @@ impl<T: Valuable + Tagged> From<&T> for WidePtr {
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub enum Sym {
     Char(char),
+    Opaque(Wide),
 }
 
-const BUILT_IN_CHAR_SYMS: [char; 5] = ['+', '-', '*', '/', '%'];
+const BUILT_IN_CHAR_SYMS: [char; 4] = ['+', '-', '*', '/'];
 
 impl Sym {
     fn built_in() -> Vec<Self> {
         BUILT_IN_CHAR_SYMS.iter().map(|c| Self::Char(*c)).collect()
+    }
+
+    fn built_in_count() -> usize {
+        BUILT_IN_CHAR_SYMS.len()
     }
 }
 
@@ -180,7 +185,14 @@ impl Valuable for Sym {
     fn value(&self) -> Wide {
         match self {
             Self::Char(char) => Wide::widen((*char).into()),
+            Self::Opaque(value) => *value,
         }
+    }
+}
+
+impl Tagged for Sym {
+    fn tag(&self) -> Tag {
+        Tag::Sym
     }
 }
 
@@ -234,6 +246,14 @@ impl Tagged for Sexp {
 }
 
 impl Cons {
+    fn bind(var: WidePtr, val: WidePtr, env: WidePtr) -> WidePtr {
+        let binding = Cons { car: var, cdr: val };
+        WidePtr::from(&Cons {
+            car: WidePtr::from(&binding),
+            cdr: env,
+        })
+    }
+
     fn list(elts: Vec<Sexp>) -> WidePtr {
         elts.iter().rev().fold(WidePtr::nil(), |acc, elt| {
             WidePtr::from(&Cons {

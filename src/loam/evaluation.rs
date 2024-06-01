@@ -25,10 +25,16 @@ impl Memory {
         Ptr(Tag::Sym.elt(), addr as u32)
     }
 
-    fn ptr_sym(ptr: Ptr) -> Sym {
+    fn ptr_sym(ptr: Ptr, value: Wide) -> Sym {
+        dbg!(&ptr);
         assert_eq!(Tag::Sym.elt(), ptr.0);
 
-        Sym::built_in()[ptr.1 as usize]
+        let built_in = Sym::built_in();
+        if (ptr.1 as usize) < built_in.len() {
+            built_in[ptr.1 as usize]
+        } else {
+            Sym::Opaque(value)
+        }
     }
 
     fn initial_tag_relation() -> Vec<(LE, Wide)> {
@@ -45,6 +51,11 @@ impl Sym {
     fn is_right_foldable(&self) -> bool {
         // Note, all of these will be variadic.
         matches!(self, Self::Char('-' | '/'))
+    }
+
+    fn is_built_in(ptr: &Ptr) -> bool {
+        dbg!(ptr);
+        dbg!(ptr.is_sym() && (ptr.1 as usize) < Self::built_in_count())
     }
 
     fn neutral_element(&self) -> F {
@@ -84,14 +95,10 @@ ascent! {
     // is likely unnecessary.
     // relation input_cons(Ptr, Ptr); // (car, cdr)
 
-    relation input_expr(WidePtr); // (wide-ptr)
-    relation output_expr(WidePtr); // (wide-ptr)
-    relation input_ptr(Ptr); // (wide-ptr)
+    relation toplevel_input(WidePtr, WidePtr); // (expr, env)
+    relation output_expr(WidePtr); // (expr)
+    relation input_ptr(Ptr, Ptr); // (expr, env)
     relation output_ptr(Ptr); // (wide-ptr)
-    // relation input_cek(CEK<WidePtr>); // (cek)
-    // relation output_cek(CEK<WidePtr>); // (cek)
-    // relation input_ptr_cek(CEK<Ptr>); // (cek)
-    // relation output_ptr_cek(CEK<Ptr>); // (cek)
 
     // triggers allocation once per unique cons
     relation cons(Ptr, Ptr); // (car, cdr)
@@ -177,10 +184,13 @@ ascent! {
     // Ingress path
 
     // Ingress 1: mark input expression for allocation.
-    alloc(tag, wide_ptr.1) <-- input_expr(wide_ptr), tag(tag, wide_ptr.0);
+    alloc(expr_tag, expr.1), alloc(env_tag, env.1) <-- toplevel_input(expr, env), tag(expr_tag, expr.0), tag(env_tag, env.0);
 
-    ingress(ptr),
-    input_ptr(ptr) <-- input_expr(wide_ptr), ptr_tag(ptr, wide_ptr.0), ptr_value(ptr, wide_ptr.1);
+    ingress(expr_ptr),
+    input_ptr(expr_ptr, env_ptr) <--
+        toplevel_input(expr, env),
+        ptr_tag(expr_ptr, expr.0), ptr_value(expr_ptr, expr.1),
+        ptr_tag(env_ptr, env.0), ptr_value(env_ptr, env.1);
 
     // mark ingress conses for unhashing.
     unhash4(Tag::Cons.elt(), digest, ptr) <--
@@ -200,6 +210,8 @@ ascent! {
     f_value(Ptr(Tag::F.elt(),f), Wide::widen(f)) <-- alloc(&Tag::F.elt(), value), let f = value.f();
     ptr(ptr), ptr_value(ptr, Wide::widen(f)) <--
         alloc(&Tag::Nil.elt(), value), let f = value.f(), let ptr = Ptr(Tag::Nil.elt(), f);
+
+    f_value(Ptr(Tag::Sym.elt(),f), Wide::widen(f)) <-- alloc(&Tag::Sym.elt(), value), let f = value.f();
 
     cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0)),
     cons_mem(car, cdr, addr) <--
@@ -227,6 +239,7 @@ ascent! {
     egress(car), egress(cdr) <-- egress(cons), cons_rel(car, cdr, cons);
 
     ptr_tag(ptr, Tag::F.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_f();
+    ptr_tag(ptr, Tag::Err.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_err();
 
     output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), ptr_value(ptr, value), ptr_tag(ptr, wide_tag);
 
@@ -253,7 +266,7 @@ ascent! {
 
     // FIXME: We need to actually allocate, or otherwise define this Nil Ptr.
     // It's fine for now, while env is unused.
-    eval_input(expr, Ptr::nil()) <-- input_ptr(expr);
+    eval_input(expr, env) <-- input_ptr(expr, env);
 
     // expr is F: self-evaluating.
     eval(expr, env, expr) <-- eval_input(expr, env), if expr.is_f();
@@ -262,7 +275,28 @@ ascent! {
     eval(expr, env, expr) <-- eval_input(expr, env), if expr.is_nil();
 
     ////////////////////////////////////////
-    // expr is CONS
+    // expr is Sym
+
+    relation lookup(Ptr, Ptr, Ptr, Ptr); // (input_expr, input_env, var, env)
+
+    // If expr is not a built-in sym, look it up.
+    ingress(env), lookup(expr, env, expr, env) <-- eval_input(expr, env), if expr.is_sym() && !Sym::is_built_in(expr);
+
+    // Unbound variable: If env is nil during lookup, var is unbound. Return an an error.
+    eval(input_expr, input_env, Ptr(Tag::Err.elt(), 0)) <-- lookup(input_expr, input_env, _, env), if env.is_nil();
+
+    // If env is a cons, ingress the first binding.
+    ingress(binding) <-- lookup(input_expr, input_env, _, env), cons_rel(binding, tail, env);
+
+    // If var matches that bound in first binding, return the binding's value.
+    eval(input_expr, input_env, value) <-- lookup(input_expr, input_env, var, env), cons_rel(binding, tail, env), cons_rel(var, value, binding);
+
+    // If var does not match that bound in first binding, lookup var in next env.
+    ingress(next_env), lookup(input_expr, input_env, var, next_env) <--
+        lookup(input_expr, input_env, var, env), cons_rel(binding, next_env, env), cons_rel(bound_var, value, binding), if bound_var != var;
+
+    ////////////////////////////////////////
+    // expr is Cons
     ingress(expr) <-- eval_input(expr, env), if expr.is_cons();
 
     ////////////////////
@@ -271,7 +305,7 @@ ascent! {
 
     // If head is left-foldable op, reduce it with its neutral element.
     ingress(tail), fold(expr, env, op, op.neutral_element(), tail) <--
-        eval_input(expr, env), cons_rel(head, tail, expr), let op = Memory::ptr_sym(*head), if op.is_left_foldable();
+        eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value), let op = Memory::ptr_sym(*head, *head_value), if op.is_left_foldable();
 
     // When left-folding with tail that is a cons, ingress its car and cdr, and eval the car.
     eval_input(car, env), ingress(car), ingress(cdr) <--
@@ -292,7 +326,7 @@ ascent! {
 
     // If head is right-foldable op, initiate fold_right.
     ingress(tail), fold_right(expr, env, op, tail) <--
-        eval_input(expr, env), cons_rel(head, tail, expr), let op = Memory::ptr_sym(*head), if op.is_right_foldable();
+        eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value), let op = Memory::ptr_sym(*head, *head_value), if op.is_right_foldable();
 
     // When right-folding with tail that is a cons, ingress its car and cdr, and eval the car.
     eval_input(car, env), ingress(car), ingress(cdr) <-- fold_right(expr, env, op, tail), cons_rel(car, cdr, tail);
@@ -307,7 +341,7 @@ ascent! {
         eval(car, env, evaled_car), if evaled_car.is_f();
 
     // output
-    output_ptr(output) <-- input_ptr(input), eval(input, Ptr::nil(), output);
+    output_ptr(output) <-- input_ptr(input, env), eval(input, env, output);
 
     ////////////////////////////////////////////////////////////////////////////////
 
@@ -319,10 +353,12 @@ mod test {
 
     #[test]
     fn new_test_eval() {
-        let mut test = |input, expected_output: WidePtr| {
+        let empty_env = WidePtr::nil();
+
+        let mut test = |input, expected_output: WidePtr, env: Option<WidePtr>| {
             let mut prog = EvaluationProgram::default();
 
-            prog.input_expr = vec![(input,)];
+            prog.toplevel_input = vec![(input, env.unwrap_or(empty_env))];
             prog.run();
 
             println!("{}", prog.relation_sizes_summary());
@@ -331,22 +367,23 @@ mod test {
             prog
         };
 
-        let empty_env = WidePtr::nil();
+        let err = WidePtr(Tag::Err.value(), Wide::widen(0));
 
-        {
+        let prog = {
             allocator().init();
 
             // F is self-evaluating.
             let f = F(123);
-            test(f.into(), f.into());
-        }
+            test(f.into(), f.into(), None);
+        };
+
         let prog = {
             allocator().init();
 
             // Nil is self-evaluating.
             let nil = WidePtr::nil();
 
-            test(nil.into(), nil.into())
+            test(nil.into(), nil.into(), None)
         };
 
         let prog = {
@@ -355,7 +392,7 @@ mod test {
             // (+)
             let add = Cons::list(vec![Sexp::Sym(Sym::Char('+'))]);
 
-            test(add.into(), F(0).into())
+            test(add.into(), F(0).into(), None)
         };
 
         let prog = {
@@ -364,7 +401,7 @@ mod test {
             // (+ 1)
             let add = Cons::list(vec![Sexp::Sym(Sym::Char('+')), Sexp::F(F(1))]);
 
-            test(add.into(), F(1).into())
+            test(add.into(), F(1).into(), None)
         };
 
         let prog = {
@@ -377,7 +414,7 @@ mod test {
                 Sexp::F(F(2)),
             ]);
 
-            test(add.into(), F(3).into())
+            test(add.into(), F(3).into(), None)
         };
 
         let prog = {
@@ -391,7 +428,7 @@ mod test {
                 Sexp::F(F(3)),
             ]);
 
-            test(add.into(), F(6).into())
+            test(add.into(), F(6).into(), None)
         };
 
         let prog = {
@@ -400,7 +437,7 @@ mod test {
             // (*)
             let mul = Cons::list(vec![Sexp::Sym(Sym::Char('*'))]);
 
-            test(mul.into(), F(1).into())
+            test(mul.into(), F(1).into(), None)
         };
 
         let prog = {
@@ -409,7 +446,7 @@ mod test {
             // (* 2)
             let mul = Cons::list(vec![Sexp::Sym(Sym::Char('*')), Sexp::F(F(2))]);
 
-            test(mul.into(), F(2).into())
+            test(mul.into(), F(2).into(), None)
         };
 
         let prog = {
@@ -422,7 +459,7 @@ mod test {
                 Sexp::F(F(3)),
             ]);
 
-            test(mul.into(), F(6).into())
+            test(mul.into(), F(6).into(), None)
         };
 
         let prog = {
@@ -436,7 +473,7 @@ mod test {
                 Sexp::F(F(4)),
             ]);
 
-            test(mul.into(), F(24).into())
+            test(mul.into(), F(24).into(), None)
         };
 
         let prog = {
@@ -453,7 +490,7 @@ mod test {
                 ])),
             ]);
 
-            test(mul.into(), F(17).into())
+            test(mul.into(), F(17).into(), None)
         };
 
         let prog = {
@@ -467,7 +504,7 @@ mod test {
                 Sexp::F(F(5)),
             ]);
 
-            test(x.into(), F(1).into())
+            test(x.into(), F(1).into(), None)
         };
 
         let prog = {
@@ -500,7 +537,44 @@ mod test {
                 ])),
             ]);
 
-            test(x.into(), F(56).into())
+            test(x.into(), F(56).into(), None)
+        };
+
+        let prog = {
+            allocator().init();
+
+            let x: WidePtr = (&Sym::Char('x')).into();
+
+            test(x, err, None)
+        };
+
+        let prog = {
+            allocator().init();
+
+            let x: WidePtr = (&Sym::Char('x')).into();
+            let val: WidePtr = F(9).into();
+
+            // ((x . 9))
+            let env = Cons::bind(x, val, empty_env);
+
+            test(x, val, Some(env))
+        };
+
+        let prog = {
+            allocator().init();
+
+            let x: WidePtr = (&Sym::Char('x')).into();
+            let y: WidePtr = (&Sym::Char('y')).into();
+            let z: WidePtr = (&Sym::Char('z')).into();
+            let val: WidePtr = F(9).into();
+            let val2: WidePtr = F(10).into();
+
+            // ((y . 10) (x . 9))
+            let env = Cons::bind(y, val2, Cons::bind(x, val, empty_env));
+
+            test(x, val, Some(env));
+            test(y, val2, Some(env));
+            test(z, err, Some(env))
         };
 
         println!("{}", prog.relation_sizes_summary());
@@ -520,7 +594,7 @@ mod test {
             hash4_rel,
             ingress,
             egress,
-            input_expr,
+            toplevel_input,
             output_expr,
             f_value,
             alloc,
@@ -535,7 +609,7 @@ mod test {
         ptr_value.sort_by_key(|(key, _)| *key);
 
         dbg!(
-            input_expr,
+            toplevel_input,
             input_ptr,
             eval_input,
             eval,
@@ -543,7 +617,7 @@ mod test {
             hash4_rel,
             output_ptr,
             output_expr,
-            //ptr_value,
+            ptr_value,
             cons_rel,
             cons_mem,
             cons_digest_mem,
