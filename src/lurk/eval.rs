@@ -1,10 +1,10 @@
 use p3_field::{Field, PrimeField};
 
-use crate::{func, lair::expr::FuncE, lurk::store::Tag};
+use crate::{func, lair::expr::FuncE};
 
 use super::{
     memory::Memory,
-    store::{Hasher, ZStore},
+    zstore::{Hasher, Tag, ZStore},
 };
 
 #[derive(Clone, Copy)]
@@ -929,7 +929,7 @@ mod test {
 
     use crate::{
         lair::{chip::FuncChip, execute::QueryRecord, toplevel::Toplevel, List},
-        lurk::store::{PoseidonBabyBearHasher, Tag},
+        lurk::zstore::{PoseidonBabyBearHasher, Tag},
     };
 
     use super::*;

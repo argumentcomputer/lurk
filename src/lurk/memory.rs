@@ -2,15 +2,12 @@ use std::{collections::BTreeMap, marker::PhantomData};
 
 use p3_field::PrimeField;
 
-use crate::{
-    lair::{
-        execute::{mem_init, mem_load, mem_store, MemMap},
-        List,
-    },
-    lurk::store::ZExpr,
+use crate::lair::{
+    execute::{mem_init, mem_load, mem_store, MemMap},
+    List,
 };
 
-use super::store::{Hasher, Payload, Tag, ZPtr, ZStore, DIGEST};
+use super::zstore::{Hasher, Payload, Tag, ZExpr, ZPtr, ZStore, DIGEST};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MPtr<F> {
@@ -32,17 +29,19 @@ impl<F: PrimeField, H: Hasher<F = F>> Memory<F, H> {
         Self { map, cache, _p }
     }
 
+    #[inline]
     pub fn load(&mut self, len: usize, ptr: F) -> &[F] {
         mem_load(&mut self.map, len, ptr)
     }
 
+    #[inline]
     pub fn store(&mut self, args: List<F>) -> F {
         mem_store(&mut self.map, args)
     }
 
+    #[inline]
     pub fn read_and_ingress(&mut self, input: &str, store: &ZStore<F, H>) -> Option<MPtr<F>> {
-        let ptr = store.read(input).ok()?;
-        Some(self.ingress(ptr, store))
+        store.read(input).ok().map(|ptr| self.ingress(ptr, store))
     }
 
     pub fn ingress(&mut self, ptr: ZPtr<F>, store: &ZStore<F, H>) -> MPtr<F> {
@@ -58,12 +57,15 @@ impl<F: PrimeField, H: Hasher<F = F>> Memory<F, H> {
             return MPtr { tag, raw };
         };
         let mptr = match expr {
-            ZExpr::Num(x) | ZExpr::Err(x) => MPtr { tag, raw: *x },
+            ZExpr::Num | ZExpr::Err => MPtr {
+                tag,
+                raw: *ptr.raw.first_field(),
+            },
             ZExpr::EmptyStr | ZExpr::RootSym | ZExpr::RootKey => MPtr {
                 tag,
                 raw: F::zero(),
             },
-            ZExpr::Char(_) | ZExpr::Nil | ZExpr::U64(_) => {
+            ZExpr::Char | ZExpr::Nil | ZExpr::U64 => {
                 let raw = self.store(ptr.raw.0.into());
                 MPtr { tag, raw }
             }
@@ -75,14 +77,15 @@ impl<F: PrimeField, H: Hasher<F = F>> Memory<F, H> {
                 MPtr { tag, raw }
             }
             ZExpr::Key { head, tail } | ZExpr::Str { head, tail } | ZExpr::Sym { head, tail } => {
-                // Keys, strings and symbols have null pointers. We add one
-                // to the memory address so that we can differentiate null
-                // pointers from actual pointers
                 let head = self.ingress(*head, store);
                 let tail = self.ingress(*tail, store);
                 let args = [head.tag, head.raw, tail.tag, tail.raw].into();
                 let raw = self.store(args);
-                assert_ne!(raw, F::zero());
+                assert_ne!(
+                    raw,
+                    F::zero(),
+                    "raw=zero is reserved for the null keyword, string and symbol"
+                );
                 MPtr { tag, raw }
             }
             ZExpr::Comm { secret, payload } => {
@@ -154,11 +157,12 @@ impl<F: PrimeField, H: Hasher<F = F>> Memory<F, H> {
                     },
                     store,
                 );
-                store.intern_cons(tag, head, tail)
+                store.intern_pair(tag, head, tail)
             }
             Tag::Str | Tag::Key | Tag::Sym => {
                 if ptr.raw.is_zero() {
-                    let raw = Payload::from_field(F::zero());
+                    // null pointer
+                    let raw = Payload::default();
                     return ZPtr { tag, raw };
                 }
                 let [head_tag, head_raw, tail_tag, tail_raw] =
@@ -177,7 +181,7 @@ impl<F: PrimeField, H: Hasher<F = F>> Memory<F, H> {
                     },
                     store,
                 );
-                store.intern_cons(tag, head, tail)
+                store.intern_pair(tag, head, tail)
             }
             Tag::Comm => {
                 let [secret, payload_tag, payload_raw] = self.load(3, ptr.raw).try_into().unwrap();
@@ -311,26 +315,28 @@ impl Tag {
 mod test {
     use p3_baby_bear::BabyBear;
 
-    use crate::lurk::store::PoseidonBabyBearHasher;
+    use crate::lurk::zstore::PoseidonBabyBearHasher;
 
     use super::*;
+
     #[test]
     fn ingress_egress_test() {
         let store = &ZStore::<BabyBear, PoseidonBabyBearHasher>::new();
-        let ptr1 = store.read("()").unwrap();
-        let ptr2 = store.read("(+ 1 2)").unwrap();
-        let ptr3 = store.read("\"test string\"").unwrap();
-        let ptr4 = store.read("TestSymbol").unwrap();
-
         let mem = &mut Memory::init();
-        let mptr1 = mem.ingress(ptr1, store);
-        let mptr2 = mem.ingress(ptr2, store);
-        let mptr3 = mem.ingress(ptr3, store);
-        let mptr4 = mem.ingress(ptr4, store);
+        let mut assert_roundtrip = |input| {
+            let ptr = store.read(input).unwrap();
+            let mptr = mem.ingress(ptr, store);
+            assert_eq!(ptr, mem.egress(mptr, store));
+        };
 
-        assert_eq!(ptr1, mem.egress(mptr1, store));
-        assert_eq!(ptr2, mem.egress(mptr2, store));
-        assert_eq!(ptr3, mem.egress(mptr3, store));
-        assert_eq!(ptr4, mem.egress(mptr4, store));
+        assert_roundtrip("~()");
+        assert_roundtrip("~:()");
+        assert_roundtrip("()");
+        assert_roundtrip("(+ 1 2)");
+        assert_roundtrip("'c");
+        assert_roundtrip("5u64");
+        assert_roundtrip("\"\"");
+        assert_roundtrip("\"test string\"");
+        assert_roundtrip("TestSymbol");
     }
 }

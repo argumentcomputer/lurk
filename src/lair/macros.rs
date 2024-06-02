@@ -316,7 +316,7 @@ macro_rules! block {
                 {
                     $(
                         vec.push((
-                            $crate::lurk::store::Tag::$tag.to_field(),
+                            $crate::lurk::zstore::Tag::$tag.to_field(),
                             $crate::block!( $branch )
                         ));
                         $(
