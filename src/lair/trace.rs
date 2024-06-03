@@ -407,20 +407,20 @@ mod tests {
                 0 => {
                     match m {
                         0 => {
-                            return zero;
+                            return zero
                         }
                         1 => {
-                            return one;
+                            return one
                         }
                     }
                 }
                 1 => {
                     match m {
                         0 => {
-                            return two;
+                            return two
                         }
                         1 => {
-                            return three;
+                            return three
                         }
                     }
                 }

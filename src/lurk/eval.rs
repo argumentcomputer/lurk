@@ -38,42 +38,11 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
     mem: &mut Memory<F, H>,
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
-    let t = mem.read_and_ingress("t", store).unwrap().raw;
-    let nil = mem.read_and_ingress("nil", store).unwrap().raw;
-    let lambda = mem.read_and_ingress("lambda", store).unwrap().raw;
-    let let_ = mem.read_and_ingress("let", store).unwrap().raw;
-    let letrec = mem.read_and_ingress("letrec", store).unwrap().raw;
-    let if_ = mem.read_and_ingress("if", store).unwrap().raw;
-    let quote = mem.read_and_ingress("quote", store).unwrap().raw;
-    let eval = mem.read_and_ingress("eval", store).unwrap().raw;
-    let begin = mem.read_and_ingress("begin", store).unwrap().raw;
-    let empty_env = mem.read_and_ingress("empty-env", store).unwrap().raw;
-    let current_env = mem.read_and_ingress("current-env", store).unwrap().raw;
-    let add = mem.read_and_ingress("+", store).unwrap().raw;
-    let sub = mem.read_and_ingress("-", store).unwrap().raw;
-    let mul = mem.read_and_ingress("*", store).unwrap().raw;
-    let div = mem.read_and_ingress("/", store).unwrap().raw;
-    let equal = mem.read_and_ingress("=", store).unwrap().raw;
-    let cons = mem.read_and_ingress("cons", store).unwrap().raw;
-    let strcons = mem.read_and_ingress("strcons", store).unwrap().raw;
-    let hide = mem.read_and_ingress("hide", store).unwrap().raw;
-    let eq = mem.read_and_ingress("eq", store).unwrap().raw;
-    let car = mem.read_and_ingress("car", store).unwrap().raw;
-    let cdr = mem.read_and_ingress("cdr", store).unwrap().raw;
-    let commit = mem.read_and_ingress("commit", store).unwrap().raw;
-    let num = mem.read_and_ingress("num", store).unwrap().raw;
-    let u64_ = mem.read_and_ingress("u64", store).unwrap().raw;
-    let comm = mem.read_and_ingress("comm", store).unwrap().raw;
-    let char_ = mem.read_and_ingress("char", store).unwrap().raw;
-    let open = mem.read_and_ingress("open", store).unwrap().raw;
-    let secret = mem.read_and_ingress("secret", store).unwrap().raw;
-    let atom = mem.read_and_ingress("atom", store).unwrap().raw;
-    let emit = mem.read_and_ingress("emit", store).unwrap().raw;
     func!(
         fn eval(expr_tag, expr, env): 2 {
             // Constants, tags, etc
-            let t = Const(t);
-            let nil = Const(nil);
+            let t = Sym("t", mem, store);
+            let nil = Sym("nil", mem, store);
             let nil_tag = Tag::Nil;
             let cons_tag = Tag::Cons;
             let err_tag = Tag::Err;
@@ -106,8 +75,8 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                     let (head_tag, head, rest_tag, rest) = load(expr);
                     match head_tag {
                         Tag::Sym => {
-                            match head {
-                                Const(lambda) => {
+                            match_sym(mem, store) head {
+                                "lambda" => {
                                     // A lambda expression is a 3 element list
                                     // first element: lambda symbol
                                     // second element: parameter list
@@ -132,7 +101,7 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                                     let res = store(params_tag, params, body_tag, body, env);
                                     return (res_tag, res)
                                 }
-                                Const(let_) => {
+                                "let" => {
                                     // A let expression is a 3 element list
                                     // first element: let symbol
                                     // second element: binding list
@@ -154,7 +123,7 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                                     let (res_tag, res) = call(eval_let, binds_tag, binds, body_tag, body, env);
                                     return (res_tag, res)
                                 }
-                                Const(letrec) => {
+                                "letrec" => {
                                     // A letrec expression is analogous to a let expression
                                     let rest_not_cons = sub(rest_tag, cons_tag);
                                     if rest_not_cons {
@@ -173,7 +142,7 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                                     let (res_tag, res) = call(eval_letrec, binds_tag, binds, body_tag, body, env);
                                     return (res_tag, res)
                                 }
-                                Const(eval) => {
+                                "eval" => {
                                     let rest_not_cons = sub(rest_tag, cons_tag);
                                     if rest_not_cons {
                                         return (err_tag, invalid_form)
@@ -208,7 +177,7 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                                     let not_env = EvalErr::NotEnv;
                                     return (err_tag, not_env)
                                 }
-                                Const(quote) => {
+                                "quote" => {
                                     let rest_not_cons = sub(rest_tag, cons_tag);
                                     if rest_not_cons {
                                         return (err_tag, invalid_form)
@@ -220,7 +189,7 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                                     }
                                     return (expr_tag, expr)
                                 }
-                                Const(begin) => {
+                                "begin" => {
                                     let rest_not_cons = sub(rest_tag, cons_tag);
                                     if rest_not_cons {
                                         return (err_tag, invalid_form)
@@ -244,7 +213,7 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                                     };
                                     return (err_tag, invalid_form)
                                 }
-                                Const(empty_env) => {
+                                "empty-env" => {
                                     let rest_not_nil = sub(rest_tag, nil_tag);
                                     if rest_not_nil {
                                         return (err_tag, invalid_form)
@@ -253,7 +222,7 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                                     let env = 0;
                                     return (env_tag, env)
                                 }
-                                Const(current_env) => {
+                                "current-env" => {
                                     let rest_not_nil = sub(rest_tag, nil_tag);
                                     if rest_not_nil {
                                         return (err_tag, invalid_form)
@@ -261,7 +230,7 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                                     let env_tag = Tag::Env;
                                     return (env_tag, env)
                                 }
-                                Const(if_) => {
+                                "if" => {
                                     // An if expression is a list of 4 elements
                                     let rest_not_cons = sub(rest_tag, cons_tag);
                                     if rest_not_cons {
@@ -296,38 +265,38 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                                     let (res_tag, res) = call(eval, t_branch_tag, t_branch, env);
                                     return (res_tag, res)
                                 }
-                                Const(add)
-                                | Const(sub)
-                                | Const(mul)
-                                | Const(div)
-                                | Const(equal) => {
+                                "+"
+                                | "-"
+                                | "*"
+                                | "/"
+                                | "=" => {
                                     let (res_tag, res) = call(eval_binop_num, head, rest_tag, rest, env);
                                     return (res_tag, res)
                                 }
-                                Const(cons)
-                                | Const(strcons)
-                                | Const(hide)
-                                | Const(eq) => {
+                                "cons"
+                                | "strcons"
+                                | "hide"
+                                | "eq" => {
                                     let (res_tag, res) = call(eval_binop_misc, head, rest_tag, rest, env);
                                     return (res_tag, res)
                                 }
-                                Const(car) => {
+                                "car" => {
                                     let (car_tag, car, _cdr_tag, _cdr) = call(car_cdr, rest_tag, rest, env);
                                     return (car_tag, car)
                                 }
-                                Const(cdr) => {
+                                "cdr" => {
                                     let (_car_tag, _car, cdr_tag, cdr) = call(car_cdr, rest_tag, rest, env);
                                     return (cdr_tag, cdr)
                                 }
-                                Const(commit)
-                                | Const(num)
-                                | Const(u64_)
-                                | Const(comm)
-                                | Const(char_)
-                                | Const(open)
-                                | Const(secret)
-                                | Const(atom)
-                                | Const(emit) => {
+                                "commit"
+                                | "num"
+                                | "u64"
+                                | "comm"
+                                | "char"
+                                | "open"
+                                | "secret"
+                                | "atom"
+                                | "emit" => {
                                     let (res_tag, res) = call(eval_unop, head, rest_tag, rest, env);
                                     return (res_tag, res)
                                 }
@@ -352,10 +321,9 @@ pub fn car_cdr<F: PrimeField, H: Hasher<F = F>>(
     mem: &mut Memory<F, H>,
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
-    let nil = mem.read_and_ingress("nil", store).unwrap().raw;
     func!(
         fn car_cdr(rest_tag, rest, env): 4 {
-            let nil = Const(nil);
+            let nil = Sym("nil", mem, store);
             let nil_tag = Tag::Nil;
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
@@ -403,13 +371,6 @@ pub fn eval_binop_num<F: PrimeField, H: Hasher<F = F>>(
     mem: &mut Memory<F, H>,
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
-    let nil = mem.read_and_ingress("nil", store).unwrap().raw;
-    let t = mem.read_and_ingress("t", store).unwrap().raw;
-    let add = mem.read_and_ingress("+", store).unwrap().raw;
-    let sub = mem.read_and_ingress("-", store).unwrap().raw;
-    let mul = mem.read_and_ingress("*", store).unwrap().raw;
-    let div = mem.read_and_ingress("/", store).unwrap().raw;
-    let equal = mem.read_and_ingress("=", store).unwrap().raw;
     func!(
         fn eval_binop_num(head, rest_tag, rest, env): 2 {
             let err_tag = Tag::Err;
@@ -454,20 +415,20 @@ pub fn eval_binop_num<F: PrimeField, H: Hasher<F = F>>(
                 let err = EvalErr::ArgNotNumber;
                 return (err_tag, err)
             }
-            match head {
-                Const(add) => {
+            match_sym(mem, store) head {
+                "+" => {
                     let res = add(val1, val2);
                     return (num_tag, res)
                 }
-                Const(sub) => {
+                "-" => {
                     let res = sub(val1, val2);
                     return (num_tag, res)
                 }
-                Const(mul) => {
+                "*" => {
                     let res = mul(val1, val2);
                     return (num_tag, res)
                 }
-                Const(div) => {
+                "/" => {
                     let res = div(val1, val2);
                     if !val2 {
                         let err = EvalErr::DivByZero;
@@ -475,14 +436,14 @@ pub fn eval_binop_num<F: PrimeField, H: Hasher<F = F>>(
                     }
                     return (num_tag, res)
                 }
-                Const(equal) => {
+                "=" => {
                     let diff = sub(val1, val2);
                     if !diff {
                         let sym_tag = Tag::Sym;
-                        let t = Const(t);
+                        let t = Sym("t", mem, store);
                         return (sym_tag, t)
                     }
-                    let nil = Const(nil);
+                    let nil = Sym("nil", mem, store);
                     return (nil_tag, nil)
                 }
             }
@@ -494,12 +455,6 @@ pub fn eval_binop_misc<F: PrimeField, H: Hasher<F = F>>(
     mem: &mut Memory<F, H>,
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
-    let nil = mem.read_and_ingress("nil", store).unwrap().raw;
-    let t = mem.read_and_ingress("t", store).unwrap().raw;
-    let cons = mem.read_and_ingress("cons", store).unwrap().raw;
-    let strcons = mem.read_and_ingress("strcons", store).unwrap().raw;
-    let hide = mem.read_and_ingress("hide", store).unwrap().raw;
-    let eq = mem.read_and_ingress("eq", store).unwrap().raw;
     func!(
         fn eval_binop_misc(head, rest_tag, rest, env): 2 {
             let err_tag = Tag::Err;
@@ -532,12 +487,12 @@ pub fn eval_binop_misc<F: PrimeField, H: Hasher<F = F>>(
                     return (val2_tag, val2)
                 }
             };
-            match head {
-                Const(cons) => {
+            match_sym(mem, store) head {
+                "cons" => {
                     let cons = store(val1_tag, val1, val2_tag, val2);
                     return (cons_tag, cons)
                 }
-                Const(strcons) => {
+                "strcons" => {
                     let char_tag = Tag::Char;
                     let str_tag = Tag::Str;
                     let strcons = store(val1_tag, val1, val2_tag, val2);
@@ -553,7 +508,7 @@ pub fn eval_binop_misc<F: PrimeField, H: Hasher<F = F>>(
                     }
                     return (str_tag, strcons)
                 }
-                Const(hide) => {
+                "hide" => {
                     match val1_tag {
                         Tag::Num => {
                             let comm_tag = Tag::Comm;
@@ -563,10 +518,10 @@ pub fn eval_binop_misc<F: PrimeField, H: Hasher<F = F>>(
                     };
                     return (err_tag, invalid_form)
                 }
-                Const(eq) => {
+                "eq" => {
                     let sym_tag = Tag::Sym;
-                    let t = Const(t);
-                    let nil = Const(nil);
+                    let t = Sym("t", mem, store);
+                    let nil = Sym("nil", mem, store);
                     let eq_tag = eq(val1_tag, val2_tag);
                     let eq_val = eq(val1, val2);
                     let eq = mul(eq_tag, eq_val);
@@ -585,17 +540,6 @@ pub fn eval_unop<F: PrimeField, H: Hasher<F = F>>(
     mem: &mut Memory<F, H>,
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
-    let t = mem.read_and_ingress("t", store).unwrap().raw;
-    let nil = mem.read_and_ingress("nil", store).unwrap().raw;
-    let commit = mem.read_and_ingress("commit", store).unwrap().raw;
-    let num = mem.read_and_ingress("num", store).unwrap().raw;
-    let u64_ = mem.read_and_ingress("u64", store).unwrap().raw;
-    let comm = mem.read_and_ingress("comm", store).unwrap().raw;
-    let char_ = mem.read_and_ingress("char", store).unwrap().raw;
-    let open = mem.read_and_ingress("open", store).unwrap().raw;
-    let secret = mem.read_and_ingress("secret", store).unwrap().raw;
-    let atom = mem.read_and_ingress("atom", store).unwrap().raw;
-    let emit = mem.read_and_ingress("emit", store).unwrap().raw;
     func!(
         fn eval_unop(head, rest_tag, rest, env): 2 {
             let err_tag = Tag::Err;
@@ -621,13 +565,13 @@ pub fn eval_unop<F: PrimeField, H: Hasher<F = F>>(
                 }
             };
 
-            match head {
-                Const(commit) => {
+            match_sym(mem, store) head {
+                "commit" => {
                     let zero = 0;
                     let comm = store(zero, val_tag, val);
                     return (comm_tag, comm)
                 }
-                Const(num) => {
+                "num" => {
                     let char_tag = Tag::Char;
                     let u64_tag = Tag::U64;
                     let val_not_char = sub(val_tag, char_tag);
@@ -643,7 +587,7 @@ pub fn eval_unop<F: PrimeField, H: Hasher<F = F>>(
                     }
                     return(num_tag, val)
                 }
-                Const(open) => {
+                "open" => {
                     let val_not_comm = sub(val_tag, comm_tag);
                     if val_not_comm {
                         let not_comm = EvalErr::NotComm;
@@ -652,7 +596,7 @@ pub fn eval_unop<F: PrimeField, H: Hasher<F = F>>(
                     let (_secret, res_tag, res) = load(val);
                     return (res_tag, res)
                 }
-                Const(secret) => {
+                "secret" => {
                     let val_not_comm = sub(val_tag, comm_tag);
                     if val_not_comm {
                         let not_comm = EvalErr::NotComm;
@@ -661,28 +605,28 @@ pub fn eval_unop<F: PrimeField, H: Hasher<F = F>>(
                     let (secret, _res_tag, _res) = load(val);
                     return (num_tag, secret)
                 }
-                Const(atom) => {
+                "atom" => {
                     let val_not_cons = sub(val_tag, cons_tag);
                     if val_not_cons {
                         let sym_tag = Tag::Sym;
-                        let t = Const(t);
+                        let t = Sym("t", mem, store);
                         return (sym_tag, t)
                     }
-                    let nil = Const(nil);
+                    let nil = Sym("nil", mem, store);
                     return (nil_tag, nil)
                 }
-                Const(emit) => {
+                "emit" => {
                     // TODO emit
                     return (val_tag, val)
                 }
-                Const(u64_) => {
+                "u64" => {
                     return(err_tag, todo)
                 }
-                Const(comm) => {
+                "comm" => {
                     // Can you really cast field elements to commitments?
                     return (err_tag, todo)
                 }
-                Const(char_) => {
+                "char" => {
                     return (err_tag, todo)
                 }
              }
@@ -1082,23 +1026,23 @@ mod test {
         eval_aux("(cdr (cons 1 (cons 2 3)))", "(2 . 3)");
         eval_aux(
             "
-(letrec ((factorial
-          (lambda (n)
-            (if (= n 0) 1
-              (* n (factorial (- n 1)))))))
-  (factorial 5))
-",
+        (letrec ((factorial
+                  (lambda (n)
+                    (if (= n 0) 1
+                      (* n (factorial (- n 1)))))))
+          (factorial 5))
+        ",
             "120",
         );
         eval_aux(
             "
-(letrec ((fib
-          (lambda (n)
-            (if (= n 0) 1
-              (if (= n 1) 1
-                (+ (fib (- n 1)) (fib (- n 2))))))))
-  (fib 50))
-",
+        (letrec ((fib
+                  (lambda (n)
+                    (if (= n 0) 1
+                      (if (= n 1) 1
+                        (+ (fib (- n 1)) (fib (- n 2))))))))
+          (fib 50))
+        ",
             "20365011074",
         );
     }
