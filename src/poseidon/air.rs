@@ -61,7 +61,7 @@ where
         let rounds_internal = &local.rounds[ROUNDS_P.clone()];
         let rounds_external_second = &local.rounds[ROUNDS_E2.clone()];
 
-        let is_init = local.is_init.clone();
+        let is_init = local.is_init;
         let is_external_first = round_flag_sum(rounds_external_first);
         let is_internal = round_flag_sum(rounds_internal);
         let is_external_second = round_flag_sum(rounds_external_second);
@@ -72,7 +72,7 @@ where
         for &round_flag in &local.rounds {
             builder.assert_bool(round_flag);
         }
-        let is_real: AB::Expr = is_init.clone() + is_internal.clone() + is_external.clone();
+        let is_real: AB::Expr = is_init + is_internal.clone() + is_external.clone();
         builder.assert_bool(is_real.clone());
 
         // Apply the round constants.
@@ -117,16 +117,16 @@ where
         // - All elements in external rounds
         let sbox_result = Array::<AB::Expr, C::WIDTH>::from_fn(|i| {
             if i == 0 {
-                is_init.clone() * local.add_rc[i]
+                is_init * local.add_rc[i]
                     + (is_internal.clone() + is_external.clone()) * local.sbox_deg_7[i]
             } else {
-                (is_init.clone() + is_internal.clone()) * local.add_rc[i]
+                (is_init + is_internal.clone()) * local.add_rc[i]
                     + is_external.clone() * local.sbox_deg_7[i]
             }
         });
 
         // EXTERNAL + INITIAL LAYER = Linear Layer
-        let is_linear = is_init.clone() + is_external.clone();
+        let is_linear = is_init + is_external.clone();
         {
             // First, we apply M_4 to each consecutive four elements of the state.
             // In Appendix B's terminology, this replaces each x_i with x_i'.

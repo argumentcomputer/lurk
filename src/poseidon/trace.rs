@@ -66,9 +66,7 @@ where
 
             // Apply the round constants
             for i in 0..width {
-                if i == 0 {
-                    row.add_rc[i] = input[i] + constants[i];
-                } else if is_external {
+                if i == 0 || is_external {
                     row.add_rc[i] = input[i] + constants[i];
                 } else if is_internal {
                     row.add_rc[i] = input[i];
@@ -107,8 +105,8 @@ where
                 matmul_internal(&mut linear_input, matmul_constants);
             }
 
-            for i in 0..width {
-                row.output[i] = linear_input[i];
+            for (i, result) in linear_input.into_iter().enumerate().take(width) {
+                row.output[i] = result;
             }
 
             // Update the input for the next round

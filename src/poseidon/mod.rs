@@ -21,9 +21,8 @@ where
     _p: PhantomData<C>,
 }
 
-impl<C: PoseidonConfig> Poseidon2Chip<C> {
-    /// Creates a new Poseidon2 chip.
-    pub fn new() -> Self {
+impl<C: PoseidonConfig> Default for Poseidon2Chip<C> {
+    fn default() -> Self {
         Self { _p: PhantomData }
     }
 }
@@ -32,15 +31,13 @@ impl<C: PoseidonConfig> Poseidon2Chip<C> {
 mod tests {
     use hybrid_array::{typenum::Unsigned, Array};
     use itertools::Itertools;
-    use p3_air::Air;
     use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
     use p3_matrix::Matrix;
     use p3_symmetric::Permutation;
 
     use crate::{
-        air::debug::{debug_constraints_collecting_queries, DebugConstraintBuilder},
-        poseidon::config::BabyBearConfig16,
+        air::debug::debug_constraints_collecting_queries, poseidon::config::BabyBearConfig16,
     };
 
     use super::{
@@ -53,7 +50,7 @@ mod tests {
     #[test]
     fn test_trace_eq_hash() {
         // Test arity 4
-        let chip4 = Poseidon2Chip::<BabyBearConfig4>::new();
+        let chip4 = Poseidon2Chip::<BabyBearConfig4>::default();
         let hasher = chip4.hasher();
         let input: [F; 4] = core::array::from_fn(|i| F::from_canonical_usize(i));
 
@@ -66,7 +63,7 @@ mod tests {
         assert_eq!(expected_output, output);
 
         // Test arity 16
-        let chip16 = Poseidon2Chip::<BabyBearConfig16>::new();
+        let chip16 = Poseidon2Chip::<BabyBearConfig16>::default();
         let hasher = chip16.hasher();
         let input: [F; 16] = core::array::from_fn(|i| F::from_canonical_usize(i));
 
@@ -81,13 +78,13 @@ mod tests {
 
     #[test]
     fn test_air_constraints() {
-        let chip4 = Poseidon2Chip::<BabyBearConfig4>::new();
+        let chip4 = Poseidon2Chip::<BabyBearConfig4>::default();
         let public_values: [F; 4] = core::array::from_fn(|i| F::from_canonical_usize(i));
         let main = chip4.generate_trace(vec![*Array::from_slice(&public_values)]);
 
         let _ = debug_constraints_collecting_queries(&chip4, &public_values, &main);
 
-        let chip16 = Poseidon2Chip::<BabyBearConfig16>::new();
+        let chip16 = Poseidon2Chip::<BabyBearConfig16>::default();
         let public_values: [F; 16] = core::array::from_fn(|i| F::from_canonical_usize(i));
         let main = chip16.generate_trace(vec![*Array::from_slice(&public_values)]);
 
