@@ -2,7 +2,7 @@ use p3_field::{AbstractField, Field};
 use std::iter::zip;
 
 // TODO: Make this public inside Plonky3 and import directly.
-pub fn apply_m_4<AF>(x: &mut [AF])
+pub(crate) fn apply_m_4<AF>(x: &mut [AF])
 where
     AF: AbstractField,
 {

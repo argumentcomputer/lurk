@@ -13,14 +13,15 @@ pub struct Poseidon2Cols<T, C>
 where
     C: PoseidonConfig,
 {
-    pub input: Array<T, C::WIDTH>,
-    pub is_init: T,
-    pub rounds: Array<T, C::R>,
-    pub add_rc: Array<T, C::WIDTH>,
-    pub sbox_deg_3: Array<T, C::WIDTH>,
-    pub sbox_deg_7: Array<T, C::WIDTH>,
-    pub output: Array<T, C::WIDTH>,
+    pub(crate) input: Array<T, C::WIDTH>,
+    pub(crate) is_init: T,
+    pub(crate) rounds: Array<T, C::R>,
+    pub(crate) add_rc: Array<T, C::WIDTH>,
+    pub(crate) sbox_deg_3: Array<T, C::WIDTH>,
+    pub(crate) sbox_deg_7: Array<T, C::WIDTH>,
+    pub(crate) output: Array<T, C::WIDTH>,
 }
+
 impl<T, C: PoseidonConfig> Poseidon2Cols<T, C> {
     #[inline]
     pub fn from_slice(slice: &[T]) -> &Self {

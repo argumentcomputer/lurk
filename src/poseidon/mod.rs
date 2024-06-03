@@ -6,11 +6,11 @@ use std::marker::PhantomData;
 
 use self::config::PoseidonConfig;
 
-mod air;
-mod columns;
-mod config;
+pub mod air;
+pub mod columns;
+pub mod config;
 mod constants;
-mod trace;
+pub mod trace;
 mod util;
 
 /// A chip that implements addition for the Poseidon2 permutation
@@ -52,7 +52,7 @@ mod tests {
         // Test arity 4
         let chip4 = Poseidon2Chip::<BabyBearConfig4>::default();
         let hasher = chip4.hasher();
-        let input: [F; 4] = core::array::from_fn(|i| F::from_canonical_usize(i));
+        let input: [F; 4] = core::array::from_fn(F::from_canonical_usize);
 
         let expected_output = hasher.permute(input).to_vec();
 
@@ -65,7 +65,7 @@ mod tests {
         // Test arity 16
         let chip16 = Poseidon2Chip::<BabyBearConfig16>::default();
         let hasher = chip16.hasher();
-        let input: [F; 16] = core::array::from_fn(|i| F::from_canonical_usize(i));
+        let input: [F; 16] = core::array::from_fn(F::from_canonical_usize);
 
         let expected_output = hasher.permute(input).to_vec();
 
@@ -79,13 +79,13 @@ mod tests {
     #[test]
     fn test_air_constraints() {
         let chip4 = Poseidon2Chip::<BabyBearConfig4>::default();
-        let public_values: [F; 4] = core::array::from_fn(|i| F::from_canonical_usize(i));
+        let public_values: [F; 4] = core::array::from_fn(F::from_canonical_usize);
         let main = chip4.generate_trace(vec![*Array::from_slice(&public_values)]);
 
         let _ = debug_constraints_collecting_queries(&chip4, &public_values, &main);
 
         let chip16 = Poseidon2Chip::<BabyBearConfig16>::default();
-        let public_values: [F; 16] = core::array::from_fn(|i| F::from_canonical_usize(i));
+        let public_values: [F; 16] = core::array::from_fn(F::from_canonical_usize);
         let main = chip16.generate_trace(vec![*Array::from_slice(&public_values)]);
 
         let _ = debug_constraints_collecting_queries(&chip16, &public_values, &main);

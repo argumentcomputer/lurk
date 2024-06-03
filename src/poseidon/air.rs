@@ -34,7 +34,7 @@ where
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
         let local = main.row_slice(0);
-        let local: &Poseidon2Cols<AB::Var, C> = Poseidon2Cols::from_slice(&*local);
+        let local: &Poseidon2Cols<AB::Var, C> = Poseidon2Cols::from_slice(&local);
         let next = main.row_slice(1);
         let next: &Poseidon2Cols<AB::Var, C> = Poseidon2Cols::from_slice(&next);
 

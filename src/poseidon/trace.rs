@@ -15,7 +15,7 @@ use super::{
 
 type F = BabyBear;
 
-impl<C: PoseidonConfig> Poseidon2Chip<C>
+impl<C> Poseidon2Chip<C>
 where
     C: PoseidonConfig<F = F>,
 {
