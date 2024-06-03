@@ -78,19 +78,30 @@ where
         // External Layers: Apply the round constants.
         // Internal Layers: Only apply the round constants to the first element.
         let mut add_rc = local.input.clone().map(Into::into);
-        for (&round_flag, round_constants) in zip(&local.rounds, C::round_constants()) {
+        for (round, (&round_flag, round_constants)) in
+            zip(&local.rounds, C::round_constants()).enumerate()
+        {
+            // Check the `round_constants` have the correct length and are only being added to the
+            // first component in the internal partial rounds.
+            debug_assert!(
+                if ROUNDS_E1.contains(&round) || ROUNDS_E2.contains(&round) {
+                    round_constants.len() == W
+                } else if ROUNDS_P.contains(&round) {
+                    round_constants.len() == 1
+                } else {
+                    true
+                }
+            );
+
             // Select the constants only if they are those for this round.
             let round_constants = round_constants
                 .iter()
                 .map(|&constant| round_flag.into() * constant);
-            for (i, (result, constant)) in zip(add_rc.iter_mut(), round_constants).enumerate() {
-                // Always apply if external layer
-                let mut should_add = is_external.clone();
-                // Only apply to the first element if internal layer
-                if i == 0 {
-                    should_add += is_internal.clone();
-                }
-                *result += should_add * constant;
+
+            // By the check above, this `zip` will have length 1 in the internal rounds, so is only
+            // added to the first component.
+            for (result, constant) in zip(add_rc.iter_mut(), round_constants) {
+                *result += constant;
             }
         }
         // Enforce round constant computation.
