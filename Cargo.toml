@@ -83,7 +83,7 @@ name = "fib"
 harness = false
 
 [workspace]
-members = ["examples/calculator", "examples/byte_lookup", "loam-macros"]
+members = ["examples/calculator", "examples/byte_lookup"]
 
 [profile.dev-ci]
 inherits = "dev"

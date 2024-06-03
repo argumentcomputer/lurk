@@ -95,8 +95,6 @@ where
                 })
                 .collect::<Vec<F>>();
 
-            dbg!(linear_input.clone());
-
             // Apply the linear layer
             if is_external {
                 matmul_exterior(&mut linear_input)

@@ -2,7 +2,6 @@
 
 use core::mem::size_of;
 
-use std::borrow::Borrow;
 use std::iter::zip;
 
 use hybrid_array::{typenum::Unsigned, Array};
@@ -35,9 +34,9 @@ where
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
         let local = main.row_slice(0);
-        let local: &Poseidon2Cols<AB::Var, C> = (*local).borrow();
+        let local: &Poseidon2Cols<AB::Var, C> = Poseidon2Cols::from_slice(&*local);
         let next = main.row_slice(1);
-        let next: &Poseidon2Cols<AB::Var, C> = (*next).borrow();
+        let next: &Poseidon2Cols<AB::Var, C> = Poseidon2Cols::from_slice(&next);
 
         let W = <C::WIDTH as Unsigned>::USIZE;
         let R_F = C::R_F;
