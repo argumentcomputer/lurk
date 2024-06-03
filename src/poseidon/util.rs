@@ -44,7 +44,7 @@ pub(crate) fn matmul_internal<AF: AbstractField>(
 ) {
     let sum: AF = state.iter().cloned().sum();
     for (state, diag) in zip(state.iter_mut(), mat_internal_diag) {
-        *state *= diag;
+        *state *= diag + (-AF::one());
         *state += sum.clone();
     }
 }

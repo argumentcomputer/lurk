@@ -97,6 +97,8 @@ where
                 })
                 .collect::<Vec<F>>();
 
+            dbg!(linear_input.clone());
+
             // Apply the linear layer
             if is_external {
                 matmul_exterior(&mut linear_input)
@@ -118,8 +120,8 @@ where
         row.input = input.clone();
         row.is_init = F::one();
         row.add_rc = input.clone();
-        row.sbox_deg_3 = Array::from_fn(|_| F::zero());
-        row.sbox_deg_7 = Array::from_fn(|_| F::zero());
+        row.sbox_deg_3 = Array::from_fn(|i| row.add_rc[i] * row.add_rc[i] * row.add_rc[i]);
+        row.sbox_deg_7 = Array::from_fn(|i| row.sbox_deg_3[i] * row.sbox_deg_3[i] * row.add_rc[i]);
         row.output = input;
 
         matmul_exterior(&mut row.output);

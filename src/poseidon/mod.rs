@@ -63,9 +63,7 @@ mod tests {
         let output_row = trace.row(<<BabyBearConfig4 as PoseidonConfig>::R as Unsigned>::USIZE);
         let output = output_row.tail(BabyBearConfig4::WIDTH).collect::<Vec<_>>();
 
-        // assert_eq!(expected_output, output);
-        dbg!(expected_output);
-        dbg!(output);
+        assert_eq!(expected_output, output);
 
         // Test arity 16
         let chip16 = Poseidon2Chip::<BabyBearConfig16>::new();
@@ -78,9 +76,7 @@ mod tests {
         let output_row = trace.row(<<BabyBearConfig16 as PoseidonConfig>::R as Unsigned>::USIZE);
         let output = output_row.tail(BabyBearConfig16::WIDTH).collect::<Vec<_>>();
 
-        // assert_eq!(expected_output, output);
-        dbg!(expected_output);
-        dbg!(output);
+        assert_eq!(expected_output, output);
     }
 
     #[test]
@@ -89,8 +85,12 @@ mod tests {
         let public_values: [F; 4] = core::array::from_fn(|i| F::from_canonical_usize(i));
         let main = chip4.generate_trace(vec![*Array::from_slice(&public_values)]);
 
-        let result = debug_constraints_collecting_queries(&chip4, &public_values, &main);
+        let _ = debug_constraints_collecting_queries(&chip4, &public_values, &main);
 
-        dbg!(result.len());
+        let chip16 = Poseidon2Chip::<BabyBearConfig16>::new();
+        let public_values: [F; 16] = core::array::from_fn(|i| F::from_canonical_usize(i));
+        let main = chip16.generate_trace(vec![*Array::from_slice(&public_values)]);
+
+        let _ = debug_constraints_collecting_queries(&chip16, &public_values, &main);
     }
 }
