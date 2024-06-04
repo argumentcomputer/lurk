@@ -25,7 +25,16 @@ macro_rules! func {
 #[macro_export]
 macro_rules! var {
     ($variable:ident) => {
-        $crate::lair::expr::Var(stringify!($variable))
+        $crate::lair::expr::Var {
+            name: stringify!($variable),
+            size: 1,
+        }
+    };
+    ($variable:ident<$size:literal>) => {
+        $crate::lair::expr::Var {
+            name: stringify!($variable),
+            size: $size,
+        }
     };
 }
 

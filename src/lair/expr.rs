@@ -4,11 +4,41 @@ use super::{map::Map, List, Name};
 
 /// The type for variable references
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Var(pub &'static str);
+pub struct Var {
+    pub name: &'static str,
+    pub size: usize,
+}
 
 impl std::fmt::Display for Var {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", &self.name)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VarList(List<Var>);
+
+impl VarList {
+    #[inline]
+    pub fn total_size(&self) -> usize {
+        self.0.iter().fold(0, |acc, var| acc + var.size)
+    }
+
+    #[inline]
+    pub fn iter(&self) -> core::slice::Iter<'_, Var> {
+        self.0.iter()
+    }
+}
+
+// impl From<List<Var>> for VarList {
+//     fn from(value: List<Var>) -> Self {
+//         Self(value)
+//     }
+// }
+
+impl<const N: usize> From<[Var; N]> for VarList {
+    fn from(value: [Var; N]) -> Self {
+        Self(value.into())
     }
 }
 
@@ -35,14 +65,14 @@ pub enum OpE<F> {
     Eq(Var, Var, Var),
     /// `Call([x, ...], foo, [y, ...])` binds `x, ...` to the output of `foo`
     /// when applied to the arguments `y, ...`
-    Call(List<Var>, Name, List<Var>),
+    Call(VarList, Name, VarList),
     /// `PreImg([x, ...], foo, [y, ...])` binds `x, ...` to the preimage of `foo`
     /// when on the arguments `y, ...`
-    PreImg(List<Var>, Name, List<Var>),
+    PreImg(VarList, Name, VarList),
     /// `Store(x, [y, ...])` binds `x` to a pointer to `[y, ...]`
-    Store(Var, List<Var>),
+    Store(Var, VarList),
     /// `Load([x, ...], y)` binds `[x, ...]` to the values that is pointed by `y`
-    Load(List<Var>, Var),
+    Load(VarList, Var),
     /// `Debug(s)` emits debug message `s`
     Debug(&'static str),
 }
@@ -82,7 +112,7 @@ pub struct CasesE<F> {
 pub struct FuncE<F> {
     pub name: Name,
     pub invertible: bool,
-    pub input_params: List<Var>,
+    pub input_params: VarList,
     pub output_size: usize,
     pub body: BlockE<F>,
 }

@@ -19,7 +19,7 @@ impl<F: Clone + Ord> Toplevel<F> {
             .iter()
             .map(|(name, func)| {
                 let func_info = FuncInfo {
-                    input_size: func.input_params.len(),
+                    input_size: func.input_params.total_size(),
                     output_size: func.output_size,
                 };
                 (*name, func_info)
@@ -61,7 +61,7 @@ type UsedMap = BTreeMap<(Var, usize), bool>;
 fn bind(var: &Var, ctx: &mut CheckCtx<'_>) {
     ctx.bind_map.insert(*var, (ctx.var_index, ctx.block_ident));
     if let Some(used) = ctx.used_map.insert((*var, ctx.block_ident), false) {
-        let ch = var.0.chars().next().unwrap();
+        let ch = var.name.chars().next().expect("Empty var name");
         assert!(
             used || ch == '_',
             "Variable {var} not used. If intended, please prefix it with \"_\""
@@ -123,7 +123,7 @@ impl<F: Clone + Ord> FuncE<F> {
         });
         let body = self.body.check_and_link(ctx);
         for ((var, _), used) in ctx.used_map.iter() {
-            let ch = var.0.chars().next().unwrap();
+            let ch = var.name.chars().next().expect("Empty var name");
             assert!(
                 *used || ch == '_',
                 "Variable {var} not used. If intended, please prefix it with \"_\""
@@ -134,7 +134,7 @@ impl<F: Clone + Ord> FuncE<F> {
             invertible: self.invertible,
             index: func_index,
             body,
-            input_size: self.input_params.len(),
+            input_size: self.input_params.total_size(),
             output_size: self.output_size,
         }
     }
@@ -146,28 +146,41 @@ impl<F: Clone + Ord> BlockE<F> {
         for op in self.ops.iter() {
             match op {
                 OpE::Const(tgt, f) => {
+                    assert_eq!(tgt.size, 1);
                     ops.push(Op::Const(f.clone()));
                     bind(tgt, ctx);
                 }
                 OpE::Add(tgt, a, b) => {
+                    assert_eq!(tgt.size, 1);
+                    assert_eq!(a.size, 1);
+                    assert_eq!(b.size, 1);
                     let a = use_var(a, ctx);
                     let b = use_var(b, ctx);
                     ops.push(Op::Add(a, b));
                     bind(tgt, ctx);
                 }
                 OpE::Mul(tgt, a, b) => {
+                    assert_eq!(tgt.size, 1);
+                    assert_eq!(a.size, 1);
+                    assert_eq!(b.size, 1);
                     let a = use_var(a, ctx);
                     let b = use_var(b, ctx);
                     ops.push(Op::Mul(a, b));
                     bind(tgt, ctx);
                 }
                 OpE::Sub(tgt, a, b) => {
+                    assert_eq!(tgt.size, 1);
+                    assert_eq!(a.size, 1);
+                    assert_eq!(b.size, 1);
                     let a = use_var(a, ctx);
                     let b = use_var(b, ctx);
                     ops.push(Op::Sub(a, b));
                     bind(tgt, ctx);
                 }
                 OpE::Div(tgt, a, b) => {
+                    assert_eq!(tgt.size, 1);
+                    assert_eq!(a.size, 1);
+                    assert_eq!(b.size, 1);
                     let a = use_var(a, ctx);
                     let b = use_var(b, ctx);
                     ops.push(Op::Inv(b));
@@ -176,16 +189,23 @@ impl<F: Clone + Ord> BlockE<F> {
                     bind(tgt, ctx);
                 }
                 OpE::Inv(tgt, a) => {
+                    assert_eq!(tgt.size, 1);
+                    assert_eq!(a.size, 1);
                     let a = use_var(a, ctx);
                     ops.push(Op::Inv(a));
                     bind(tgt, ctx);
                 }
                 OpE::Not(tgt, a) => {
+                    assert_eq!(tgt.size, 1);
+                    assert_eq!(a.size, 1);
                     let a = use_var(a, ctx);
                     ops.push(Op::Not(a));
                     bind(tgt, ctx);
                 }
                 OpE::Eq(tgt, a, b) => {
+                    assert_eq!(tgt.size, 1);
+                    assert_eq!(a.size, 1);
+                    assert_eq!(b.size, 1);
                     let a = use_var(a, ctx);
                     let b = use_var(b, ctx);
                     ops.push(Op::Sub(a, b));
@@ -202,8 +222,8 @@ impl<F: Clone + Ord> BlockE<F> {
                         input_size,
                         output_size,
                     } = ctx.info_map.get_index(name_idx).unwrap().1;
-                    assert_eq!(inp.len(), input_size);
-                    assert_eq!(out.len(), output_size);
+                    assert_eq!(inp.total_size(), input_size);
+                    assert_eq!(out.total_size(), output_size);
                     let inp = inp.iter().map(|a| use_var(a, ctx)).collect();
                     ops.push(Op::Call(name_idx, inp));
                     out.iter().for_each(|t| bind(t, ctx));
@@ -217,21 +237,22 @@ impl<F: Clone + Ord> BlockE<F> {
                         input_size,
                         output_size,
                     } = ctx.info_map.get_index(name_idx).unwrap().1;
-                    assert_eq!(out.len(), input_size);
-                    assert_eq!(inp.len(), output_size);
+                    assert_eq!(out.total_size(), input_size);
+                    assert_eq!(inp.total_size(), output_size);
                     let inp = inp.iter().map(|a| use_var(a, ctx)).collect();
                     ops.push(Op::PreImg(name_idx, inp));
                     out.iter().for_each(|t| bind(t, ctx));
                 }
                 OpE::Store(ptr, vals) => {
+                    assert_eq!(ptr.size, 1);
                     let vals = vals.iter().map(|a| use_var(a, ctx)).collect();
                     ops.push(Op::Store(vals));
                     bind(ptr, ctx);
                 }
                 OpE::Load(vals, ptr) => {
+                    assert_eq!(ptr.size, 1);
                     let ptr = use_var(ptr, ctx);
-                    let size = vals.len();
-                    ops.push(Op::Load(size, ptr));
+                    ops.push(Op::Load(vals.total_size(), ptr));
                     vals.iter().for_each(|val| bind(val, ctx));
                 }
                 OpE::Debug(s) => ops.push(Op::Debug(s)),
