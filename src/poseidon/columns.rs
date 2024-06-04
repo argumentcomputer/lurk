@@ -1,10 +1,10 @@
 //! This module defines the columns for the Poseidon 2 chip
 
+use std::iter::zip;
 use std::mem::size_of;
 
 use crate::poseidon::util::{matmul_exterior, matmul_internal};
 use hybrid_array::Array;
-use itertools::izip;
 use p3_field::AbstractField;
 
 use super::config::PoseidonConfig;
@@ -62,11 +62,12 @@ impl<C: PoseidonConfig> Poseidon2Cols<C::F, C> {
 
         self.rounds[round] = C::F::one();
 
+        self.add_rc = self.input.clone();
         // Apply the round constants
         // Internal round: constants.len() = 1
         // External round: constants.len() = WIDTH
-        for (add_rc, &input, &constant) in izip!(self.add_rc.iter_mut(), &self.input, constants) {
-            *add_rc = input + constant;
+        for (add_rc, &constant) in zip(self.add_rc.iter_mut(), constants) {
+            *add_rc += constant;
         }
 
         // Evaluate sbox over add_rc
