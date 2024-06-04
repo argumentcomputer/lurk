@@ -502,7 +502,7 @@ mod tests {
     #[test]
     fn lair_div_test() {
         let test_e = func!(
-            fn test(a, b): 1 {
+            fn test(a, b): [1] {
                 let n = div(a, b);
                 return n
             }
@@ -519,7 +519,7 @@ mod tests {
     #[test]
     fn lair_shadow_test() {
         let test_e = func!(
-            fn test(x): 1 {
+            fn test(x): [1] {
                 let x = add(x, x);
                 let x = add(x, x);
                 let x = add(x, x);
@@ -538,7 +538,7 @@ mod tests {
     #[test]
     fn lair_preimg_test() {
         let polynomial_e = func!(
-            invertible fn polynomial(a0, a1, a2, a3, x): 1 {
+            invertible fn polynomial(a0, a1, a2, a3, x): [1] {
                 // a2 + a3*x
                 let coef = mul(a3, x);
                 let res = add(a2, coef);
@@ -552,7 +552,7 @@ mod tests {
             }
         );
         let inverse_e = func!(
-            fn inverse(y): 5 {
+            fn inverse(y): [5] {
                 let (a0, a1, a2, a3, x) = preimg(polynomial, y);
                 return (a0, a1, a2, a3, x)
             }

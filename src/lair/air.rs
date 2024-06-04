@@ -393,12 +393,12 @@ mod tests {
     #[test]
     fn lair_not_eq_test() {
         let not_func = func!(
-        fn not(a): 1 {
+        fn not(a): [1] {
             let x = not(a);
             return x
         });
         let eq_func = func!(
-        fn eq(a, b): 1 {
+        fn eq(a, b): [1] {
             let x = eq(a, b);
             return x
         });

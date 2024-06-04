@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! func {
-    (fn $name:ident($( $in:ident ),*): $size:literal $lair:tt) => {{
+    (fn $name:ident($( $in:ident ),*): [$size:literal] $lair:tt) => {{
         $(let $in = $crate::var!($in);)*
         $crate::lair::expr::FuncE {
             name: $crate::lair::Name(stringify!($name)),
@@ -10,7 +10,7 @@ macro_rules! func {
             body: $crate::block_init!($lair),
         }
     }};
-    (invertible fn $name:ident($( $in:ident ),*): $size:literal $lair:tt) => {{
+    (invertible fn $name:ident($( $in:ident ),*): [$size:literal] $lair:tt) => {{
         $(let $in = $crate::var!($in);)*
         $crate::lair::expr::FuncE {
             name: $crate::lair::Name(stringify!($name)),

@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn lair_memory_test() {
         let func_e = func!(
-        fn test(): 2 {
+        fn test(): [2] {
             let one = 1;
             let two = 2;
             let three = 3;

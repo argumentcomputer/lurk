@@ -47,7 +47,7 @@ pub type List<T> = Box<[T]>;
 #[allow(dead_code)]
 pub(crate) fn demo_toplevel<F: Field + Ord>() -> Toplevel<F> {
     let factorial_e = func!(
-    fn factorial(n): 1 {
+    fn factorial(n): [1] {
         let one = 1;
         if n {
             let pred = sub(n, one);
@@ -58,7 +58,7 @@ pub(crate) fn demo_toplevel<F: Field + Ord>() -> Toplevel<F> {
         return one
     });
     let fib_e = func!(
-    fn fib(n): 1 {
+    fn fib(n): [1] {
         let one = 1;
         match n {
             0 => {
@@ -76,7 +76,7 @@ pub(crate) fn demo_toplevel<F: Field + Ord>() -> Toplevel<F> {
         return res
     });
     let even_e = func!(
-    fn even(n): 1 {
+    fn even(n): [1] {
         let one = 1;
         match n {
             0 => {
@@ -89,7 +89,7 @@ pub(crate) fn demo_toplevel<F: Field + Ord>() -> Toplevel<F> {
     });
 
     let odd_e = func!(
-    fn odd(n): 1 {
+    fn odd(n): [1] {
         let one = 1;
         match n {
             0 => {
