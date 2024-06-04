@@ -1,11 +1,33 @@
 use p3_field::{Field, PrimeField};
 
-use crate::{func, lair::expr::FuncE};
+use crate::{
+    func,
+    lair::{expr::FuncE, toplevel::Toplevel},
+};
 
 use super::{
     memory::Memory,
     zstore::{Hasher, Tag, ZStore},
 };
+
+/// Creates a `Toplevel` with the functions used for Lurk evaluation
+#[inline]
+pub fn build_lurk_toplevel<F: PrimeField, H: Hasher<F = F>>(
+    mem: &mut Memory<F, H>,
+    store: &ZStore<F, H>,
+) -> Toplevel<F> {
+    Toplevel::new(&[
+        eval(mem, store),
+        eval_unop(mem, store),
+        eval_binop_num(mem, store),
+        eval_binop_misc(mem, store),
+        car_cdr(mem, store),
+        eval_let(),
+        eval_letrec(),
+        apply(),
+        env_lookup(),
+    ])
+}
 
 #[derive(Clone, Copy)]
 #[repr(u8)]
@@ -949,17 +971,7 @@ mod test {
 
         let mem = &mut Memory::init();
         let store = &ZStore::<F, PoseidonBabyBearHasher>::new();
-        let toplevel = &Toplevel::new(&[
-            eval(mem, store),
-            eval_unop(mem, store),
-            eval_binop_num(mem, store),
-            eval_binop_misc(mem, store),
-            car_cdr(mem, store),
-            eval_let(),
-            eval_letrec(),
-            apply(),
-            env_lookup(),
-        ]);
+        let toplevel = &build_lurk_toplevel(mem, store);
         let queries = &mut QueryRecord::new_with_init_mem(toplevel, take(&mut mem.map));
 
         // Chips

@@ -54,6 +54,13 @@ p3-symmetric = { workspace = true }
 p3-util = { workspace = true }
 wp1-core = { workspace = true }
 
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "fib"
+harness = false
+
 [workspace]
 members = ["examples/calculator", "examples/byte_lookup"]
 

@@ -352,7 +352,8 @@ impl<F: Field + Ord, H: Hasher<F = F>> ZStore<F, H> {
     }
 }
 
-pub struct PoseidonBabyBearHasher();
+#[derive(Clone)]
+pub struct PoseidonBabyBearHasher;
 
 impl Hasher for PoseidonBabyBearHasher {
     type F = F;
