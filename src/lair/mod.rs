@@ -14,6 +14,7 @@ pub mod hasher;
 mod macros;
 pub mod map;
 pub mod memory;
+mod memoset;
 #[allow(dead_code)]
 pub mod pointer;
 pub mod toplevel;
