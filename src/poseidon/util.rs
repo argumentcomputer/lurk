@@ -2,7 +2,7 @@ use p3_field::{AbstractField, Field};
 use std::iter::zip;
 
 // TODO: Make this public inside Plonky3 and import directly.
-pub(crate) fn apply_m_4<AF>(x: &mut [AF])
+pub(crate) fn apply_m_4<AF>(x: &mut [AF; 4])
 where
     AF: AbstractField,
 {
@@ -23,15 +23,18 @@ pub(crate) fn matmul_exterior<F: Field>(state: &mut [F]) {
     let width = state.len();
 
     for state_chunk in state.chunks_exact_mut(4) {
+        let state_chunk: &mut [F; 4] = state_chunk.try_into().unwrap();
         apply_m_4(state_chunk);
     }
-    let sums = state
-        .chunks_exact_mut(4)
-        .fold([F::zero(); 4], |mut sums, chunk| {
-            zip(sums.iter_mut(), chunk).for_each(|(s, &mut v)| *s += v);
-            sums
-        });
 
+    let mut sums = [F::zero(); 4];
+    for state_chunk in state.chunks_exact(4) {
+        let state_chunk: &[F; 4] = state_chunk.try_into().unwrap();
+        for (sum, &v) in zip(sums.iter_mut(), state_chunk) {
+            *sum += v;
+        }
+    }
+    
     for i in 0..width {
         state[i] += sums[i % 4];
     }
@@ -44,7 +47,7 @@ pub(crate) fn matmul_internal<AF: AbstractField>(
 ) {
     let sum: AF = state.iter().cloned().sum();
     for (state, diag) in zip(state.iter_mut(), mat_internal_diag) {
-        *state *= diag + (-AF::one());
+        *state *= diag + AF::neg_one();
         *state += sum.clone();
     }
 }

@@ -1,12 +1,14 @@
 //! This module defines the AIR constraints for the Poseidon2Chip
 
 use core::mem::size_of;
+use std::array;
 
 use std::iter::zip;
 
 use hybrid_array::{typenum::Unsigned, Array};
 use itertools::izip;
 use p3_air::{Air, AirBuilder, BaseAir};
+use p3_field::AbstractField;
 use p3_matrix::Matrix;
 
 use super::{
@@ -65,6 +67,7 @@ where
         let is_internal = round_flag_sum(rounds_internal);
         let is_external_second = round_flag_sum(rounds_external_second);
         let is_external: AB::Expr = is_external_first.clone() + is_external_second.clone();
+        let is_linear = is_init + is_external.clone();
 
         // Range check all flags.
         builder.assert_bool(is_init);
@@ -75,11 +78,12 @@ where
         builder.assert_bool(is_real.clone());
 
         // Apply the round constants.
+        // Initial Layer: add_rc = input
         // External Layers: Apply the round constants.
         // Internal Layers: Only apply the round constants to the first element.
         let mut add_rc = local.input.clone().map(Into::into);
         for (round, (&round_flag, round_constants)) in
-            zip(&local.rounds, C::round_constants()).enumerate()
+            zip(&local.rounds, C::round_constants_iter()).enumerate()
         {
             // Check the `round_constants` have the correct length and are only being added to the
             // first component in the internal partial rounds.
@@ -89,7 +93,7 @@ where
                 } else if ROUNDS_P.contains(&round) {
                     round_constants.len() == 1
                 } else {
-                    true
+                    false
                 }
             );
 
@@ -105,7 +109,7 @@ where
             }
         }
         // Enforce round constant computation.
-        // When is_real.is_zero(), `add_rc` is zero.
+        // For initial round, add_rc = input
         for (add_rc, &add_rc_expected) in zip(add_rc, &local.add_rc) {
             builder
                 .when(is_real.clone())
@@ -113,6 +117,7 @@ where
         }
 
         // Verify sbox computations
+        // sbox_deg_7[i] = add_rc[i]^7
         for (&input, &sbox_deg_3_expected, &sbox_deg_7_expected) in
             izip!(&local.add_rc, &local.sbox_deg_3, &local.sbox_deg_7)
         {
@@ -136,25 +141,25 @@ where
         });
 
         // EXTERNAL + INITIAL LAYER = Linear Layer
-        let is_linear = is_init + is_external.clone();
         {
             // First, we apply M_4 to each consecutive four elements of the state.
             // In Appendix B's terminology, this replaces each x_i with x_i'.
             let mut state = sbox_result.clone();
             for state_chunk in state.chunks_mut(4) {
+                let state_chunk: &mut [AB::Expr; 4] = state_chunk.try_into().unwrap();
                 apply_m_4(state_chunk);
             }
 
             // Now, we apply the outer circulant matrix (to compute the y_i values).
             //
             // We first precompute the four sums of every four elements.
-            let sums: [AB::Expr; 4] = core::array::from_fn(|k| {
-                (0..W)
-                    .step_by(4)
-                    .map(|j| state[j + k].clone())
-                    .sum::<AB::Expr>()
-            });
-
+            let mut sums: [AB::Expr; 4] = array::from_fn(|_| AB::Expr::zero());
+            for state_chunk in state.chunks_exact(4) {
+                for (sum, state_item) in zip(sums.iter_mut(), state_chunk) {
+                    *sum += state_item.clone();
+                }
+            }
+            
             // The formula for each y_i involves 2x_i' term and x_j' terms for each j that equals i mod 4.
             // In other words, we can add a single copy of x_i' to the appropriate one of our precomputed sums.
             for (state, sum, &output_expected) in

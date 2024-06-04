@@ -28,7 +28,7 @@ pub trait PoseidonConfig: Clone + Copy + Sync + ConstantsProvided {
     fn matrix_diag() -> &'static Array<Self::F, Self::WIDTH>;
 
     /// Returns an iterator of the hasher's round constants
-    fn round_constants() -> impl IntoIterator<Item = &'static [Self::F]>;
+    fn round_constants_iter() -> impl IntoIterator<Item = &'static [Self::F]>;
 }
 
 /// The internal diffusion layer for the Poseidon chip, implements the `Permutation` and
@@ -37,14 +37,14 @@ pub trait PoseidonConfig: Clone + Copy + Sync + ConstantsProvided {
 pub struct InternalDiffusion {}
 
 macro_rules! impl_poseidon_config {
-    ($name:ident, $width_t:ident, $width:literal, $r_p:literal, $r_f:literal, $r_t:ident, $full_rc:ident, $part_rc:ident, $diag:ident) => {
+    ($name:ident, $field:ident, $width_t:ident, $width:literal, $r_p:literal, $r_f:literal, $r_t:ident, $full_rc:ident, $part_rc:ident, $diag:ident) => {
         #[derive(Clone, Copy)]
         pub struct $name;
 
         impl ConstantsProvided for $name {}
 
         impl PoseidonConfig for $name {
-            type F = BabyBear;
+            type F = $field;
             type WIDTH = $width_t;
             const WIDTH: usize = $width;
             const R_P: usize = $r_p;
@@ -55,7 +55,7 @@ macro_rules! impl_poseidon_config {
                 Array::from_slice(&*$diag)
             }
 
-            fn round_constants() -> impl IntoIterator<Item = &'static [Self::F]> {
+            fn round_constants_iter() -> impl IntoIterator<Item = &'static [Self::F]> {
                 let first_half = $full_rc.iter().map(|c| c.as_slice()).take(Self::R_F / 2);
                 let second_half = $full_rc.iter().map(|c| c.as_slice()).skip(Self::R_F / 2);
 
@@ -65,22 +65,22 @@ macro_rules! impl_poseidon_config {
             }
         }
 
-        impl Permutation<[BabyBear; $width]> for InternalDiffusion {
-            fn permute_mut(&self, input: &mut [BabyBear; $width]) {
-                let sum: BabyBear = input.iter().map(|x| *x).sum();
+        impl Permutation<[$field; $width]> for InternalDiffusion {
+            fn permute_mut(&self, input: &mut [$field; $width]) {
+                let sum: $field = input.iter().copied().sum();
                 for i in 0..$width {
-                    input[i] = sum + ($diag[i] + (-BabyBear::one())) * input[i];
+                    input[i] = sum + ($diag[i] + $field::neg_one()) * input[i];
                 }
             }
         }
 
-        impl DiffusionPermutation<BabyBear, $width> for InternalDiffusion {}
+        impl DiffusionPermutation<$field, $width> for InternalDiffusion {}
 
         impl Poseidon2Chip<$name> {
             /// Returns a Poseidon 2 hasher
             pub fn hasher(
                 &self,
-            ) -> Poseidon2<BabyBear, Poseidon2ExternalMatrixGeneral, InternalDiffusion, $width, 7>
+            ) -> Poseidon2<$field, Poseidon2ExternalMatrixGeneral, InternalDiffusion, $width, 7>
             {
                 let rounds_f = $name::R_F;
                 let rounds_p = $name::R_P;
@@ -106,6 +106,7 @@ macro_rules! impl_poseidon_config {
 
 impl_poseidon_config!(
     BabyBearConfig4,
+    BabyBear,
     U4,
     4,
     21,
@@ -118,6 +119,7 @@ impl_poseidon_config!(
 
 impl_poseidon_config!(
     BabyBearConfig8,
+    BabyBear,
     U8,
     8,
     12,
@@ -130,6 +132,7 @@ impl_poseidon_config!(
 
 impl_poseidon_config!(
     BabyBearConfig12,
+    BabyBear,
     U12,
     12,
     10,
@@ -142,6 +145,7 @@ impl_poseidon_config!(
 
 impl_poseidon_config!(
     BabyBearConfig16,
+    BabyBear,
     U16,
     16,
     13,
@@ -154,6 +158,7 @@ impl_poseidon_config!(
 
 impl_poseidon_config!(
     BabyBearConfig20,
+    BabyBear,
     U20,
     20,
     18,
@@ -166,6 +171,7 @@ impl_poseidon_config!(
 
 impl_poseidon_config!(
     BabyBearConfig24,
+    BabyBear,
     U24,
     24,
     21,
@@ -178,6 +184,7 @@ impl_poseidon_config!(
 
 impl_poseidon_config!(
     BabyBearConfig28,
+    BabyBear,
     U28,
     28,
     25,
@@ -190,6 +197,7 @@ impl_poseidon_config!(
 
 impl_poseidon_config!(
     BabyBearConfig32,
+    BabyBear,
     U32,
     32,
     30,
@@ -202,6 +210,7 @@ impl_poseidon_config!(
 
 impl_poseidon_config!(
     BabyBearConfig36,
+    BabyBear,
     U36,
     36,
     34,
@@ -214,6 +223,7 @@ impl_poseidon_config!(
 
 impl_poseidon_config!(
     BabyBearConfig40,
+    BabyBear,
     U40,
     40,
     38,
