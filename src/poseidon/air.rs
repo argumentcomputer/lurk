@@ -159,7 +159,7 @@ where
                     *sum += state_item.clone();
                 }
             }
-            
+
             // The formula for each y_i involves 2x_i' term and x_j' terms for each j that equals i mod 4.
             // In other words, we can add a single copy of x_i' to the appropriate one of our precomputed sums.
             for (state, sum, &output_expected) in

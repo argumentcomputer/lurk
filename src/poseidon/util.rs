@@ -34,7 +34,7 @@ pub(crate) fn matmul_exterior<F: Field>(state: &mut [F]) {
             *sum += v;
         }
     }
-    
+
     for i in 0..width {
         state[i] += sums[i % 4];
     }
