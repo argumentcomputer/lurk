@@ -11,10 +11,11 @@ use super::zstore::{Hasher, Payload, Tag, ZExpr, ZPtr, ZStore, DIGEST};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MPtr<F> {
-    pub(crate) tag: F,
-    pub(crate) raw: F,
+    pub tag: F,
+    pub raw: F,
 }
 
+#[derive(Clone)]
 pub struct Memory<F, H> {
     pub map: Vec<MemMap<F>>,
     pub cache: BTreeMap<ZPtr<F>, MPtr<F>>,

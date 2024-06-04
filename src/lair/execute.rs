@@ -24,7 +24,7 @@ pub(crate) type MemMap<F> = IndexMap<List<F>, u32>;
 pub struct QueryRecord<F: Field> {
     pub(crate) func_queries: Vec<QueryMap<F>>,
     pub(crate) inv_func_queries: Vec<Option<InvQueryMap<F>>>,
-    pub(crate) mem_queries: Vec<MemMap<F>>,
+    pub mem_queries: Vec<MemMap<F>>,
 }
 
 const NUM_MEM_TABLES: usize = 5;
