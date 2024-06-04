@@ -1,10 +1,11 @@
 use p3_air::{Air, AirBuilder, BaseAir};
-use p3_field::Field;
+use p3_field::{AbstractField, Field};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
     slice::ParallelSliceMut,
 };
+use std::iter::zip;
 
 use super::execute::{mem_index_from_len, QueryRecord};
 
@@ -18,11 +19,53 @@ where
 {
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
-        let (local, next) = (main.row_slice(0), main.row_slice(1));
-        let local_ptr = local[0];
-        let next_ptr = next[0];
-        builder.when_first_row().assert_one(local_ptr);
-        builder.when_transition().assert_one(next_ptr - local_ptr);
+        let local: &[AB::Var] = &main.row_slice(0);
+        let next: &[AB::Var] = &main.row_slice(1);
+
+        let (is_real, ptr_local, values_local) = (local[0], local[1], &local[2..]);
+        let (is_real_next, ptr_next, values_next) = (next[0], next[1], &next[2..]);
+
+        // is_real
+        {
+            builder.assert_bool(is_real);
+            // is_real starts with one
+            builder.when_first_row().assert_one(is_real);
+            // if next is real, local is real
+            builder
+                .when_transition()
+                .when(is_real_next)
+                .assert_one(is_real);
+            // last row must be padding
+            // after this, is_real => is_transition
+            builder.when_last_row().assert_zero(is_real);
+        }
+
+        // First valid pointer is 1
+        builder.when_first_row().assert_one(ptr_local);
+        // Then increases by 0 or 1
+        let ptr_diff = ptr_next - ptr_local;
+        builder.when(is_real).assert_bool(ptr_diff.clone());
+
+        // ptr in first padding row must be the next unused index
+        let is_last_real = is_real * (AB::Expr::one() - is_real_next);
+        builder.when(is_last_real).assert_one(ptr_diff.clone());
+
+        // write happens in the last duplication of the value
+        let is_write = ptr_diff;
+        let is_read = AB::Expr::one() - is_write.clone();
+
+        for (&val_local, &val_next) in zip(values_local, values_next) {
+            builder
+                .when(is_real)
+                .when(is_read.clone())
+                .assert_eq(val_local, val_next);
+        }
+
+        const READ_TAG: u32 = 1;
+        const WRITE_TAG: u32 = 2;
+
+        let tag = AB::Expr::from_canonical_u32(READ_TAG) * is_read
+            + AB::Expr::from_canonical_u32(WRITE_TAG) * is_write;
     }
 }
 
@@ -33,7 +76,7 @@ impl<F: Sync> BaseAir<F> for MemChip {
 }
 
 impl MemChip {
-    /// Pointer, multiplicity and arguments
+    /// is_real, Pointer, and arguments
     fn width(&self) -> usize {
         2 + self.len
     }
