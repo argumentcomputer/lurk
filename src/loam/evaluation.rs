@@ -350,6 +350,7 @@ ascent! {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::loam::Sexp as S;
 
     #[test]
     fn new_test_eval() {
@@ -390,7 +391,7 @@ mod test {
             allocator().init();
 
             // (+)
-            let add = Cons::list(vec![Sexp::Sym(Sym::Char('+'))]);
+            let add = Cons::list(vec![S::sym('+')]);
 
             test(add.into(), F(0).into(), None)
         };
@@ -399,7 +400,7 @@ mod test {
             allocator().init();
 
             // (+ 1)
-            let add = Cons::list(vec![Sexp::Sym(Sym::Char('+')), Sexp::F(F(1))]);
+            let add = Cons::list(vec![S::sym('+'), S::f(1)]);
 
             test(add.into(), F(1).into(), None)
         };
@@ -408,11 +409,7 @@ mod test {
             allocator().init();
 
             // (+ 1 2)
-            let add = Cons::list(vec![
-                Sexp::Sym(Sym::Char('+')),
-                Sexp::F(F(1)),
-                Sexp::F(F(2)),
-            ]);
+            let add = Cons::list(vec![S::sym('+'), S::f(1), S::f(2)]);
 
             test(add.into(), F(3).into(), None)
         };
@@ -421,12 +418,7 @@ mod test {
             allocator().init();
 
             // (+ 1 2 3)
-            let add = Cons::list(vec![
-                Sexp::Sym(Sym::Char('+')),
-                Sexp::F(F(1)),
-                Sexp::F(F(2)),
-                Sexp::F(F(3)),
-            ]);
+            let add = Cons::list(vec![S::sym('+'), S::f(1), S::f(2), S::f(3)]);
 
             test(add.into(), F(6).into(), None)
         };
@@ -435,7 +427,7 @@ mod test {
             allocator().init();
 
             // (*)
-            let mul = Cons::list(vec![Sexp::Sym(Sym::Char('*'))]);
+            let mul = Cons::list(vec![S::sym('*')]);
 
             test(mul.into(), F(1).into(), None)
         };
@@ -444,7 +436,7 @@ mod test {
             allocator().init();
 
             // (* 2)
-            let mul = Cons::list(vec![Sexp::Sym(Sym::Char('*')), Sexp::F(F(2))]);
+            let mul = Cons::list(vec![S::sym('*'), S::f(2)]);
 
             test(mul.into(), F(2).into(), None)
         };
@@ -453,11 +445,7 @@ mod test {
             allocator().init();
 
             // (* 2 3)
-            let mul = Cons::list(vec![
-                Sexp::Sym(Sym::Char('*')),
-                Sexp::F(F(2)),
-                Sexp::F(F(3)),
-            ]);
+            let mul = Cons::list(vec![S::sym('*'), S::f(2), S::f(3)]);
 
             test(mul.into(), F(6).into(), None)
         };
@@ -466,12 +454,7 @@ mod test {
             allocator().init();
 
             // (+ 2 3 4)
-            let mul = Cons::list(vec![
-                Sexp::Sym(Sym::Char('*')),
-                Sexp::F(F(2)),
-                Sexp::F(F(3)),
-                Sexp::F(F(4)),
-            ]);
+            let mul = Cons::list(vec![S::sym('*'), S::f(2), S::f(3), S::f(4)]);
 
             test(mul.into(), F(24).into(), None)
         };
@@ -481,13 +464,9 @@ mod test {
 
             // (+ 5 (* 3 4))
             let mul = Cons::list(vec![
-                Sexp::Sym(Sym::Char('+')),
-                Sexp::F(F(5)),
-                Sexp::Cons(Cons::list_x(vec![
-                    Sexp::Sym(Sym::Char('*')),
-                    Sexp::F(F(3)),
-                    Sexp::F(F(4)),
-                ])),
+                S::sym('+'),
+                S::f(5),
+                S::list(vec![S::sym('*'), S::f(3), S::f(4)]),
             ]);
 
             test(mul.into(), F(17).into(), None)
@@ -497,12 +476,7 @@ mod test {
             allocator().init();
 
             // (/ 10 2 5)
-            let x = Cons::list(vec![
-                Sexp::Sym(Sym::Char('/')),
-                Sexp::F(F(10)),
-                Sexp::F(F(2)),
-                Sexp::F(F(5)),
-            ]);
+            let x = Cons::list(vec![S::sym('/'), S::f(10), S::f(2), S::f(5)]);
 
             test(x.into(), F(1).into(), None)
         };
@@ -512,29 +486,19 @@ mod test {
 
             // (+ 5 (-) (*) (/) (+) (* 3 4 (- 7 2 1)) (/ 10 2 5))
             let x = Cons::list(vec![
-                Sexp::Sym(Sym::Char('+')),
-                Sexp::F(F(5)),
-                Sexp::Cons(Cons::list_x(vec![Sexp::Sym(Sym::Char('-'))])),
-                Sexp::Cons(Cons::list_x(vec![Sexp::Sym(Sym::Char('*'))])),
-                Sexp::Cons(Cons::list_x(vec![Sexp::Sym(Sym::Char('/'))])),
-                Sexp::Cons(Cons::list_x(vec![Sexp::Sym(Sym::Char('+'))])),
-                Sexp::Cons(Cons::list_x(vec![
-                    Sexp::Sym(Sym::Char('*')),
-                    Sexp::F(F(3)),
-                    Sexp::F(F(4)),
-                    Sexp::Cons(Cons::list_x(vec![
-                        Sexp::Sym(Sym::Char('-')),
-                        Sexp::F(F(7)),
-                        Sexp::F(F(2)),
-                        Sexp::F(F(1)),
-                    ])),
-                ])),
-                Sexp::Cons(Cons::list_x(vec![
-                    Sexp::Sym(Sym::Char('/')),
-                    Sexp::F(F(10)),
-                    Sexp::F(F(2)),
-                    Sexp::F(F(5)),
-                ])),
+                S::sym('+'),
+                S::f(5),
+                S::list(vec![S::sym('-')]),
+                S::list(vec![S::sym('*')]),
+                S::list(vec![S::sym('/')]),
+                S::list(vec![S::sym('+')]),
+                S::list(vec![
+                    S::sym('*'),
+                    S::f(3),
+                    S::f(4),
+                    S::list(vec![S::sym('-'), S::f(7), S::f(2), S::f(1)]),
+                ]),
+                S::list(vec![S::sym('/'), S::f(10), S::f(2), S::f(5)]),
             ]);
 
             test(x.into(), F(56).into(), None)

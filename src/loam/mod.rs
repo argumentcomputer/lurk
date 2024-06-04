@@ -223,6 +223,19 @@ pub enum Sexp {
     Nil,
 }
 
+impl Sexp {
+    pub fn sym(c: char) -> Self {
+        Self::Sym(Sym::Char(c))
+    }
+    pub fn f(f: LE) -> Self {
+        Self::F(F(f))
+    }
+
+    pub fn list(elts: Vec<Sexp>) -> Self {
+        Self::Cons(Cons::list_x(elts))
+    }
+}
+
 impl Valuable for Sexp {
     fn value(&self) -> Wide {
         match self {
