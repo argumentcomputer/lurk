@@ -135,18 +135,18 @@ impl<F: PrimeField> Ctrl<F> {
                 if let Some(branch) = cases.branches.get(&t) {
                     branch.populate_row(map, index, slice, queries);
                 } else {
-                    let branch = cases.default.as_ref().expect("No match");
-                    branch.populate_row(map, index, slice, queries);
                     for (f, _) in cases.branches.iter() {
                         slice.push_aux(index, (t - *f).inverse());
                     }
+                    let branch = cases.default.as_ref().expect("No match");
+                    branch.populate_row(map, index, slice, queries);
                 }
             }
             Ctrl::If(b, t, f) => {
                 let (b, _) = map[*b];
                 if b != F::zero() {
-                    t.populate_row(map, index, slice, queries);
                     slice.push_aux(index, b.inverse());
+                    t.populate_row(map, index, slice, queries);
                 } else {
                     f.populate_row(map, index, slice, queries);
                 }
@@ -300,13 +300,13 @@ mod tests {
         factorial_chip.execute(args, queries);
         let trace = factorial_chip.generate_trace_parallel(queries);
         let expected_trace = [
-            // in order: n, output, mult, fact(n-1), n*fact(n-1), 1/n, and selectors
+            // in order: n, output, mult, 1/n, fact(n-1), n*fact(n-1), and selectors
             0, 1, 1, 0, 0, 0, 0, 1, //
             1, 1, 1, 1, 1, 1, 1, 0, //
-            2, 2, 1, 1, 2, 1006632961, 1, 0, //
-            3, 6, 1, 2, 6, 1342177281, 1, 0, //
-            4, 24, 1, 6, 24, 1509949441, 1, 0, //
-            5, 120, 1, 24, 120, 1610612737, 1, 0, //
+            2, 2, 1, 1006632961, 1, 2, 1, 0, //
+            3, 6, 1, 1342177281, 2, 6, 1, 0, //
+            4, 24, 1, 1509949441, 6, 24, 1, 0, //
+            5, 120, 1, 1610612737, 24, 120, 1, 0, //
             // dummy
             0, 0, 0, 0, 0, 0, 0, 0, //
             0, 0, 0, 0, 0, 0, 0, 0, //
@@ -321,15 +321,15 @@ mod tests {
         let trace = fib_chip.generate_trace_parallel(queries);
 
         let expected_trace = [
-            // in order: n, output, mult, fib(n-1), fib(n-2), 1/n, 1/(n-1), and selectors
+            // in order: n, output, mult, 1/n, 1/(n-1), fib(n-1), fib(n-2), and selectors
             0, 1, 1, 0, 0, 0, 0, 1, 0, 0, //
             1, 1, 2, 0, 0, 0, 0, 0, 1, 0, //
-            2, 2, 2, 1, 1, 1006632961, 1, 0, 0, 1, //
-            3, 3, 2, 2, 1, 1342177281, 1006632961, 0, 0, 1, //
-            4, 5, 2, 3, 2, 1509949441, 1342177281, 0, 0, 1, //
-            5, 8, 2, 5, 3, 1610612737, 1509949441, 0, 0, 1, //
-            6, 13, 1, 8, 5, 1677721601, 1610612737, 0, 0, 1, //
-            7, 21, 1, 13, 8, 862828252, 1677721601, 0, 0, 1, //
+            2, 2, 2, 1006632961, 1, 1, 1, 0, 0, 1, //
+            3, 3, 2, 1342177281, 1006632961, 2, 1, 0, 0, 1, //
+            4, 5, 2, 1509949441, 1342177281, 3, 2, 0, 0, 1, //
+            5, 8, 2, 1610612737, 1509949441, 5, 3, 0, 0, 1, //
+            6, 13, 1, 1677721601, 1610612737, 8, 5, 0, 0, 1, //
+            7, 21, 1, 862828252, 1677721601, 13, 8, 0, 0, 1, //
         ]
         .into_iter()
         .map(field_from_u32)
@@ -384,8 +384,8 @@ mod tests {
             // that does not follow the default will reuse the slots for the inverted
             // elements to minimize the number of columns
             3, 2, 16, 1, 4, 16, 0, 0, 0, 0, 0, 0, 1, 0, //
-            4, 2, 16, 1, 16, 1509949441, 1342177281, 1006632961, 1, 0, 0, 0, 0, 1, //
-            5, 2, 16, 1, 16, 1610612737, 1509949441, 1342177281, 1006632961, 0, 0, 0, 0, 1, //
+            4, 2, 16, 1, 1509949441, 1342177281, 1006632961, 1, 16, 0, 0, 0, 0, 1, //
+            5, 2, 16, 1, 1610612737, 1509949441, 1342177281, 1006632961, 16, 0, 0, 0, 0, 1, //
             // dummy
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
         ]

@@ -872,6 +872,7 @@ mod test {
     use p3_field::AbstractField;
 
     use crate::{
+        air::debug::debug_constraints_collecting_queries,
         lair::{chip::FuncChip, execute::QueryRecord, toplevel::Toplevel, List},
         lurk::zstore::{PoseidonBabyBearHasher, Tag},
     };
@@ -997,6 +998,8 @@ mod test {
             let result = queries.func_queries[eval.func.index].get(&args).unwrap();
             let expected = [res.tag, res.raw].into();
             assert_eq!(result.output, expected);
+            let trace = eval.generate_trace_parallel(queries);
+            let _ = debug_constraints_collecting_queries(&eval, &[], &trace);
         };
 
         eval_aux("t", "t");
