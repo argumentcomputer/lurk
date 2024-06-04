@@ -11,6 +11,19 @@ use super::{
     trace::ColumnIndex,
 };
 
+impl ColumnIndex {
+    #[inline]
+    fn save(&mut self) -> (usize, usize) {
+        (self.aux, self.output)
+    }
+
+    #[inline]
+    fn restore(&mut self, (aux, output): (usize, usize)) {
+        self.aux = aux;
+        self.output = output;
+    }
+}
+
 pub type ColumnSlice<'a, T> = ColumnLayout<&'a [T]>;
 impl<'a, T> ColumnSlice<'a, T> {
     pub fn from_slice(slice: &'a [T], layout_sizes: LayoutSizes) -> Self {
@@ -248,22 +261,26 @@ impl<F: Field> Ctrl<F> {
                 let mut sels = Vec::with_capacity(cases.size());
 
                 for (f, branch) in cases.branches.iter() {
-                    let index = &mut index.clone();
+                    let state = index.save();
                     let sel = branch.eval(builder, local, index, map, toplevel);
                     builder.when(sel.clone()).assert_eq(v.clone(), *f);
                     sels.push(sel);
                     map.truncate(map_len);
+                    index.restore(state);
                 }
 
                 if let Some(branch) = &cases.default {
-                    let index = &mut index.clone();
+                    let state = index.save();
+                    let invs = (0..cases.branches.size())
+                        .map(|_| *local.next_aux(index))
+                        .collect::<Vec<_>>();
                     let sel = branch.eval(builder, local, index, map, toplevel);
-                    for (f, _) in cases.branches.iter() {
-                        let inv = *local.next_aux(index);
+                    for ((f, _), inv) in cases.branches.iter().zip(invs.into_iter()) {
                         builder.when(sel.clone()).assert_one(inv * (v.clone() - *f));
                     }
                     sels.push(sel);
                     map.truncate(map_len);
+                    index.restore(state);
                 }
 
                 sels.into_iter()
@@ -273,16 +290,18 @@ impl<F: Field> Ctrl<F> {
                 let map_len = map.len();
                 let b = map[*b].to_expr();
 
-                let t_index = &mut index.clone();
-                let t_sel = t.eval(builder, local, t_index, map, toplevel);
-                let inv = *local.next_aux(t_index);
+                let state = index.save();
+                let inv = *local.next_aux(index);
+                let t_sel = t.eval(builder, local, index, map, toplevel);
                 builder.when(t_sel.clone()).assert_one(inv * b.clone());
                 map.truncate(map_len);
+                index.restore(state);
 
-                let f_index = &mut index.clone();
-                let f_sel = f.eval(builder, local, f_index, map, toplevel);
+                index.save();
+                let f_sel = f.eval(builder, local, index, map, toplevel);
                 builder.when(f_sel.clone()).assert_zero(b);
                 map.truncate(map_len);
+                index.restore(state);
 
                 t_sel + f_sel
             }
@@ -319,13 +338,13 @@ mod tests {
         let factorial_width = factorial_chip.width();
         let factorial_trace = RowMajorMatrix::new(
             [
-                // in order: n, output, mult, fact(n-1), n*fact(n-1), 1/n, and selectors
+                // in order: n, output, mult, 1/n, fact(n-1), n*fact(n-1), and selectors
                 0, 1, 1, 0, 0, 0, 0, 1, //
                 1, 1, 1, 1, 1, 1, 1, 0, //
-                2, 2, 1, 1, 2, 1006632961, 1, 0, //
-                3, 6, 1, 2, 6, 1342177281, 1, 0, //
-                4, 24, 1, 6, 24, 1509949441, 1, 0, //
-                5, 120, 1, 24, 120, 1610612737, 1, 0, //
+                2, 2, 1, 1006632961, 1, 2, 1, 0, //
+                3, 6, 1, 1342177281, 2, 6, 1, 0, //
+                4, 24, 1, 1509949441, 6, 24, 1, 0, //
+                5, 120, 1, 1610612737, 24, 120, 1, 0, //
                 // dummy
                 0, 0, 0, 0, 0, 0, 0, 0, //
                 0, 0, 0, 0, 0, 0, 0, 0, //
@@ -339,15 +358,15 @@ mod tests {
         let fib_width = fib_chip.width();
         let fib_trace = RowMajorMatrix::new(
             [
-                // in order: n, output, mult, fib(n-1), fib(n-2), 1/n, 1/(n-1), and selectors
+                // in order: n, output, mult, 1/n, 1/(n-1), fib(n-1), fib(n-2), and selectors
                 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, //
                 1, 1, 2, 0, 0, 0, 0, 0, 1, 0, //
-                2, 2, 2, 1, 1, 1006632961, 1, 0, 0, 1, //
-                3, 3, 2, 2, 1, 1342177281, 1006632961, 0, 0, 1, //
-                4, 5, 2, 3, 2, 1509949441, 1342177281, 0, 0, 1, //
-                5, 8, 2, 5, 3, 1610612737, 1509949441, 0, 0, 1, //
-                6, 13, 1, 8, 5, 1677721601, 1610612737, 0, 0, 1, //
-                7, 21, 1, 13, 8, 862828252, 1677721601, 0, 0, 1, //
+                2, 2, 2, 1006632961, 1, 1, 1, 0, 0, 1, //
+                3, 3, 2, 1342177281, 1006632961, 2, 1, 0, 0, 1, //
+                4, 5, 2, 1509949441, 1342177281, 3, 2, 0, 0, 1, //
+                5, 8, 2, 1610612737, 1509949441, 5, 3, 0, 0, 1, //
+                6, 13, 1, 1677721601, 1610612737, 8, 5, 0, 0, 1, //
+                7, 21, 1, 862828252, 1677721601, 13, 8, 0, 0, 1, //
             ]
             .into_iter()
             .map(F::from_canonical_u32)
