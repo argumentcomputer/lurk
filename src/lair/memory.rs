@@ -1,3 +1,4 @@
+use crate::air::builder::LookupBuilder;
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{AbstractField, Field};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
@@ -66,6 +67,8 @@ where
 
         let tag = AB::Expr::from_canonical_u32(READ_TAG) * is_read
             + AB::Expr::from_canonical_u32(WRITE_TAG) * is_write;
+
+        // builder.when(is_real).send([tag, values_local]);
     }
 }
 
