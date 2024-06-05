@@ -26,7 +26,6 @@ impl Memory {
     }
 
     fn ptr_sym(ptr: Ptr, value: Wide) -> Sym {
-        dbg!(&ptr);
         assert_eq!(Tag::Sym.elt(), ptr.0);
 
         let built_in = Sym::built_in();
@@ -43,6 +42,10 @@ impl Memory {
 }
 
 impl Sym {
+    fn is_binding(&self) -> bool {
+        matches!(self, Self::Char('l'))
+    }
+
     fn is_left_foldable(&self) -> bool {
         // Note, all of these will be variadic.
         matches!(self, Self::Char('+' | '*'))
@@ -54,8 +57,7 @@ impl Sym {
     }
 
     fn is_built_in(ptr: &Ptr) -> bool {
-        dbg!(ptr);
-        dbg!(ptr.is_sym() && (ptr.1 as usize) < Self::built_in_count())
+        ptr.is_sym() && (ptr.1 as usize) < Self::built_in_count()
     }
 
     fn neutral_element(&self) -> F {
@@ -300,6 +302,70 @@ ascent! {
     ingress(expr) <-- eval_input(expr, env), if expr.is_cons();
 
     ////////////////////
+    // let binding
+
+    relation bind1(Ptr, Ptr, Ptr); // (expr, env, bindings-and-body)
+    relation bind2(Ptr, Ptr, Ptr, Ptr, Ptr); // (expr, env, body, this-env, bindings)
+
+    ingress(tail), bind1(expr, env, tail) <--
+        eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
+        let op = Memory::ptr_sym(*head, *head_value), if op.is_binding();
+
+    // // Signal rule
+    ingress(bindings), ingress(rest) <--
+        bind1(expr, env, tail),
+        cons_rel(bindings, rest, tail);
+
+    bind2(expr, env, body, env, bindings) <--
+        bind1(expr, env, tail),
+        cons_rel(bindings, rest, tail),
+        cons_rel(body, end, rest), if end.is_nil(); // TODO: error otherwise
+
+    eval_input(body, this_env) <--
+        bind2(expr, env, body, this_env, bindings),
+        if bindings.is_nil();
+
+    eval(expr, env, result) <--
+        bind2(expr, env, body, this_env, bindings),
+        if bindings.is_nil(),
+        eval(bod, this_env, result);
+
+    // Signal rule
+    ingress(binding), ingress(more_bindings) <--
+        bind2(expr, env, body, this_env, bindings),
+        cons_rel(binding, more_bindings, bindings);
+
+    // Signal rule
+    ingress(binding_tail) <--
+        bind2(expr, env, body, this_env, bindings),
+        cons_rel(binding, more_bindings, bindings),
+        cons_rel(var, binding_tail, binding);
+
+    // Signal rule
+     cons(var, val) <--
+        bind2(expr, env, body, this_env, bindings),
+        cons_rel(binding, more_bindings, bindings),
+        cons_rel(var, binding_tail, binding),
+        cons_rel(val, end, binding_tail), if end.is_nil(); // TODO: error otherwise
+
+    // Signal rule
+     cons(env_binding, this_env) <--
+        bind2(expr, env, body, this_env, bindings),
+        cons_rel(binding, more_bindings, bindings),
+        cons_rel(var, binding_tail, binding),
+        cons_rel(val, end, binding_tail), if end.is_nil(), // TODO: error otherwise
+        cons_rel(var, val, env_binding);
+
+    // This is the 'real rule'.
+     bind2(expr, env, body, new_env, more_bindings) <--
+        bind2(expr, env, body, this_env, bindings),
+        cons_rel(binding, more_bindings, bindings),
+        cons_rel(var, binding_tail, binding),
+        cons_rel(val, end, binding_tail), if end.is_nil(), // TODO: error otherwise
+        cons_rel(var, val, env_binding),
+        cons_rel(env_binding, this_env, new_env);
+
+    ////////////////////
     // fold -- default folding is fold_left
     relation fold(Ptr, Ptr, Sym, F, Ptr); // (expr, env, op, acc, tail)
 
@@ -539,6 +605,33 @@ mod test {
             test(x, val, Some(env));
             test(y, val2, Some(env));
             test(z, err, Some(env))
+        };
+
+        let prog = {
+            allocator().init();
+
+            let x = S::sym('x');
+            let y = S::sym('y');
+            let l = S::sym('l');
+            let v = F(9);
+            let v2 = F(10);
+
+            //(x 9)
+            let binding = S::list(vec![x.clone(), S::F(v)]);
+            // ((x 9))
+            let bindings = S::list(vec![binding]);
+            // (l ((x 9)) x)
+            let let_form: WidePtr = (&S::list(vec![l, bindings, x])).into();
+
+            test(let_form.into(), v.into(), None);
+
+            let binding2 = S::list(vec![y.clone(), S::F(v2)]);
+            let bindings2 = S::list(vec![binding, binding2]);
+            let let_form2: WidePtr = (&S::list(vec![l, bindings2, x])).into();
+            let let_form3: WidePtr = (&S::list(vec![l, bindings2, y])).into();
+
+            test(let_form2.into(), v.into(), None);
+            test(let_form3.into(), v2.into(), None)
         };
 
         println!("{}", prog.relation_sizes_summary());

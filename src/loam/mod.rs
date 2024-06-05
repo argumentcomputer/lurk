@@ -169,7 +169,7 @@ pub enum Sym {
     Opaque(Wide),
 }
 
-const BUILT_IN_CHAR_SYMS: [char; 4] = ['+', '-', '*', '/'];
+const BUILT_IN_CHAR_SYMS: [char; 5] = ['+', '-', '*', '/', 'l'];
 
 impl Sym {
     fn built_in() -> Vec<Self> {
@@ -216,6 +216,7 @@ impl Tagged for Cons {
     }
 }
 
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub enum Sexp {
     F(F),
     Sym(Sym),
