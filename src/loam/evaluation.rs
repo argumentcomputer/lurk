@@ -1,38 +1,43 @@
 use crate::loam::allocation::{allocator, Allocator};
-use crate::loam::{Cons, Elemental, Ptr, Sexp, Sym, Tag, Valuable, Wide, WidePtr, F, LE};
+use crate::loam::{Cons, Elemental, LEWrap, Ptr, Sexp, Sym, Tag, Valuable, Wide, WidePtr, F, LE};
+
+use p3_field::{AbstractField, PrimeField32};
 
 use ascent::{ascent, Dual};
 
 struct Memory {}
 
 impl Memory {
-    fn initial_sym_relation() -> Vec<(Wide, Dual<LE>)> {
+    fn initial_sym_relation() -> Vec<(Wide, Dual<LEWrap>)> {
         let syms = Sym::built_in();
 
         syms.iter()
             .enumerate()
-            .map(|(i, sym)| (sym.value(), Dual(i as LE)))
+            .map(|(i, sym)| (sym.value(), Dual(LEWrap(LE::from_canonical_u64(i as u64)))))
             .collect()
     }
-    fn initial_sym_counter() -> Vec<(LE,)> {
-        vec![(Sym::built_in().len() as LE,)]
+    fn initial_sym_addr() -> LE {
+        LE::from_canonical_u64(Sym::built_in_count() as u64)
     }
+
     fn sym_ptr(sym: Sym) -> Ptr {
         let addr = Sym::built_in()
             .iter()
             .position(|s| *s == sym)
             .expect("not a built-in symbol");
-        Ptr(Tag::Sym.elt(), addr as u32)
+        Ptr(Tag::Sym.elt(), LE::from_canonical_u64(addr as u64))
     }
 
-    fn ptr_sym(ptr: Ptr, value: Wide) -> Sym {
-        assert_eq!(Tag::Sym.elt(), ptr.0);
+    fn ptr_sym(ptr: Ptr, value: Wide) -> Option<Sym> {
+        if ptr.0 != Tag::Sym.elt() {
+            return None;
+        }
 
         let built_in = Sym::built_in();
-        if (ptr.1 as usize) < built_in.len() {
-            built_in[ptr.1 as usize]
+        if (ptr.1.as_canonical_u32() as usize) < built_in.len() {
+            Some(built_in[ptr.1.as_canonical_u32() as usize])
         } else {
-            Sym::Opaque(value)
+            Some(Sym::Opaque(value))
         }
     }
 
@@ -46,6 +51,10 @@ impl Sym {
         matches!(self, Self::Char('l'))
     }
 
+    fn is_lambda(&self) -> bool {
+        matches!(self, Self::Char('f'))
+    }
+
     fn is_left_foldable(&self) -> bool {
         // Note, all of these will be variadic.
         matches!(self, Self::Char('+' | '*'))
@@ -57,13 +66,13 @@ impl Sym {
     }
 
     fn is_built_in(ptr: &Ptr) -> bool {
-        ptr.is_sym() && (ptr.1 as usize) < Self::built_in_count()
+        ptr.is_sym() && (ptr.1.as_canonical_u32() as usize) < Self::built_in_count()
     }
 
     fn neutral_element(&self) -> F {
         match self {
-            Self::Char('+' | '-') => F(0),
-            Self::Char('*' | '/') => F(1),
+            Self::Char('+' | '-') => F(LE::zero()),
+            Self::Char('*' | '/') => F(LE::one()),
             _ => unimplemented!(),
         }
     }
@@ -111,7 +120,7 @@ ascent! {
     relation hash4_rel(Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, digest)
 
     relation fun(Ptr, Ptr, Ptr); // (args, body, closed_env)
-    relation hash6(Ptr, Wide, Wide, Wide, Wide); // (a, b, c, d, e, f)
+    relation hash6(Ptr, Wide, Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, e, f)
     relation unhash6(LE, Wide, Ptr); // (tag, digest, ptr)
     relation hash6_rel(Wide, Wide, Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, e, f, digest)
 
@@ -144,20 +153,17 @@ ascent! {
     relation cons_rel(Ptr, Ptr, Ptr); // (car, cdr, cons)
 
     // Memory to support conses allocated by digest or contents.
-    lattice cons_digest_mem(Wide, Dual<LE>); // (value, addr)
-    lattice cons_mem(Ptr, Ptr, Dual<LE>); // (car, cdr, addr)
+    lattice cons_digest_mem(Wide, Dual<LEWrap>); // (value, addr)
+    lattice cons_mem(Ptr, Ptr, Dual<LEWrap>); // (car, cdr, addr)
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
-    cons_digest_mem(value, Dual(allocator().alloc_addr(Tag::Cons.elt()))) <--
-        alloc(tag, value),
-        if *tag == Tag::Cons.elt(),
-        tag(tag, wide_tag);
+    cons_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::zero())))) <-- alloc(tag, value), if *tag == Tag::Cons.elt();
 
     // Convert addr to ptr and register ptr relations.
-    ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0);
+    ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0.0);
 
     // Populating cons(...) triggers allocation in cons mem.
-    cons_mem(car, cdr, Dual(allocator().alloc_addr(Tag::Cons.elt()))) <-- cons(car, cdr);
+    cons_mem(car, cdr, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::zero())))) <-- cons(car, cdr);
 
     // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
     cons_digest_mem(digest, addr) <--
@@ -166,7 +172,7 @@ ascent! {
         ptr_tag(car, car_tag), ptr_tag(cdr, cdr_tag),
         hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest);
 
-    cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0)) <-- cons_mem(car, cdr, addr);
+    cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0.0)) <-- cons_mem(car, cdr, addr);
 
     ptr(cons), ptr_tag(cons, Tag::Cons.value()) <-- cons_rel(_, _, cons);
 
@@ -177,17 +183,14 @@ ascent! {
 
     relation fun_rel(Ptr, Ptr, Ptr, Ptr); // (args, body, closed-env, fun)
 
-    lattice fun_digest_mem(Wide, Dual<LE>); // (value, addr)
-    lattice fun_mem(Ptr, Ptr, Ptr, Dual<LE>); // (args, body, closed-env, addr)
+    lattice fun_digest_mem(Wide, Dual<LEWrap>); // (value, addr)
+    lattice fun_mem(Ptr, Ptr, Ptr, Dual<LEWrap>); // (args, body, closed-env, addr)
 
-    fun_digest_mem(value, Dual(allocator().alloc_addr(Tag::Fun.elt()))) <--
-        alloc(tag, value),
-        if *tag == Tag::Fun.elt(),
-        tag(tag, wide_tag);
+    fun_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Fun.elt(), LE::zero())))) <-- alloc(tag, value), if *tag == Tag::Fun.elt();
 
-    ptr(ptr), ptr_tag(ptr, Tag::Fun.value()), ptr_value(ptr, value) <-- fun_digest_mem(value, addr), let ptr = Ptr(Tag::Fun.elt(), addr.0);
+    ptr(ptr), ptr_tag(ptr, Tag::Fun.value()), ptr_value(ptr, value) <-- fun_digest_mem(value, addr), let ptr = Ptr(Tag::Fun.elt(), addr.0.0);
 
-    fun_mem(args, body, closed_env, Dual(allocator().alloc_addr(Tag::Fun.elt()))) <-- fun(args, body, closed_env);
+    fun_mem(args, body, closed_env, Dual(LEWrap(allocator().alloc_addr(Tag::Fun.elt(), LE::zero())))) <-- fun(args, body, closed_env);
 
     fun_digest_mem(digest, addr) <--
         fun_mem(args, body, closed_env, addr),
@@ -195,7 +198,7 @@ ascent! {
         ptr_tag(args, args_tag), ptr_tag(body, body_tag), ptr_tag(closed_env, closed_env_tag),
         hash6_rel(args_tag, args_value, body_tag, body_value, closed_env_tag, closed_env_value, digest);
 
-    fun_rel(args, body, closed_env, Ptr(Tag::Fun.elt(), addr.0)) <-- fun_mem(args, body, closed_env, addr);
+    fun_rel(args, body, closed_env, Ptr(Tag::Fun.elt(), addr.0.0)) <-- fun_mem(args, body, closed_env, addr);
 
     ptr(fun), ptr_tag(fun, Tag::Fun.value()) <-- fun_rel(_, _, _, fun);
 
@@ -203,10 +206,16 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
     // Sym
 
-    lattice sym_digest_mem(Wide, Dual<LE>) = Memory::initial_sym_relation(); // (digest, addr)
+    lattice sym_digest_mem(Wide, Dual<LEWrap>) = Memory::initial_sym_relation(); // (digest, addr)
     // Convert addr to ptr and register ptr relations.
-    ptr(ptr), ptr_tag(ptr, Tag::Sym.value()), ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), addr.0);
+    ptr(ptr), ptr_tag(ptr, Tag::Sym.value()), ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), addr.0.0);
     // todo: sym_value
+
+    // Populating alloc(...) triggers allocation in sym_digest_mem.
+    sym_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Sym.elt(), Memory::initial_sym_addr())))) <-- alloc(tag, value), if *tag == Tag::Sym.elt();
+
+    // Convert addr to ptr and register ptr relations.
+    ptr(ptr), ptr_tag(ptr, Tag::Sym.value()), ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), addr.0.0);
 
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -230,12 +239,15 @@ ascent! {
         ptr_tag(env_ptr, env.0), ptr_value(env_ptr, env.1);
 
     // mark ingress conses for unhashing.
-    unhash4(Tag::Cons.elt(), digest, ptr) <--
-        ingress(ptr), if ptr.is_cons(),
-        ptr_value(ptr, digest);
+    unhash4(Tag::Cons.elt(), digest, ptr) <-- ingress(ptr), if ptr.is_cons(), ptr_value(ptr, digest);
 
     // unhash to acquire preimage pointers from digest.
     hash4_rel(a, b, c, d, digest) <-- unhash4(_, digest, ptr), let [a, b, c, d] = allocator().unhash4(digest).unwrap();
+
+    // mark ingress funs for unhashing
+    unhash6(Tag::Fun.elt(), digest, ptr) <-- ingress(ptr), if ptr.is_fun(), ptr_value(ptr, digest);
+
+    hash6_rel(a, b, c, d, e, f, digest) <-- unhash6(_, digest, ptr), let [a, b, c, d, e, f] = allocator().unhash6(digest).unwrap();
 
     alloc(car_tag, car_value),
     alloc(cdr_tag, cdr_value) <--
@@ -244,17 +256,17 @@ ascent! {
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
 
-    f_value(Ptr(Tag::F.elt(),f), Wide::widen(f)) <-- alloc(&Tag::F.elt(), value), let f = value.f();
     ptr(ptr), ptr_value(ptr, Wide::widen(f)) <--
         alloc(&Tag::Nil.elt(), value), let f = value.f(), let ptr = Ptr(Tag::Nil.elt(), f);
+    f_value(Ptr(Tag::F.elt(),f), value) <-- alloc(&Tag::F.elt(), value), let f = value.f();
 
-    f_value(Ptr(Tag::Sym.elt(),f), Wide::widen(f)) <-- alloc(&Tag::Sym.elt(), value), let f = value.f();
+    ptr(ptr), ptr_value(ptr, value) <-- alloc(&Tag::Nil.elt(), value), let f = value.f(), let ptr = Ptr(Tag::Nil.elt(), f);
 
-    cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0)),
+    cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0.0)),
     cons_mem(car, cdr, addr) <--
-        hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
+        hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest),
         cons_digest_mem(digest, addr),
-        ptr_tag(car, wide_car_tag), ptr_tag(cdr, wide_cdr_tag),
+        ptr_tag(car, car_tag), ptr_tag(cdr, cdr_tag),
         ptr_value(car, car_value), ptr_value(cdr, cdr_value);
 
     ptr(cons), car(cons, car), cdr(cons, cdr) <-- cons_rel(car, cdr, cons);
@@ -273,13 +285,22 @@ ascent! {
     // The output_ptr is marked for egress.
     egress(ptr) <-- output_ptr(ptr);
 
+    // Cons
     egress(car), egress(cdr) <-- egress(cons), cons_rel(car, cdr, cons);
 
+    // Fun
+    egress(args), egress(body), egress(closed_env) <-- egress(fun), fun_rel(args, body, closed_env, fun);
+
+    // F
     ptr_tag(ptr, Tag::F.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_f();
+
+    // Err
     ptr_tag(ptr, Tag::Err.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_err();
 
+    // Construct output_expr from output_ptr
     output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), ptr_value(ptr, value), ptr_tag(ptr, wide_tag);
 
+    // Cons
     hash4(cons, car_tag, car_value, cdr_tag, cdr_value) <--
         egress(cons),
         cons_rel(car, cdr, cons),
@@ -294,6 +315,34 @@ ascent! {
         hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, _),
         ptr_tag(car, wide_car_tag), ptr_tag(cdr, wide_cdr_tag),
         ptr_value(car, car_value), ptr_value(cdr, cdr_value);
+
+    alloc(car_tag, car_value), alloc(cdr_tag, cdr_value) <--
+        cons_digest_mem(digest, addr),
+        hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
+        tag(car_tag, wide_car_tag), tag(cdr_tag, wide_cdr_tag);
+
+    // Fun
+    hash6(fun, args_tag, args_value, body_tag, body_value, closed_env_tag, closed_env_value) <--
+        egress(fun),
+        fun_rel(args, body, closed_env, fun),
+        ptr_tag(args, args_tag),
+        ptr_value(args, args_value),
+        ptr_tag(body, body_tag),
+        ptr_value(body, body_value),
+        ptr_tag(closed_env, closed_env_tag),
+        ptr_value(closed_env, closed_env_value);
+
+    hash6_rel(a, b, c, d, e, f, allocator().hash6(*a, *b, *c, *d, *e, *f)) <-- hash6(ptr, a, b, c, d, e, f);
+
+    ptr(args), ptr(body), ptr(closed_env) <--
+        hash6_rel(args_tag, args_value, body_tag, body_value, closed_env_tag, closed_env_value, _),
+        ptr_tag(args, args_tag), ptr_tag(body, body_tag), ptr_tag(closed_env, closed_env_tag),
+        ptr_value(args, args_value), ptr_value(body, body_value), ptr_value(closed_env, closed_env_value);
+
+    alloc(args_tag, args_value), alloc(body_tag, body_value), alloc(closed_env_tag, closed_env_value) <--
+        fun_digest_mem(digest, addr),
+        hash6_rel(wide_args_tag, args_value, wide_body_tag, body_value, wide_closed_env_tag, closed_env_value, digest),
+        tag(args_tag, wide_args_tag), tag(body_tag, wide_body_tag), tag(closed_env_tag, wide_closed_env_tag);
 
     ////////////////////////////////////////////////////////////////////////////////
     // eval
@@ -320,7 +369,7 @@ ascent! {
     ingress(env), lookup(expr, env, expr, env) <-- eval_input(expr, env), if expr.is_sym() && !Sym::is_built_in(expr);
 
     // Unbound variable: If env is nil during lookup, var is unbound. Return an an error.
-    eval(input_expr, input_env, Ptr(Tag::Err.elt(), 0)) <-- lookup(input_expr, input_env, _, env), if env.is_nil();
+    eval(input_expr, input_env, Ptr(Tag::Err.elt(), LE::zero())) <-- lookup(input_expr, input_env, _, env), if env.is_nil();
 
     // If env is a cons, ingress the first binding.
     ingress(binding) <-- lookup(input_expr, input_env, _, env), cons_rel(binding, tail, env);
@@ -336,6 +385,83 @@ ascent! {
     // expr is Cons
     ingress(expr) <-- eval_input(expr, env), if expr.is_cons();
 
+    relation eval_head_parse(Ptr, Ptr, Ptr, Ptr); // (expr, env, head, rest)
+
+    // if head is a cons [or eventually other non-built-in]
+    ingress(head),
+    eval_head_parse(expr, env, head, rest),
+    eval_input(head, env) <--
+        eval_input(expr, env), cons_rel(head, rest, expr), if head.is_cons(); // || head.is_sym() && todo!("check for non built-in symbol");
+
+    // construct new expression to evaluate, using evaled head
+    cons(evaled_head, rest) <--
+        eval_head_parse(expr, env, head, rest),
+        eval(head, env, evaled_head);
+
+    // mark the new expression for evaluation
+    // Signal rule
+    ingress(rest),
+    eval_input(new_expr, env) <--
+        eval_head_parse(expr, env, head, rest),
+        eval(head, env, evaled_head),
+        cons_rel(evaled_head, rest, new_expr);
+
+    // register evaluation result
+    eval(expr, env, result) <--
+        eval_head_parse(expr, env, head, rest),
+        eval(head, env, evaled_head),
+        cons_rel(evaled_head, rest, new_expr),
+        eval(new_expr, env, result);
+
+    ////////////////////
+
+    // TODO: parse_fun relation?
+
+    relation parse_fun_call(Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, Ptr); // (expr, env, fun, args, body, closed_env, rest)
+
+    ingress(args), ingress(rest),
+    parse_fun_call(expr, env, fun, args, body, closed_env, rest) <--
+        eval_input(expr, env),
+        cons_rel(fun, rest, expr),
+        fun_rel(args, body, closed_env, fun);
+
+    // base case: args list is empty
+    eval_input(body, closed_env) <--
+        parse_fun_call(expr, env, fun, args, body, closed_env, rest),
+        if args.is_nil() && rest.is_nil(); // TODO: error if arg is nil, but rest is not.
+
+    // register base-case evaluation result
+    eval(expr, env, result) <--
+        parse_fun_call(expr, env, fun, args, body, closed_env, rest),
+        if args.is_nil(),
+        eval(body, closed_env, result);
+
+    cons(arg, val) <--
+        parse_fun_call(expr, env, fun, args, body, closed_env, rest),
+        cons_rel(arg, more_args, args),
+        cons_rel(val, more_vals, rest);
+
+    cons(binding, closed_env) <--
+        parse_fun_call(expr, env, fun, args, body, closed_env, rest),
+        cons_rel(arg, more_args, args),
+        cons_rel(val, more_vals, rest),
+        cons_rel(arg, val, binding);
+
+    eval_input(body, new_closed_env) <--
+        parse_fun_call(expr, env, fun, args, body, closed_env, rest),
+        cons_rel(arg, more_args, args),
+        cons_rel(val, more_vals, rest),
+        cons_rel(arg, val, binding),
+        cons_rel(binding, closed_env, new_closed_env);
+
+    eval(expr, env, result) <--
+        parse_fun_call(expr, env, fun, args, body, closed_env, rest),
+        cons_rel(arg, more_args, args),
+        cons_rel(val, more_vals, rest),
+        cons_rel(arg, val, binding),
+        cons_rel(binding, closed_env, new_closed_env),
+        eval(body, new_closed_env, result);
+
     ////////////////////
     // let binding
 
@@ -348,14 +474,14 @@ ascent! {
 
     ingress(tail), bind_parse(expr, env, tail) <--
         eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
-        let op = Memory::ptr_sym(*head, *head_value), if op.is_binding();
+        let op = Memory::ptr_sym(*head, *head_value), if op.is_some() && op.unwrap().is_binding();
 
     // // Signal rule
     ingress(bindings), ingress(rest) <--
         bind_parse(expr, env, tail),
         cons_rel(bindings, rest, tail);
 
-    // Base case, bindings list is empty.
+    // Base case: bindings list is empty.
     bind(expr, env, body, env, bindings) <--
         bind_parse(expr, env, tail),
         cons_rel(bindings, rest, tail),
@@ -421,12 +547,44 @@ ascent! {
     //     cons_rel(env_binding, extended_env, new_env);
 
     ////////////////////
+    // first-element is not built-in
+
+    ////////////////////
+    // lambda
+
+    relation lambda_parse(Ptr, Ptr, Ptr); // (expr, env, args-and-body)
+
+    ingress(tail), lambda_parse(expr, env, tail) <--
+        eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
+        let op = Memory::ptr_sym(*head, *head_value), if op.is_some() && op.unwrap().is_lambda();
+
+    // // Signal rule
+    ingress(rest) <--
+        lambda_parse(expr, env, tail),
+        cons_rel(args, rest, tail);
+
+    // create a fun from a parsed lambda evaluation
+    fun(args, body, env) <--
+        lambda_parse(expr, env, tail),
+        cons_rel(args, rest, tail),
+        cons_rel(body, end, rest), if end.is_nil(); // TODO: otherwise error
+
+    // register a fun created from a lambda expression as its evaluation
+    eval(expr, env, fun) <--
+        eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
+        let op = Memory::ptr_sym(*head, *head_value), if op.is_some() && op.unwrap().is_lambda(),
+        lambda_parse(expre, env, tail),
+        fun(args, body, env),
+        fun_rel(args, body, env, fun);
+
+    ////////////////////
     // fold -- default folding is fold_left
     relation fold(Ptr, Ptr, Sym, F, Ptr); // (expr, env, op, acc, tail)
 
     // If head is left-foldable op, reduce it with its neutral element.
-    ingress(tail), fold(expr, env, op, op.neutral_element(), tail) <--
-        eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value), let op = Memory::ptr_sym(*head, *head_value), if op.is_left_foldable();
+    ingress(tail), fold(expr, env, op.unwrap(), op.unwrap().neutral_element(), tail) <--
+        eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
+        let op = Memory::ptr_sym(*head, *head_value), if op.is_some() && op.unwrap().is_left_foldable();
 
     // When left-folding with tail that is a cons, ingress its car and cdr, and eval the car.
     eval_input(car, env), ingress(car), ingress(cdr) <--
@@ -446,8 +604,9 @@ ascent! {
     relation fold_right(Ptr, Ptr, Sym, Ptr); // (expr, env, op, tail)
 
     // If head is right-foldable op, initiate fold_right.
-    ingress(tail), fold_right(expr, env, op, tail) <--
-        eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value), let op = Memory::ptr_sym(*head, *head_value), if op.is_right_foldable();
+    ingress(tail), fold_right(expr, env, op.unwrap(), tail) <--
+        eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
+        let op = Memory::ptr_sym(*head, *head_value), if op.is_some() && op.unwrap().is_right_foldable();
 
     // When right-folding with tail that is a cons, ingress its car and cdr, and eval the car.
     eval_input(car, env), ingress(car), ingress(cdr) <-- fold_right(expr, env, op, tail), cons_rel(car, cdr, tail);
@@ -489,13 +648,13 @@ mod test {
             prog
         };
 
-        let err = WidePtr(Tag::Err.value(), Wide::widen(0));
+        let err = WidePtr(Tag::Err.value(), Wide::widen(LE::from_canonical_u32(0)));
 
         let prog = {
             allocator().init();
 
             // F is self-evaluating.
-            let f = F(123);
+            let f = F(LE::from_canonical_u32(123));
             test(f.into(), f.into(), None);
         };
 
@@ -514,34 +673,43 @@ mod test {
             // (+)
             let add = Cons::list(vec![S::sym('+')]);
 
-            test(add.into(), F(0).into(), None)
+            test(add.into(), F(LE::from_canonical_u32(0)).into(), None)
         };
 
         let prog = {
             allocator().init();
 
             // (+ 1)
-            let add = Cons::list(vec![S::sym('+'), S::f(1)]);
+            let add = Cons::list(vec![S::sym('+'), S::f(LE::from_canonical_u32(1))]);
 
-            test(add.into(), F(1).into(), None)
+            test(add.into(), F(LE::from_canonical_u32(1)).into(), None)
         };
 
         let prog = {
             allocator().init();
 
             // (+ 1 2)
-            let add = Cons::list(vec![S::sym('+'), S::f(1), S::f(2)]);
+            let add = Cons::list(vec![
+                S::sym('+'),
+                S::f(LE::from_canonical_u32(1)),
+                S::f(LE::from_canonical_u32(2)),
+            ]);
 
-            test(add.into(), F(3).into(), None)
+            test(add.into(), F(LE::from_canonical_u32(3)).into(), None)
         };
 
         let prog = {
             allocator().init();
 
             // (+ 1 2 3)
-            let add = Cons::list(vec![S::sym('+'), S::f(1), S::f(2), S::f(3)]);
+            let add = Cons::list(vec![
+                S::sym('+'),
+                S::f(LE::from_canonical_u32(1)),
+                S::f(LE::from_canonical_u32(2)),
+                S::f(LE::from_canonical_u32(3)),
+            ]);
 
-            test(add.into(), F(6).into(), None)
+            test(add.into(), F(LE::from_canonical_u32(6)).into(), None)
         };
 
         let prog = {
@@ -550,34 +718,43 @@ mod test {
             // (*)
             let mul = Cons::list(vec![S::sym('*')]);
 
-            test(mul.into(), F(1).into(), None)
+            test(mul.into(), F(LE::from_canonical_u32(1)).into(), None)
         };
 
         let prog = {
             allocator().init();
 
             // (* 2)
-            let mul = Cons::list(vec![S::sym('*'), S::f(2)]);
+            let mul = Cons::list(vec![S::sym('*'), S::f(LE::from_canonical_u32(2))]);
 
-            test(mul.into(), F(2).into(), None)
+            test(mul.into(), F(LE::from_canonical_u32(2)).into(), None)
         };
 
         let prog = {
             allocator().init();
 
             // (* 2 3)
-            let mul = Cons::list(vec![S::sym('*'), S::f(2), S::f(3)]);
+            let mul = Cons::list(vec![
+                S::sym('*'),
+                S::f(LE::from_canonical_u32(2)),
+                S::f(LE::from_canonical_u32(3)),
+            ]);
 
-            test(mul.into(), F(6).into(), None)
+            test(mul.into(), F(LE::from_canonical_u32(6)).into(), None)
         };
 
         let prog = {
             allocator().init();
 
             // (+ 2 3 4)
-            let mul = Cons::list(vec![S::sym('*'), S::f(2), S::f(3), S::f(4)]);
+            let mul = Cons::list(vec![
+                S::sym('*'),
+                S::f(LE::from_canonical_u32(2)),
+                S::f(LE::from_canonical_u32(3)),
+                S::f(LE::from_canonical_u32(4)),
+            ]);
 
-            test(mul.into(), F(24).into(), None)
+            test(mul.into(), F(LE::from_canonical_u32(24)).into(), None)
         };
 
         let prog = {
@@ -586,20 +763,29 @@ mod test {
             // (+ 5 (* 3 4))
             let mul = Cons::list(vec![
                 S::sym('+'),
-                S::f(5),
-                S::list(vec![S::sym('*'), S::f(3), S::f(4)]),
+                S::f(LE::from_canonical_u32(5)),
+                S::list(vec![
+                    S::sym('*'),
+                    S::f(LE::from_canonical_u32(3)),
+                    S::f(LE::from_canonical_u32(4)),
+                ]),
             ]);
 
-            test(mul.into(), F(17).into(), None)
+            test(mul.into(), F(LE::from_canonical_u32(17)).into(), None)
         };
 
         let prog = {
             allocator().init();
 
             // (/ 10 2 5)
-            let x = Cons::list(vec![S::sym('/'), S::f(10), S::f(2), S::f(5)]);
+            let x = Cons::list(vec![
+                S::sym('/'),
+                S::f(LE::from_canonical_u32(10)),
+                S::f(LE::from_canonical_u32(2)),
+                S::f(LE::from_canonical_u32(5)),
+            ]);
 
-            test(x.into(), F(1).into(), None)
+            test(x.into(), F(LE::from_canonical_u32(1)).into(), None)
         };
 
         let prog = {
@@ -608,21 +794,31 @@ mod test {
             // (+ 5 (-) (*) (/) (+) (* 3 4 (- 7 2 1)) (/ 10 2 5))
             let x = Cons::list(vec![
                 S::sym('+'),
-                S::f(5),
+                S::f(LE::from_canonical_u32(5)),
                 S::list(vec![S::sym('-')]),
                 S::list(vec![S::sym('*')]),
                 S::list(vec![S::sym('/')]),
                 S::list(vec![S::sym('+')]),
                 S::list(vec![
                     S::sym('*'),
-                    S::f(3),
-                    S::f(4),
-                    S::list(vec![S::sym('-'), S::f(7), S::f(2), S::f(1)]),
+                    S::f(LE::from_canonical_u32(3)),
+                    S::f(LE::from_canonical_u32(4)),
+                    S::list(vec![
+                        S::sym('-'),
+                        S::f(LE::from_canonical_u32(7)),
+                        S::f(LE::from_canonical_u32(2)),
+                        S::f(LE::from_canonical_u32(1)),
+                    ]),
                 ]),
-                S::list(vec![S::sym('/'), S::f(10), S::f(2), S::f(5)]),
+                S::list(vec![
+                    S::sym('/'),
+                    S::f(LE::from_canonical_u32(10)),
+                    S::f(LE::from_canonical_u32(2)),
+                    S::f(LE::from_canonical_u32(5)),
+                ]),
             ]);
 
-            test(x.into(), F(56).into(), None)
+            test(x.into(), F(LE::from_canonical_u32(56)).into(), None)
         };
 
         let prog = {
@@ -637,7 +833,7 @@ mod test {
             allocator().init();
 
             let x: WidePtr = (&Sym::Char('x')).into();
-            let val: WidePtr = F(9).into();
+            let val: WidePtr = F(LE::from_canonical_u32(9)).into();
 
             // ((x . 9))
             let env = Cons::bind(x, val, empty_env);
@@ -651,8 +847,8 @@ mod test {
             let x: WidePtr = (&Sym::Char('x')).into();
             let y: WidePtr = (&Sym::Char('y')).into();
             let z: WidePtr = (&Sym::Char('z')).into();
-            let val: WidePtr = F(9).into();
-            let val2: WidePtr = F(10).into();
+            let val: WidePtr = F(LE::from_canonical_u32(9)).into();
+            let val2: WidePtr = F(LE::from_canonical_u32(10)).into();
 
             // ((y . 10) (x . 9))
             let env = Cons::bind(y, val2, Cons::bind(x, val, empty_env));
@@ -668,8 +864,8 @@ mod test {
             let x = S::sym('x');
             let y = S::sym('y');
             let l = S::sym('l');
-            let v = F(9);
-            let v2 = F(10);
+            let v = F(LE::from_canonical_u32(9));
+            let v2 = F(LE::from_canonical_u32(10));
 
             //(x 9)
             let binding = S::list(vec![x.clone(), S::F(v)]);
@@ -687,6 +883,55 @@ mod test {
 
             test(let_form2.into(), v.into(), None);
             test(let_form3.into(), v2.into(), None)
+        };
+
+        let prog: EvaluationProgram = {
+            allocator().init();
+
+            // ((f (x) (+ x 1)) 7)
+
+            let f = S::sym('f');
+            let l = S::sym('l');
+            let x = S::sym('x');
+            let plus = S::sym('+');
+            let one = S::f(LE::from_canonical_u32(1));
+            let seven = S::f(LE::from_canonical_u32(7));
+            let eight = S::f(LE::from_canonical_u32(8));
+
+            let body = one;
+            // (f () 1)
+            let lambda = S::list(vec![f, S::Nil, body]);
+            // ((f () 1))
+            let expr = S::list(vec![lambda]);
+
+            // (x)
+            let args1 = S::list(vec![x]);
+            // (+ x 1)
+            let body1 = S::list(vec![plus, x, one]);
+            // (f (x) (+ x 1))
+            let lambda1 = S::list(vec![f, args1, body1]);
+            let expr1 = S::list(vec![lambda1, seven]);
+
+            let args_wide_ptr: WidePtr = (&args1).into();
+            let body_wide_ptr: WidePtr = (&body1).into();
+            let expected_fun_digest = allocator().hash6(
+                args_wide_ptr.0,
+                args_wide_ptr.1,
+                body_wide_ptr.0,
+                body_wide_ptr.1,
+                empty_env.0,
+                empty_env.1,
+            );
+            let expected_fun = WidePtr(Tag::Fun.value(), expected_fun_digest);
+
+            test((&lambda1).into(), expected_fun, None);
+
+            allocator().reset_allocation();
+            test((&expr).into(), (&one).into(), None);
+
+            allocator().reset_allocation();
+            // ((f (x) (+ x 1)) 7) -> 8
+            test((&expr1).into(), (&eight).into(), None)
         };
 
         println!("{}", prog.relation_sizes_summary());
@@ -715,6 +960,11 @@ mod test {
             eval_input,
             eval,
             cons_digest_mem,
+            fun_rel,
+            fun_mem,
+            fun,
+            sym_digest_mem,
+            parse_fun_call,
             ..
         } = prog;
 
@@ -726,15 +976,23 @@ mod test {
             eval_input,
             eval,
             hash4,
+            unhash4,
             hash4_rel,
             output_ptr,
             output_expr,
             ptr_value,
+            cons,
             cons_rel,
             cons_mem,
             cons_digest_mem,
             alloc,
-            egress
+            ingress,
+            egress,
+            fun_rel,
+            fun_mem,
+            fun,
+            sym_digest_mem,
+            parse_fun_call,
         );
 
         // panic!("uiop");

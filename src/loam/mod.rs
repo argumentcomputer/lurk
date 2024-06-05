@@ -1,9 +1,15 @@
+use std::cmp::Ordering;
+
+use ascent::Lattice;
+use p3_baby_bear::BabyBear;
+use p3_field::{AbstractField, PrimeField32};
+
 mod allocation;
 mod evaluation;
 
 use allocation::allocator;
 
-pub type LE = u32;
+pub type LE = BabyBear;
 
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub enum Tag {
@@ -13,6 +19,26 @@ pub enum Tag {
     Sym,
     Fun,
     Err,
+}
+
+#[derive(Clone, Copy, Debug, Ord, PartialEq, Eq, Hash)]
+struct LEWrap(LE);
+
+impl PartialOrd for LEWrap {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.0
+            .as_canonical_u32()
+            .partial_cmp(&other.0.as_canonical_u32())
+    }
+}
+
+impl Lattice for LEWrap {
+    fn meet(self, other: Self) -> Self {
+        self.min(other)
+    }
+    fn join(self, other: Self) -> Self {
+        self.max(other)
+    }
 }
 
 trait Elemental {
@@ -35,14 +61,14 @@ impl<T: Elemental> Valuable for T {
 
 impl Elemental for Tag {
     fn elt(&self) -> LE {
-        match self {
+        LE::from_canonical_u32(match self {
             Self::F => 0,
             Self::Cons => 1,
             Self::Nil => 2,
             Self::Sym => 3,
             Self::Fun => 4,
             Self::Err => 5,
-        }
+        })
     }
 }
 
@@ -83,7 +109,7 @@ pub struct Ptr(pub LE, pub LE);
 
 impl Ptr {
     fn nil() -> Self {
-        Self(Tag::Nil.elt(), 0)
+        Self(Tag::Nil.elt(), LE::from_canonical_u32(0))
     }
     fn f(val: LE) -> Self {
         Self(Tag::F.elt(), val)
@@ -100,6 +126,9 @@ impl Ptr {
     fn is_sym(&self) -> bool {
         self.0 == Tag::Sym.elt()
     }
+    fn is_fun(&self) -> bool {
+        self.0 == Tag::Fun.elt()
+    }
     fn is_err(&self) -> bool {
         self.0 == Tag::Err.elt()
     }
@@ -115,8 +144,8 @@ impl From<&F> for Ptr {
 pub struct Wide(pub [LE; 8]);
 
 impl Wide {
-    pub const fn widen(elt: LE) -> Wide {
-        let mut v = [0u32; 8];
+    pub fn widen(elt: LE) -> Self {
+        let mut v = [LE::zero(); 8];
         v[0] = elt;
         Wide(v)
     }
@@ -143,7 +172,7 @@ pub struct WidePtr(pub Wide, pub Wide);
 
 impl WidePtr {
     fn nil() -> Self {
-        Self(Tag::Nil.value(), Wide::widen(0))
+        Self(Tag::Nil.value(), Wide::widen(LE::from_canonical_u32(0)))
     }
 }
 
@@ -171,7 +200,7 @@ pub enum Sym {
     Opaque(Wide),
 }
 
-const BUILT_IN_CHAR_SYMS: [char; 5] = ['+', '-', '*', '/', 'l'];
+const BUILT_IN_CHAR_SYMS: [char; 6] = ['+', '-', '*', '/', 'l', 'f'];
 
 impl Sym {
     fn built_in() -> Vec<Self> {
@@ -186,7 +215,7 @@ impl Sym {
 impl Valuable for Sym {
     fn value(&self) -> Wide {
         match self {
-            Self::Char(char) => Wide::widen((*char).into()),
+            Self::Char(char) => Wide::widen(LE::from_canonical_u32((*char).into())),
             Self::Opaque(value) => *value,
         }
     }
@@ -237,6 +266,19 @@ impl Sexp {
     pub fn list(elts: Vec<Sexp>) -> Self {
         Self::Cons(Cons::list_x(elts))
     }
+
+    pub fn car(&self) -> Option<WidePtr> {
+        match self {
+            Self::Cons(cons) => Some(cons.car),
+            _ => None,
+        }
+    }
+    pub fn cdr(&self) -> Option<WidePtr> {
+        match self {
+            Self::Cons(cons) => Some(cons.cdr),
+            _ => None,
+        }
+    }
 }
 
 impl Valuable for Sexp {
@@ -245,7 +287,7 @@ impl Valuable for Sexp {
             Self::F(f) => f.value(),
             Self::Sym(sym) => sym.value(),
             Self::Cons(cons) => cons.value(),
-            Self::Nil => Wide::widen(0),
+            Self::Nil => Wide::widen(LE::from_canonical_u32(0)),
         }
     }
 }
@@ -321,17 +363,32 @@ mod test {
     fn test_cons_list() {
         let l = Cons::list(vec![
             Sexp::Sym(Sym::Char('+')),
-            Sexp::F(F(1)),
-            Sexp::F(F(2)),
+            Sexp::F(F(LE::from_canonical_u32(1))),
+            Sexp::F(F(LE::from_canonical_u32(2))),
         ]);
 
         assert_eq!(
             WidePtr(
-                Wide([1, 0, 0, 0, 0, 0, 0, 0]),
                 Wide([
-                    3864046529, 430932103, 4182774374, 1056266594, 3890674019, 2613686248,
-                    848015655, 4249421387
-                ])
+                    LE::one(),
+                    LE::zero(),
+                    LE::zero(),
+                    LE::zero(),
+                    LE::zero(),
+                    LE::zero(),
+                    LE::zero(),
+                    LE::zero(),
+                ]),
+                Wide([
+                    LE::from_canonical_u32(1317489235),
+                    LE::from_canonical_u32(988355858),
+                    LE::from_canonical_u32(377021789),
+                    LE::from_canonical_u32(1625298703),
+                    LE::from_canonical_u32(1385378477),
+                    LE::from_canonical_u32(297630406),
+                    LE::from_canonical_u32(739282074),
+                    LE::from_canonical_u32(37715763)
+                ]),
             ),
             l
         );

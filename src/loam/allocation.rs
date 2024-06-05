@@ -3,8 +3,10 @@ use std::hash::Hash;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use ascent::{ascent, Dual};
+use p3_field::{AbstractField, Field, PrimeField32};
 
-use crate::loam::{Elemental, Ptr, Tag, Valuable, Wide, WidePtr, F, LE};
+use crate::lair::hasher::{Hasher, LurkHasher};
+use crate::loam::{Elemental, LEWrap, Ptr, Tag, Valuable, Wide, WidePtr, F, LE};
 
 // Because of how the macros work, it's not easy (or possible) to pass a per-invocation structure like the `Allocator`
 // into the program, while also having access to the program struct itself. However, that access is extremely useful
@@ -22,83 +24,99 @@ pub fn allocator() -> MutexGuard<'static, Allocator> {
         .expect("poisoned")
 }
 
-#[derive(Debug, Default, Hash)]
+#[derive(Default)]
 pub struct Allocator {
     allocation_map: BTreeMap<LE, LE>,
     digest_cache: BTreeMap<Vec<Wide>, Wide>,
     preimage_cache: BTreeMap<Wide, Vec<Wide>>,
+    hasher: LurkHasher,
 }
 
 impl Allocator {
     pub fn init(&mut self) {
         self.allocation_map = Default::default();
+        self.hasher = Default::default();
         self.digest_cache = Default::default();
         self.preimage_cache = Default::default();
     }
 
-    pub fn alloc(&mut self, tag: LE) -> Ptr {
-        let idx = self.alloc_addr(tag);
-
-        Ptr(tag, idx)
+    pub fn reset_allocation(&mut self) {
+        self.allocation_map = Default::default();
     }
 
-    pub fn alloc_addr(&mut self, tag: LE) -> LE {
+    pub fn alloc_addr(&mut self, tag: LE, initial_addr: LE) -> LE {
         let idx = *self
             .allocation_map
             .entry(tag)
-            .and_modify(|x| *x += 1)
-            .or_insert(0);
+            .and_modify(|x| *x += LE::from_canonical_u32(1))
+            .or_insert(initial_addr);
         idx
     }
 
     pub fn hash4(&mut self, a: Wide, b: Wide, c: Wide, d: Wide) -> Wide {
-        use sha2::{Digest, Sha256};
+        let mut preimage = Vec::with_capacity(32);
 
-        let preimage = vec![a, b, c, d];
+        preimage.extend(&a.0);
+        preimage.extend(&b.0);
+        preimage.extend(&c.0);
+        preimage.extend(&d.0);
 
-        let mut h = Sha256::new();
-        if let Some(found) = self.digest_cache.get(&preimage) {
-            return *found;
-        }
+        let preimage_vec = vec![a, b, c, d];
 
-        for elt in a.0.iter() {
-            h.update(elt.to_le_bytes());
-        }
-        for elt in b.0.iter() {
-            h.update(elt.to_le_bytes());
-        }
-        for elt in c.0.iter() {
-            h.update(elt.to_le_bytes());
-        }
-        for elt in d.0.iter() {
-            h.update(elt.to_le_bytes());
-        }
-        let hash: [u8; 32] = h.finalize().into();
+        if let Some(digest) = self.digest_cache.get(&preimage_vec) {
+            return digest.clone();
+        };
 
-        let mut buf = [0u8; 4];
+        let mut digest0 = [LE::zero(); 8];
+        let digest1 = self.hasher.hash(&preimage);
 
-        let x: Vec<u32> = hash
-            .chunks(4)
-            .map(|chunk| {
-                buf.copy_from_slice(chunk);
-                u32::from_le_bytes(buf)
-            })
-            .collect();
+        digest0.copy_from_slice(&digest1);
+        let digest = Wide(digest0);
 
-        let digest = Wide(x.try_into().unwrap());
+        self.digest_cache.insert(preimage_vec.clone(), digest);
+        self.preimage_cache.insert(digest, preimage_vec);
 
-        self.digest_cache.insert(preimage.clone(), digest);
-        self.preimage_cache.insert(digest, preimage);
+        digest
+    }
+    // TODO: refactor to share code with hash4
+    pub fn hash6(&mut self, a: Wide, b: Wide, c: Wide, d: Wide, e: Wide, f: Wide) -> Wide {
+        let mut preimage = Vec::with_capacity(32);
+
+        preimage.extend(&a.0);
+        preimage.extend(&b.0);
+        preimage.extend(&c.0);
+        preimage.extend(&d.0);
+        preimage.extend(&e.0);
+        preimage.extend(&f.0);
+
+        let preimage_vec = vec![a, b, c, d];
+
+        if let Some(digest) = self.digest_cache.get(&preimage_vec) {
+            return digest.clone();
+        };
+
+        let mut digest0 = [LE::zero(); 8];
+        let digest1 = self.hasher.hash(&preimage);
+
+        digest0.copy_from_slice(&digest1);
+        let digest = Wide(digest0);
+
+        self.digest_cache.insert(preimage_vec.clone(), digest);
+        self.preimage_cache.insert(digest, preimage_vec);
 
         digest
     }
     pub fn unhash4(&mut self, digest: &Wide) -> Option<[Wide; 4]> {
-        let mut preimage = [Wide::widen(0); 4];
+        let mut preimage = [Wide::widen(LE::from_canonical_u32(0)); 4];
 
         self.preimage_cache.get(digest).map(|digest| {
             preimage.copy_from_slice(&digest[..4]);
             preimage
         })
+    }
+
+    pub fn unhash6(&mut self, digest: &Wide) -> Option<[Wide; 6]> {
+        todo!();
     }
 }
 
@@ -159,20 +177,17 @@ ascent! {
     relation cons_rel(Ptr, Ptr, Ptr); // (car, cdr, cons)
 
     // Memory to support conses allocated by digest or contents.
-    lattice cons_digest_mem(Wide, Dual<LE>); // (tag, wide-tag, value, addr)
-    lattice cons_mem(Ptr, Ptr, Dual<LE>); // (car, cdr, addr)
+    lattice cons_digest_mem(Wide, Dual<LEWrap>); // (tag, wide-tag, value, addr)
+    lattice cons_mem(Ptr, Ptr, Dual<LEWrap>); // (car, cdr, addr)
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
-    cons_digest_mem(value, Dual(allocator().alloc_addr(Tag::Cons.elt()))) <--
-        alloc(tag, value),
-        if *tag == Tag::Cons.elt(),
-        tag(tag, wide_tag);
+    cons_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::from_canonical_u32(0))))) <-- alloc(tag, value), if *tag == Tag::Cons.elt();
 
     // Convert addr to ptr and register ptr relations.
-    ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0);
+    ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0.0);
 
     // Populating cons(...) triggers allocation in cons mem.
-    cons_mem(car, cdr, Dual(allocator().alloc_addr(Tag::Cons.elt()))) <-- cons(car, cdr);
+    cons_mem(car, cdr, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::from_canonical_u32(0))))) <-- cons(car, cdr);
 
     // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
     cons_digest_mem(digest, addr) <--
@@ -181,7 +196,7 @@ ascent! {
         ptr_tag(car, car_tag), ptr_tag(cdr, cdr_tag),
         hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest);
 
-    cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0)) <-- cons_mem(car, cdr, addr);
+    cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0.0)) <-- cons_mem(car, cdr, addr);
 
     ptr(cons), ptr_tag(cons, Tag::Cons.value()) <-- cons_rel(car, cdr, cons);
 
@@ -220,7 +235,7 @@ ascent! {
     ptr(Ptr(Tag::F.elt(), f)),
     f_value(Ptr(Tag::F.elt(), f), Wide::widen(f)) <-- alloc(&Tag::F.elt(), value), let f = value.f();
 
-    cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0)),
+    cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0.0)),
     cons_mem(car, cdr, addr) <--
         hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
         cons_digest_mem(digest, addr),
@@ -275,7 +290,7 @@ ascent! {
     relation map_double(Ptr, Ptr); // (input-ptr, output-ptr)
 
     ptr(doubled),
-    map_double(ptr, doubled) <-- map_double_input(ptr), if ptr.is_f(), let doubled = Ptr(Tag::F.elt(), ptr.1 * 2);
+    map_double(ptr, doubled) <-- map_double_input(ptr), if ptr.is_f(), let doubled = Ptr(Tag::F.elt(), ptr.1.double());
 
     map_double_input(ptr) <-- input_ptr(ptr);
 
@@ -336,7 +351,9 @@ impl AllocationProgram {
         addrs.dedup();
 
         let len = addrs.len();
-        no_duplicates && addrs[0] == 0 && addrs[len - 1] as usize == len - 1
+        no_duplicates
+            && addrs[0].0.is_zero()
+            && LE::as_canonical_u32(&addrs[len - 1].0) as usize == len - 1
     }
 }
 
@@ -381,37 +398,37 @@ mod test {
         // (1 . 2)
         let c1_2 = allocator().hash4(
             Tag::F.value(),
-            Wide::widen(1),
+            Wide::widen(LE::from_canonical_u32(1)),
             Tag::F.value(),
-            Wide::widen(2),
+            Wide::widen(LE::from_canonical_u32(2)),
         );
         // (2 . 3)
         let c2_3 = allocator().hash4(
             Tag::F.value(),
-            Wide::widen(2),
+            Wide::widen(LE::from_canonical_u32(2)),
             Tag::F.value(),
-            Wide::widen(3),
+            Wide::widen(LE::from_canonical_u32(3)),
         );
         // (2 . 4)
         let c2_4 = allocator().hash4(
             Tag::F.value(),
-            Wide::widen(2),
+            Wide::widen(LE::from_canonical_u32(2)),
             Tag::F.value(),
-            Wide::widen(4),
+            Wide::widen(LE::from_canonical_u32(4)),
         );
         // (4 . 6)
         let c4_6 = allocator().hash4(
             Tag::F.value(),
-            Wide::widen(4),
+            Wide::widen(LE::from_canonical_u32(4)),
             Tag::F.value(),
-            Wide::widen(6),
+            Wide::widen(LE::from_canonical_u32(6)),
         );
         // (4 . 8)
         let c4_8 = allocator().hash4(
             Tag::F.value(),
-            Wide::widen(4),
+            Wide::widen(LE::from_canonical_u32(4)),
             Tag::F.value(),
-            Wide::widen(8),
+            Wide::widen(LE::from_canonical_u32(8)),
         );
         // ((1 . 2) . (2 . 4))
         let c1_2__2_4 = allocator().hash4(Tag::Cons.value(), c1_2, Tag::Cons.value(), c2_4);
@@ -421,29 +438,6 @@ mod test {
         let c2_4__4_8 = allocator().hash4(Tag::Cons.value(), c2_4, Tag::Cons.value(), c4_8);
         // ((2 . 4) . (4 . 6))
         let c2_4__4_6 = allocator().hash4(Tag::Cons.value(), c2_4, Tag::Cons.value(), c4_6);
-
-        assert_eq!(
-            Wide([
-                4038165649, 752447834, 1060359009, 3812570985, 3368674057, 2161975811, 2601257232,
-                1536661076
-            ]),
-            c1_2
-        );
-        assert_eq!(
-            Wide([
-                3612283221, 1832028404, 1497027099, 2489301282, 1316351861, 200274982, 901424954,
-                3034146026
-            ]),
-            c2_4
-        );
-
-        assert_eq!(
-            Wide([
-                2025499267, 1838322365, 1110884429, 2931761435, 2978718557, 3907840380, 1112426582,
-                1522367847
-            ]),
-            c1_2__2_4
-        );
 
         let mut test = |input, expected_output, cons_count| {
             let mut prog = AllocationProgram::default();
