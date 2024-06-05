@@ -603,7 +603,7 @@ def to_field(value, p):
     value = hex(int(value))[2:]
     value = "0x" + value.zfill(l - 2)
     # print("from_hex(\"{}\"),".format(value))
-    print(f"f({value}),")
+    print(f"BabyBear::from_canonical_u32({value}),")
 
 
 def generate_constants_file():
@@ -615,15 +615,10 @@ def generate_constants_file():
     """)
     print()
     print("use lazy_static::*;")
+    print("use hybrid_array::{Array, typenum::*};")
     print("use p3_baby_bear::BabyBear;")
     print("use p3_field::AbstractField;")
     print()
-    print("""
-fn f(u: u32) -> BabyBear {
-    BabyBear::from_canonical_u32(u)
-}
-          """
-          )
     for t in range(4, 44, 4):
         p = 2013265921 # BabyBear
         n = len(p.bits())
@@ -653,10 +648,10 @@ fn f(u: u32) -> BabyBear {
         MATRIX_PARTIAL_DIAGONAL_M_1 = [matrix_partial_m_1(MATRIX_PARTIAL, NUM_CELLS, F)[i,i] for i in range(0, NUM_CELLS)]
 
         # Efficient partial matrix (diagonal - 1)
-        print("pub static ref MATRIX_DIAG_{}_BABYBEAR: [BabyBear; {}]= [".format(t, t))
+        print("pub static ref MATRIX_DIAG_{}_BABYBEAR: Array<BabyBear, U{}> = Array::clone_from_slice([".format(t, t))
         for val in MATRIX_PARTIAL_DIAGONAL_M_1:
-            to_field(val, p)
-        print("];")
+            to_field(val - 1, p)
+        print("].as_ref());")
         print()
 
 

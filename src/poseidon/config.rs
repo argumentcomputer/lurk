@@ -5,7 +5,8 @@ use std::slice;
 
 use hybrid_array::{typenum::*, Array, ArraySize};
 use p3_baby_bear::BabyBear;
-use p3_field::{AbstractField, Field};
+use p3_field::Field;
+use p3_poseidon2::matmul_internal;
 use p3_poseidon2::{DiffusionPermutation, Poseidon2, Poseidon2ExternalMatrixGeneral};
 use p3_symmetric::Permutation;
 
@@ -51,8 +52,9 @@ macro_rules! impl_poseidon_config {
             const R_F: usize = $r_f;
             type R = $r_t;
 
+            #[inline]
             fn matrix_diag() -> &'static Array<Self::F, Self::WIDTH> {
-                Array::from_slice(&*$diag)
+                $diag.as_ref()
             }
 
             fn round_constants_iter() -> impl IntoIterator<Item = &'static [Self::F]> {
@@ -67,10 +69,7 @@ macro_rules! impl_poseidon_config {
 
         impl Permutation<[$field; $width]> for InternalDiffusion {
             fn permute_mut(&self, input: &mut [$field; $width]) {
-                let sum: $field = input.iter().copied().sum();
-                for i in 0..$width {
-                    input[i] = sum + ($diag[i] + $field::neg_one()) * input[i];
-                }
+                matmul_internal(input, *$diag.as_ref());
             }
         }
 
