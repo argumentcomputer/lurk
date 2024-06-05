@@ -71,9 +71,8 @@ p3-maybe-rayon = { workspace = true }
 p3-poseidon2 = { workspace = true }
 p3-symmetric = { workspace = true }
 p3-util = { workspace = true }
-
-[dev-dependencies]
-criterion = { workspace = true }
+hybrid-array = "0.2.0-rc"
+lazy_static = "1.4.0"
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -93,4 +92,3 @@ overflow-checks = true
 lto = "thin"
 incremental = false
 codegen-units = 16
-
