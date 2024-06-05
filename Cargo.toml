@@ -1,9 +1,6 @@
 [package]
 name = "loam"
 version = "0.1.0"
-edition.workspace = true
-
-[workspace.package]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -79,7 +76,7 @@ p3-util = { workspace = true }
 criterion = { workspace = true }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = { workspace = true }
 
 [[bench]]
 name = "fib"
