@@ -12,4 +12,4 @@ p3-baby-bear = { workspace = true }
 p3-field = { workspace = true }
 p3-matrix = { workspace = true }
 rayon = { workspace = true }
-rustyline = "14.0"
+rustyline = { workspace = true }
