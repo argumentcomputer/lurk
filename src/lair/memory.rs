@@ -26,47 +26,34 @@ where
         let (is_real, ptr_local, values_local) = (local[0], local[1], &local[2..]);
         let (is_real_next, ptr_next, values_next) = (next[0], next[1], &next[2..]);
 
-        // is_real
-        {
-            builder.assert_bool(is_real);
-            // is_real starts with one
-            builder.when_first_row().assert_one(is_real);
-            // if next is real, local is real
-            builder
-                .when_transition()
-                .when(is_real_next)
-                .assert_one(is_real);
-            // last row must be padding
-            // after this, is_real => is_transition
-            builder.when_last_row().assert_zero(is_real);
-        }
+        // is_real is 1 for all valid entries, then 0 for padding rows until the last row.
+        builder.assert_bool(is_real);
+        // is_real starts with one
+        builder.when_first_row().assert_one(is_real);
+
+        // all but the last rows where is_real = 1
+        let is_real_transition = is_real_next * builder.is_transition();
+
+        // if we are in a real transition, the current row should be real
+        builder.when(is_real_transition.clone()).assert_one(is_real);
 
         // First valid pointer is 1
         builder.when_first_row().assert_one(ptr_local);
-        // Then increases by 0 or 1
-        let ptr_diff = ptr_next - ptr_local;
-        builder.when(is_real).assert_bool(ptr_diff.clone());
 
-        // ptr in first padding row must be the next unused index
-        let is_last_real = is_real * (AB::Expr::one() - is_real_next);
-        builder.when(is_last_real).assert_one(ptr_diff.clone());
+        // Next pointer is either the same, or increased by 1
+        let is_next_ptr_diff = ptr_next - ptr_local;
+        builder
+            .when(is_real_transition.clone())
+            .assert_bool(is_next_ptr_diff.clone());
 
-        // write happens in the last duplication of the value
-        let is_write = ptr_diff;
-        let is_read = AB::Expr::one() - is_write.clone();
+        let is_next_prt_same = AB::Expr::one() - is_next_ptr_diff;
 
         for (&val_local, &val_next) in zip(values_local, values_next) {
             builder
-                .when(is_real)
-                .when(is_read.clone())
+                .when(is_real_transition.clone())
+                .when(is_next_prt_same.clone())
                 .assert_eq(val_local, val_next);
         }
-
-        const READ_TAG: u32 = 1;
-        const WRITE_TAG: u32 = 2;
-
-        let tag = AB::Expr::from_canonical_u32(READ_TAG) * is_read
-            + AB::Expr::from_canonical_u32(WRITE_TAG) * is_write;
 
         // builder.when(is_real).send([tag, values_local]);
     }
