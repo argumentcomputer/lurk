@@ -27,6 +27,7 @@ arc-swap = "1.7.1"
 base-x = "0.2.11"
 elsa = { version = "1.9.0", git = "https://github.com/lurk-lab/elsa", branch = "sync_frozen", features = ["indexmap"] }
 expect-test = "1.4.1"
+fxhash = "0.2.1"
 indexmap = { version = "2.2.6", features = ["rayon"] }
 match_opt = "0.1.2"
 nom = "7.1.3"

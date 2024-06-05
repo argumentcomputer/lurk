@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, slice::Iter};
+use std::slice::Iter;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
@@ -7,6 +7,7 @@ use super::{
     List,
 };
 
+use fxhash::FxHashMap;
 use indexmap::IndexMap;
 use p3_field::{Field, PrimeField};
 
@@ -16,8 +17,8 @@ pub struct QueryResult<T> {
     pub(crate) mult: u32,
 }
 
-pub(crate) type QueryMap<F> = BTreeMap<List<F>, QueryResult<List<F>>>;
-pub(crate) type InvQueryMap<F> = BTreeMap<List<F>, List<F>>;
+pub(crate) type QueryMap<F> = FxHashMap<List<F>, QueryResult<List<F>>>;
+pub(crate) type InvQueryMap<F> = FxHashMap<List<F>, List<F>>;
 pub(crate) type MemMap<F> = IndexMap<List<F>, u32>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -81,13 +82,13 @@ impl<F: Field> QueryRecord<F> {
 
     #[inline]
     pub fn new_with_init_mem(toplevel: &Toplevel<F>, mem_queries: Vec<MemMap<F>>) -> Self {
-        let func_queries = vec![BTreeMap::new(); toplevel.size()];
+        let func_queries = vec![FxHashMap::default(); toplevel.size()];
         let inv_func_queries = toplevel
             .map
             .iter()
             .map(|(_, func)| {
                 if func.invertible {
-                    Some(BTreeMap::new())
+                    Some(FxHashMap::default())
                 } else {
                     None
                 }
