@@ -110,6 +110,11 @@ ascent! {
     relation unhash4(LE, Wide, Ptr); // (tag, digest, ptr)
     relation hash4_rel(Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, digest)
 
+    relation fun(Ptr, Ptr, Ptr); // (args, body, closed_env)
+    relation hash6(Ptr, Wide, Wide, Wide, Wide); // (a, b, c, d, e, f)
+    relation unhash6(LE, Wide, Ptr); // (tag, digest, ptr)
+    relation hash6_rel(Wide, Wide, Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, e, f, digest)
+
     // inclusion triggers *_value relations.
     relation egress(Ptr); // (ptr)
     relation f_value(Ptr, Wide); // (ptr, immediate-wide-value)
@@ -139,7 +144,7 @@ ascent! {
     relation cons_rel(Ptr, Ptr, Ptr); // (car, cdr, cons)
 
     // Memory to support conses allocated by digest or contents.
-    lattice cons_digest_mem(Wide, Dual<LE>); // (tag, wide-tag, value, addr)
+    lattice cons_digest_mem(Wide, Dual<LE>); // (value, addr)
     lattice cons_mem(Ptr, Ptr, Dual<LE>); // (car, cdr, addr)
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
@@ -163,7 +168,37 @@ ascent! {
 
     cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0)) <-- cons_mem(car, cdr, addr);
 
-    ptr(cons), ptr_tag(cons, Tag::Cons.value()) <-- cons_rel(car, cdr, cons);
+    ptr(cons), ptr_tag(cons, Tag::Cons.value()) <-- cons_rel(_, _, cons);
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // Fun
+
+    // TODO: this was copied directly from the cons memory, so we should be able to formalize with a macro.
+
+    relation fun_rel(Ptr, Ptr, Ptr, Ptr); // (args, body, closed-env, fun)
+
+    lattice fun_digest_mem(Wide, Dual<LE>); // (value, addr)
+    lattice fun_mem(Ptr, Ptr, Ptr, Dual<LE>); // (args, body, closed-env, addr)
+
+    fun_digest_mem(value, Dual(allocator().alloc_addr(Tag::Fun.elt()))) <--
+        alloc(tag, value),
+        if *tag == Tag::Fun.elt(),
+        tag(tag, wide_tag);
+
+    ptr(ptr), ptr_tag(ptr, Tag::Fun.value()), ptr_value(ptr, value) <-- fun_digest_mem(value, addr), let ptr = Ptr(Tag::Fun.elt(), addr.0);
+
+    fun_mem(args, body, closed_env, Dual(allocator().alloc_addr(Tag::Fun.elt()))) <-- fun(args, body, closed_env);
+
+    fun_digest_mem(digest, addr) <--
+        fun_mem(args, body, closed_env, addr),
+        ptr_value(args, args_value), ptr_value(body, body_value), ptr_value(closed_env, closed_env_value),
+        ptr_tag(args, args_tag), ptr_tag(body, body_tag), ptr_tag(closed_env, closed_env_tag),
+        hash6_rel(args_tag, args_value, body_tag, body_value, closed_env_tag, closed_env_value, digest);
+
+    fun_rel(args, body, closed_env, Ptr(Tag::Fun.elt(), addr.0)) <-- fun_mem(args, body, closed_env, addr);
+
+    ptr(fun), ptr_tag(fun, Tag::Fun.value()) <-- fun_rel(_, _, _, fun);
+
 
     ////////////////////////////////////////////////////////////////////////////////
     // Sym

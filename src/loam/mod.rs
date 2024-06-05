@@ -11,6 +11,7 @@ pub enum Tag {
     Cons,
     Nil,
     Sym,
+    Fun,
     Err,
 }
 
@@ -39,7 +40,8 @@ impl Elemental for Tag {
             Self::Cons => 1,
             Self::Nil => 2,
             Self::Sym => 3,
-            Self::Err => 4,
+            Self::Fun => 4,
+            Self::Err => 5,
         }
     }
 }
