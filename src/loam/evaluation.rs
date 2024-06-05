@@ -304,66 +304,86 @@ ascent! {
     ////////////////////
     // let binding
 
-    relation bind1(Ptr, Ptr, Ptr); // (expr, env, bindings-and-body)
-    relation bind2(Ptr, Ptr, Ptr, Ptr, Ptr); // (expr, env, body, this-env, bindings)
+    relation bind_parse(Ptr, Ptr, Ptr); // (expr, env, bindings-and-body)
+    relation bind(Ptr, Ptr, Ptr, Ptr, Ptr); // (expr, env, body, extended-env, bindings)
 
-    ingress(tail), bind1(expr, env, tail) <--
+    // These rules act, morally, as continuations and are all 'signal relations'.
+    relation bind_cont1(Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, Ptr); // (expr, env, body, extended-env, binding, more-bindings, var, binding_tail)
+    relation bind_cont2(Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, Ptr); // (expr, env, body, extended-env, var, val, more-bindings)
+
+    ingress(tail), bind_parse(expr, env, tail) <--
         eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
         let op = Memory::ptr_sym(*head, *head_value), if op.is_binding();
 
     // // Signal rule
     ingress(bindings), ingress(rest) <--
-        bind1(expr, env, tail),
+        bind_parse(expr, env, tail),
         cons_rel(bindings, rest, tail);
 
-    bind2(expr, env, body, env, bindings) <--
-        bind1(expr, env, tail),
+    // Base case, bindings list is empty.
+    bind(expr, env, body, env, bindings) <--
+        bind_parse(expr, env, tail),
         cons_rel(bindings, rest, tail),
         cons_rel(body, end, rest), if end.is_nil(); // TODO: error otherwise
 
-    eval_input(body, this_env) <--
-        bind2(expr, env, body, this_env, bindings),
+    // Evaluate body with extended environment.
+    eval_input(body, extended_env) <--
+        bind(expr, env, body, extended_env, bindings),
         if bindings.is_nil();
 
     eval(expr, env, result) <--
-        bind2(expr, env, body, this_env, bindings),
+        bind(expr, env, body, extended_env, bindings),
         if bindings.is_nil(),
-        eval(bod, this_env, result);
+        eval(bod, extended_env, result);
 
     // Signal rule
     ingress(binding), ingress(more_bindings) <--
-        bind2(expr, env, body, this_env, bindings),
+        bind(expr, env, body, extended_env, bindings),
         cons_rel(binding, more_bindings, bindings);
 
     // Signal rule
+    bind_cont1(expr, env, body, extended_env, binding, more_bindings, var, binding_tail),
     ingress(binding_tail) <--
-        bind2(expr, env, body, this_env, bindings),
+        bind(expr, env, body, extended_env, bindings),
         cons_rel(binding, more_bindings, bindings),
         cons_rel(var, binding_tail, binding);
 
     // Signal rule
-     cons(var, val) <--
-        bind2(expr, env, body, this_env, bindings),
-        cons_rel(binding, more_bindings, bindings),
+    bind_cont2(expr, env, body, extended_env, var, val, more_bindings),
+    cons(var, val) <--
+        bind_cont1(expr, env, body, extended_env, binding, more_bindings, var, binding_tail),
         cons_rel(var, binding_tail, binding),
         cons_rel(val, end, binding_tail), if end.is_nil(); // TODO: error otherwise
 
     // Signal rule
-     cons(env_binding, this_env) <--
-        bind2(expr, env, body, this_env, bindings),
-        cons_rel(binding, more_bindings, bindings),
-        cons_rel(var, binding_tail, binding),
-        cons_rel(val, end, binding_tail), if end.is_nil(), // TODO: error otherwise
+     cons(env_binding, extended_env) <--
+        bind_cont2(expr, env, body, extended_env, var, val, more_bindings),
         cons_rel(var, val, env_binding);
 
-    // This is the 'real rule'.
-     bind2(expr, env, body, new_env, more_bindings) <--
-        bind2(expr, env, body, this_env, bindings),
+    // This is the 'real rule'. Since the signal relations will be distilled out, the second-pass program should contain
+    // all the required dependencies.
+     bind(expr, env, body, new_env, more_bindings) <--
+        bind(expr, env, body, extended_env, bindings),
         cons_rel(binding, more_bindings, bindings),
         cons_rel(var, binding_tail, binding),
         cons_rel(val, end, binding_tail), if end.is_nil(), // TODO: error otherwise
         cons_rel(var, val, env_binding),
-        cons_rel(env_binding, this_env, new_env);
+        cons_rel(env_binding, extended_env, new_env);
+
+    // If a smart-enough compiler can arrange, it may be more efficient to use the version that depends on the signal
+    // relations in the first pass, though.
+    //
+    //  relation bind_cont3(Ptr, Ptr, Ptr, Ptr, Ptr, Ptr); // (expr, env, body, extended-env, env_binding)
+    //
+    // // Signal rule
+    //  bind_cont3(expr, env, body, extended_env, env_binding, more_bindings),
+    //  cons(env_binding, extended_env) <--
+    //     bind_cont2(expr, env, body, extended_env, var, val, more_bindings),
+    //     cons_rel(var, val, env_binding);
+
+    //  bind(expr, env, body, new_env, more_bindings) <--
+    //     bind_cont3(expr, env, body, extended_env, env_binding, more_bindings),
+    //     cons_rel(env_binding, extended_env, new_env);
 
     ////////////////////
     // fold -- default folding is fold_left
