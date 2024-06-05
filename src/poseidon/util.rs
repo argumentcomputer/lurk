@@ -1,22 +1,6 @@
 use p3_field::{AbstractField, Field};
+use p3_poseidon2::apply_mat4;
 use std::iter::zip;
-
-// TODO: Make this public inside Plonky3 and import directly.
-pub(crate) fn apply_m_4<AF>(x: &mut [AF; 4])
-where
-    AF: AbstractField,
-{
-    let t01 = x[0].clone() + x[1].clone();
-    let t23 = x[2].clone() + x[3].clone();
-    let t0123 = t01.clone() + t23.clone();
-    let t01123 = t0123.clone() + x[1].clone();
-    let t01233 = t0123.clone() + x[3].clone();
-    // The order here is important. Need to overwrite x[0] and x[2] after x[1] and x[3].
-    x[3] = t01233.clone() + x[0].double(); // 3*x[0] + x[1] + x[2] + 2*x[3]
-    x[1] = t01123.clone() + x[2].double(); // x[0] + 2*x[1] + 3*x[2] + x[3]
-    x[0] = t01123 + t01; // 2*x[0] + 3*x[1] + x[2] + x[3]
-    x[2] = t01233 + t23; // x[0] + x[1] + 2*x[2] + 3*x[3]
-}
 
 // Apply the MDS matrix to the external state.
 pub(crate) fn matmul_exterior<F: Field>(state: &mut [F]) {
@@ -24,7 +8,7 @@ pub(crate) fn matmul_exterior<F: Field>(state: &mut [F]) {
 
     for state_chunk in state.chunks_exact_mut(4) {
         let state_chunk: &mut [F; 4] = state_chunk.try_into().unwrap();
-        apply_m_4(state_chunk);
+        apply_mat4(state_chunk);
     }
 
     let mut sums = [F::zero(); 4];
