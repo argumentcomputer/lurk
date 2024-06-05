@@ -8,26 +8,25 @@ edition = "2021"
 [workspace.dependencies]
 rayon = "1.10.0"
 itertools = "0.13.0"
-p3-air = { git = "https://github.com/plonky3/Plonky3.git", branch = "main" }
-p3-baby-bear = { git = "https://github.com/plonky3/Plonky3.git", branch = "main" }
-p3-field = { git = "https://github.com/plonky3/Plonky3.git", branch = "main" }
-p3-matrix = { git = "https://github.com/plonky3/Plonky3.git", branch = "main" }
-p3-mds = { git = "https://github.com/plonky3/Plonky3.git", branch = "main" }
-p3-commit = { git = "https://github.com/plonky3/Plonky3.git", branch = "main" }
-p3-challenger = { git = "https://github.com/plonky3/Plonky3.git", branch = "main" }
-p3-maybe-rayon = { git = "https://github.com/plonky3/Plonky3.git", branch = "main" }
-p3-poseidon2 = { git = "https://github.com/plonky3/Plonky3.git", branch = "main" }
-p3-symmetric = { git = "https://github.com/plonky3/Plonky3.git", branch = "main" }
-p3-uni-stark = { git = "https://github.com/plonky3/Plonky3.git", branch = "main" }
-p3-util = { git = "https://github.com/plonky3/Plonky3.git", branch = "main" }
-
-[dependencies]
+p3-air = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
+p3-baby-bear = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
+p3-field = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
+p3-matrix = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
+p3-mds = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
+p3-commit = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
+p3-challenger = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
+p3-maybe-rayon = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
+p3-poseidon2 = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
+p3-symmetric = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
+p3-uni-stark = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
+p3-util = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
 anyhow = "1.0.72"
 arc-swap = "1.7.1"
 base-x = "0.2.11"
-elsa = { version = "1.9.0", git = "https://github.com/lurk-lab/elsa", branch = "sync_frozen", features = ["indexmap"] }
+criterion = "0.5"
+elsa = { git = "https://github.com/lurk-lab/elsa", branch = "sync_frozen" }
 expect-test = "1.4.1"
-indexmap = { version = "2.2.6", features = ["rayon"] }
+indexmap = "2.2.6"
 match_opt = "0.1.2"
 nom = "7.1.3"
 nom_locate = "4.1.0"
@@ -35,9 +34,28 @@ num-bigint = "0.4.3"
 once_cell = "1.18.0"
 rand = "0.8.5"
 rand_xoshiro = "0.6.0"
+rustyline = "14.0"
 serde = "1.0"
-serde_json = { version = "1.0" }
+serde_json = "1.0"
 thiserror = "1.0.44"
+
+[dependencies]
+anyhow = { workspace = true }
+arc-swap = { workspace = true }
+base-x = { workspace = true }
+elsa = { workspace = true, features = ["indexmap"] }
+expect-test = { workspace = true }
+indexmap = { workspace = true, features = ["rayon"] }
+match_opt = { workspace = true }
+nom = { workspace = true }
+nom_locate = { workspace = true }
+num-bigint = { workspace = true }
+once_cell = { workspace = true }
+rand = { workspace = true }
+rand_xoshiro = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
 rayon = { workspace = true }
 itertools = { workspace = true }
 p3-air = { workspace = true }
@@ -53,7 +71,7 @@ p3-symmetric = { workspace = true }
 p3-util = { workspace = true }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = { workspace = true }
 
 [[bench]]
 name = "fib"
