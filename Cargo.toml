@@ -26,6 +26,7 @@ base-x = "0.2.11"
 criterion = "0.5"
 elsa = { git = "https://github.com/lurk-lab/elsa", branch = "sync_frozen" }
 expect-test = "1.4.1"
+fxhash = "0.2.1"
 indexmap = "2.2.6"
 match_opt = "0.1.2"
 nom = "7.1.3"
@@ -45,6 +46,7 @@ arc-swap = { workspace = true }
 base-x = { workspace = true }
 elsa = { workspace = true, features = ["indexmap"] }
 expect-test = { workspace = true }
+fxhash = { workspace = true }
 indexmap = { workspace = true, features = ["rayon"] }
 match_opt = { workspace = true }
 nom = { workspace = true }

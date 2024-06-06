@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, slice::Iter};
+use fxhash::FxBuildHasher;
+use indexmap::IndexMap;
+use p3_field::{Field, PrimeField};
+use std::slice::Iter;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
@@ -7,18 +10,15 @@ use super::{
     List,
 };
 
-use indexmap::IndexMap;
-use p3_field::{Field, PrimeField};
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QueryResult<T> {
     pub(crate) output: T,
     pub(crate) mult: u32,
 }
 
-pub(crate) type QueryMap<F> = BTreeMap<List<F>, QueryResult<List<F>>>;
-pub(crate) type InvQueryMap<F> = BTreeMap<List<F>, List<F>>;
-pub(crate) type MemMap<F> = IndexMap<List<F>, u32>;
+pub(crate) type QueryMap<F> = IndexMap<List<F>, QueryResult<List<F>>, FxBuildHasher>;
+pub(crate) type InvQueryMap<F> = IndexMap<List<F>, List<F>, FxBuildHasher>;
+pub(crate) type MemMap<F> = IndexMap<List<F>, u32, FxBuildHasher>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QueryRecord<F: Field> {
@@ -45,7 +45,7 @@ pub fn mem_index_from_len(len: usize) -> usize {
 
 #[inline]
 pub fn mem_init<F: Clone>() -> Vec<MemMap<F>> {
-    vec![IndexMap::new(); NUM_MEM_TABLES]
+    vec![IndexMap::default(); NUM_MEM_TABLES]
 }
 
 pub fn mem_store<F: Field>(mem: &mut [MemMap<F>], args: List<F>) -> F {
@@ -81,13 +81,13 @@ impl<F: Field> QueryRecord<F> {
 
     #[inline]
     pub fn new_with_init_mem(toplevel: &Toplevel<F>, mem_queries: Vec<MemMap<F>>) -> Self {
-        let func_queries = vec![BTreeMap::new(); toplevel.size()];
+        let func_queries = vec![IndexMap::default(); toplevel.size()];
         let inv_func_queries = toplevel
             .map
             .iter()
             .map(|(_, func)| {
                 if func.invertible {
-                    Some(BTreeMap::new())
+                    Some(IndexMap::default())
                 } else {
                     None
                 }
