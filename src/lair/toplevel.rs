@@ -322,8 +322,7 @@ impl<F: Clone + Ord> CtrlE<F> {
                 Ctrl::Match(t, cases)
             }
             CtrlE::If(b, true_block, false_block) => {
-                assert_eq!(b.size, 1);
-                let b = use_var(b, ctx)[0];
+                let vars = use_var(b, ctx).into();
 
                 ctx.block_ident += 1;
                 let state = ctx.save_bind_state();
@@ -332,7 +331,12 @@ impl<F: Clone + Ord> CtrlE<F> {
 
                 ctx.block_ident += 1;
                 let false_block = false_block.check_and_link(ctx);
-                Ctrl::If(b, true_block.into(), false_block.into())
+
+                if b.size != 1 {
+                    Ctrl::IfMany(vars, true_block.into(), false_block.into())
+                } else {
+                    Ctrl::If(vars[0], true_block.into(), false_block.into())
+                }
             }
         }
     }

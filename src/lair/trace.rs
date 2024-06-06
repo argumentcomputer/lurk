@@ -151,6 +151,24 @@ impl<F: PrimeField> Ctrl<F> {
                     f.populate_row(map, index, slice, queries);
                 }
             }
+            Ctrl::IfMany(vars, t, f) => {
+                if let Some(i) = vars.iter().position(|&var| {
+                    let (b, _) = map[var];
+                    b != F::zero()
+                }) {
+                    for j in 0..vars.len() {
+                        if i == j {
+                            let (b, _) = map[vars[i]];
+                            slice.push_aux(index, b.inverse());
+                        } else {
+                            slice.push_aux(index, F::zero());
+                        }
+                    }
+                    t.populate_row(map, index, slice, queries);
+                } else {
+                    f.populate_row(map, index, slice, queries);
+                }
+            }
         }
     }
 }

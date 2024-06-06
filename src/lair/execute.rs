@@ -280,6 +280,16 @@ impl<F: PrimeField> Ctrl<F> {
                     t.execute(map, toplevel, queries)
                 }
             }
+            Ctrl::IfMany(vars, t, f) => {
+                if vars.iter().any(|&var| {
+                    let b = map[var];
+                    b != F::zero()
+                }) {
+                    t.execute(map, toplevel, queries)
+                } else {
+                    f.execute(map, toplevel, queries)
+                }
+            }
             Ctrl::Match(v, cases) => {
                 let v = map.get(*v).unwrap();
                 cases
@@ -308,6 +318,16 @@ impl<F: PrimeField> Ctrl<F> {
                     f.execute_step(map, stack, toplevel, queries)
                 } else {
                     t.execute_step(map, stack, toplevel, queries)
+                }
+            }
+            Ctrl::IfMany(vars, t, f) => {
+                if vars.iter().any(|&var| {
+                    let b = map[var];
+                    b != F::zero()
+                }) {
+                    t.execute_step(map, stack, toplevel, queries)
+                } else {
+                    f.execute_step(map, stack, toplevel, queries)
                 }
             }
             Ctrl::Match(v, cases) => {

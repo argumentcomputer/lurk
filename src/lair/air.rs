@@ -305,6 +305,39 @@ impl<F: Field> Ctrl<F> {
 
                 t_sel + f_sel
             }
+            Ctrl::IfMany(vars, t, f) => {
+                let map_len = map.len();
+
+                let state = index.save();
+                let coeffs = vars
+                    .iter()
+                    .map(|_| *local.next_aux(index))
+                    .collect::<Vec<_>>();
+                let t_sel = t.eval(builder, local, index, map, toplevel);
+                let one: AB::Expr = F::one().into();
+                let acc = coeffs
+                    .iter()
+                    .zip(vars.iter())
+                    .map(|(coeff, var)| {
+                        let b = map[*var].to_expr();
+                        *coeff * b
+                    })
+                    .fold(one, |acc, expr| acc - expr);
+                builder.when(t_sel.clone()).assert_zero(acc);
+                map.truncate(map_len);
+                index.restore(state);
+
+                index.save();
+                let f_sel = f.eval(builder, local, index, map, toplevel);
+                for var in vars.iter() {
+                    let b = map[*var].to_expr();
+                    builder.when(f_sel.clone()).assert_zero(b);
+                }
+                map.truncate(map_len);
+                index.restore(state);
+
+                t_sel + f_sel
+            }
             Ctrl::Return(ident, vs) => {
                 let sel = local.sel[*ident];
                 for v in vs.iter() {
@@ -455,5 +488,51 @@ mod tests {
 
         let _ = debug_constraints_collecting_queries(&not_chip, &[], &not_trace);
         let _ = debug_constraints_collecting_queries(&eq_chip, &[], &eq_trace);
+    }
+
+    #[test]
+    fn lair_if_many_test() {
+        let if_many_func = func!(
+        fn if_many(a: [4]): [1] {
+            if a {
+                let one = 1;
+                return one
+            }
+            let zero = 0;
+            return zero
+        });
+        let toplevel = Toplevel::<F>::new(&[if_many_func]);
+        let if_many_chip = FuncChip::from_name("if_many", &toplevel);
+
+        let queries = &mut QueryRecord::new(&toplevel);
+        let f = field_from_u32;
+        let args = [f(0), f(0), f(0), f(0)].into();
+        if_many_chip.execute_iter(args, queries);
+        let args = [f(1), f(3), f(8), f(2)].into();
+        if_many_chip.execute_iter(args, queries);
+        let args = [f(0), f(0), f(4), f(1)].into();
+        if_many_chip.execute_iter(args, queries);
+        let args = [f(0), f(0), f(0), f(9)].into();
+        if_many_chip.execute_iter(args, queries);
+
+        let if_many_trace = if_many_chip.generate_trace_parallel(queries);
+
+        let if_many_width = if_many_chip.width();
+        let expected_trace = RowMajorMatrix::new(
+            [
+                // 4 inputs, 1 output, mult, 4 coeffs, 2 selectors
+                0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, //
+                1, 3, 8, 2, 1, 1, 1, 0, 0, 0, 1, 0, //
+                0, 0, 4, 1, 1, 1, 0, 0, 1509949441, 0, 1, 0, //
+                0, 0, 0, 9, 1, 1, 0, 0, 0, 447392427, 1, 0, //
+            ]
+            .into_iter()
+            .map(F::from_canonical_u32)
+            .collect::<Vec<_>>(),
+            if_many_width,
+        );
+        assert_eq!(if_many_trace, expected_trace);
+
+        let _ = debug_constraints_collecting_queries(&if_many_chip, &[], &expected_trace);
     }
 }

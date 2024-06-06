@@ -147,6 +147,17 @@ impl<F> Ctrl<F> {
                 degrees.truncate(degrees_len);
                 *aux = (*t_aux).max(*f_aux);
             }
+            Ctrl::IfMany(vars, t, f) => {
+                let degrees_len = degrees.len();
+                let t_aux = &mut aux.clone();
+                *t_aux += vars.len();
+                t.compute_layout_sizes(degrees, toplevel, t_aux, sel);
+                degrees.truncate(degrees_len);
+                let f_aux = &mut aux.clone();
+                f.compute_layout_sizes(degrees, toplevel, f_aux, sel);
+                degrees.truncate(degrees_len);
+                *aux = (*t_aux).max(*f_aux);
+            }
         }
     }
 }
