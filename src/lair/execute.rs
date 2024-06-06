@@ -1,6 +1,9 @@
 use fxhash::FxBuildHasher;
 use indexmap::IndexMap;
-use p3_field::{Field, PrimeField};
+use p3_field::{AbstractField, Field, PrimeField};
+use sphinx_core::air::MachineProgram;
+use sphinx_core::stark::MachineRecord;
+use std::collections::HashMap;
 use std::slice::Iter;
 
 use super::{
@@ -27,11 +30,41 @@ pub(crate) type QueryMap<F> = FxIndexMap<List<F>, QueryResult<List<F>>>;
 pub(crate) type InvQueryMap<F> = FxIndexMap<List<F>, List<F>>;
 pub(crate) type MemMap<F> = FxIndexMap<List<F>, u32>;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Default, Clone, Debug, Eq, PartialEq)]
 pub struct QueryRecord<F: Field> {
     pub(crate) func_queries: Vec<QueryMap<F>>,
     pub(crate) inv_func_queries: Vec<Option<InvQueryMap<F>>>,
     pub mem_queries: Vec<MemMap<F>>,
+}
+
+impl<F: Field> MachineProgram<F> for QueryRecord<F> {
+    fn pc_start(&self) -> F {
+        F::zero()
+    }
+}
+
+impl<F: Field> MachineRecord for QueryRecord<F> {
+    type Config = ();
+
+    fn index(&self) -> u32 {
+        0
+    }
+
+    fn set_index(&mut self, _index: u32) {}
+
+    fn stats(&self) -> HashMap<String, usize> {
+        Default::default()
+    }
+
+    fn append(&mut self, _other: &mut Self) {}
+
+    fn shard(self, _config: &Self::Config) -> Vec<Self> {
+        vec![]
+    }
+
+    fn public_values<F2: AbstractField>(&self) -> Vec<F2> {
+        vec![]
+    }
 }
 
 const NUM_MEM_TABLES: usize = 5;

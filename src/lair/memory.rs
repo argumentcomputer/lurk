@@ -1,4 +1,5 @@
 use crate::air::builder::LookupBuilder;
+use itertools::{repeat_n, Itertools};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{AbstractField, Field};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
@@ -6,12 +7,70 @@ use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
     slice::ParallelSliceMut,
 };
+use sphinx_core::air::MachineAir;
 use std::iter::zip;
+use std::ops::Deref;
 
 use super::execute::{mem_index_from_len, QueryRecord};
 
 pub struct MemChip {
     len: usize,
+}
+
+impl<F: Field> MachineAir<F> for MemChip {
+    type Record = QueryRecord<F>;
+    type Program = QueryRecord<F>;
+
+    fn name(&self) -> String {
+        format!("mem {}", self.len).to_string()
+    }
+
+    fn generate_trace(
+        &self,
+        input: &Self::Record,
+        _output: &mut Self::Record,
+    ) -> RowMajorMatrix<F> {
+        let len = self.len;
+        let mem_idx = mem_index_from_len(len);
+        let mem = &input.mem_queries[mem_idx];
+        let width = self.width();
+
+        let height = mem
+            .values()
+            .map(|&m| m as usize)
+            .sum::<usize>()
+            .next_power_of_two()
+            .max(4);
+        let mut rows = vec![F::zero(); height * width];
+
+        let values = mem
+            .iter()
+            .enumerate()
+            .flat_map(|(i, (args, &mult))| {
+                // We skip the address 0 as to leave room for null pointers
+                let ptr = F::from_canonical_usize(i + 1);
+                let values: &[F] = args.deref();
+
+                repeat_n((ptr, values), mult as usize)
+            })
+            .collect_vec();
+
+        rows.par_chunks_mut(width)
+            .zip(values)
+            .for_each(|(row, (ptr, values))| {
+                // is_real
+                row[0] = F::one();
+                // ptr
+                row[1] = ptr;
+                // values
+                row[2..].copy_from_slice(values);
+            });
+        RowMajorMatrix::new(rows, width)
+    }
+
+    fn included(&self, _shard: &Self::Record) -> bool {
+        true
+    }
 }
 
 impl<AB> Air<AB> for MemChip
