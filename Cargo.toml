@@ -20,6 +20,7 @@ p3-poseidon2 = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-
 p3-symmetric = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new-tmp" }
 p3-uni-stark = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new-tmp" }
 p3-util = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new-tmp" }
+sphinx-core = { git = "https://github.com/lurk-lab/sphinx.git", branch = "dev"}
 anyhow = "1.0.72"
 arc-swap = "1.7.1"
 base-x = "0.2.11"
@@ -75,6 +76,7 @@ p3-maybe-rayon = { workspace = true }
 p3-poseidon2 = { workspace = true }
 p3-symmetric = { workspace = true }
 p3-util = { workspace = true }
+sphinx-core = {workspace = true}
 
 [dev-dependencies]
 criterion = { workspace = true }
