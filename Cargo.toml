@@ -39,6 +39,8 @@ rustyline = "14.0"
 serde = "1.0"
 serde_json = "1.0"
 thiserror = "1.0.44"
+hybrid-array = "0.2.0-rc"
+lazy_static = "1.4.0"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -47,7 +49,9 @@ base-x = { workspace = true }
 elsa = { workspace = true, features = ["indexmap"] }
 expect-test = { workspace = true }
 fxhash = { workspace = true }
+hybrid-array = { workspace = true }
 indexmap = { workspace = true, features = ["rayon"] }
+lazy_static = { workspace = true }
 match_opt = { workspace = true }
 nom = { workspace = true }
 nom_locate = { workspace = true }
