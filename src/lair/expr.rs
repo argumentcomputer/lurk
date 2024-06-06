@@ -30,12 +30,6 @@ impl VarList {
     }
 }
 
-impl From<List<Var>> for VarList {
-    fn from(value: List<Var>) -> Self {
-        Self(value)
-    }
-}
-
 impl<const N: usize> From<[Var; N]> for VarList {
     fn from(value: [Var; N]) -> Self {
         Self(value.into())

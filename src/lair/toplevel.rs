@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::{bytecode::*, expr::*, map::Map, Name};
+use super::{bytecode::*, expr::*, map::Map, List, Name};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Toplevel<F> {
@@ -54,7 +54,10 @@ impl<F> Toplevel<F> {
     }
 }
 
-type BindMap = BTreeMap<Var, (Vec<usize>, usize)>;
+/// A map from `Var` to its compiled indices and block identifier
+type BindMap = BTreeMap<Var, (List<usize>, usize)>;
+
+/// A map that tells whether a `Var`, from a certain block, has been used or not
 type UsedMap = BTreeMap<(Var, usize), bool>;
 
 #[inline]
@@ -65,7 +68,7 @@ fn bind_new(var: &Var, ctx: &mut CheckCtx<'_>) {
 }
 
 #[inline]
-fn bind(var: &Var, idxs: Vec<usize>, ctx: &mut CheckCtx<'_>) {
+fn bind(var: &Var, idxs: List<usize>, ctx: &mut CheckCtx<'_>) {
     ctx.bind_map.insert(*var, (idxs, ctx.block_ident));
     if let Some(used) = ctx.used_map.insert((*var, ctx.block_ident), false) {
         let ch = var.name.chars().next().expect("Empty var name");
@@ -82,7 +85,10 @@ fn use_var<'a>(var: &Var, ctx: &'a mut CheckCtx<'_>) -> &'a [usize] {
         .bind_map
         .get(var)
         .unwrap_or_else(|| panic!("Variable {var} is unbound."));
-    let used = ctx.used_map.get_mut(&(*var, *block_idx)).unwrap();
+    let used = ctx
+        .used_map
+        .get_mut(&(*var, *block_idx))
+        .expect("Data should have been inserted when binding");
     *used = true;
     idxs
 }
@@ -273,14 +279,14 @@ impl<F: Clone + Ord> BlockE<F> {
                 OpE::Debug(s) => ops.push(Op::Debug(s)),
                 OpE::Slice(pats, args) => {
                     assert_eq!(pats.total_size(), args.total_size());
-                    let args: Vec<_> = args
+                    let args: List<_> = args
                         .slice()
                         .iter()
                         .flat_map(|a| use_var(a, ctx).to_vec())
                         .collect();
                     let mut i = 0;
                     for pat in pats.slice() {
-                        let idxs = args[i..i + pat.size].to_vec();
+                        let idxs = args[i..i + pat.size].into();
                         bind(pat, idxs, ctx);
                         i += pat.size;
                     }
