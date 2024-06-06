@@ -3,6 +3,7 @@ use p3_air::BaseAir;
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
     toplevel::Toplevel,
+    List,
 };
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -29,8 +30,20 @@ pub struct FuncChip<'a, F> {
 }
 
 impl<'a, F> FuncChip<'a, F> {
+    #[inline]
     pub fn from_name(name: &'static str, toplevel: &'a Toplevel<F>) -> Self {
-        let func = toplevel.get_by_name(name).unwrap();
+        let func = toplevel.get_by_name(name).expect("Func not found");
+        Self::from_func(func, toplevel)
+    }
+
+    #[inline]
+    pub fn from_index(idx: usize, toplevel: &'a Toplevel<F>) -> Self {
+        let func = toplevel.get_by_index(idx).expect("Index out of bounds");
+        Self::from_func(func, toplevel)
+    }
+
+    #[inline]
+    pub fn from_func(func: &'a Func<F>, toplevel: &'a Toplevel<F>) -> Self {
         let layout_sizes = func.compute_layout_sizes(toplevel);
         Self {
             func,
@@ -39,14 +52,14 @@ impl<'a, F> FuncChip<'a, F> {
         }
     }
 
-    pub fn from_index(idx: usize, toplevel: &'a Toplevel<F>) -> Self {
-        let func = toplevel.get_by_index(idx).unwrap();
-        let layout_sizes = func.compute_layout_sizes(toplevel);
-        Self {
-            func,
-            toplevel,
-            layout_sizes,
-        }
+    #[inline]
+    pub fn from_toplevel(toplevel: &'a Toplevel<F>) -> List<Self> {
+        toplevel
+            .map
+            .get_pairs()
+            .iter()
+            .map(|(_, func)| FuncChip::from_func(func, toplevel))
+            .collect()
     }
 
     #[inline]

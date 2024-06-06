@@ -1,6 +1,7 @@
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use p3_baby_bear::BabyBear;
 use p3_field::AbstractField;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{mem::take, time::Duration};
 
 use loam::{
@@ -85,13 +86,19 @@ fn trace_generation(c: &mut Criterion) {
 
         eval.execute_iter(args, &mut queries);
 
-        b.iter(|| eval.generate_trace_parallel(&queries))
+        let func_chips = FuncChip::from_toplevel(&toplevel);
+
+        b.iter(|| {
+            func_chips.par_iter().for_each(|func_chip| {
+                func_chip.generate_trace_parallel(&queries);
+            })
+        })
     });
 }
 
 criterion_group! {
     name = fib_benches;
-    config = Criterion::default().measurement_time(Duration::from_secs(8));
+    config = Criterion::default().measurement_time(Duration::from_secs(9));
     targets =
         evaluation,
         trace_generation,
