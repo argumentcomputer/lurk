@@ -30,11 +30,11 @@ impl VarList {
     }
 }
 
-// impl From<List<Var>> for VarList {
-//     fn from(value: List<Var>) -> Self {
-//         Self(value)
-//     }
-// }
+impl From<List<Var>> for VarList {
+    fn from(value: List<Var>) -> Self {
+        Self(value)
+    }
+}
 
 impl<const N: usize> From<[Var; N]> for VarList {
     fn from(value: [Var; N]) -> Self {
@@ -73,6 +73,9 @@ pub enum OpE<F> {
     Store(Var, VarList),
     /// `Load([x, ...], y)` binds `[x, ...]` to the values that is pointed by `y`
     Load(VarList, Var),
+    /// `Slice([x, ...], [y, ...])` matches the pattern `[x, ...]` against the values
+    /// formed by `[y, ...]`
+    Slice(VarList, VarList),
     /// `Debug(s)` emits debug message `s`
     Debug(&'static str),
 }
@@ -94,7 +97,7 @@ pub enum CtrlE<F> {
     If(Var, Box<BlockE<F>>, Box<BlockE<F>>),
     /// Contains the variables whose bindings will construct the output of the
     /// block
-    Return(List<Var>),
+    Return(VarList),
 }
 
 /// Represents the cases for `CtrlE::Match`, containing the branches for successfull

@@ -577,19 +577,19 @@ mod tests {
     #[test]
     fn lair_array_test() {
         let test_e = func!(
-            fn test(x: [4]): [1] {
-                let ptr = store(x);
-                let (_x, y: [2], _x) = load(ptr);
-                return y
+            fn test(x: [4], y: [3]): [3] {
+                let (a, _foo: [2], b: [2], _foo: [2]) = slice(x, y);
+                return (a, b)
             }
         );
         let toplevel = Toplevel::new(&[test_e]);
         let test = toplevel.get_by_name("test").unwrap();
         let f = F::from_canonical_u32;
-        let args = &[f(1), f(2), f(3), f(4)];
+        let args = &[f(1), f(2), f(3), f(4), f(5), f(6), f(7)];
         let record = &mut QueryRecord::new(&toplevel);
         let out = test.execute(args, &toplevel, record);
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[0..2], [f(2), f(3)]);
+        let expected_len = 3;
+        assert_eq!(out.len(), expected_len);
+        assert_eq!(out[0..expected_len], [f(1), f(4), f(5)]);
     }
 }

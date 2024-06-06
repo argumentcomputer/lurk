@@ -139,6 +139,20 @@ macro_rules! block {
         $crate::block!({ $($tail)* }, $ops)
     }};
     // Pseudo-operations
+    ({ let $tgt:ident $(: [$size:literal])? = slice($($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+        let out = [$crate::var!($tgt $(, $size)?)].into();
+        let inp = [$($arg),*].into();
+        $ops.push($crate::lair::expr::OpE::Slice(out, inp));
+        let $tgt = $crate::var!($tgt $(, $size)?);
+        $crate::block!({ $($tail)* }, $ops)
+    }};
+    ({ let ($($tgt:ident $(: [$size:literal])?),*) = slice($($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+        let out = [$($crate::var!($tgt $(, $size)?)),*].into();
+        let inp = [$($arg),*].into();
+        $ops.push($crate::lair::expr::OpE::Slice(out, inp));
+        $(let $tgt = $crate::var!($tgt $(, $size)?);)*
+        $crate::block!({ $($tail)* }, $ops)
+    }};
     ({ let $tgt:ident = Sym($sym:literal, $mem:ident, $store:ident); $($tail:tt)+ }, $ops:expr) => {{
         let sym = $mem.read_and_ingress($sym, $store).unwrap().raw;
         $ops.push($crate::lair::expr::OpE::Const($crate::var!($tgt), sym));
