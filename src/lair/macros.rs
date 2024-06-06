@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! func {
-    (fn $name:ident($( $in:ident $(: [$in_size:literal])? ),*): [$size:literal] $lair:tt) => {{
+    (fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
         $(let $in = $crate::var!($in $(, $in_size)?);)*
         $crate::lair::expr::FuncE {
             name: $crate::lair::Name(stringify!($name)),
@@ -10,7 +10,7 @@ macro_rules! func {
             body: $crate::block_init!($lair),
         }
     }};
-    (invertible fn $name:ident($( $in:ident $(: [$in_size:literal])? ),*): [$size:literal] $lair:tt) => {{
+    (invertible fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
         $(let $in = $crate::var!($in $(, $in_size)?);)*
         $crate::lair::expr::FuncE {
             name: $crate::lair::Name(stringify!($name)),
@@ -30,7 +30,7 @@ macro_rules! var {
             size: 1,
         }
     };
-    ($variable:ident, $size:literal) => {
+    ($variable:ident, $size:expr) => {
         $crate::lair::expr::Var {
             name: stringify!($variable),
             size: $size,
@@ -96,13 +96,13 @@ macro_rules! block {
         let $tgt = $crate::var!($tgt);
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let ($($tgt:ident $(: [$size:literal])?),*) = load($arg:ident); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = load($arg:ident); $($tail:tt)+ }, $ops:expr) => {{
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         $ops.push($crate::lair::expr::OpE::Load(out, $arg));
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let ($($tgt:ident $(: [$size:literal])?),*) = call($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = call($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
         let func = $crate::lair::Name(stringify!($func));
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         let inp = [$($arg),*].into();
@@ -110,7 +110,7 @@ macro_rules! block {
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let $tgt:ident $(: [$size:literal])? = call($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident $(: [$size:expr])? = call($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
         let func = $crate::lair::Name(stringify!($func));
         let out = [$crate::var!($tgt $(, $size)?)].into();
         let inp = [$($arg),*].into();
@@ -118,7 +118,7 @@ macro_rules! block {
         let $tgt = $crate::var!($tgt $(, $size)?);
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let ($($tgt:ident $(: [$size:literal])?),*) = preimg($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = preimg($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
         let func = $crate::lair::Name(stringify!($func));
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         let inp = [$($arg),*].into();
@@ -126,7 +126,7 @@ macro_rules! block {
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let $tgt:ident $(: [$size:literal])? = preimg($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident $(: [$size:expr])? = preimg($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
         let func = $crate::lair::Name(stringify!($func));
         let out = [$crate::var!($tgt $(, $size)?)].into();
         let inp = [$($arg),*].into();
@@ -139,16 +139,23 @@ macro_rules! block {
         $crate::block!({ $($tail)* }, $ops)
     }};
     // Pseudo-operations
-    ({ let $tgt:ident $(: [$size:literal])? = slice($($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident $(: [$size:expr])? = ($($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
         let out = [$crate::var!($tgt $(, $size)?)].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::Slice(out, inp));
         let $tgt = $crate::var!($tgt $(, $size)?);
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let ($($tgt:ident $(: [$size:literal])?),*) = slice($($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = ($($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         let inp = [$($arg),*].into();
+        $ops.push($crate::lair::expr::OpE::Slice(out, inp));
+        $(let $tgt = $crate::var!($tgt $(, $size)?);)*
+        $crate::block!({ $($tail)* }, $ops)
+    }};
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = $arg:ident; $($tail:tt)+ }, $ops:expr) => {{
+        let out = [$($crate::var!($tgt $(, $size)?)),*].into();
+        let inp = [$arg].into();
         $ops.push($crate::lair::expr::OpE::Slice(out, inp));
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
         $crate::block!({ $($tail)* }, $ops)

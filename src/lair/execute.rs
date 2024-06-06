@@ -578,14 +578,14 @@ mod tests {
     fn lair_array_test() {
         let test1_e = func!(
             fn test1(x: [4], y: [3]): [3] {
-                let (_foo, a: [2], b: [2], _foo: [2]) = slice(x, y);
+                let (_foo, a: [2], b: [2], _foo: [2]) = (x, y);
                 let (sums1: [2], sum2: [1]) = call(test2, a, b);
                 return (sums1, sum2)
             }
         );
         let test2_e = func!(
             fn test2(z: [4]): [3] {
-                let (a, b, c, d) = slice(z);
+                let (a, b, c, d) = z;
                 let a_b = add(a, b);
                 let b_c = add(b, c);
                 let c_d = add(c, d);
