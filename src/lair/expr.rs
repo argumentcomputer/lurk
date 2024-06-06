@@ -21,12 +21,17 @@ pub struct VarList(List<Var>);
 impl VarList {
     #[inline]
     pub fn total_size(&self) -> usize {
-        self.0.iter().fold(0, |acc, var| acc + var.size)
+        self.0.iter().map(|var| var.size).sum()
     }
 
     #[inline]
-    pub fn slice(&self) -> &[Var] {
+    pub fn as_slice(&self) -> &[Var] {
         &self.0
+    }
+
+    #[inline]
+    pub fn iter(&self) -> core::slice::Iter<'_, Var> {
+        self.as_slice().iter()
     }
 }
 
