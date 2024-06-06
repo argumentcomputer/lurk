@@ -25,8 +25,8 @@ impl VarList {
     }
 
     #[inline]
-    pub fn iter(&self) -> core::slice::Iter<'_, Var> {
-        self.0.iter()
+    pub fn slice(&self) -> &[Var] {
+        &self.0
     }
 }
 

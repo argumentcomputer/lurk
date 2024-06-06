@@ -573,4 +573,23 @@ mod tests {
         let expect_inp = args;
         assert_eq!(inp, expect_inp);
     }
+
+    #[test]
+    fn lair_array_test() {
+        let test_e = func!(
+            fn test(x: [4]): [1] {
+                let ptr = store(x);
+                let (_x, y: [2], _x) = load(ptr);
+                return y
+            }
+        );
+        let toplevel = Toplevel::new(&[test_e]);
+        let test = toplevel.get_by_name("test").unwrap();
+        let f = F::from_canonical_u32;
+        let args = &[f(1), f(2), f(3), f(4)];
+        let record = &mut QueryRecord::new(&toplevel);
+        let out = test.execute(args, &toplevel, record);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0..2], [f(2), f(3)]);
+    }
 }
