@@ -4,11 +4,40 @@ use super::{map::Map, List, Name};
 
 /// The type for variable references
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Var(pub &'static str);
+pub struct Var {
+    pub name: &'static str,
+    pub size: usize,
+}
 
 impl std::fmt::Display for Var {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", &self.name)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VarList(List<Var>);
+
+impl VarList {
+    #[inline]
+    pub fn total_size(&self) -> usize {
+        self.0.iter().map(|var| var.size).sum()
+    }
+
+    #[inline]
+    pub fn as_slice(&self) -> &[Var] {
+        &self.0
+    }
+
+    #[inline]
+    pub fn iter(&self) -> core::slice::Iter<'_, Var> {
+        self.as_slice().iter()
+    }
+}
+
+impl<const N: usize> From<[Var; N]> for VarList {
+    fn from(value: [Var; N]) -> Self {
+        Self(value.into())
     }
 }
 
@@ -35,14 +64,17 @@ pub enum OpE<F> {
     Eq(Var, Var, Var),
     /// `Call([x, ...], foo, [y, ...])` binds `x, ...` to the output of `foo`
     /// when applied to the arguments `y, ...`
-    Call(List<Var>, Name, List<Var>),
+    Call(VarList, Name, VarList),
     /// `PreImg([x, ...], foo, [y, ...])` binds `x, ...` to the preimage of `foo`
     /// when on the arguments `y, ...`
-    PreImg(List<Var>, Name, List<Var>),
+    PreImg(VarList, Name, VarList),
     /// `Store(x, [y, ...])` binds `x` to a pointer to `[y, ...]`
-    Store(Var, List<Var>),
+    Store(Var, VarList),
     /// `Load([x, ...], y)` binds `[x, ...]` to the values that is pointed by `y`
-    Load(List<Var>, Var),
+    Load(VarList, Var),
+    /// `Slice([x, ...], [y, ...])` matches the pattern `[x, ...]` against the values
+    /// formed by `[y, ...]`
+    Slice(VarList, VarList),
     /// `Debug(s)` emits debug message `s`
     Debug(&'static str),
 }
@@ -64,7 +96,7 @@ pub enum CtrlE<F> {
     If(Var, Box<BlockE<F>>, Box<BlockE<F>>),
     /// Contains the variables whose bindings will construct the output of the
     /// block
-    Return(List<Var>),
+    Return(VarList),
 }
 
 /// Represents the cases for `CtrlE::Match`, containing the branches for successfull
@@ -82,7 +114,7 @@ pub struct CasesE<F> {
 pub struct FuncE<F> {
     pub name: Name,
     pub invertible: bool,
-    pub input_params: List<Var>,
+    pub input_params: VarList,
     pub output_size: usize,
     pub body: BlockE<F>,
 }

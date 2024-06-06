@@ -340,7 +340,7 @@ mod tests {
     #[test]
     fn lair_match_trace_test() {
         let func_e = func!(
-        fn test(n, m): 1 {
+        fn test(n, m): [1] {
             let one = 1;
             match n {
                 0 => {
@@ -398,7 +398,7 @@ mod tests {
     #[test]
     fn lair_inner_match_trace_test() {
         let func_e = func!(
-        fn test(n, m): 1 {
+        fn test(n, m): [1] {
             let zero = 0;
             let one = 1;
             let two = 2;

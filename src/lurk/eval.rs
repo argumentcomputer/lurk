@@ -61,7 +61,7 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
     func!(
-        fn eval(expr_tag, expr, env): 2 {
+        fn eval(expr_tag, expr, env): [2] {
             // Constants, tags, etc
             let t = Sym("t", mem, store);
             let nil = Sym("nil", mem, store);
@@ -344,7 +344,7 @@ pub fn car_cdr<F: PrimeField, H: Hasher<F = F>>(
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
     func!(
-        fn car_cdr(rest_tag, rest, env): 4 {
+        fn car_cdr(rest_tag, rest, env): [4] {
             let nil = Sym("nil", mem, store);
             let nil_tag = Tag::Nil;
             let err_tag = Tag::Err;
@@ -394,7 +394,7 @@ pub fn eval_binop_num<F: PrimeField, H: Hasher<F = F>>(
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
     func!(
-        fn eval_binop_num(head, rest_tag, rest, env): 2 {
+        fn eval_binop_num(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let num_tag = Tag::Num;
             let cons_tag = Tag::Cons;
@@ -478,7 +478,7 @@ pub fn eval_binop_misc<F: PrimeField, H: Hasher<F = F>>(
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
     func!(
-        fn eval_binop_misc(head, rest_tag, rest, env): 2 {
+        fn eval_binop_misc(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let nil_tag = Tag::Nil;
@@ -563,7 +563,7 @@ pub fn eval_unop<F: PrimeField, H: Hasher<F = F>>(
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
     func!(
-        fn eval_unop(head, rest_tag, rest, env): 2 {
+        fn eval_unop(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let num_tag = Tag::Num;
@@ -658,7 +658,7 @@ pub fn eval_unop<F: PrimeField, H: Hasher<F = F>>(
 
 pub fn eval_let<F: PrimeField>() -> FuncE<F> {
     func!(
-        fn eval_let(binds_tag, binds, body_tag, body, env): 2 {
+        fn eval_let(binds_tag, binds, body_tag, body, env): [2] {
             let err_tag = Tag::Err;
             let invalid_form = EvalErr::InvalidForm;
             match binds_tag {
@@ -711,7 +711,7 @@ pub fn eval_let<F: PrimeField>() -> FuncE<F> {
 
 pub fn eval_letrec<F: PrimeField>() -> FuncE<F> {
     func!(
-        fn eval_letrec(binds_tag, binds, body_tag, body, env): 2 {
+        fn eval_letrec(binds_tag, binds, body_tag, body, env): [2] {
             let err_tag = Tag::Err;
             let invalid_form = EvalErr::InvalidForm;
             match binds_tag {
@@ -765,7 +765,7 @@ pub fn eval_letrec<F: PrimeField>() -> FuncE<F> {
 
 pub fn apply<F: PrimeField>() -> FuncE<F> {
     func!(
-        fn apply(head_tag, head, args_tag, args, args_env): 2 {
+        fn apply(head_tag, head, args_tag, args, args_env): [2] {
             // Constants, tags, etc
             let err_tag = Tag::Err;
             let fun_tag = Tag::Fun;
@@ -832,7 +832,7 @@ pub fn apply<F: PrimeField>() -> FuncE<F> {
 
 pub fn env_lookup<F: Field>() -> FuncE<F> {
     func!(
-        fn env_lookup(x, env): 2 {
+        fn env_lookup(x, env): [2] {
             if !env {
                 let err_tag = Tag::Err;
                 let err = EvalErr::UnboundVar;
@@ -851,7 +851,7 @@ pub fn env_lookup<F: Field>() -> FuncE<F> {
 
 pub fn list_to_env<F: PrimeField>() -> FuncE<F> {
     func!(
-        fn list_to_env(list_tag, list): 2 {
+        fn list_to_env(list_tag, list): [2] {
             let err_tag = Tag::Err;
             let generic_err = EvalErr::GenericError;
             let env_tag = Tag::Env;
@@ -904,7 +904,7 @@ mod test {
     #[test]
     fn list_lookup_test() {
         let list_lookup = func!(
-            fn list_lookup(x, list_tag, list): 2 {
+            fn list_lookup(x, list_tag, list): [2] {
                 match list_tag {
                     Tag::Nil => {
                         let err_tag = Tag::Err;
@@ -925,7 +925,7 @@ mod test {
             }
         );
         let to_env_lookup = func!(
-            fn to_env_lookup(x, list_tag, list): 2 {
+            fn to_env_lookup(x, list_tag, list): [2] {
                 let (status, env) = call(list_to_env, list_tag, list);
                 if !status {
                     return (status, status)

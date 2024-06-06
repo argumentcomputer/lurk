@@ -502,7 +502,7 @@ mod tests {
     #[test]
     fn lair_div_test() {
         let test_e = func!(
-            fn test(a, b): 1 {
+            fn test(a, b): [1] {
                 let n = div(a, b);
                 return n
             }
@@ -519,7 +519,7 @@ mod tests {
     #[test]
     fn lair_shadow_test() {
         let test_e = func!(
-            fn test(x): 1 {
+            fn test(x): [1] {
                 let x = add(x, x);
                 let x = add(x, x);
                 let x = add(x, x);
@@ -538,7 +538,7 @@ mod tests {
     #[test]
     fn lair_preimg_test() {
         let polynomial_e = func!(
-            invertible fn polynomial(a0, a1, a2, a3, x): 1 {
+            invertible fn polynomial(a0, a1, a2, a3, x): [1] {
                 // a2 + a3*x
                 let coef = mul(a3, x);
                 let res = add(a2, coef);
@@ -552,7 +552,7 @@ mod tests {
             }
         );
         let inverse_e = func!(
-            fn inverse(y): 5 {
+            fn inverse(y): [5] {
                 let (a0, a1, a2, a3, x) = preimg(polynomial, y);
                 return (a0, a1, a2, a3, x)
             }
@@ -572,5 +572,34 @@ mod tests {
         assert_eq!(inp.len(), 5);
         let expect_inp = args;
         assert_eq!(inp, expect_inp);
+    }
+
+    #[test]
+    fn lair_array_test() {
+        let test1_e = func!(
+            fn test1(x: [4], y: [3]): [3] {
+                let (_foo, a: [2], b: [2], _foo: [2]) = slice(x, y);
+                let (sums1: [2], sum2: [1]) = call(test2, a, b);
+                return (sums1, sum2)
+            }
+        );
+        let test2_e = func!(
+            fn test2(z: [4]): [3] {
+                let (a, b, c, d) = slice(z);
+                let a_b = add(a, b);
+                let b_c = add(b, c);
+                let c_d = add(c, d);
+                return (a_b, b_c, c_d)
+            }
+        );
+        let toplevel = Toplevel::new(&[test1_e, test2_e]);
+        let test = toplevel.get_by_name("test1").unwrap();
+        let f = F::from_canonical_u32;
+        let args = &[f(1), f(2), f(3), f(4), f(5), f(6), f(7)];
+        let record = &mut QueryRecord::new(&toplevel);
+        let out = test.execute(args, &toplevel, record);
+        let expected_len = 3;
+        assert_eq!(out.len(), expected_len);
+        assert_eq!(out[0..expected_len], [f(5), f(7), f(9)]);
     }
 }
