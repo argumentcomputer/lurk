@@ -144,7 +144,6 @@ impl Reader {
         if let Some(digest) = self.sym_cache.get(s) {
             return *digest;
         }
-        let is_nil = s == nil();
         let digest = s.path().iter().fold([F::zero(); IMG_SIZE], |acc, s| {
             let mut buffer = SizedBuffer::<PREIMG_SIZE>::default();
             buffer.read_tag(Tag::Str);
@@ -153,11 +152,7 @@ impl Reader {
             buffer.read_iter(acc);
             let preimg = buffer.extract();
             let img = self.hash(preimg);
-            // we don't ingress the children of nil so we don't need to remember
-            // its hashes
-            if !is_nil {
-                self.hashes.insert(preimg, img);
-            }
+            self.hashes.insert(preimg, img);
             img
         });
         self.sym_cache.insert(s.clone(), digest);
