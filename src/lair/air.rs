@@ -257,20 +257,19 @@ impl<F: Field> Ctrl<F> {
         match self {
             Ctrl::Match(v, cases) => {
                 let map_len = map.len();
+                let init_state = index.save();
                 let v = map[*v].to_expr();
                 let mut sels = Vec::with_capacity(cases.size());
 
                 for (f, branch) in cases.branches.iter() {
-                    let state = index.save();
                     let sel = branch.eval(builder, local, index, map, toplevel);
                     builder.when(sel.clone()).assert_eq(v.clone(), *f);
                     sels.push(sel);
                     map.truncate(map_len);
-                    index.restore(state);
+                    index.restore(init_state);
                 }
 
                 if let Some(branch) = &cases.default {
-                    let state = index.save();
                     let invs = (0..cases.branches.size())
                         .map(|_| *local.next_aux(index))
                         .collect::<Vec<_>>();
@@ -280,7 +279,7 @@ impl<F: Field> Ctrl<F> {
                     }
                     sels.push(sel);
                     map.truncate(map_len);
-                    index.restore(state);
+                    index.restore(init_state);
                 }
 
                 sels.into_iter()
@@ -288,27 +287,26 @@ impl<F: Field> Ctrl<F> {
             }
             Ctrl::If(b, t, f) => {
                 let map_len = map.len();
+                let init_state = index.save();
                 let b = map[*b].to_expr();
 
-                let state = index.save();
                 let inv = *local.next_aux(index);
                 let t_sel = t.eval(builder, local, index, map, toplevel);
                 builder.when(t_sel.clone()).assert_one(inv * b.clone());
                 map.truncate(map_len);
-                index.restore(state);
+                index.restore(init_state);
 
-                index.save();
                 let f_sel = f.eval(builder, local, index, map, toplevel);
                 builder.when(f_sel.clone()).assert_zero(b);
                 map.truncate(map_len);
-                index.restore(state);
+                index.restore(init_state);
 
                 t_sel + f_sel
             }
             Ctrl::IfMany(vars, t, f) => {
                 let map_len = map.len();
+                let init_state = index.save();
 
-                let state = index.save();
                 let coeffs = vars
                     .iter()
                     .map(|_| *local.next_aux(index))
@@ -325,16 +323,15 @@ impl<F: Field> Ctrl<F> {
                     .fold(one, |acc, expr| acc - expr);
                 builder.when(t_sel.clone()).assert_zero(acc);
                 map.truncate(map_len);
-                index.restore(state);
+                index.restore(init_state);
 
-                index.save();
                 let f_sel = f.eval(builder, local, index, map, toplevel);
                 for var in vars.iter() {
                     let b = map[*var].to_expr();
                     builder.when(f_sel.clone()).assert_zero(b);
                 }
                 map.truncate(map_len);
-                index.restore(state);
+                index.restore(init_state);
 
                 t_sel + f_sel
             }
