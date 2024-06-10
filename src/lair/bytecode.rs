@@ -51,6 +51,8 @@ pub enum Ctrl<F> {
     Match(usize, Cases<F>),
     /// `If(b, t, f)` executes block `f` if `stack[b]` is zero and `t` otherwise
     If(usize, Box<Block<F>>, Box<Block<F>>),
+    /// `IfMany(b, t, f)` executes block `f` if `stack[b]` is zero and `t` otherwise
+    IfMany(List<usize>, Box<Block<F>>, Box<Block<F>>),
     /// Contains the variables whose bindings will construct the output of the
     /// block. The first `usize` is an unique identifier, representing the
     /// selector used for arithmetization

@@ -257,20 +257,19 @@ impl<F: Field> Ctrl<F> {
         match self {
             Ctrl::Match(v, cases) => {
                 let map_len = map.len();
+                let init_state = index.save();
                 let v = map[*v].to_expr();
                 let mut sels = Vec::with_capacity(cases.size());
 
                 for (f, branch) in cases.branches.iter() {
-                    let state = index.save();
                     let sel = branch.eval(builder, local, index, map, toplevel);
                     builder.when(sel.clone()).assert_eq(v.clone(), *f);
                     sels.push(sel);
                     map.truncate(map_len);
-                    index.restore(state);
+                    index.restore(init_state);
                 }
 
                 if let Some(branch) = &cases.default {
-                    let state = index.save();
                     let invs = (0..cases.branches.size())
                         .map(|_| *local.next_aux(index))
                         .collect::<Vec<_>>();
@@ -280,7 +279,7 @@ impl<F: Field> Ctrl<F> {
                     }
                     sels.push(sel);
                     map.truncate(map_len);
-                    index.restore(state);
+                    index.restore(init_state);
                 }
 
                 sels.into_iter()
@@ -288,20 +287,51 @@ impl<F: Field> Ctrl<F> {
             }
             Ctrl::If(b, t, f) => {
                 let map_len = map.len();
+                let init_state = index.save();
                 let b = map[*b].to_expr();
 
-                let state = index.save();
                 let inv = *local.next_aux(index);
                 let t_sel = t.eval(builder, local, index, map, toplevel);
                 builder.when(t_sel.clone()).assert_one(inv * b.clone());
                 map.truncate(map_len);
-                index.restore(state);
+                index.restore(init_state);
 
-                index.save();
                 let f_sel = f.eval(builder, local, index, map, toplevel);
                 builder.when(f_sel.clone()).assert_zero(b);
                 map.truncate(map_len);
-                index.restore(state);
+                index.restore(init_state);
+
+                t_sel + f_sel
+            }
+            Ctrl::IfMany(vars, t, f) => {
+                let map_len = map.len();
+                let init_state = index.save();
+
+                let coeffs = vars
+                    .iter()
+                    .map(|_| *local.next_aux(index))
+                    .collect::<Vec<_>>();
+                let t_sel = t.eval(builder, local, index, map, toplevel);
+                let one: AB::Expr = F::one().into();
+                let acc = coeffs
+                    .iter()
+                    .zip(vars.iter())
+                    .map(|(coeff, var)| {
+                        let b = map[*var].to_expr();
+                        *coeff * b
+                    })
+                    .fold(one, |acc, expr| acc - expr);
+                builder.when(t_sel.clone()).assert_zero(acc);
+                map.truncate(map_len);
+                index.restore(init_state);
+
+                let f_sel = f.eval(builder, local, index, map, toplevel);
+                for var in vars.iter() {
+                    let b = map[*var].to_expr();
+                    builder.when(f_sel.clone()).assert_zero(b);
+                }
+                map.truncate(map_len);
+                index.restore(init_state);
 
                 t_sel + f_sel
             }
@@ -455,5 +485,51 @@ mod tests {
 
         let _ = debug_constraints_collecting_queries(&not_chip, &[], &not_trace);
         let _ = debug_constraints_collecting_queries(&eq_chip, &[], &eq_trace);
+    }
+
+    #[test]
+    fn lair_if_many_test() {
+        let if_many_func = func!(
+        fn if_many(a: [4]): [1] {
+            if a {
+                let one = 1;
+                return one
+            }
+            let zero = 0;
+            return zero
+        });
+        let toplevel = Toplevel::<F>::new(&[if_many_func]);
+        let if_many_chip = FuncChip::from_name("if_many", &toplevel);
+
+        let queries = &mut QueryRecord::new(&toplevel);
+        let f = field_from_u32;
+        let args = [f(0), f(0), f(0), f(0)].into();
+        if_many_chip.execute_iter(args, queries);
+        let args = [f(1), f(3), f(8), f(2)].into();
+        if_many_chip.execute_iter(args, queries);
+        let args = [f(0), f(0), f(4), f(1)].into();
+        if_many_chip.execute_iter(args, queries);
+        let args = [f(0), f(0), f(0), f(9)].into();
+        if_many_chip.execute_iter(args, queries);
+
+        let if_many_trace = if_many_chip.generate_trace_parallel(queries);
+
+        let if_many_width = if_many_chip.width();
+        let expected_trace = RowMajorMatrix::new(
+            [
+                // 4 inputs, 1 output, mult, 4 coeffs, 2 selectors
+                0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, //
+                1, 3, 8, 2, 1, 1, 1, 0, 0, 0, 1, 0, //
+                0, 0, 4, 1, 1, 1, 0, 0, 1509949441, 0, 1, 0, //
+                0, 0, 0, 9, 1, 1, 0, 0, 0, 447392427, 1, 0, //
+            ]
+            .into_iter()
+            .map(F::from_canonical_u32)
+            .collect::<Vec<_>>(),
+            if_many_width,
+        );
+        assert_eq!(if_many_trace, expected_trace);
+
+        let _ = debug_constraints_collecting_queries(&if_many_chip, &[], &expected_trace);
     }
 }
