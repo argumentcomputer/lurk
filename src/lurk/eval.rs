@@ -890,7 +890,7 @@ pub fn list_to_env<F: PrimeField>() -> FuncE<F> {
 #[cfg(test)]
 mod test {
     use expect_test::{expect, Expect};
-    use p3_baby_bear::BabyBear as F;
+    use p3_baby_bear::{BabyBear as F, BabyBear};
     use p3_field::AbstractField;
 
     use crate::{
@@ -900,6 +900,25 @@ mod test {
     };
 
     use super::*;
+
+    #[test]
+    fn width() {
+        let mem = &mut Memory::init();
+        let store = ZStore::<BabyBear, PoseidonBabyBearHasher>::new();
+        let toplevel = build_lurk_toplevel(mem, &store);
+        let mut total = 0;
+
+        println!("| Name | Width |");
+        println!("|---|---|");
+        for (name, func) in toplevel.map.iter() {
+            let chip = FuncChip::from_func(func, &toplevel);
+            let name = name.0;
+            let w = chip.width();
+            total += w;
+            println!("| {name} | {w} |");
+        }
+        println!("| Total | {total} |");
+    }
 
     #[test]
     fn list_lookup_test() {

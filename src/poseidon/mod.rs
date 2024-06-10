@@ -90,4 +90,26 @@ mod tests {
 
         let _ = debug_constraints_collecting_queries(&chip16, &public_values, &main);
     }
+
+    #[test]
+    fn test_width() {
+        fn get_width<C: PoseidonConfig>() -> (usize, usize) {
+            let w = C::WIDTH;
+            let f = C::R_F;
+            let p = C::R_P;
+            (w, w * (2 * f + 1) + 2 * p - 1)
+        }
+
+        let widths = [
+            get_width::<crate::poseidon::config::BabyBearConfig16>(),
+            get_width::<crate::poseidon::config::BabyBearConfig24>(),
+            get_width::<crate::poseidon::config::BabyBearConfig32>(),
+            get_width::<crate::poseidon::config::BabyBearConfig40>(),
+        ];
+        println!("| Width | Columns |");
+        println!("|---|---|");
+        for (w, cols) in widths {
+            println!("| {w} | {cols} |")
+        }
+    }
 }
