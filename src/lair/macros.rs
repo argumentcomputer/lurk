@@ -234,7 +234,7 @@ macro_rules! block {
                 ));
                 $(
                     vec.push((
-                        $crate::lurk::store::Tag::$other_tag.to_field(),
+                        $crate::lurk::zstore::Tag::$other_tag.to_field(),
                         $crate::block_init!( $branch ),
                     ));
                 )*

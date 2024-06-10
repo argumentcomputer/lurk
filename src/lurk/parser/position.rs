@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use crate::lurk::parser::Span;
 #[cfg(not(target_arch = "wasm32"))]
 
@@ -21,6 +23,11 @@ impl PartialEq for Pos {
     fn eq(&self, _other: &Self) -> bool {
         true
     }
+}
+
+// NOOP in the same spirit of the `PartialEq` implementation
+impl Hash for Pos {
+    fn hash<H: std::hash::Hasher>(&self, _state: &mut H) {}
 }
 
 impl Eq for Pos {}
