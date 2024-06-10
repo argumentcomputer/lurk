@@ -56,6 +56,132 @@ impl EvalErr {
     }
 }
 
+pub fn ingress<F: PrimeField>() -> FuncE<F> {
+    func!(
+        fn ingress(tag_full: [8], digest: [8]): [1] {
+            let (tag, _rest: [7]) = tag_full;
+            match tag {
+                Tag::Num | Tag::Err => {
+                    let (x, _rest: [7]) = digest;
+                    return x
+                }
+                Tag::Char | Tag::Nil | Tag::U64 | Tag::Comm => {
+                    let ptr = store(digest);
+                    return ptr
+                }
+                Tag::Str | Tag::Sym | Tag::Key => {
+                    if !digest {
+                        let zero = 0;
+                        return zero
+                    }
+                    let (fst_tag_full: [8], fst_digest: [8],
+                         snd_tag_full: [8], snd_digest: [8]) = preimg(hash_32_8, digest);
+                    let fst_ptr = call(ingress, fst_tag_full, fst_digest);
+                    let snd_ptr = call(ingress, snd_tag_full, snd_digest);
+                    let (fst_tag, _rest: [7]) = fst_tag_full;
+                    let (snd_tag, _rest: [7]) = snd_tag_full;
+                    let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr);
+                    return ptr
+                }
+                Tag::Cons | Tag::Thunk => {
+                    let (fst_tag_full: [8], fst_digest: [8],
+                         snd_tag_full: [8], snd_digest: [8]) = preimg(hash_32_8, digest);
+                    let fst_ptr = call(ingress, fst_tag_full, fst_digest);
+                    let snd_ptr = call(ingress, snd_tag_full, snd_digest);
+                    let (fst_tag, _rest: [7]) = fst_tag_full;
+                    let (snd_tag, _rest: [7]) = snd_tag_full;
+                    let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr);
+                    return ptr
+                }
+                Tag::Fun | Tag::Env => {
+                    let (fst_tag_full: [8], fst_digest: [8],
+                         snd_tag_full: [8], snd_digest: [8],
+                         trd_tag_full: [8], trd_digest: [8]) = preimg(hash_48_8, digest);
+                    let fst_ptr = call(ingress, fst_tag_full, fst_digest);
+                    let snd_ptr = call(ingress, snd_tag_full, snd_digest);
+                    let trd_ptr = call(ingress, trd_tag_full, trd_digest);
+                    let (fst_tag, _rest: [7]) = fst_tag_full;
+                    let (snd_tag, _rest: [7]) = snd_tag_full;
+                    let (trd_tag, _rest: [7]) = trd_tag_full;
+                    let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr, trd_tag, trd_ptr);
+                    return ptr
+                }
+            }
+        }
+    )
+}
+
+pub fn egress<F: PrimeField>() -> FuncE<F> {
+    func!(
+        fn egress(tag, val): [8] {
+            let zero = 0;
+            match tag {
+                Tag::Num | Tag::Err => {
+                    let (digest: [8]) = (val, zero, zero, zero, zero, zero, zero, zero);
+                    return digest
+                }
+                Tag::Char | Tag::Nil | Tag::U64 | Tag::Comm => {
+                    let (digest: [8]) = load(val);
+                    return digest
+                }
+                Tag::Str | Tag::Sym | Tag::Key => {
+                    if !val {
+                        let (digest: [8]) = (zero, zero, zero, zero, zero, zero, zero, zero);
+                        return digest
+                    }
+                    let (fst_tag, fst_ptr, snd_tag, snd_ptr) = load(val);
+                    let (fst_digest: [8]) = call(egress, fst_tag, fst_ptr);
+                    let (snd_digest: [8]) = call(egress, snd_tag, snd_ptr);
+                    let (fst_tag_full: [8]) = (fst_tag, zero, zero, zero, zero, zero, zero, zero);
+                    let (snd_tag_full: [8]) = (snd_tag, zero, zero, zero, zero, zero, zero, zero);
+                    let (digest: [8]) = call(hash_32_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
+                    return digest
+                }
+                Tag::Cons | Tag::Thunk => {
+                    let (fst_tag, fst_ptr, snd_tag, snd_ptr) = load(val);
+                    let (fst_digest: [8]) = call(egress, fst_tag, fst_ptr);
+                    let (snd_digest: [8]) = call(egress, snd_tag, snd_ptr);
+                    let (fst_tag_full: [8]) = (fst_tag, zero, zero, zero, zero, zero, zero, zero);
+                    let (snd_tag_full: [8]) = (snd_tag, zero, zero, zero, zero, zero, zero, zero);
+                    let (digest: [8]) = call(hash_32_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
+                    return digest
+                }
+                Tag::Fun | Tag::Env => {
+                    let (fst_tag, fst_ptr, snd_tag, snd_ptr, trd_tag, trd_ptr) = load(val);
+                    let (fst_digest: [8]) = call(egress, fst_tag, fst_ptr);
+                    let (snd_digest: [8]) = call(egress, snd_tag, snd_ptr);
+                    let (trd_digest: [8]) = call(egress, trd_tag, trd_ptr);
+                    let (fst_tag_full: [8]) = (fst_tag, zero, zero, zero, zero, zero, zero, zero);
+                    let (snd_tag_full: [8]) = (snd_tag, zero, zero, zero, zero, zero, zero, zero);
+                    let (trd_tag_full: [8]) = (trd_tag, zero, zero, zero, zero, zero, zero, zero);
+                    let (digest: [8]) = call(hash_48_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest, trd_tag_full, trd_digest);
+                    return digest
+                }
+            }
+        }
+    )
+}
+
+pub fn hash_32_8<F: PrimeField>() -> FuncE<F> {
+    func!(
+        invertible fn hash_32_8(_preimg: [32]): [8] {
+            let zero = 0;
+            let (dig: [8]) = (zero, zero, zero, zero, zero, zero, zero, zero);
+            return dig
+        }
+    )
+}
+
+pub fn hash_48_8<F: PrimeField>() -> FuncE<F> {
+    func!(
+        fn hash_48_8(_preimg: [48]): [8] {
+            let zero = 0;
+            let (dig: [8]) = (zero, zero, zero, zero, zero, zero, zero, zero);
+            return dig
+        }
+    )
+}
+
 pub fn eval<F: PrimeField, H: Hasher<F = F>>(
     mem: &mut Memory<F, H>,
     store: &ZStore<F, H>,
@@ -322,7 +448,7 @@ pub fn eval<F: PrimeField, H: Hasher<F = F>>(
                                     let (res_tag, res) = call(eval_unop, head, rest_tag, rest, env);
                                     return (res_tag, res)
                                 }
-                                // TODO: other keywords
+                                // TODO: other builtins
                             };
                             let (head_tag, head) = call(eval, head_tag, head, env);
                             let (res_tag, res) = call(apply, head_tag, head, rest_tag, rest, env);
@@ -896,7 +1022,11 @@ mod test {
     use crate::{
         air::debug::debug_constraints_collecting_queries,
         lair::{chip::FuncChip, execute::QueryRecord, toplevel::Toplevel, List},
-        lurk::zstore::{PoseidonBabyBearHasher, Tag},
+        lurk::{
+            reader::{read, ReadData},
+            state::State,
+            zstore::{PoseidonBabyBearHasher, Tag},
+        },
     };
 
     use super::*;
@@ -1012,6 +1142,7 @@ mod test {
             assert_eq!(result.output, expected);
             let trace = eval.generate_trace_parallel(queries);
             let _ = debug_constraints_collecting_queries(&eval, &[], &trace);
+            // TODO: check the trace of every chip
         };
 
         eval_aux("t", "t");
@@ -1060,5 +1191,60 @@ mod test {
         ",
             "20365011074",
         );
+    }
+
+    #[test]
+    fn test_ingress_egress_roundtrip() {
+        let toplevel = Toplevel::<F>::new(&[ingress(), egress(), hash_32_8(), hash_48_8()]);
+
+        let ingress_chip = FuncChip::from_name("ingress", &toplevel);
+        let egress_chip = FuncChip::from_name("egress", &toplevel);
+
+        let assert_ingress_egress_roundtrip = |code| {
+            let ReadData {
+                tag,
+                digest,
+                hashes,
+            } = read(State::init_lurk_state().rccell(), code).unwrap();
+
+            let digest: List<_> = digest.into();
+
+            let queries = &mut QueryRecord::new(&toplevel);
+            queries.inject_queries("hash_32_8", &toplevel, hashes);
+
+            let mut ingress_args = [F::zero(); 16];
+            ingress_args[0] = tag;
+            ingress_args[8..].copy_from_slice(&digest);
+
+            let ingress_args: List<_> = ingress_args.into();
+            ingress_chip.execute_iter(ingress_args.clone(), queries);
+            let ingress_out_ptr = queries.func_queries[ingress_chip.func.index]
+                .get(&ingress_args)
+                .unwrap()
+                .output[0];
+
+            let egress_args: List<_> = [tag, ingress_out_ptr].into();
+            egress_chip.execute_iter(egress_args.clone(), queries);
+            let egress_out = &queries.func_queries[egress_chip.func.index]
+                .get(&egress_args)
+                .unwrap()
+                .output;
+
+            assert_eq!(egress_out, &digest);
+        };
+
+        assert_ingress_egress_roundtrip("~()");
+        assert_ingress_egress_roundtrip("~:()");
+        assert_ingress_egress_roundtrip("()");
+        assert_ingress_egress_roundtrip("'c'");
+        assert_ingress_egress_roundtrip("5u64");
+        assert_ingress_egress_roundtrip("\"\"");
+        assert_ingress_egress_roundtrip("\"a\"");
+        assert_ingress_egress_roundtrip("\"test string\"");
+        assert_ingress_egress_roundtrip(".a");
+        assert_ingress_egress_roundtrip("TestSymbol");
+        assert_ingress_egress_roundtrip(":keyword");
+        assert_ingress_egress_roundtrip("(+ 1 2)");
+        assert_ingress_egress_roundtrip("(a 'b c)");
     }
 }

@@ -4,7 +4,7 @@ use super::package::SymbolRef;
 use super::parser::position::Pos;
 
 /// Lurk's syntax for parsing
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Syntax<F> {
     /// An element of the finite field `F`
     Num(Pos, F),

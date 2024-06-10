@@ -16,9 +16,16 @@ pub struct QueryResult<T> {
     pub(crate) mult: u32,
 }
 
-pub(crate) type QueryMap<F> = IndexMap<List<F>, QueryResult<List<F>>, FxBuildHasher>;
-pub(crate) type InvQueryMap<F> = IndexMap<List<F>, List<F>, FxBuildHasher>;
-pub(crate) type MemMap<F> = IndexMap<List<F>, u32, FxBuildHasher>;
+impl<T> QueryResult<T> {
+    fn init(output: T) -> Self {
+        Self { output, mult: 0 }
+    }
+}
+
+pub(crate) type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
+pub(crate) type QueryMap<F> = FxIndexMap<List<F>, QueryResult<List<F>>>;
+pub(crate) type InvQueryMap<F> = FxIndexMap<List<F>, List<F>>;
+pub(crate) type MemMap<F> = FxIndexMap<List<F>, u32>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QueryRecord<F: Field> {
@@ -45,7 +52,7 @@ pub fn mem_index_from_len(len: usize) -> usize {
 
 #[inline]
 pub fn mem_init<F: Clone>() -> Vec<MemMap<F>> {
-    vec![IndexMap::default(); NUM_MEM_TABLES]
+    vec![FxIndexMap::default(); NUM_MEM_TABLES]
 }
 
 pub fn mem_store<F: Field>(mem: &mut [MemMap<F>], args: List<F>) -> F {
@@ -81,13 +88,13 @@ impl<F: Field> QueryRecord<F> {
 
     #[inline]
     pub fn new_with_init_mem(toplevel: &Toplevel<F>, mem_queries: Vec<MemMap<F>>) -> Self {
-        let func_queries = vec![IndexMap::default(); toplevel.size()];
+        let func_queries = vec![FxIndexMap::default(); toplevel.size()];
         let inv_func_queries = toplevel
             .map
             .iter()
             .map(|(_, func)| {
                 if func.invertible {
-                    Some(IndexMap::default())
+                    Some(FxIndexMap::default())
                 } else {
                     None
                 }
@@ -103,6 +110,28 @@ impl<F: Field> QueryRecord<F> {
     #[inline]
     pub fn func_queries(&self) -> &Vec<QueryMap<F>> {
         &self.func_queries
+    }
+
+    pub fn inject_queries<I: Into<List<F>>, O: Into<List<F>>, T: IntoIterator<Item = (I, O)>>(
+        &mut self,
+        name: &'static str,
+        toplevel: &Toplevel<F>,
+        new_queries_data: T,
+    ) {
+        let func = toplevel.get_by_name(name).expect("Unknown Func");
+        for (inp, out) in new_queries_data {
+            let (inp, out) = (inp.into(), out.into());
+            let queries = &mut self.func_queries[func.index];
+            if !queries.contains_key(&inp) {
+                queries.insert(inp.clone(), QueryResult::init(out.clone()));
+                if func.invertible {
+                    self.inv_func_queries[func.index]
+                        .as_mut()
+                        .expect("Inverse query map not found")
+                        .insert(out, inp);
+                }
+            }
+        }
     }
 }
 
