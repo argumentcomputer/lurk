@@ -103,17 +103,6 @@ impl<F: Field> Payload<F> {
         }
         Self(pay)
     }
-
-    #[allow(clippy::assertions_on_constants)]
-    pub fn from_char(c: char) -> Self {
-        assert!(DIGEST >= 4);
-        let mut pay = [F::zero(); DIGEST];
-        let bytes = (c as u32).to_le_bytes();
-        for i in 0..4 {
-            pay[i] = F::from_canonical_u8(bytes[i]);
-        }
-        Self(pay)
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -272,7 +261,7 @@ impl<F: Field + Ord, H: Hasher<F = F>> ZStore<F, H> {
 
     pub fn intern_char(&self, c: char) -> ZPtr<F> {
         let tag = Tag::Char;
-        let raw = Payload::from_char(c);
+        let raw = Payload::from_field(F::from_canonical_u32(c as u32));
         let ptr = ZPtr { tag, raw };
         self.map.insert(ptr, ZExpr::Char.into());
         ptr
