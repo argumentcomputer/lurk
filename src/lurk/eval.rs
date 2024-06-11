@@ -1018,6 +1018,7 @@ mod test {
     use expect_test::{expect, Expect};
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
+    use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
     use crate::{
         air::debug::debug_constraints_collecting_queries,
@@ -1129,6 +1130,18 @@ mod test {
         expect_eq(apply.width(), expect!["36"]);
         expect_eq(env_lookup.width(), expect!["16"]);
 
+        let all_chips = [
+            &eval,
+            &eval_unop,
+            &eval_binop_num,
+            &eval_binop_misc,
+            &eval_let,
+            &eval_letrec,
+            &car_cdr,
+            &apply,
+            &env_lookup,
+        ];
+
         let mut eval_aux = |expr: &str, res: &str| {
             mem.map = take(&mut queries.mem_queries);
             let expr = mem.read_and_ingress(expr, store).unwrap();
@@ -1140,9 +1153,10 @@ mod test {
             let result = queries.func_queries[eval.func.index].get(&args).unwrap();
             let expected = [res.tag, res.raw].into();
             assert_eq!(result.output, expected);
-            let trace = eval.generate_trace_parallel(queries);
-            let _ = debug_constraints_collecting_queries(&eval, &[], &trace);
-            // TODO: check the trace of every chip
+            all_chips.into_par_iter().for_each(|chip| {
+                let trace = chip.generate_trace_parallel(queries);
+                debug_constraints_collecting_queries(chip, &[], &trace);
+            });
         };
 
         eval_aux("t", "t");
