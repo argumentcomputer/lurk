@@ -12,18 +12,21 @@ pub mod config;
 mod constants;
 pub mod trace;
 mod util;
+mod wide;
 
 /// A chip that implements addition for the Poseidon2 permutation
-pub struct Poseidon2Chip<C>
+pub struct Poseidon2Chip<const WIDTH: usize, C>
 where
-    C: PoseidonConfig,
+    C: PoseidonConfig<WIDTH>,
 {
-    _p: PhantomData<C>,
+    _marker: PhantomData<C>,
 }
 
-impl<C: PoseidonConfig> Default for Poseidon2Chip<C> {
+impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Default for Poseidon2Chip<WIDTH, C> {
     fn default() -> Self {
-        Self { _p: PhantomData }
+        Self {
+            _marker: PhantomData,
+        }
     }
 }
 

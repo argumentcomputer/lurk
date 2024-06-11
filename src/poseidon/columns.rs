@@ -4,7 +4,7 @@ use std::iter::zip;
 use std::mem::size_of;
 
 use crate::poseidon::util::{matmul_exterior, matmul_internal};
-use hybrid_array::Array;
+use hybrid_array::{typenum::Unsigned, Array};
 use p3_field::AbstractField;
 
 use super::config::PoseidonConfig;
@@ -12,20 +12,17 @@ use super::config::PoseidonConfig;
 /// The column layout for the chip.
 #[derive(Clone, Debug)]
 #[repr(C)]
-pub struct Poseidon2Cols<T, C>
-where
-    C: PoseidonConfig,
-{
-    pub(crate) input: Array<T, C::WIDTH>,
+pub struct Poseidon2Cols<T, const WIDTH: usize, C: PoseidonConfig<WIDTH>> {
+    pub(crate) input: [T; WIDTH],
     pub(crate) is_init: T,
     pub(crate) rounds: Array<T, C::R>,
-    pub(crate) add_rc: Array<T, C::WIDTH>,
-    pub(crate) sbox_deg_3: Array<T, C::WIDTH>,
-    pub(crate) sbox_deg_7: Array<T, C::WIDTH>,
-    pub(crate) output: Array<T, C::WIDTH>,
+    pub(crate) add_rc: [T; WIDTH],
+    pub(crate) sbox_deg_3: [T; WIDTH],
+    pub(crate) sbox_deg_7: [T; WIDTH],
+    pub(crate) output: [T; WIDTH],
 }
 
-impl<T, C: PoseidonConfig> Poseidon2Cols<T, C> {
+impl<T, const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2Cols<T, WIDTH, C> {
     #[inline]
     pub fn from_slice(slice: &[T]) -> &Self {
         let num_cols = size_of::<Poseidon2Cols<u8, C>>();
@@ -35,8 +32,8 @@ impl<T, C: PoseidonConfig> Poseidon2Cols<T, C> {
     }
 }
 
-impl<C: PoseidonConfig> Poseidon2Cols<C::F, C> {
-    pub fn set_initial_round(&mut self, input: Array<C::F, C::WIDTH>) -> Array<C::F, C::WIDTH> {
+impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2Cols<C::F, WIDTH, C> {
+    pub fn set_initial_round(&mut self, input: [C::F; WIDTH]) -> [C::F; WIDTH] {
         self.input = input.clone();
         self.is_init = C::F::one();
         self.add_rc = input.clone();
@@ -49,15 +46,17 @@ impl<C: PoseidonConfig> Poseidon2Cols<C::F, C> {
 
     pub fn set_round(
         &mut self,
-        input: Array<C::F, C::WIDTH>,
+        input: [C::F; WIDTH],
         round: usize,
         constants: &[C::F],
-    ) -> Array<C::F, C::WIDTH> {
+    ) -> [C::F; WIDTH] {
         self.input = input;
 
         // Set the boolean flags
-        let is_external_first_half = round < C::R_F / 2;
-        let is_external_second_half = round >= C::R_F / 2 + C::R_P;
+        let rounds_half = <C::R_F as Unsigned>::USIZE / 2;
+        let partial_rounds = <C::R_P as Unsigned>::USIZE;
+        let is_external_first_half = round < rounds_half;
+        let is_external_second_half = round >= rounds_half + partial_rounds;
         let is_external = is_external_first_half || is_external_second_half;
 
         self.rounds[round] = C::F::one();

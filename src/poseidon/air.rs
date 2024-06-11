@@ -14,19 +14,19 @@ use p3_poseidon2::apply_mat4;
 
 use super::{columns::Poseidon2Cols, config::PoseidonConfig, util::matmul_internal, Poseidon2Chip};
 
-impl<F, C> BaseAir<F> for Poseidon2Chip<C>
+impl<F, const WIDTH: usize, C> BaseAir<F> for Poseidon2Chip<WIDTH, C>
 where
-    C: PoseidonConfig,
+    C: PoseidonConfig<WIDTH>,
 {
     fn width(&self) -> usize {
         size_of::<Poseidon2Cols<u8, C>>()
     }
 }
 
-impl<AB, C> Air<AB> for Poseidon2Chip<C>
+impl<AB, const WIDTH: usize, C> Air<AB> for Poseidon2Chip<WIDTH, C>
 where
     AB: AirBuilder,
-    C: PoseidonConfig<F = AB::F>,
+    C: PoseidonConfig<WIDTH, F = AB::F>,
 {
     #[allow(non_snake_case)]
     fn eval(&self, builder: &mut AB) {
@@ -37,8 +37,8 @@ where
         let next: &Poseidon2Cols<AB::Var, C> = Poseidon2Cols::from_slice(&next);
 
         let W = <C::WIDTH as Unsigned>::USIZE;
-        let R_F = C::R_F;
-        let R_P = C::R_P;
+        let R_F = <C::R_F as Unsigned>::USIZE;
+        let R_P = <C::R_P as Unsigned>::USIZE;
 
         let RF_HALF = R_F / 2;
 

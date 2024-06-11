@@ -1,5 +1,5 @@
 //! This module defines the trace generation for the Poseidon2 AIR Chip
-use hybrid_array::Array;
+use hybrid_array::{typenum::Unsigned, Array};
 use itertools::Itertools;
 use p3_air::BaseAir;
 use p3_field::AbstractField;
@@ -8,13 +8,14 @@ use std::iter::zip;
 
 use super::{columns::Poseidon2Cols, config::PoseidonConfig, Poseidon2Chip};
 
-impl<C> Poseidon2Chip<C>
+impl<const WIDTH: usize, C> Poseidon2Chip<WIDTH, C>
 where
-    C: PoseidonConfig,
+    C: PoseidonConfig<WIDTH>,
 {
-    pub fn generate_trace(&self, inputs: Vec<Array<C::F, C::WIDTH>>) -> RowMajorMatrix<C::F> {
-        // let width = C::WIDTH;
-        let rounds = C::R_F + C::R_P;
+    pub fn generate_trace(&self, inputs: Vec<[C::F; WIDTH]>) -> RowMajorMatrix<C::F> {
+        let full_rounds = <C::R_F as Unsigned>::USIZE;
+        let part_rounds = <C::R_P as Unsigned>::USIZE;
+        let rounds = full_rounds + part_rounds;
         let num_cols = <Poseidon2Chip<C> as BaseAir<C::F>>::width(self);
 
         let full_num_rows = inputs.len() * (rounds + 1);
