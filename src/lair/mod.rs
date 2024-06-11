@@ -9,6 +9,7 @@ pub mod bytecode;
 pub mod chip;
 pub mod execute;
 pub mod expr;
+pub mod hasher;
 mod macros;
 pub mod map;
 pub mod memory;
