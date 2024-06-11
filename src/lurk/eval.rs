@@ -1180,6 +1180,7 @@ mod test {
         eval_aux("(eval '(+ 1 2) (empty-env))", "3");
         eval_aux("(cons 1 2)", "(1 . 2)");
         eval_aux("(strcons 'a' \"bc\")", "\"abc\"");
+        eval_aux("'a'", "'a'");
         eval_aux("(eq (cons 1 2) '(1 . 2))", "t");
         eval_aux("(eq (cons 1 3) '(1 . 2))", "nil");
         eval_aux("(car (cons 1 2))", "1");
