@@ -126,13 +126,13 @@ impl<F: Field> QueryRecord<F> {
             let (inp, out) = (inp.into(), out.into());
             let queries = &mut self.func_queries[func.index];
             if !queries.contains_key(&inp) {
-                queries.insert(inp.clone(), QueryResult::init(out.clone()));
                 if func.invertible {
                     self.inv_func_queries[func.index]
                         .as_mut()
                         .expect("Inverse query map not found")
-                        .insert(out, inp);
+                        .insert(out.clone(), inp.clone());
                 }
+                queries.insert(inp, QueryResult::init(out));
             }
         }
     }

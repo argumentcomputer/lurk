@@ -4,13 +4,8 @@ use nom::{sequence::preceded, Parser};
 use once_cell::sync::OnceCell;
 use p3_baby_bear::BabyBear as F;
 use p3_field::AbstractField;
-use p3_poseidon2::{Poseidon2, Poseidon2ExternalMatrixGeneral};
-use p3_symmetric::Permutation;
 
-use crate::poseidon::{
-    config::{BabyBearConfig32, InternalDiffusion},
-    Poseidon2Chip,
-};
+use crate::lair::hasher::{Hasher, LurkHasher};
 
 use super::{
     parser::{
@@ -55,12 +50,13 @@ impl<const N: usize> SizedBuffer<N> {
         self.advance(7);
     }
 
-    fn read_iter<I: IntoIterator<Item = F>>(&mut self, iter: I) {
-        iter.into_iter().for_each(|f| self.read_f(f))
+    fn read_slice(&mut self, slice: &[F]) {
+        self.data[self.pos..self.pos + slice.len()].copy_from_slice(slice);
+        self.pos += slice.len();
     }
 
     fn read_u64(&mut self, u: u64) {
-        self.read_iter(u.to_le_bytes().map(F::from_canonical_u8))
+        self.read_slice(&u.to_le_bytes().map(F::from_canonical_u8))
     }
 
     fn read_char(&mut self, c: char) {
@@ -74,24 +70,13 @@ impl<const N: usize> SizedBuffer<N> {
     }
 }
 
+#[derive(Default)]
 struct Reader {
-    hasher: Poseidon2<F, Poseidon2ExternalMatrixGeneral, InternalDiffusion, PREIMG_SIZE, 7>,
+    hasher: LurkHasher,
     hashes: FxHashMap<[F; PREIMG_SIZE], [F; IMG_SIZE]>,
     syn_cache: FxHashMap<Syntax<F>, (Tag, [F; IMG_SIZE])>,
     str_cache: FxHashMap<String, [F; IMG_SIZE]>,
     sym_cache: FxHashMap<Symbol, [F; IMG_SIZE]>,
-}
-
-impl Default for Reader {
-    fn default() -> Self {
-        Self {
-            hasher: Poseidon2Chip::<BabyBearConfig32>::default().hasher(),
-            hashes: FxHashMap::default(),
-            syn_cache: FxHashMap::default(),
-            str_cache: FxHashMap::default(),
-            sym_cache: FxHashMap::default(),
-        }
-    }
 }
 
 static NIL: OnceCell<Symbol> = OnceCell::new();
@@ -119,8 +104,8 @@ impl Reader {
         if let Some(digest) = self.hashes.get(&fs) {
             return *digest;
         }
-        let mut buffer = SizedBuffer::<IMG_SIZE>::default();
-        buffer.read_iter(self.hasher.permute(fs).into_iter().take(IMG_SIZE));
+        let mut buffer = SizedBuffer::default();
+        buffer.read_slice(&self.hasher.hash(&fs));
         let digest = buffer.extract();
         self.hashes.insert(fs, digest);
         digest
@@ -131,11 +116,11 @@ impl Reader {
             return *digest;
         }
         let digest = s.chars().rev().fold([F::zero(); IMG_SIZE], |acc, c| {
-            let mut buffer = SizedBuffer::<PREIMG_SIZE>::default();
+            let mut buffer = SizedBuffer::default();
             buffer.read_tag(Tag::Char);
             buffer.read_char(c);
             buffer.read_tag(Tag::Str);
-            buffer.read_iter(acc);
+            buffer.read_slice(&acc);
             let preimg = buffer.extract();
             let img = self.hash(preimg);
             self.hashes.insert(preimg, img);
@@ -150,11 +135,11 @@ impl Reader {
             return *digest;
         }
         let digest = s.path().iter().fold([F::zero(); IMG_SIZE], |acc, s| {
-            let mut buffer = SizedBuffer::<PREIMG_SIZE>::default();
+            let mut buffer = SizedBuffer::default();
             buffer.read_tag(Tag::Str);
-            buffer.read_iter(self.read_string(s));
+            buffer.read_slice(&self.read_string(s));
             buffer.read_tag(Tag::Sym);
-            buffer.read_iter(acc);
+            buffer.read_slice(&acc);
             let preimg = buffer.extract();
             let img = self.hash(preimg);
             self.hashes.insert(preimg, img);
@@ -172,11 +157,11 @@ impl Reader {
         list.into_iter()
             .rev()
             .fold(last, |(tag_acc, digest_acc), (tag, digest)| {
-                let mut buffer = SizedBuffer::<PREIMG_SIZE>::default();
+                let mut buffer = SizedBuffer::default();
                 buffer.read_tag(tag);
-                buffer.read_iter(digest);
+                buffer.read_slice(&digest);
                 buffer.read_tag(tag_acc);
-                buffer.read_iter(digest_acc);
+                buffer.read_slice(&digest_acc);
                 let preimg = buffer.extract();
                 let img = self.hash(preimg);
                 self.hashes.insert(preimg, img);
@@ -190,17 +175,17 @@ impl Reader {
         }
         let res = match syn {
             Syntax::Num(_, f) => {
-                let mut buffer = SizedBuffer::<IMG_SIZE>::default();
+                let mut buffer = SizedBuffer::default();
                 buffer.read_f(*f);
                 (Tag::Num, buffer.extract())
             }
             Syntax::U64(_, u) => {
-                let mut buffer = SizedBuffer::<IMG_SIZE>::default();
+                let mut buffer = SizedBuffer::default();
                 buffer.read_u64(*u);
                 (Tag::U64, buffer.extract())
             }
             Syntax::Char(_, c) => {
-                let mut buffer = SizedBuffer::<IMG_SIZE>::default();
+                let mut buffer = SizedBuffer::default();
                 buffer.read_char(*c);
                 (Tag::Char, buffer.extract())
             }
