@@ -61,11 +61,11 @@ pub fn ingress<F: PrimeField>() -> FuncE<F> {
         fn ingress(tag_full: [8], digest: [8]): [1] {
             let (tag, _rest: [7]) = tag_full;
             match tag {
-                Tag::Num | Tag::Err => {
+                Tag::Num | Tag::Char | Tag::Err => {
                     let (x, _rest: [7]) = digest;
                     return x
                 }
-                Tag::Char | Tag::Nil | Tag::U64 | Tag::Comm => {
+                Tag::Nil | Tag::U64 | Tag::Comm => {
                     let ptr = store(digest);
                     return ptr
                 }
@@ -116,11 +116,11 @@ pub fn egress<F: PrimeField>() -> FuncE<F> {
         fn egress(tag, val): [8] {
             let zero = 0;
             match tag {
-                Tag::Num | Tag::Err => {
+                Tag::Num | Tag::Char | Tag::Err => {
                     let (digest: [8]) = (val, zero, zero, zero, zero, zero, zero, zero);
                     return digest
                 }
-                Tag::Char | Tag::Nil | Tag::U64 | Tag::Comm => {
+                Tag::Nil | Tag::U64 | Tag::Comm => {
                     let (digest: [8]) = load(val);
                     return digest
                 }

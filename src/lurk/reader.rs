@@ -64,8 +64,8 @@ impl<const N: usize> SizedBuffer<N> {
     }
 
     fn read_char(&mut self, c: char) {
-        self.read_iter((c as u32).to_le_bytes().map(F::from_canonical_u8));
-        self.advance(4);
+        self.read_f(F::from_canonical_u32(c as u32));
+        self.advance(7);
     }
 
     fn extract(self) -> [F; N] {
@@ -97,6 +97,11 @@ impl Default for Reader {
 static NIL: OnceCell<Symbol> = OnceCell::new();
 fn nil() -> &'static Symbol {
     NIL.get_or_init(|| lurk_sym("nil"))
+}
+
+static QUOTE: OnceCell<Symbol> = OnceCell::new();
+fn quote() -> &'static Symbol {
+    QUOTE.get_or_init(|| lurk_sym("quote"))
 }
 
 fn get_symbol_tag(symbol: &Symbol) -> Tag {
@@ -213,7 +218,7 @@ impl Reader {
             }
             Syntax::Quote(_, x) => {
                 let nil_hash = self.read_symbol(nil());
-                let quote_hash = self.read_symbol(&lurk_sym("quote"));
+                let quote_hash = self.read_symbol(quote());
                 let x_hash = self.read_syntax(x);
                 self.hash_list(vec![(Tag::Sym, quote_hash), x_hash], (Tag::Nil, nil_hash))
             }
