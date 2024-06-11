@@ -112,6 +112,9 @@ impl<F: Field> QueryRecord<F> {
         &self.func_queries
     }
 
+    /// Injects new queries for a function referenced by name. If a query is already present, do nothing.
+    /// Otherwise, add it with multiplicity zero. Further, if the function is invertible, add the query
+    /// to the `inv_func_queries` as well.
     pub fn inject_queries<I: Into<List<F>>, O: Into<List<F>>, T: IntoIterator<Item = (I, O)>>(
         &mut self,
         name: &'static str,
@@ -132,6 +135,16 @@ impl<F: Field> QueryRecord<F> {
                 }
             }
         }
+    }
+
+    /// Resets all multiplicities to zero
+    pub fn reset_multiplicities(&mut self) {
+        self.func_queries.iter_mut().for_each(|query_map| {
+            query_map.iter_mut().for_each(|(_, r)| r.mult = 0);
+        });
+        self.mem_queries.iter_mut().for_each(|mem_map| {
+            mem_map.iter_mut().for_each(|(_, mult)| *mult = 0);
+        });
     }
 }
 
