@@ -619,7 +619,7 @@ def generate_constants_file():
     print("use p3_baby_bear::BabyBear;")
     print("use p3_field::AbstractField;")
     print()
-    for t in range(4, 44, 4):
+    for t in range(4, 52, 4):
         p = 2013265921 # BabyBear
         n = len(p.bits())
         FIELD = 1
