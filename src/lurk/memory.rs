@@ -58,7 +58,7 @@ impl<F: PrimeField, H: Hasher<F = F>> Memory<F, H> {
             return MPtr { tag, raw };
         };
         let mptr = match expr {
-            ZExpr::Num | ZExpr::Err => MPtr {
+            ZExpr::Num | ZExpr::Char | ZExpr::Err => MPtr {
                 tag,
                 raw: *ptr.raw.first_field(),
             },
@@ -66,7 +66,7 @@ impl<F: PrimeField, H: Hasher<F = F>> Memory<F, H> {
                 tag,
                 raw: F::zero(),
             },
-            ZExpr::Char | ZExpr::Nil | ZExpr::U64 => {
+            ZExpr::Nil | ZExpr::U64 => {
                 let raw = self.store(ptr.raw.0.into());
                 MPtr { tag, raw }
             }
@@ -136,11 +136,11 @@ impl<F: PrimeField, H: Hasher<F = F>> Memory<F, H> {
             return self.load_immediate(tag, ptr.raw);
         }
         match tag {
-            Tag::Num | Tag::Err => {
+            Tag::Num | Tag::Char | Tag::Err => {
                 let raw = Payload::from_field(ptr.raw);
                 ZPtr { tag, raw }
             }
-            Tag::Nil | Tag::Char | Tag::U64 => self.load_immediate(tag, ptr.raw),
+            Tag::Nil | Tag::U64 => self.load_immediate(tag, ptr.raw),
             Tag::Cons => {
                 let [head_tag, head_raw, tail_tag, tail_raw] =
                     self.load(4, ptr.raw).try_into().unwrap();

@@ -47,6 +47,7 @@ enum EvalErr {
     NotComm,
     NotString,
     CannotCastToNum,
+    CannotCastToChar,
     Todo,
 }
 
@@ -693,6 +694,7 @@ pub fn eval_unop<F: PrimeField, H: Hasher<F = F>>(
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let num_tag = Tag::Num;
+            let char_tag = Tag::Char;
             let comm_tag = Tag::Comm;
             let nil_tag = Tag::Nil;
             let invalid_form = EvalErr::InvalidForm;
@@ -720,7 +722,6 @@ pub fn eval_unop<F: PrimeField, H: Hasher<F = F>>(
                     return (comm_tag, comm)
                 }
                 "num" => {
-                    let char_tag = Tag::Char;
                     let u64_tag = Tag::U64;
                     let val_not_char = sub(val_tag, char_tag);
                     let val_not_u64 = sub(val_tag, u64_tag);
@@ -775,7 +776,14 @@ pub fn eval_unop<F: PrimeField, H: Hasher<F = F>>(
                     return (err_tag, todo)
                 }
                 "char" => {
-                    return (err_tag, todo)
+                    let val_not_num = sub(val_tag, num_tag);
+                    let val_not_char = sub(val_tag, char_tag);
+                    let acc = mul(val_not_num, val_not_char);
+                    if acc {
+                        let char_err = EvalErr::CannotCastToChar;
+                        return (err_tag, char_err)
+                    }
+                    return (char_tag, val)
                 }
              }
         }
@@ -1121,7 +1129,7 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(eval.width(), expect!["106"]);
-        expect_eq(eval_unop.width(), expect!["33"]);
+        expect_eq(eval_unop.width(), expect!["34"]);
         expect_eq(eval_binop_num.width(), expect!["38"]);
         expect_eq(eval_binop_misc.width(), expect!["41"]);
         expect_eq(eval_let.width(), expect!["34"]);
@@ -1180,6 +1188,9 @@ mod test {
         eval_aux("(eval '(+ 1 2) (empty-env))", "3");
         eval_aux("(cons 1 2)", "(1 . 2)");
         eval_aux("(strcons 'a' \"bc\")", "\"abc\"");
+        eval_aux("'a'", "'a'");
+        eval_aux("(char 97)", "'a'");
+        eval_aux("(char 'a')", "'a'");
         eval_aux("(eq (cons 1 2) '(1 . 2))", "t");
         eval_aux("(eq (cons 1 3) '(1 . 2))", "nil");
         eval_aux("(car (cons 1 2))", "1");
