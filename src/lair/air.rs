@@ -285,6 +285,9 @@ impl<F: Field> Ctrl<F> {
                 sels.into_iter()
                     .fold(F::zero().into(), |acc, sel| acc + sel)
             }
+            Ctrl::MatchMany(..) => {
+                todo!()
+            }
             Ctrl::If(b, t, f) => {
                 let map_len = map.len();
                 let init_state = index.save();

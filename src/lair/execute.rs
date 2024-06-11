@@ -339,6 +339,13 @@ impl<F: PrimeField> Ctrl<F> {
                     .expect("No match")
                     .execute(map, toplevel, queries)
             }
+            Ctrl::MatchMany(v, cases) => {
+                let v = v.iter().map(|&v| map[v]).collect();
+                cases
+                    .match_case(&v)
+                    .expect("No match")
+                    .execute(map, toplevel, queries)
+            }
         }
     }
 
@@ -376,6 +383,13 @@ impl<F: PrimeField> Ctrl<F> {
                 let v = map.get(*v).unwrap();
                 cases
                     .match_case(v)
+                    .expect("No match")
+                    .execute_step(map, stack, toplevel, queries)
+            }
+            Ctrl::MatchMany(v, cases) => {
+                let v = v.iter().map(|&v| map[v]).collect();
+                cases
+                    .match_case(&v)
                     .expect("No match")
                     .execute_step(map, stack, toplevel, queries)
             }

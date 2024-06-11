@@ -48,10 +48,12 @@ pub struct Block<F> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Ctrl<F> {
     /// `Match(x, cases)` matches on `x` in order to decide which case to execute
-    Match(usize, Cases<F>),
+    Match(usize, Cases<F, F>),
+    /// `MatchMany(x, cases)` matches on array `x` in order to decide which case to execute
+    MatchMany(List<usize>, Cases<List<F>, F>),
     /// `If(b, t, f)` executes block `f` if `stack[b]` is zero and `t` otherwise
     If(usize, Box<Block<F>>, Box<Block<F>>),
-    /// `IfMany(b, t, f)` executes block `f` if `stack[b]` is zero and `t` otherwise
+    /// `IfMany(bs, t, f)` executes block `f` if `bs` is a zero array and `t` otherwise
     IfMany(List<usize>, Box<Block<F>>, Box<Block<F>>),
     /// Contains the variables whose bindings will construct the output of the
     /// block. The first `usize` is an unique identifier, representing the
@@ -63,16 +65,16 @@ pub enum Ctrl<F> {
 /// matches and an optional default case in case there's no match. Each code path
 /// is encoded as its own block
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Cases<F> {
-    pub(crate) branches: Map<F, Block<F>>,
+pub struct Cases<K, F> {
+    pub(crate) branches: Map<K, Block<F>>,
     pub(crate) default: Option<Box<Block<F>>>,
 }
 
-impl<F: Ord> Cases<F> {
+impl<K: Ord, F> Cases<K, F> {
     /// Returns the block mapped from key `f`
     #[inline]
-    pub fn match_case(&self, f: &F) -> Option<&Block<F>> {
-        self.branches.get(f).or(self.default.as_deref())
+    pub fn match_case(&self, k: &K) -> Option<&Block<F>> {
+        self.branches.get(k).or(self.default.as_deref())
     }
 
     /// Returns the block at a given index
@@ -88,14 +90,14 @@ impl<F: Ord> Cases<F> {
     /// match, returns the size of `branches`, assuming that's the index of the
     /// default block
     #[inline]
-    pub fn get_index_of(&self, f: &F) -> Option<usize> {
+    pub fn get_index_of(&self, k: &K) -> Option<usize> {
         self.branches
-            .get_index_of(f)
+            .get_index_of(k)
             .or_else(|| self.default.as_ref().map(|_| self.branches.size()))
     }
 }
 
-impl<F> Cases<F> {
+impl<K, F> Cases<K, F> {
     /// Returns the size of `branches`, assuming that's the index of the default
     /// block
     #[inline]
