@@ -47,10 +47,6 @@ impl<F: Field> MachineProgram<F> for QueryRecord<F> {
 impl<F: Field> MachineRecord for QueryRecord<F> {
     type Config = ();
 
-    fn index(&self) -> u32 {
-        0
-    }
-
     fn set_index(&mut self, _index: u32) {}
 
     fn stats(&self) -> HashMap<String, usize> {

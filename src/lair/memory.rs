@@ -1,4 +1,3 @@
-use crate::air::builder::LookupBuilder;
 use itertools::{repeat_n, Itertools};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{AbstractField, Field};
@@ -7,17 +6,37 @@ use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
     slice::ParallelSliceMut,
 };
-use sphinx_core::air::MachineAir;
+use sphinx_core::air::{EventLens, MachineAir, WithEvents};
+use sphinx_core::stark::Indexed;
 use std::iter::zip;
+use std::marker::PhantomData;
 use std::ops::Deref;
 
-use super::execute::{mem_index_from_len, QueryRecord};
+use super::execute::{mem_index_from_len, MemMap, QueryRecord};
 
-pub struct MemChip {
+#[derive(Default)]
+pub struct MemChip<F> {
     len: usize,
+    _marker: PhantomData<F>,
 }
 
-impl<F: Field> MachineAir<F> for MemChip {
+impl<F: Field> Indexed for QueryRecord<F> {
+    fn index(&self) -> u32 {
+        0
+    }
+}
+
+impl<F: Field> EventLens<MemChip<F>> for QueryRecord<F> {
+    fn events(&self) -> <MemChip<F> as WithEvents<'_>>::Events {
+        self.mem_queries.as_slice()
+    }
+}
+
+impl<'a, F: Field> WithEvents<'a> for MemChip<F> {
+    type Events = &'a [MemMap<F>];
+}
+
+impl<F: Field> MachineAir<F> for MemChip<F> {
     type Record = QueryRecord<F>;
     type Program = QueryRecord<F>;
 
@@ -25,14 +44,14 @@ impl<F: Field> MachineAir<F> for MemChip {
         format!("mem {}", self.len).to_string()
     }
 
-    fn generate_trace(
+    fn generate_trace<EL: EventLens<Self>>(
         &self,
-        input: &Self::Record,
+        input: &EL,
         _output: &mut Self::Record,
     ) -> RowMajorMatrix<F> {
         let len = self.len;
         let mem_idx = mem_index_from_len(len);
-        let mem = &input.mem_queries[mem_idx];
+        let mem = &input.events()[mem_idx];
         let width = self.width();
 
         let height = mem
@@ -73,7 +92,7 @@ impl<F: Field> MachineAir<F> for MemChip {
     }
 }
 
-impl<AB> Air<AB> for MemChip
+impl<AB> Air<AB> for MemChip<AB::F>
 where
     AB: AirBuilder,
 {
@@ -118,19 +137,19 @@ where
     }
 }
 
-impl<F: Sync> BaseAir<F> for MemChip {
+impl<F: Sync> BaseAir<F> for MemChip<F> {
     fn width(&self) -> usize {
         self.width()
     }
 }
 
-impl MemChip {
+impl<F: Field> MemChip<F> {
     /// is_real, Pointer, and arguments
     fn width(&self) -> usize {
         2 + self.len
     }
 
-    pub fn generate_trace<F: Field>(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
+    pub fn generate_trace(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let len = self.len;
         let mem_idx = mem_index_from_len(len);
         let mem = &queries.mem_queries[mem_idx];
@@ -151,7 +170,7 @@ impl MemChip {
         RowMajorMatrix::new(rows, width)
     }
 
-    pub fn generate_trace_parallel<F: Field>(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
+    pub fn generate_trace_parallel(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let len = self.len;
         let mem_idx = mem_index_from_len(len);
         let mem = queries.mem_queries[mem_idx].iter().collect::<Vec<_>>();
@@ -216,7 +235,10 @@ mod tests {
         assert_eq!(func_trace.values, expected_trace);
 
         let mem_len = 3;
-        let mem_chip = MemChip { len: mem_len };
+        let mem_chip = MemChip::<F> {
+            len: mem_len,
+            _marker: Default::default(),
+        };
         let mem_trace = mem_chip.generate_trace(queries);
 
         let expected_trace = [
