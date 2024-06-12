@@ -159,6 +159,13 @@ impl<F: Clone + Ord> BlockE<F> {
                     ops.push(Op::Const(f.clone()));
                     bind_new(tgt, ctx);
                 }
+                OpE::Array(tgt, fs) => {
+                    assert_eq!(tgt.size, fs.len());
+                    for f in fs {
+                        ops.push(Op::Const(f.clone()));
+                    }
+                    bind_new(tgt, ctx);
+                }
                 OpE::Add(tgt, a, b) => {
                     assert_eq!(tgt.size, 1);
                     assert_eq!(a.size, 1);

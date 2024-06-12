@@ -577,23 +577,27 @@ mod tests {
     #[test]
     fn lair_match_many_test() {
         let match_many_func = func!(
-        fn match_many(a: [2]): [1] {
+        fn match_many(a: [2]): [2] {
             match a {
                 [0, 0] => {
-                    let zero = 0;
-                    return zero
+                    let res = [1, 0];
+                    return res
                 }
                 [0, 1] => {
-                    let one = 1;
-                    return one
+                    let res = [1, 1];
+                    return res
                 }
                 [1, 0] => {
-                    let two = 2;
-                    return two
+                    let res = [1, 2];
+                    return res
+                }
+                [1, 1] => {
+                    let res = [1, 3];
+                    return res
                 }
             };
-            let three = 3;
-            return three
+            let fail = [0, 0];
+            return fail
         });
         let toplevel = Toplevel::<F>::new(&[match_many_func]);
         let match_many_chip = FuncChip::from_name("match_many", &toplevel);
@@ -606,6 +610,8 @@ mod tests {
         match_many_chip.execute_iter(args, queries);
         let args = [f(1), f(0)].into();
         match_many_chip.execute_iter(args, queries);
+        let args = [f(1), f(1)].into();
+        match_many_chip.execute_iter(args, queries);
         let args = [f(0), f(8)].into();
         match_many_chip.execute_iter(args, queries);
 
@@ -614,11 +620,17 @@ mod tests {
         let match_many_width = match_many_chip.width();
         let expected_trace = RowMajorMatrix::new(
             [
-                // 2 inputs, 1 output, mult, 6 witness coefficients, 4 selectors
-                0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, //
-                0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, //
-                1, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, //
-                0, 8, 3, 1, 0, 1761607681, 0, 862828252, 2013265920, 0, 0, 0, 0, 1, //
+                // 2 inputs, 2 output, mult, 8 witness coefficients, 5 selectors
+                0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, //
+                0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, //
+                1, 0, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, //
+                1, 1, 1, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, //
+                0, 8, 0, 0, 1, 0, 1761607681, 0, 862828252, 2013265920, 0, 2013265920, 0, 0, 0, 0,
+                0, 1, //
+                // dummy queries
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
             ]
             .into_iter()
             .map(F::from_canonical_u32)
