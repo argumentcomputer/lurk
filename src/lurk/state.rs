@@ -61,7 +61,7 @@ impl State {
     }
 
     /// Returns a reference to the current package
-    fn get_current_package(&self) -> &Package {
+    pub fn get_current_package(&self) -> &Package {
         self.symbol_packages
             .get(&self.current_package)
             .expect("current package must be in the hashmap")

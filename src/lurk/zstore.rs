@@ -890,4 +890,18 @@ mod test {
         let env = zstore.intern_env(x, one, empty_env);
         assert_eq!(zstore.fmt_with_state(state, &env), "<Env ((x . 1))>");
     }
+
+    #[test]
+    fn test_tag_index_roundtrip() {
+        use p3_field::PrimeField32;
+
+        let test = |tag: Tag| {
+            let f = tag.to_field::<BabyBear>();
+            let u = f.as_canonical_u32();
+            let new_tag = Tag::from(u as usize);
+            assert_eq!(tag, new_tag);
+        };
+
+        test(Tag::Nil);
+    }
 }

@@ -1,90 +1,136 @@
-use crate::loam::allocation::{allocator, Allocator};
-use crate::loam::{Cons, Elemental, LEWrap, Ptr, Sexp, Sym, Tag, Valuable, Wide, WidePtr, F, LE};
+use crate::loam::allocation::allocator;
+use crate::loam::{LEWrap, Num, Ptr, Wide, WidePtr, LE};
+use crate::lurk::reader::{read, ReadData};
+use crate::lurk::state::{State, LURK_PACKAGE_SYMBOLS_NAMES};
+use crate::lurk::zstore::Tag;
 
 use p3_field::{AbstractField, PrimeField32};
 
 use ascent::{ascent, Dual};
 
-struct Memory {}
+pub struct Memory {}
+
+fn simple_read(src: &str) -> ReadData {
+    read(State::init_lurk_state().rccell(), src).unwrap()
+}
 
 impl Memory {
     fn initial_sym_relation() -> Vec<(Wide, Dual<LEWrap>)> {
-        let syms = Sym::built_in();
-
-        syms.iter()
+        LURK_PACKAGE_SYMBOLS_NAMES
+            .iter()
             .enumerate()
-            .map(|(i, sym)| (sym.value(), Dual(LEWrap(LE::from_canonical_u64(i as u64)))))
+            .map(|(i, name)| {
+                let ReadData { digest, .. } = simple_read(name);
+                (Wide(digest), Dual(LEWrap(LE::from_canonical_u64(i as u64))))
+            })
             .collect()
     }
     fn initial_sym_addr() -> LE {
-        LE::from_canonical_u64(Sym::built_in_count() as u64)
-    }
-
-    fn sym_ptr(sym: Sym) -> Ptr {
-        let addr = Sym::built_in()
-            .iter()
-            .position(|s| *s == sym)
-            .expect("not a built-in symbol");
-        Ptr(Tag::Sym.elt(), LE::from_canonical_u64(addr as u64))
-    }
-
-    fn ptr_sym(ptr: Ptr, value: Wide) -> Option<Sym> {
-        if ptr.0 != Tag::Sym.elt() {
-            return None;
-        }
-
-        let built_in = Sym::built_in();
-        if (ptr.1.as_canonical_u32() as usize) < built_in.len() {
-            Some(built_in[ptr.1.as_canonical_u32() as usize])
-        } else {
-            Some(Sym::Opaque(value))
-        }
+        LE::from_canonical_u64(LURK_PACKAGE_SYMBOLS_NAMES.len() as u64)
     }
 
     fn initial_tag_relation() -> Vec<(LE, Wide)> {
-        Tag::tag_wide_relation()
+        Tag::wide_relation()
     }
 }
 
-impl Sym {
+// TODO: This can use a hashtable lookup, or could even be known at compile-time (but how to make that non-brittle since iter() is not const?).
+fn lurk_sym_index(name: &str) -> Option<usize> {
+    LURK_PACKAGE_SYMBOLS_NAMES.iter().position(|s| *s == name)
+}
+
+impl Ptr {
+    fn is_built_in_named(&self, name: &str) -> bool {
+        self.1.as_canonical_u32() as usize == lurk_sym_index(name).unwrap()
+    }
+
     fn is_binding(&self) -> bool {
-        matches!(self, Self::Char('l'))
+        if !self.is_sym() {
+            return false;
+        }
+        self.is_built_in_named("let")
     }
 
     fn is_lambda(&self) -> bool {
-        matches!(self, Self::Char('f'))
+        if !self.is_sym() {
+            return false;
+        }
+        self.is_built_in_named("lambda")
     }
 
     fn is_left_foldable(&self) -> bool {
-        // Note, all of these will be variadic.
-        matches!(self, Self::Char('+' | '*'))
+        if !self.is_sym() {
+            return false;
+        }
+        self.is_built_in_named("+") || self.is_built_in_named("*")
     }
 
     fn is_right_foldable(&self) -> bool {
-        // Note, all of these will be variadic.
-        matches!(self, Self::Char('-' | '/'))
-    }
-
-    fn is_built_in(ptr: &Ptr) -> bool {
-        ptr.is_sym() && (ptr.1.as_canonical_u32() as usize) < Self::built_in_count()
-    }
-
-    fn neutral_element(&self) -> F {
-        match self {
-            Self::Char('+' | '-') => F(LE::zero()),
-            Self::Char('*' | '/') => F(LE::one()),
-            _ => unimplemented!(),
+        if !self.is_sym() {
+            return false;
         }
+        self.is_built_in_named("/") || self.is_built_in_named("-")
     }
 
-    fn apply_op(&self, a: F, b: F) -> F {
-        match self {
-            Self::Char('+') => F(a.0 + b.0),
-            Self::Char('-') => F(a.0 - b.0),
-            Self::Char('*') => F(a.0 * b.0),
-            Self::Char('/') => F(a.0 / b.0),
-            _ => unimplemented!(),
+    fn is_built_in(&self) -> bool {
+        if !self.is_sym() {
+            return false;
         }
+        self.1 < Memory::initial_sym_addr()
+    }
+
+    fn is_non_built_in(&self) -> bool {
+        if !self.is_sym() {
+            return false;
+        }
+        self.1 >= Memory::initial_sym_addr()
+    }
+
+    fn neutral_element(&self) -> Num {
+        if self.is_built_in_named("+") || self.is_built_in_named("-") {
+            return Num(LE::zero());
+        }
+        if self.is_built_in_named("*") || self.is_built_in_named("/") {
+            return Num(LE::one());
+        }
+        unreachable!()
+    }
+
+    fn apply_op(&self, a: Num, b: Num) -> Num {
+        // TODO: more efficient matching
+        if self.is_built_in_named("+") {
+            return Num(a.0 + b.0);
+        }
+        if self.is_built_in_named("-") {
+            return Num(a.0 - b.0);
+        }
+        if self.is_built_in_named("*") {
+            return Num(a.0 * b.0);
+        }
+        if self.is_built_in_named("/") {
+            return Num(a.0 / b.0);
+        }
+
+        unreachable!()
+    }
+}
+
+impl Tag {
+    pub fn elt(&self) -> LE {
+        self.to_field::<LE>()
+    }
+
+    pub fn value(&self) -> Wide {
+        Wide::widen(self.elt())
+    }
+
+    pub fn wide_relation() -> Vec<(LE, Wide)> {
+        (0..Self::count())
+            .map(|i| {
+                let tag = Tag::from(i);
+                (tag.elt(), tag.value())
+            })
+            .collect()
     }
 }
 
@@ -256,11 +302,10 @@ ascent! {
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
 
-    ptr(ptr), ptr_value(ptr, Wide::widen(f)) <--
-        alloc(&Tag::Nil.elt(), value), let f = value.f(), let ptr = Ptr(Tag::Nil.elt(), f);
-    f_value(Ptr(Tag::F.elt(),f), value) <-- alloc(&Tag::F.elt(), value), let f = value.f();
+    // ptr(ptr), ptr_value(ptr, Wide::widen(f)) <-- alloc(&Tag::Nil.elt(), value), let f = value.f(), let ptr = Ptr(Tag::Nil.elt(), f);
+    f_value(Ptr(Tag::Num.elt(), value.f()), value) <-- alloc(&Tag::Num.elt(), value); // let f = value.f();
 
-    ptr(ptr), ptr_value(ptr, value) <-- alloc(&Tag::Nil.elt(), value), let f = value.f(), let ptr = Ptr(Tag::Nil.elt(), f);
+    ptr(ptr), ptr_value(ptr, value) <-- alloc(&Tag::Nil.elt(), value), let ptr = Ptr(Tag::Nil.elt(), value.f());
 
     cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0.0)),
     cons_mem(car, cdr, addr) <--
@@ -291,8 +336,8 @@ ascent! {
     // Fun
     egress(args), egress(body), egress(closed_env) <-- egress(fun), fun_rel(args, body, closed_env, fun);
 
-    // F
-    ptr_tag(ptr, Tag::F.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_f();
+    // F: FIXME: change this when F becomes u32.
+    ptr_tag(ptr, Tag::Num.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_f();
 
     // Err
     ptr_tag(ptr, Tag::Err.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_err();
@@ -357,7 +402,7 @@ ascent! {
     // expr is F: self-evaluating.
     eval(expr, env, expr) <-- eval_input(expr, env), if expr.is_f();
 
-    // expr is Nil: self-evaluating. TODO: check value == 0.
+    // expr is Nil: self-evaluating. TODO: check value == nil value
     eval(expr, env, expr) <-- eval_input(expr, env), if expr.is_nil();
 
     ////////////////////////////////////////
@@ -366,7 +411,7 @@ ascent! {
     relation lookup(Ptr, Ptr, Ptr, Ptr); // (input_expr, input_env, var, env)
 
     // If expr is not a built-in sym, look it up.
-    ingress(env), lookup(expr, env, expr, env) <-- eval_input(expr, env), if expr.is_sym() && !Sym::is_built_in(expr);
+    ingress(env), lookup(expr, env, expr, env) <-- eval_input(expr, env), if expr.is_non_built_in();
 
     // Unbound variable: If env is nil during lookup, var is unbound. Return an an error.
     eval(input_expr, input_env, Ptr(Tag::Err.elt(), LE::zero())) <-- lookup(input_expr, input_env, _, env), if env.is_nil();
@@ -391,7 +436,7 @@ ascent! {
     ingress(head),
     eval_head_parse(expr, env, head, rest),
     eval_input(head, env) <--
-        eval_input(expr, env), cons_rel(head, rest, expr), if head.is_cons(); // || head.is_sym() && todo!("check for non built-in symbol");
+        eval_input(expr, env), cons_rel(head, rest, expr), if head.is_cons();
 
     // construct new expression to evaluate, using evaled head
     cons(evaled_head, rest) <--
@@ -474,7 +519,7 @@ ascent! {
 
     ingress(tail), bind_parse(expr, env, tail) <--
         eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
-        let op = Memory::ptr_sym(*head, *head_value), if op.is_some() && op.unwrap().is_binding();
+       if head.is_binding();
 
     // // Signal rule
     ingress(bindings), ingress(rest) <--
@@ -556,7 +601,7 @@ ascent! {
 
     ingress(tail), lambda_parse(expr, env, tail) <--
         eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
-        let op = Memory::ptr_sym(*head, *head_value), if op.is_some() && op.unwrap().is_lambda();
+        if head.is_lambda();
 
     // // Signal rule
     ingress(rest) <--
@@ -572,19 +617,21 @@ ascent! {
     // register a fun created from a lambda expression as its evaluation
     eval(expr, env, fun) <--
         eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
-        let op = Memory::ptr_sym(*head, *head_value), if op.is_some() && op.unwrap().is_lambda(),
+        if head.is_lambda(),
+        //let op = Memory::ptr_sym(*head, *head_value), if op.is_some() && op.unwrap().is_lambda(),
         lambda_parse(expre, env, tail),
         fun(args, body, env),
         fun_rel(args, body, env, fun);
 
     ////////////////////
     // fold -- default folding is fold_left
-    relation fold(Ptr, Ptr, Sym, F, Ptr); // (expr, env, op, acc, tail)
+    relation fold(Ptr, Ptr, Ptr, Num, Ptr); // (expr, env, op, acc, tail)
 
     // If head is left-foldable op, reduce it with its neutral element.
-    ingress(tail), fold(expr, env, op.unwrap(), op.unwrap().neutral_element(), tail) <--
+    ingress(tail), fold(expr, env, head, head.neutral_element(), tail) <--
         eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
-        let op = Memory::ptr_sym(*head, *head_value), if op.is_some() && op.unwrap().is_left_foldable();
+        if head.is_left_foldable();
+        // let op = Memory::ptr_sym(*head, *head_value), if op.is_some() && op.unwrap().is_left_foldable();
 
     // When left-folding with tail that is a cons, ingress its car and cdr, and eval the car.
     eval_input(car, env), ingress(car), ingress(cdr) <--
@@ -592,30 +639,31 @@ ascent! {
 
     // When left-folding, if car has been evaled and is F, apply the op to it and the acc, then recursively
     // fold acc and new tail.
-    ingress(cdr), fold(expr, env, op, op.apply_op(*acc, F(evaled_car.1)), cdr) <--
+    ingress(cdr), fold(expr, env, op, op.apply_op(*acc, Num(evaled_car.1)), cdr) <--
         fold(expr, env, op, acc, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car), if evaled_car.is_f();
 
     // left-folding operation with an empty (nil) tail
-    eval(expr, env, Ptr(Tag::F.elt(), acc.0)) <-- fold(expr, env, _, acc, tail), if tail.is_nil();
+    eval(expr, env, Ptr(Tag::Num.elt(), acc.0)) <-- fold(expr, env, _, acc, tail), if tail.is_nil();
 
     ////////////////////
     // fold_right
 
-    relation fold_right(Ptr, Ptr, Sym, Ptr); // (expr, env, op, tail)
+    relation fold_right(Ptr, Ptr, Ptr, Ptr); // (expr, env, op, tail)
 
     // If head is right-foldable op, initiate fold_right.
-    ingress(tail), fold_right(expr, env, op.unwrap(), tail) <--
+    ingress(tail), fold_right(expr, env, head, tail) <--
         eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
-        let op = Memory::ptr_sym(*head, *head_value), if op.is_some() && op.unwrap().is_right_foldable();
+        if head.is_right_foldable();
+        //let op = Memory::ptr_sym(*head, *head_value), if op.is_some() && op.unwrap().is_right_foldable();
 
     // When right-folding with tail that is a cons, ingress its car and cdr, and eval the car.
     eval_input(car, env), ingress(car), ingress(cdr) <-- fold_right(expr, env, op, tail), cons_rel(car, cdr, tail);
 
     // When right-folding an empty list, return the neutral element.
-    eval(expr, env, Ptr(Tag::F.elt(), op.neutral_element().0)) <-- fold_right(expr, env, op, tail), if tail.is_nil();
+    eval(expr, env, Ptr(Tag::Num.elt(), op.neutral_element().0)) <-- fold_right(expr, env, op, tail), if tail.is_nil();
 
     // When right-folding, if tail is a cons (not empty), revert to a (left) fold with evaled car as initial acc.
-    ingress(cdr), fold(expr, env, op, F(evaled_car.1), cdr) <--
+    ingress(cdr), fold(expr, env, op, Num(evaled_car.1), cdr) <--
         fold_right(expr, env, op, tail),
         cons_rel(car, cdr, tail),
         eval(car, env, evaled_car), if evaled_car.is_f();
@@ -630,310 +678,175 @@ ascent! {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::loam::Sexp as S;
+    use crate::lurk::state::State;
+
+    fn err() -> WidePtr {
+        WidePtr(Tag::Err.value(), Wide::widen(LE::from_canonical_u32(0)))
+    }
+
+    fn wide_ptr(tag: LE, digest: [LE; 8]) -> WidePtr {
+        WidePtr(Wide::widen(tag), Wide(digest))
+    }
+
+    fn read_wideptr(src: &str) -> WidePtr {
+        let ReadData {
+            tag,
+            digest,
+            hashes,
+        } = simple_read(src);
+
+        allocator().import_hashes(hashes);
+        wide_ptr(tag, digest)
+    }
+
+    fn test_aux0(
+        input: WidePtr,
+        expected_output: WidePtr,
+        env: Option<WidePtr>,
+    ) -> EvaluationProgram {
+        let mut prog = EvaluationProgram::default();
+
+        prog.toplevel_input = vec![(input, env.unwrap_or(WidePtr::empty_env()))];
+        prog.run();
+
+        println!("{}", prog.relation_sizes_summary());
+
+        assert_eq!(vec![(expected_output,)], prog.output_expr);
+        prog
+    }
+
+    fn test_aux(input: &str, expected_output: &str, env: Option<&str>) -> EvaluationProgram {
+        allocator().init();
+
+        test_aux0(
+            read_wideptr(input),
+            read_wideptr(expected_output),
+            env.map(read_wideptr),
+        )
+    }
+
+    fn test_aux1(input: &str, expected_output: WidePtr, env: Option<&str>) -> EvaluationProgram {
+        allocator().init();
+
+        test_aux0(read_wideptr(input), expected_output, env.map(read_wideptr))
+    }
 
     #[test]
-    fn new_test_eval() {
-        let empty_env = WidePtr::nil();
-
-        let mut test = |input, expected_output: WidePtr, env: Option<WidePtr>| {
-            let mut prog = EvaluationProgram::default();
-
-            prog.toplevel_input = vec![(input, env.unwrap_or(empty_env))];
-            prog.run();
-
-            println!("{}", prog.relation_sizes_summary());
-
-            assert_eq!(vec![(expected_output,)], prog.output_expr);
-            prog
-        };
-
-        let err = WidePtr(Tag::Err.value(), Wide::widen(LE::from_canonical_u32(0)));
-
-        let prog = {
-            allocator().init();
-
-            // F is self-evaluating.
-            let f = F(LE::from_canonical_u32(123));
-            test(f.into(), f.into(), None);
-        };
-
-        let prog = {
-            allocator().init();
-
-            // Nil is self-evaluating.
-            let nil = WidePtr::nil();
-
-            test(nil.into(), nil.into(), None)
-        };
-
-        let prog = {
-            allocator().init();
-
-            // (+)
-            let add = Cons::list(vec![S::sym('+')]);
-
-            test(add.into(), F(LE::from_canonical_u32(0)).into(), None)
-        };
-
-        let prog = {
-            allocator().init();
-
-            // (+ 1)
-            let add = Cons::list(vec![S::sym('+'), S::f(LE::from_canonical_u32(1))]);
-
-            test(add.into(), F(LE::from_canonical_u32(1)).into(), None)
-        };
-
-        let prog = {
-            allocator().init();
-
-            // (+ 1 2)
-            let add = Cons::list(vec![
-                S::sym('+'),
-                S::f(LE::from_canonical_u32(1)),
-                S::f(LE::from_canonical_u32(2)),
-            ]);
-
-            test(add.into(), F(LE::from_canonical_u32(3)).into(), None)
-        };
-
-        let prog = {
-            allocator().init();
-
-            // (+ 1 2 3)
-            let add = Cons::list(vec![
-                S::sym('+'),
-                S::f(LE::from_canonical_u32(1)),
-                S::f(LE::from_canonical_u32(2)),
-                S::f(LE::from_canonical_u32(3)),
-            ]);
-
-            test(add.into(), F(LE::from_canonical_u32(6)).into(), None)
-        };
-
-        let prog = {
-            allocator().init();
-
-            // (*)
-            let mul = Cons::list(vec![S::sym('*')]);
-
-            test(mul.into(), F(LE::from_canonical_u32(1)).into(), None)
-        };
-
-        let prog = {
-            allocator().init();
-
-            // (* 2)
-            let mul = Cons::list(vec![S::sym('*'), S::f(LE::from_canonical_u32(2))]);
-
-            test(mul.into(), F(LE::from_canonical_u32(2)).into(), None)
-        };
-
-        let prog = {
-            allocator().init();
-
-            // (* 2 3)
-            let mul = Cons::list(vec![
-                S::sym('*'),
-                S::f(LE::from_canonical_u32(2)),
-                S::f(LE::from_canonical_u32(3)),
-            ]);
-
-            test(mul.into(), F(LE::from_canonical_u32(6)).into(), None)
-        };
-
-        let prog = {
-            allocator().init();
-
-            // (+ 2 3 4)
-            let mul = Cons::list(vec![
-                S::sym('*'),
-                S::f(LE::from_canonical_u32(2)),
-                S::f(LE::from_canonical_u32(3)),
-                S::f(LE::from_canonical_u32(4)),
-            ]);
-
-            test(mul.into(), F(LE::from_canonical_u32(24)).into(), None)
-        };
-
-        let prog = {
-            allocator().init();
-
-            // (+ 5 (* 3 4))
-            let mul = Cons::list(vec![
-                S::sym('+'),
-                S::f(LE::from_canonical_u32(5)),
-                S::list(vec![
-                    S::sym('*'),
-                    S::f(LE::from_canonical_u32(3)),
-                    S::f(LE::from_canonical_u32(4)),
-                ]),
-            ]);
-
-            test(mul.into(), F(LE::from_canonical_u32(17)).into(), None)
-        };
-
-        let prog = {
-            allocator().init();
-
-            // (/ 10 2 5)
-            let x = Cons::list(vec![
-                S::sym('/'),
-                S::f(LE::from_canonical_u32(10)),
-                S::f(LE::from_canonical_u32(2)),
-                S::f(LE::from_canonical_u32(5)),
-            ]);
-
-            test(x.into(), F(LE::from_canonical_u32(1)).into(), None)
-        };
-
-        let prog = {
-            allocator().init();
-
-            // (+ 5 (-) (*) (/) (+) (* 3 4 (- 7 2 1)) (/ 10 2 5))
-            let x = Cons::list(vec![
-                S::sym('+'),
-                S::f(LE::from_canonical_u32(5)),
-                S::list(vec![S::sym('-')]),
-                S::list(vec![S::sym('*')]),
-                S::list(vec![S::sym('/')]),
-                S::list(vec![S::sym('+')]),
-                S::list(vec![
-                    S::sym('*'),
-                    S::f(LE::from_canonical_u32(3)),
-                    S::f(LE::from_canonical_u32(4)),
-                    S::list(vec![
-                        S::sym('-'),
-                        S::f(LE::from_canonical_u32(7)),
-                        S::f(LE::from_canonical_u32(2)),
-                        S::f(LE::from_canonical_u32(1)),
-                    ]),
-                ]),
-                S::list(vec![
-                    S::sym('/'),
-                    S::f(LE::from_canonical_u32(10)),
-                    S::f(LE::from_canonical_u32(2)),
-                    S::f(LE::from_canonical_u32(5)),
-                ]),
-            ]);
-
-            test(x.into(), F(LE::from_canonical_u32(56)).into(), None)
-        };
-
-        let prog = {
-            allocator().init();
-
-            let x: WidePtr = (&Sym::Char('x')).into();
-
-            test(x, err, None)
-        };
-
-        let prog = {
-            allocator().init();
-
-            let x: WidePtr = (&Sym::Char('x')).into();
-            let val: WidePtr = F(LE::from_canonical_u32(9)).into();
-
-            // ((x . 9))
-            let env = Cons::bind(x, val, empty_env);
-
-            test(x, val, Some(env))
-        };
-
-        let prog = {
-            allocator().init();
-
-            let x: WidePtr = (&Sym::Char('x')).into();
-            let y: WidePtr = (&Sym::Char('y')).into();
-            let z: WidePtr = (&Sym::Char('z')).into();
-            let val: WidePtr = F(LE::from_canonical_u32(9)).into();
-            let val2: WidePtr = F(LE::from_canonical_u32(10)).into();
-
-            // ((y . 10) (x . 9))
-            let env = Cons::bind(y, val2, Cons::bind(x, val, empty_env));
-
-            test(x, val, Some(env));
-            test(y, val2, Some(env));
-            test(z, err, Some(env))
-        };
-
-        let prog = {
-            allocator().init();
-
-            let x = S::sym('x');
-            let y = S::sym('y');
-            let l = S::sym('l');
-            let v = F(LE::from_canonical_u32(9));
-            let v2 = F(LE::from_canonical_u32(10));
-
-            //(x 9)
-            let binding = S::list(vec![x.clone(), S::F(v)]);
-            // ((x 9))
-            let bindings = S::list(vec![binding]);
-            // (l ((x 9)) x)
-            let let_form: WidePtr = (&S::list(vec![l, bindings, x])).into();
-
-            test(let_form.into(), v.into(), None);
-
-            let binding2 = S::list(vec![y.clone(), S::F(v2)]);
-            let bindings2 = S::list(vec![binding, binding2]);
-            let let_form2: WidePtr = (&S::list(vec![l, bindings2, x])).into();
-            let let_form3: WidePtr = (&S::list(vec![l, bindings2, y])).into();
-
-            test(let_form2.into(), v.into(), None);
-            test(let_form3.into(), v2.into(), None)
-        };
-
-        let prog: EvaluationProgram = {
-            allocator().init();
-
-            // ((f (x) (+ x 1)) 7)
-
-            let f = S::sym('f');
-            let l = S::sym('l');
-            let x = S::sym('x');
-            let plus = S::sym('+');
-            let one = S::f(LE::from_canonical_u32(1));
-            let seven = S::f(LE::from_canonical_u32(7));
-            let eight = S::f(LE::from_canonical_u32(8));
-
-            let body = one;
-            // (f () 1)
-            let lambda = S::list(vec![f, S::Nil, body]);
-            // ((f () 1))
-            let expr = S::list(vec![lambda]);
-
-            // (x)
-            let args1 = S::list(vec![x]);
-            // (+ x 1)
-            let body1 = S::list(vec![plus, x, one]);
-            // (f (x) (+ x 1))
-            let lambda1 = S::list(vec![f, args1, body1]);
-            let expr1 = S::list(vec![lambda1, seven]);
-
-            let args_wide_ptr: WidePtr = (&args1).into();
-            let body_wide_ptr: WidePtr = (&body1).into();
-            let expected_fun_digest = allocator().hash6(
-                args_wide_ptr.0,
-                args_wide_ptr.1,
-                body_wide_ptr.0,
-                body_wide_ptr.1,
-                empty_env.0,
-                empty_env.1,
-            );
-            let expected_fun = WidePtr(Tag::Fun.value(), expected_fun_digest);
-
-            test((&lambda1).into(), expected_fun, None);
-
-            allocator().reset_allocation();
-            test((&expr).into(), (&one).into(), None);
-
-            allocator().reset_allocation();
-            // ((f (x) (+ x 1)) 7) -> 8
-            test((&expr1).into(), (&eight).into(), None)
-        };
-
+    fn test_self_evaluating_f() {
+        test_aux("123", "123", None);
+    }
+
+    #[test]
+    fn test_self_evaluating_nil() {
+        test_aux("nil", "nil", None);
+    }
+
+    #[test]
+    fn test_zero_arg_addition() {
+        test_aux("(+)", "0", None);
+    }
+
+    #[test]
+    fn test_one_arg_addition() {
+        test_aux("(+ 1)", "1", None);
+    }
+
+    #[test]
+    fn test_two_arg_addition() {
+        test_aux("(+ 1 2)", "3", None);
+    }
+
+    #[test]
+    fn test_three_arg_addition() {
+        test_aux("(+ 1 2 3)", "6", None);
+    }
+
+    #[test]
+    fn test_zerog_arg_multiplication() {
+        test_aux("(*)", "1", None);
+    }
+
+    #[test]
+    fn test_one_arg_multiplication() {
+        test_aux("(* 2)", "2", None);
+    }
+
+    #[test]
+    fn test_two_arg_multiplication() {
+        test_aux("(* 2 3)", "6", None);
+    }
+
+    #[test]
+    fn test_three_arg_multiplication() {
+        test_aux("(* 2 3 4)", "24", None);
+    }
+
+    #[test]
+    fn test_nested_arithmetic() {
+        test_aux("(+ 5 (* 3 4))", "17", None);
+    }
+
+    #[test]
+    fn test_three_arg_division() {
+        test_aux("(/ 10 2 5)", "1", None);
+    }
+
+    #[test]
+    fn test_complicated_nested_arithmetic() {
+        test_aux(
+            "(+ 5 (-) (*) (/) (+) (* 3 4 (- 7 2 1)) (/ 10 2 5))",
+            "56",
+            None,
+        );
+    }
+
+    #[test]
+    fn test_unbound_var() {
+        test_aux1("x", err(), None);
+    }
+
+    #[test]
+    fn test_var_lookup() {
+        test_aux("x", "9", Some("((x . 9))"));
+    }
+
+    #[test]
+    fn test_deep_var_lookup() {
+        let env = read_wideptr("((y . 10) (x . 9))");
+        let expr = read_wideptr("x");
+
+        test_aux("x", "9", Some("((y . 10) (x . 9))"));
+        test_aux("y", "10", Some("((y . 10) (x . 9))"));
+        test_aux1("z", err(), Some("((y . 10) (x . 9))"));
+    }
+
+    #[test]
+    fn test_let() {
+        test_aux("(let ((x 9)) x)", "9", None);
+        test_aux("(let ((x 9)(y 10)) x)", "9", None);
+        test_aux("(let ((x 9)(y 10)) y)", "10", None);
+    }
+
+    #[test]
+    fn test_lambda() {
+        let args_wide_ptr: WidePtr = read_wideptr("(x)");
+        let body_wide_ptr: WidePtr = read_wideptr("(+ x 1)");
+        let expected_fun_digest = allocator().hash6(
+            args_wide_ptr.0,
+            args_wide_ptr.1,
+            body_wide_ptr.0,
+            body_wide_ptr.1,
+            WidePtr::empty_env().0,
+            WidePtr::empty_env().1,
+        );
+        let expected_fun = WidePtr(Tag::Fun.value(), expected_fun_digest);
+
+        test_aux1("(lambda (x) (+ x 1))", expected_fun, None);
+
+        test_aux("((lambda (x) (+ x 1)) 7)", "8", None);
+    }
+
+    fn debug_prog(prog: EvaluationProgram) {
         println!("{}", prog.relation_sizes_summary());
 
         let EvaluationProgram {
@@ -994,7 +907,5 @@ mod test {
             sym_digest_mem,
             parse_fun_call,
         );
-
-        // panic!("uiop");
     }
 }

@@ -1,12 +1,15 @@
-use std::collections::BTreeMap;
 use std::hash::Hash;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use ascent::{ascent, Dual};
+use fxhash::FxHashMap;
 use p3_field::{AbstractField, Field, PrimeField32};
 
 use crate::lair::hasher::{Hasher, LurkHasher};
-use crate::loam::{Elemental, LEWrap, Ptr, Tag, Valuable, Wide, WidePtr, F, LE};
+use crate::loam::evaluation::Memory;
+use crate::loam::{LEWrap, Num, Ptr, Wide, WidePtr, LE};
+use crate::lurk::reader;
+use crate::lurk::zstore::Tag;
 
 // Because of how the macros work, it's not easy (or possible) to pass a per-invocation structure like the `Allocator`
 // into the program, while also having access to the program struct itself. However, that access is extremely useful
@@ -26,9 +29,9 @@ pub fn allocator() -> MutexGuard<'static, Allocator> {
 
 #[derive(Default)]
 pub struct Allocator {
-    allocation_map: BTreeMap<LE, LE>,
-    digest_cache: BTreeMap<Vec<Wide>, Wide>,
-    preimage_cache: BTreeMap<Wide, Vec<Wide>>,
+    allocation_map: FxHashMap<LE, LE>,
+    digest_cache: FxHashMap<Vec<Wide>, Wide>,
+    preimage_cache: FxHashMap<Wide, Vec<Wide>>,
     hasher: LurkHasher,
 }
 
@@ -42,6 +45,24 @@ impl Allocator {
 
     pub fn reset_allocation(&mut self) {
         self.allocation_map = Default::default();
+    }
+
+    pub fn import_hashes(
+        &mut self,
+        hashes: FxHashMap<[LE; reader::PREIMG_SIZE], [LE; reader::IMG_SIZE]>,
+    ) {
+        for (preimage, digest) in &hashes {
+            let preimage_vec = preimage
+                .chunks(8)
+                .map(|chunk| Wide::from_slice(chunk))
+                .collect::<Vec<_>>();
+            let digest_wide = Wide(digest.clone());
+
+            self.digest_cache
+                .insert(preimage_vec.clone(), digest_wide.clone());
+
+            self.preimage_cache.insert(digest_wide, preimage_vec);
+        }
     }
 
     pub fn alloc_addr(&mut self, tag: LE, initial_addr: LE) -> LE {
@@ -116,7 +137,12 @@ impl Allocator {
     }
 
     pub fn unhash6(&mut self, digest: &Wide) -> Option<[Wide; 6]> {
-        todo!();
+        let mut preimage = [Wide::widen(LE::from_canonical_u32(0)); 6];
+
+        self.preimage_cache.get(digest).map(|digest| {
+            preimage.copy_from_slice(&digest[..6]);
+            preimage
+        })
     }
 }
 
@@ -127,7 +153,7 @@ ascent! {
     // Relations
 
     // The standard tag mapping.
-    relation tag(LE, Wide) = Tag::tag_wide_relation(); // (short-tag, wide-tag)
+    relation tag(LE, Wide) = Tag::wide_relation(); // (short-tag, wide-tag)
 
     relation ptr_value(Ptr, Wide); // (ptr, value)}
     relation ptr_tag(Ptr, Wide); // (ptr, tag)
@@ -232,8 +258,8 @@ ascent! {
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
 
-    ptr(Ptr(Tag::F.elt(), f)),
-    f_value(Ptr(Tag::F.elt(), f), Wide::widen(f)) <-- alloc(&Tag::F.elt(), value), let f = value.f();
+    ptr(Ptr(Tag::Num.elt(), f)),
+    f_value(Ptr(Tag::Num.elt(), f), Wide::widen(f)) <-- alloc(&Tag::Num.elt(), value), let f = value.f();
 
     cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0.0)),
     cons_mem(car, cdr, addr) <--
@@ -261,7 +287,7 @@ ascent! {
 
     egress(car), egress(cdr) <-- egress(cons), cons_rel(car, cdr, cons);
 
-    ptr_tag(ptr, Tag::F.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_f();
+    ptr_tag(ptr, Tag::Num.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_f();
 
     output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), ptr_value(ptr, value), ptr_tag(ptr, wide_tag);
 
@@ -290,7 +316,7 @@ ascent! {
     relation map_double(Ptr, Ptr); // (input-ptr, output-ptr)
 
     ptr(doubled),
-    map_double(ptr, doubled) <-- map_double_input(ptr), if ptr.is_f(), let doubled = Ptr(Tag::F.elt(), ptr.1.double());
+    map_double(ptr, doubled) <-- map_double_input(ptr), if ptr.is_f(), let doubled = Ptr(Tag::Num.elt(), ptr.1.double());
 
     map_double_input(ptr) <-- input_ptr(ptr);
 
@@ -397,37 +423,37 @@ mod test {
 
         // (1 . 2)
         let c1_2 = allocator().hash4(
-            Tag::F.value(),
+            Tag::Num.value(),
             Wide::widen(LE::from_canonical_u32(1)),
-            Tag::F.value(),
+            Tag::Num.value(),
             Wide::widen(LE::from_canonical_u32(2)),
         );
         // (2 . 3)
         let c2_3 = allocator().hash4(
-            Tag::F.value(),
+            Tag::Num.value(),
             Wide::widen(LE::from_canonical_u32(2)),
-            Tag::F.value(),
+            Tag::Num.value(),
             Wide::widen(LE::from_canonical_u32(3)),
         );
         // (2 . 4)
         let c2_4 = allocator().hash4(
-            Tag::F.value(),
+            Tag::Num.value(),
             Wide::widen(LE::from_canonical_u32(2)),
-            Tag::F.value(),
+            Tag::Num.value(),
             Wide::widen(LE::from_canonical_u32(4)),
         );
         // (4 . 6)
         let c4_6 = allocator().hash4(
-            Tag::F.value(),
+            Tag::Num.value(),
             Wide::widen(LE::from_canonical_u32(4)),
-            Tag::F.value(),
+            Tag::Num.value(),
             Wide::widen(LE::from_canonical_u32(6)),
         );
         // (4 . 8)
         let c4_8 = allocator().hash4(
-            Tag::F.value(),
+            Tag::Num.value(),
             Wide::widen(LE::from_canonical_u32(4)),
-            Tag::F.value(),
+            Tag::Num.value(),
             Wide::widen(LE::from_canonical_u32(8)),
         );
         // ((1 . 2) . (2 . 4))
