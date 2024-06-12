@@ -1,4 +1,4 @@
-use itertools::{repeat_n, Itertools};
+use itertools::{chain, repeat_n, Itertools};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{AbstractField, Field};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
@@ -6,7 +6,10 @@ use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
     slice::ParallelSliceMut,
 };
-use sphinx_core::air::{EventLens, MachineAir, WithEvents};
+use sphinx_core::air::{
+    AirInteraction, BaseAirBuilder, EventLens, MachineAir, MessageBuilder, WithEvents,
+};
+use sphinx_core::lookup::InteractionKind;
 use sphinx_core::stark::Indexed;
 use std::iter::zip;
 use std::marker::PhantomData;
@@ -94,7 +97,7 @@ impl<F: Field> MachineAir<F> for MemChip<F> {
 
 impl<AB> Air<AB> for MemChip<AB::F>
 where
-    AB: AirBuilder,
+    AB: BaseAirBuilder,
 {
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
@@ -133,7 +136,16 @@ where
                 .assert_eq(val_local, val_next);
         }
 
-        // builder.when(is_real).send([tag, values_local]);
+        const MEM_TAG: u32 = 42;
+        builder.send(AirInteraction {
+            values: chain(
+                [AB::Expr::from_canonical_u32(MEM_TAG)],
+                values_local.iter().copied().map(Into::into),
+            )
+            .collect(),
+            multiplicity: is_real.into(),
+            kind: InteractionKind::Memory,
+        })
     }
 }
 
@@ -141,50 +153,6 @@ impl<F: Sync> BaseAir<F> for MemChip<F> {
     /// is_real, Pointer, and arguments
     fn width(&self) -> usize {
         2 + self.len
-    }
-}
-
-impl<F: Field> MemChip<F> {
-    pub fn generate_trace(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
-        let len = self.len;
-        let mem_idx = mem_index_from_len(len);
-        let mem = &queries.mem_queries[mem_idx];
-        let width = self.width();
-        let height = mem.len().next_power_of_two().max(4);
-        let mut rows = vec![F::zero(); height * width];
-        rows.chunks_mut(width).enumerate().for_each(|(i, row)| {
-            // We skip the address 0 as to leave room for null pointers
-            row[0] = F::from_canonical_usize(i + 1);
-            if let Some((args, &mult)) = mem.get_index(i) {
-                assert_eq!(args.len(), len);
-                row[1] = F::from_canonical_u32(mult);
-                args.iter().enumerate().for_each(|(j, arg)| {
-                    row[j + 2] = *arg;
-                });
-            }
-        });
-        RowMajorMatrix::new(rows, width)
-    }
-
-    pub fn generate_trace_parallel(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
-        let len = self.len;
-        let mem_idx = mem_index_from_len(len);
-        let mem = queries.mem_queries[mem_idx].iter().collect::<Vec<_>>();
-        let width = self.width();
-        let height = mem.len().next_power_of_two().max(4);
-        let mut rows = vec![F::zero(); height * width];
-        rows.par_chunks_mut(width).enumerate().for_each(|(i, row)| {
-            // We skip the address 0 as to leave room for null pointers
-            row[0] = F::from_canonical_usize(i + 1);
-            if let Some((args, &mult)) = mem.get(i) {
-                assert_eq!(args.len(), len);
-                row[1] = F::from_canonical_u32(mult);
-                args.iter().enumerate().for_each(|(j, arg)| {
-                    row[j + 2] = *arg;
-                });
-            }
-        });
-        RowMajorMatrix::new(rows, width)
     }
 }
 
@@ -215,6 +183,7 @@ mod tests {
         let toplevel = Toplevel::<F, LurkHasher>::new(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
         let queries = &mut QueryRecord::new(&toplevel);
+        let mut queries_out = QueryRecord::default();
         test_chip.execute([].into(), queries);
         let func_trace = test_chip.generate_trace(queries);
 
@@ -235,14 +204,14 @@ mod tests {
             len: mem_len,
             _marker: Default::default(),
         };
-        let mem_trace = mem_chip.generate_trace(queries);
+        let mem_trace = mem_chip.generate_trace(queries, &mut queries_out);
 
         let expected_trace = [
-            // index, mult, memory values
-            1, 2, 1, 2, 3, //
-            2, 1, 1, 1, 1, //
-            3, 0, 0, 0, 0, //
-            4, 0, 0, 0, 0, //
+            // is_real, index, memory values
+            1, 1, 1, 2, 3, // 1
+            1, 1, 1, 2, 3, // 1
+            1, 2, 1, 1, 1, // 2
+            0, 0, 0, 0, 0, // dummy
         ]
         .into_iter()
         .map(F::from_canonical_u32)
