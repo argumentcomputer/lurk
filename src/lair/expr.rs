@@ -91,7 +91,9 @@ pub struct BlockE<F> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CtrlE<F> {
     /// `Match(x, cases)` matches on `x` in order to decide which case to execute
-    Match(Var, CasesE<F>),
+    Match(Var, CasesE<F, F>),
+    /// `MatchMany(x, cases)` matches on array `x` in order to decide which case to execute
+    MatchMany(Var, CasesE<List<F>, F>),
     /// `If(b, t, f)` executes block `f` if `b` is zero and `t` otherwise
     If(Var, Box<BlockE<F>>, Box<BlockE<F>>),
     /// Contains the variables whose bindings will construct the output of the
@@ -103,8 +105,8 @@ pub enum CtrlE<F> {
 /// matches and an optional default case in case there's no match. Each code path
 /// is encoded as its own block
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CasesE<F> {
-    pub branches: Map<F, BlockE<F>>,
+pub struct CasesE<K, F> {
+    pub branches: Map<K, BlockE<F>>,
     pub default: Option<Box<BlockE<F>>>,
 }
 

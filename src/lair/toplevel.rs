@@ -321,6 +321,26 @@ impl<F: Clone + Ord> CtrlE<F> {
                 let cases = Cases { branches, default };
                 Ctrl::Match(t, cases)
             }
+            CtrlE::MatchMany(t, cases) => {
+                let size = t.size;
+                let vars = use_var(t, ctx).into();
+                let mut vec = Vec::with_capacity(cases.branches.size());
+                for (fs, block) in cases.branches.iter() {
+                    assert_eq!(fs.len(), size, "Pattern must have size {size}");
+                    ctx.block_ident += 1;
+                    let state = ctx.save_bind_state();
+                    let block = block.check_and_link(ctx);
+                    ctx.restore_bind_state(state);
+                    vec.push((fs.clone(), block))
+                }
+                let branches = Map::from_vec(vec);
+                let default = cases.default.as_ref().map(|def| {
+                    ctx.block_ident += 1;
+                    def.check_and_link(ctx).into()
+                });
+                let cases = Cases { branches, default };
+                Ctrl::MatchMany(vars, cases)
+            }
             CtrlE::If(b, true_block, false_block) => {
                 let vars = use_var(b, ctx).into();
 

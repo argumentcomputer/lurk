@@ -573,4 +573,60 @@ mod tests {
 
         let _ = debug_constraints_collecting_queries(&if_many_chip, &[], &expected_trace);
     }
+
+    #[test]
+    fn lair_match_many_test() {
+        let match_many_func = func!(
+        fn match_many(a: [2]): [1] {
+            match a {
+                [0, 0] => {
+                    let zero = 0;
+                    return zero
+                }
+                [0, 1] => {
+                    let one = 1;
+                    return one
+                }
+                [1, 0] => {
+                    let two = 2;
+                    return two
+                }
+            };
+            let three = 3;
+            return three
+        });
+        let toplevel = Toplevel::<F>::new(&[match_many_func]);
+        let match_many_chip = FuncChip::from_name("match_many", &toplevel);
+
+        let queries = &mut QueryRecord::new(&toplevel);
+        let f = field_from_u32;
+        let args = [f(0), f(0)].into();
+        match_many_chip.execute_iter(args, queries);
+        let args = [f(0), f(1)].into();
+        match_many_chip.execute_iter(args, queries);
+        let args = [f(1), f(0)].into();
+        match_many_chip.execute_iter(args, queries);
+        let args = [f(0), f(8)].into();
+        match_many_chip.execute_iter(args, queries);
+
+        let match_many_trace = match_many_chip.generate_trace_parallel(queries);
+
+        let match_many_width = match_many_chip.width();
+        let expected_trace = RowMajorMatrix::new(
+            [
+                // 2 inputs, 1 output, mult, 6 witness coefficients, 4 selectors
+                0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, //
+                0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, //
+                1, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, //
+                0, 8, 3, 1, 0, 1761607681, 0, 862828252, 2013265920, 0, 0, 0, 0, 1, //
+            ]
+            .into_iter()
+            .map(F::from_canonical_u32)
+            .collect::<Vec<_>>(),
+            match_many_width,
+        );
+        assert_eq!(match_many_trace, expected_trace);
+
+        let _ = debug_constraints_collecting_queries(&match_many_chip, &[], &expected_trace);
+    }
 }
