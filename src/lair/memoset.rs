@@ -1,21 +1,30 @@
+use crate::lair::execute::{mem_index_from_len, MemMap, QueryRecord};
+use crate::lair::memory::MemChip;
+use itertools::{chain, repeat_n};
 use p3_air::{Air, AirBuilder, BaseAir};
-use p3_field::AbstractField;
+use p3_field::{AbstractField, Field};
+use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::Matrix;
+use rayon::prelude::ParallelSliceMut;
+use sphinx_core::air::{AirInteraction, BaseAirBuilder, EventLens, MachineAir, WithEvents};
+use sphinx_core::lookup::InteractionKind;
 use std::iter::zip;
+use std::marker::PhantomData;
 
-pub struct MemoSetChip {
+pub struct MemoSetChip<F> {
     len: usize,
+    _marker: PhantomData<F>,
 }
 
-impl<F> BaseAir<F> for MemoSetChip {
+impl<F: Field> BaseAir<F> for MemoSetChip<F> {
     fn width(&self) -> usize {
         2 + self.len
     }
 }
 
-impl<AB> Air<AB> for MemoSetChip
+impl<AB> Air<AB> for MemoSetChip<AB::F>
 where
-    AB: AirBuilder,
+    AB: BaseAirBuilder,
 {
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
@@ -41,7 +50,7 @@ where
             .assert_one(is_real.clone());
 
         // The current row is real, and either it is the last row, or the next row is not real.
-        let is_last_real = is_real
+        let is_last_real = is_real.clone()
             * (builder.is_last_row() + builder.is_transition() * (AB::Expr::one() - is_real_next));
 
         // when the next row is not real, ensure the last query was provided
@@ -58,6 +67,44 @@ where
         let tag = AB::Expr::from_canonical_u32(REQUIRE_TAG) * is_require
             + AB::Expr::from_canonical_u32(PROVIDE_TAG) * is_provide;
 
-        // builder.when(is_real).send([tag, query]);
+        builder.send(AirInteraction {
+            values: chain([tag], query_local.iter().copied().map(Into::into)).collect(),
+            multiplicity: is_real,
+            kind: InteractionKind::Instruction,
+        })
     }
 }
+
+// impl<F: Field> EventLens<MemoSetChip<F>> for QueryRecord<F> {
+//     fn events(&self) -> <MemoSetChip<F> as WithEvents<'_>>::Events {
+//         // self.mem_queries.as_slice()
+//     }
+// }
+//
+// impl<'a, F: Field> WithEvents<'a> for MemoSetChip<F> {
+//     type Events = &'a [MemMap<F>];
+// }
+//
+// impl<F: Field> MachineAir<F> for MemoSetChip<F> {
+//     type Record = QueryRecord<F>;
+//     type Program = QueryRecord<F>;
+//
+//     fn name(&self) -> String {
+//         format!("mem {}", self.len).to_string()
+//     }
+//
+//     fn generate_trace<EL: EventLens<Self>>(
+//         &self,
+//         input: &EL,
+//         _output: &mut Self::Record,
+//     ) -> RowMajorMatrix<F> {
+//         let len = self.len;
+//         let mem_idx = mem_index_from_len(len);
+//         let mem = &input.events()[mem_idx];
+//         let width = self.width();
+//     }
+//
+//     fn included(&self, _shard: &Self::Record) -> bool {
+//         true
+//     }
+// }

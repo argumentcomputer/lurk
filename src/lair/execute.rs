@@ -2,7 +2,7 @@ use fxhash::FxBuildHasher;
 use indexmap::IndexMap;
 use p3_field::{AbstractField, Field, PrimeField};
 use sphinx_core::air::MachineProgram;
-use sphinx_core::stark::MachineRecord;
+use sphinx_core::stark::{Indexed, MachineRecord};
 use std::collections::HashMap;
 use std::slice::Iter;
 
@@ -40,6 +40,12 @@ pub struct QueryRecord<F: Field> {
 impl<F: Field> MachineProgram<F> for QueryRecord<F> {
     fn pc_start(&self) -> F {
         F::zero()
+    }
+}
+
+impl<F: Field> Indexed for QueryRecord<F> {
+    fn index(&self) -> u32 {
+        0
     }
 }
 
