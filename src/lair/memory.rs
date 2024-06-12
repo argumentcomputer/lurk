@@ -138,17 +138,13 @@ where
 }
 
 impl<F: Sync> BaseAir<F> for MemChip<F> {
-    fn width(&self) -> usize {
-        self.width()
-    }
-}
-
-impl<F: Field> MemChip<F> {
     /// is_real, Pointer, and arguments
     fn width(&self) -> usize {
         2 + self.len
     }
+}
 
+impl<F: Field> MemChip<F> {
     pub fn generate_trace(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let len = self.len;
         let mem_idx = mem_index_from_len(len);

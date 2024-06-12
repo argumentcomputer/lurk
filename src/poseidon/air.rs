@@ -10,7 +10,8 @@ use itertools::izip;
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::AbstractField;
 use p3_matrix::Matrix;
-use p3_poseidon2::apply_mat4;
+use p3_poseidon2::MDSMat4;
+use p3_symmetric::Permutation;
 
 use super::{columns::Poseidon2Cols, config::PoseidonConfig, util::matmul_internal, Poseidon2Chip};
 
@@ -142,8 +143,9 @@ where
             // In Appendix B's terminology, this replaces each x_i with x_i'.
             let mut state = sbox_result.clone();
             for state_chunk in state.chunks_mut(4) {
+                let mds = MDSMat4 {};
                 let state_chunk: &mut [AB::Expr; 4] = state_chunk.try_into().unwrap();
-                apply_mat4(state_chunk);
+                mds.permute_mut(state_chunk);
             }
 
             // Now, we apply the outer circulant matrix (to compute the y_i values).
