@@ -6,6 +6,7 @@ use std::slice::Iter;
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
     chip::FuncChip,
+    hasher::Hasher,
     toplevel::Toplevel,
     List,
 };
@@ -82,12 +83,15 @@ pub fn mem_load<F: PrimeField>(mem: &mut [MemMap<F>], len: usize, ptr: F) -> &[F
 
 impl<F: Field> QueryRecord<F> {
     #[inline]
-    pub fn new(toplevel: &Toplevel<F>) -> Self {
+    pub fn new<H: Hasher<F>>(toplevel: &Toplevel<F, H>) -> Self {
         Self::new_with_init_mem(toplevel, mem_init())
     }
 
     #[inline]
-    pub fn new_with_init_mem(toplevel: &Toplevel<F>, mem_queries: Vec<MemMap<F>>) -> Self {
+    pub fn new_with_init_mem<H: Hasher<F>>(
+        toplevel: &Toplevel<F, H>,
+        mem_queries: Vec<MemMap<F>>,
+    ) -> Self {
         let func_queries = vec![FxIndexMap::default(); toplevel.size()];
         let inv_func_queries = toplevel
             .map
@@ -114,11 +118,16 @@ impl<F: Field> QueryRecord<F> {
 
     /// Injects new queries for a function referenced by name. If a query is already present, do nothing.
     /// Otherwise, add it with multiplicity zero. Further, if the function is invertible, add the query
-    /// to the `inv_func_queries` as well.
-    pub fn inject_queries<I: Into<List<F>>, O: Into<List<F>>, T: IntoIterator<Item = (I, O)>>(
+    /// to its `inv_func_queries` as well.
+    pub fn inject_queries<
+        I: Into<List<F>>,
+        O: Into<List<F>>,
+        T: IntoIterator<Item = (I, O)>,
+        H: Hasher<F>,
+    >(
         &mut self,
         name: &'static str,
-        toplevel: &Toplevel<F>,
+        toplevel: &Toplevel<F, H>,
         new_queries_data: T,
     ) {
         let func = toplevel.get_by_name(name).expect("Unknown Func");
@@ -179,9 +188,9 @@ impl<F: Field + Ord> QueryRecord<F> {
 }
 
 impl<F: PrimeField> QueryRecord<F> {
-    fn record_event_and_return(
+    fn record_event_and_return<H: Hasher<F>>(
         &mut self,
-        toplevel: &Toplevel<F>,
+        toplevel: &Toplevel<F, H>,
         func_idx: usize,
         args: List<F>,
     ) -> List<F> {
@@ -200,7 +209,7 @@ impl<F: PrimeField> QueryRecord<F> {
     }
 }
 
-impl<'a, F: PrimeField> FuncChip<'a, F> {
+impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
     pub fn execute(&self, args: List<F>, queries: &mut QueryRecord<F>) {
         let index = self.func.index;
         let toplevel = self.toplevel;
@@ -235,16 +244,21 @@ enum Continuation<F> {
 }
 
 impl<F: PrimeField> Func<F> {
-    fn execute(&self, args: &[F], toplevel: &Toplevel<F>, queries: &mut QueryRecord<F>) -> List<F> {
+    fn execute<H: Hasher<F>>(
+        &self,
+        args: &[F],
+        toplevel: &Toplevel<F, H>,
+        queries: &mut QueryRecord<F>,
+    ) -> List<F> {
         let frame = &mut args.into();
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
         self.body().execute(frame, toplevel, queries)
     }
 
-    pub fn execute_iter(
+    pub fn execute_iter<H: Hasher<F>>(
         &self,
         args: &[F],
-        toplevel: &Toplevel<F>,
+        toplevel: &Toplevel<F, H>,
         queries: &mut QueryRecord<F>,
     ) -> List<F> {
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
@@ -280,10 +294,10 @@ impl<F: PrimeField> Func<F> {
 }
 
 impl<F: PrimeField> Block<F> {
-    fn execute(
+    fn execute<H: Hasher<F>>(
         &self,
         map: &mut VarMap<F>,
-        toplevel: &Toplevel<F>,
+        toplevel: &Toplevel<F, H>,
         queries: &mut QueryRecord<F>,
     ) -> List<F> {
         self.ops
@@ -292,11 +306,11 @@ impl<F: PrimeField> Block<F> {
         self.ctrl.execute(map, toplevel, queries)
     }
 
-    fn execute_step<'a>(
+    fn execute_step<'a, H: Hasher<F>>(
         &'a self,
         map: VarMap<F>,
         stack: &mut Stack<'a, F>,
-        toplevel: &Toplevel<F>,
+        toplevel: &Toplevel<F, H>,
         queries: &mut QueryRecord<F>,
     ) -> Continuation<F> {
         let ops = self.ops.iter();
@@ -306,10 +320,10 @@ impl<F: PrimeField> Block<F> {
 }
 
 impl<F: PrimeField> Ctrl<F> {
-    fn execute(
+    fn execute<H: Hasher<F>>(
         &self,
         map: &mut VarMap<F>,
-        toplevel: &Toplevel<F>,
+        toplevel: &Toplevel<F, H>,
         queries: &mut QueryRecord<F>,
     ) -> List<F> {
         match self {
@@ -349,11 +363,11 @@ impl<F: PrimeField> Ctrl<F> {
         }
     }
 
-    fn execute_step<'a>(
+    fn execute_step<'a, H: Hasher<F>>(
         &'a self,
         map: VarMap<F>,
         stack: &mut Stack<'a, F>,
-        toplevel: &Toplevel<F>,
+        toplevel: &Toplevel<F, H>,
         queries: &mut QueryRecord<F>,
     ) -> Continuation<F> {
         match self {
@@ -398,7 +412,12 @@ impl<F: PrimeField> Ctrl<F> {
 }
 
 impl<F: PrimeField> Op<F> {
-    fn execute(&self, map: &mut VarMap<F>, toplevel: &Toplevel<F>, queries: &mut QueryRecord<F>) {
+    fn execute<H: Hasher<F>>(
+        &self,
+        map: &mut VarMap<F>,
+        toplevel: &Toplevel<F, H>,
+        queries: &mut QueryRecord<F>,
+    ) {
         match self {
             Op::Const(c) => {
                 map.push(*c);
@@ -449,16 +468,21 @@ impl<F: PrimeField> Op<F> {
                 let args = queries.load(*len, *ptr);
                 map.extend(args);
             }
+            Op::Hash(inp) => {
+                let args: List<_> = inp.iter().map(|a| map[*a]).collect();
+                let hasher = &toplevel.hasher;
+                map.extend(hasher.hash(&args).iter());
+            }
             Op::Debug(s) => println!("{}", s),
         }
     }
 
-    fn execute_step<'a>(
+    fn execute_step<'a, H: Hasher<F>>(
         mut ops: Iter<'a, Self>,
         ctrl: &'a Ctrl<F>,
         mut map: VarMap<F>,
         stack: &mut Stack<'a, F>,
-        toplevel: &Toplevel<F>,
+        toplevel: &Toplevel<F, H>,
         queries: &mut QueryRecord<F>,
     ) -> Continuation<F> {
         while let Some(op) = ops.next() {
@@ -523,6 +547,11 @@ impl<F: PrimeField> Op<F> {
                         return Continuation::Apply(*index, args);
                     }
                 }
+                Op::Hash(inp) => {
+                    let args: List<_> = inp.iter().map(|a| map[*a]).collect();
+                    let hasher = &toplevel.hasher;
+                    map.extend(hasher.hash(&args).iter());
+                }
             }
         }
         ctrl.execute_step(map, stack, toplevel, queries)
@@ -533,7 +562,10 @@ impl<F: PrimeField> Op<F> {
 mod tests {
     use crate::{
         func,
-        lair::{demo_toplevel, execute::QueryRecord, field_from_u32, toplevel::Toplevel, List},
+        lair::{
+            demo_toplevel, execute::QueryRecord, field_from_u32, hasher::LurkHasher,
+            toplevel::Toplevel, List,
+        },
     };
 
     use p3_baby_bear::BabyBear as F;
@@ -541,7 +573,7 @@ mod tests {
 
     #[test]
     fn lair_execute_test() {
-        let toplevel = demo_toplevel::<_>();
+        let toplevel = demo_toplevel::<_, LurkHasher>();
 
         let factorial = toplevel.get_by_name("factorial").unwrap();
         let args = &[F::from_canonical_u32(5)];
@@ -565,7 +597,7 @@ mod tests {
 
     #[test]
     fn lair_execute_iter_test() {
-        let toplevel = demo_toplevel::<_>();
+        let toplevel = demo_toplevel::<_, LurkHasher>();
 
         let fib = toplevel.get_by_name("fib").unwrap();
         let args = &[F::from_canonical_u32(100000)];
@@ -583,7 +615,7 @@ mod tests {
                 return n
             }
         );
-        let toplevel = Toplevel::new(&[test_e]);
+        let toplevel = Toplevel::<_, LurkHasher>::new(&[test_e]);
         let test = toplevel.get_by_name("test").unwrap();
         let args = &[F::from_canonical_u32(20), F::from_canonical_u32(4)];
         let record = &mut QueryRecord::new(&toplevel);
@@ -602,7 +634,7 @@ mod tests {
                 return x
             }
         );
-        let toplevel = Toplevel::new(&[test_e]);
+        let toplevel = Toplevel::<_, LurkHasher>::new(&[test_e]);
         let test = toplevel.get_by_name("test").unwrap();
         let args = &[F::from_canonical_u32(10)];
         let record = &mut QueryRecord::new(&toplevel);
@@ -633,7 +665,7 @@ mod tests {
                 return (a0, a1, a2, a3, x)
             }
         );
-        let toplevel = Toplevel::<F>::new(&[polynomial_e, inverse_e]);
+        let toplevel = Toplevel::<F, LurkHasher>::new(&[polynomial_e, inverse_e]);
         let polynomial = toplevel.get_by_name("polynomial").unwrap();
         let inverse = toplevel.get_by_name("inverse").unwrap();
         let args = [1, 3, 5, 7, 20]
@@ -668,7 +700,7 @@ mod tests {
                 return (a_b, b_c, c_d)
             }
         );
-        let toplevel = Toplevel::new(&[test1_e, test2_e]);
+        let toplevel = Toplevel::<_, LurkHasher>::new(&[test1_e, test2_e]);
         let test = toplevel.get_by_name("test1").unwrap();
         let f = F::from_canonical_u32;
         let args = &[f(1), f(2), f(3), f(4), f(5), f(6), f(7)];

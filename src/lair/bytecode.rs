@@ -32,6 +32,8 @@ pub enum Op<F> {
     Store(List<usize>),
     /// `Load(len, y)` extends the stack with the `len` values that is pointed by `y`
     Load(usize, usize),
+    /// `Hash([x, ...])` extends the stack with the hash of `x, ...`
+    Hash(List<usize>),
     /// `Debug(s)` emits debug message `s`
     Debug(&'static str),
 }
@@ -42,6 +44,7 @@ pub enum Op<F> {
 pub struct Block<F> {
     pub(crate) ops: List<Op<F>>,
     pub(crate) ctrl: Ctrl<F>,
+    pub(crate) return_idents: List<usize>,
 }
 
 /// Encodes the logical flow of a Lair program
