@@ -7,6 +7,7 @@ use p3_matrix::Matrix;
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
     chip::{ColumnLayout, FuncChip, LayoutSizes},
+    hasher::Hasher,
     toplevel::Toplevel,
     trace::ColumnIndex,
 };
@@ -57,9 +58,15 @@ impl<'a, T> ColumnSlice<'a, T> {
         index.aux += 1;
         t
     }
+
+    pub fn next_n_aux(&self, index: &mut ColumnIndex, n: usize) -> &[T] {
+        let slice = &self.aux[index.aux..index.aux + n];
+        index.aux += n;
+        slice
+    }
 }
 
-impl<'a, AB> Air<AB> for FuncChip<'a, AB::F>
+impl<'a, AB, H: Hasher<AB::F>> Air<AB> for FuncChip<'a, AB::F, H>
 where
     AB: AirBuilder,
     <AB as AirBuilder>::Var: Debug,
@@ -85,8 +92,12 @@ impl<AB: AirBuilder> Val<AB> {
 }
 
 impl<F: Field> Func<F> {
-    fn eval<AB>(&self, builder: &mut AB, toplevel: &Toplevel<F>, layout_sizes: LayoutSizes)
-    where
+    fn eval<AB, H: Hasher<F>>(
+        &self,
+        builder: &mut AB,
+        toplevel: &Toplevel<F, H>,
+        layout_sizes: LayoutSizes,
+    ) where
         AB: AirBuilder<F = F>,
         <AB as AirBuilder>::Var: Debug,
     {
@@ -109,22 +120,39 @@ impl<F: Field> Func<F> {
 }
 
 impl<F: Field> Block<F> {
-    fn eval<AB>(
+    fn eval<AB, H: Hasher<F>>(
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
-        toplevel: &Toplevel<F>,
+        toplevel: &Toplevel<F, H>,
     ) -> AB::Expr
     where
         AB: AirBuilder<F = F>,
         <AB as AirBuilder>::Var: Debug,
     {
-        let mut constraints = vec![];
-        self.ops
+        assert!(
+            !self.return_idents.is_empty(),
+            "A block must have at least one return ident"
+        );
+        let is_real = self
+            .return_idents
             .iter()
-            .for_each(|op| op.eval(local, &mut constraints, index, map, toplevel));
+            .map(|i| local.sel[*i].into())
+            .sum();
+        let mut constraints = vec![];
+        self.ops.iter().for_each(|op| {
+            op.eval(
+                builder,
+                local,
+                &mut constraints,
+                &is_real,
+                index,
+                map,
+                toplevel,
+            )
+        });
         let sel = self.ctrl.eval(builder, local, index, map, toplevel);
         for expr in constraints {
             builder.when(sel.clone()).assert_zero(expr);
@@ -134,13 +162,16 @@ impl<F: Field> Block<F> {
 }
 
 impl<F: Field> Op<F> {
-    fn eval<AB>(
+    #[allow(clippy::too_many_arguments)]
+    fn eval<AB, H: Hasher<F>>(
         &self,
+        builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
         constraints: &mut Vec<AB::Expr>,
+        is_real: &AB::Expr,
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
-        toplevel: &Toplevel<F>,
+        toplevel: &Toplevel<F, H>,
     ) where
         AB: AirBuilder<F = F>,
         <AB as AirBuilder>::Var: Debug,
@@ -236,19 +267,29 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(o.into()));
                 }
             }
+            Op::Hash(preimg) => {
+                let preimg: Vec<_> = preimg.iter().map(|a| map[*a].to_expr()).collect();
+                let hasher = &toplevel.hasher;
+                let witness_size = hasher.witness_size(preimg.len());
+                let witness = local.next_n_aux(index, witness_size);
+                let img_vars = hasher.eval_preimg(builder, preimg, witness, is_real.clone());
+                for img_var in img_vars {
+                    map.push(Val::Expr(img_var.into()))
+                }
+            }
             Op::Debug(..) => (),
         }
     }
 }
 
 impl<F: Field> Ctrl<F> {
-    fn eval<AB>(
+    fn eval<AB, H: Hasher<F>>(
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
-        toplevel: &Toplevel<F>,
+        toplevel: &Toplevel<F, H>,
     ) -> AB::Expr
     where
         AB: AirBuilder<F = F>,
@@ -388,7 +429,7 @@ fn constrain_inequality_witness<AB: AirBuilder>(
 
 #[cfg(test)]
 mod tests {
-    use crate::{air::debug::debug_constraints_collecting_queries, func};
+    use crate::{air::debug::debug_constraints_collecting_queries, func, lair::hasher::LurkHasher};
     use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
     use p3_matrix::dense::RowMajorMatrix;
@@ -401,7 +442,7 @@ mod tests {
 
     #[test]
     fn lair_constraint_test() {
-        let toplevel = demo_toplevel();
+        let toplevel = demo_toplevel::<_, LurkHasher>();
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
         let factorial_width = factorial_chip.width();
         let factorial_trace = RowMajorMatrix::new(
@@ -448,7 +489,7 @@ mod tests {
 
     #[test]
     fn lair_long_constraint_test() {
-        let toplevel = demo_toplevel::<F>();
+        let toplevel = demo_toplevel::<_, LurkHasher>();
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         let args = [field_from_u32(20000)].into();
         let queries = &mut QueryRecord::new(&toplevel);
@@ -470,7 +511,7 @@ mod tests {
             let x = eq(a, b);
             return x
         });
-        let toplevel = Toplevel::<F>::new(&[eq_func, not_func]);
+        let toplevel = Toplevel::<F, LurkHasher>::new(&[eq_func, not_func]);
         let eq_chip = FuncChip::from_name("eq", &toplevel);
         let not_chip = FuncChip::from_name("not", &toplevel);
 
@@ -536,7 +577,7 @@ mod tests {
             let zero = 0;
             return zero
         });
-        let toplevel = Toplevel::<F>::new(&[if_many_func]);
+        let toplevel = Toplevel::<F, LurkHasher>::new(&[if_many_func]);
         let if_many_chip = FuncChip::from_name("if_many", &toplevel);
 
         let queries = &mut QueryRecord::new(&toplevel);
@@ -596,7 +637,7 @@ mod tests {
             let fail = [0, 0];
             return fail
         });
-        let toplevel = Toplevel::<F>::new(&[match_many_func]);
+        let toplevel = Toplevel::<F, LurkHasher>::new(&[match_many_func]);
         let match_many_chip = FuncChip::from_name("match_many", &toplevel);
 
         let queries = &mut QueryRecord::new(&toplevel);

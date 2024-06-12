@@ -25,7 +25,7 @@ use super::{
 pub const DIGEST: usize = 8;
 pub const WIDTH: usize = 24;
 
-pub trait Hasher {
+pub trait HasherTemp {
     type F: Field;
     fn hash(fs: &[Self::F]) -> [Self::F; DIGEST] {
         let mut state = [Self::F::zero(); WIDTH];
@@ -161,12 +161,12 @@ pub enum ZExpr<F> {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct ZStore<F: Ord + Clone, H: Hasher<F = F>> {
+pub struct ZStore<F: Ord + Clone, H: HasherTemp<F = F>> {
     pub(crate) map: FrozenBTreeMap<ZPtr<F>, Box<ZExpr<F>>>,
     _p: PhantomData<H>,
 }
 
-impl<F: Field + Ord, H: Hasher<F = F>> ZStore<F, H> {
+impl<F: Field + Ord, H: HasherTemp<F = F>> ZStore<F, H> {
     pub fn new() -> Self {
         ZStore {
             map: FrozenBTreeMap::new(),
@@ -344,7 +344,7 @@ impl<F: Field + Ord, H: Hasher<F = F>> ZStore<F, H> {
 #[derive(Clone)]
 pub struct PoseidonBabyBearHasher;
 
-impl Hasher for PoseidonBabyBearHasher {
+impl HasherTemp for PoseidonBabyBearHasher {
     type F = F;
     fn hash_aux(state: &mut [F; WIDTH]) {
         let mut rng = Xoroshiro128Plus::seed_from_u64(1);
