@@ -4,11 +4,14 @@ use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrixView;
 use p3_matrix::stack::VerticalPair;
 use p3_matrix::Matrix;
+use sphinx_core::air::{AirInteraction, MessageBuilder};
+use sphinx_core::lookup::InteractionKind;
 
 type LocalRowView<'a, F> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatrixView<'a, F>>;
 
 pub struct Query<F> {
     pub query_type: QueryType,
+    pub domain: InteractionKind,
     pub values: Vec<F>,
 }
 
@@ -52,6 +55,28 @@ pub struct DebugConstraintBuilder<'a, F> {
     row: usize,
     height: usize,
     queries: Vec<Query<F>>,
+}
+
+impl<'a, F: Field> MessageBuilder<AirInteraction<F>> for DebugConstraintBuilder<'a, F> {
+    fn send(&mut self, message: AirInteraction<F>) {
+        if !message.multiplicity.is_zero() {
+            self.queries.push(Query {
+                query_type: QueryType::Send,
+                domain: message.kind,
+                values: message.values,
+            })
+        }
+    }
+
+    fn receive(&mut self, message: AirInteraction<F>) {
+        if !message.multiplicity.is_zero() {
+            self.queries.push(Query {
+                query_type: QueryType::Receive,
+                domain: message.kind,
+                values: message.values,
+            })
+        }
+    }
 }
 
 impl<'a, F: Field> AirBuilderWithPublicValues for DebugConstraintBuilder<'a, F> {
@@ -103,7 +128,12 @@ impl<'a, F: Field> LookupBuilder for DebugConstraintBuilder<'a, F> {
         }
 
         let values = relation.values().into_iter().collect();
-        self.queries.push(Query { query_type, values });
+        // TODO dummy domain
+        self.queries.push(Query {
+            query_type,
+            domain: InteractionKind::Program,
+            values,
+        });
     }
 }
 

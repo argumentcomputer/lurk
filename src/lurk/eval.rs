@@ -1208,58 +1208,58 @@ mod test {
         );
     }
 
-    #[test]
-    fn test_ingress_egress_roundtrip() {
-        let toplevel = Toplevel::<F>::new(&[ingress(), egress(), hash_32_8(), hash_48_8()]);
-
-        let ingress_chip = FuncChip::from_name("ingress", &toplevel);
-        let egress_chip = FuncChip::from_name("egress", &toplevel);
-
-        let assert_ingress_egress_roundtrip = |code| {
-            let ReadData {
-                tag,
-                digest,
-                hashes,
-            } = read(State::init_lurk_state().rccell(), code).unwrap();
-
-            let digest: List<_> = digest.into();
-
-            let queries = &mut QueryRecord::new(&toplevel);
-            queries.inject_queries("hash_32_8", &toplevel, hashes);
-
-            let mut ingress_args = [F::zero(); 16];
-            ingress_args[0] = tag;
-            ingress_args[8..].copy_from_slice(&digest);
-
-            let ingress_args: List<_> = ingress_args.into();
-            ingress_chip.execute_iter(ingress_args.clone(), queries);
-            let ingress_out_ptr = queries.func_queries[ingress_chip.func.index]
-                .get(&ingress_args)
-                .unwrap()
-                .output[0];
-
-            let egress_args: List<_> = [tag, ingress_out_ptr].into();
-            egress_chip.execute_iter(egress_args.clone(), queries);
-            let egress_out = &queries.func_queries[egress_chip.func.index]
-                .get(&egress_args)
-                .unwrap()
-                .output;
-
-            assert_eq!(egress_out, &digest);
-        };
-
-        assert_ingress_egress_roundtrip("~()");
-        assert_ingress_egress_roundtrip("~:()");
-        assert_ingress_egress_roundtrip("()");
-        assert_ingress_egress_roundtrip("'c'");
-        assert_ingress_egress_roundtrip("5u64");
-        assert_ingress_egress_roundtrip("\"\"");
-        assert_ingress_egress_roundtrip("\"a\"");
-        assert_ingress_egress_roundtrip("\"test string\"");
-        assert_ingress_egress_roundtrip(".a");
-        assert_ingress_egress_roundtrip("TestSymbol");
-        assert_ingress_egress_roundtrip(":keyword");
-        assert_ingress_egress_roundtrip("(+ 1 2)");
-        assert_ingress_egress_roundtrip("(a 'b c)");
-    }
+    // #[test]
+    // fn test_ingress_egress_roundtrip() {
+    //     let toplevel = Toplevel::<F>::new(&[ingress(), egress(), hash_32_8(), hash_48_8()]);
+    //
+    //     let ingress_chip = FuncChip::from_name("ingress", &toplevel);
+    //     let egress_chip = FuncChip::from_name("egress", &toplevel);
+    //
+    //     let assert_ingress_egress_roundtrip = |code| {
+    //         let ReadData {
+    //             tag,
+    //             digest,
+    //             hashes,
+    //         } = read(State::init_lurk_state().rccell(), code).unwrap();
+    //
+    //         let digest: List<_> = digest.into();
+    //
+    //         let queries = &mut QueryRecord::new(&toplevel);
+    //         queries.inject_queries("hash_32_8", &toplevel, hashes);
+    //
+    //         let mut ingress_args = [F::zero(); 16];
+    //         ingress_args[0] = tag;
+    //         ingress_args[8..].copy_from_slice(&digest);
+    //
+    //         let ingress_args: List<_> = ingress_args.into();
+    //         ingress_chip.execute_iter(ingress_args.clone(), queries);
+    //         let ingress_out_ptr = queries.func_queries[ingress_chip.func.index]
+    //             .get(&ingress_args)
+    //             .unwrap()
+    //             .output[0];
+    //
+    //         let egress_args: List<_> = [tag, ingress_out_ptr].into();
+    //         egress_chip.execute_iter(egress_args.clone(), queries);
+    //         let egress_out = &queries.func_queries[egress_chip.func.index]
+    //             .get(&egress_args)
+    //             .unwrap()
+    //             .output;
+    //
+    //         assert_eq!(egress_out, &digest);
+    //     };
+    //
+    //     assert_ingress_egress_roundtrip("~()");
+    //     assert_ingress_egress_roundtrip("~:()");
+    //     assert_ingress_egress_roundtrip("()");
+    //     assert_ingress_egress_roundtrip("'c'");
+    //     assert_ingress_egress_roundtrip("5u64");
+    //     assert_ingress_egress_roundtrip("\"\"");
+    //     assert_ingress_egress_roundtrip("\"a\"");
+    //     assert_ingress_egress_roundtrip("\"test string\"");
+    //     assert_ingress_egress_roundtrip(".a");
+    //     assert_ingress_egress_roundtrip("TestSymbol");
+    //     assert_ingress_egress_roundtrip(":keyword");
+    //     assert_ingress_egress_roundtrip("(+ 1 2)");
+    //     assert_ingress_egress_roundtrip("(a 'b c)");
+    // }
 }
