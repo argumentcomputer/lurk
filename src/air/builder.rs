@@ -87,12 +87,13 @@ impl<'a, AB: LookupBuilder> LookupBuilder for FilteredAirBuilder<'a, AB> {
         relation: impl Relation<Self::Expr>,
         is_real: Option<Self::Expr>,
     ) {
-        // TODO: This requires FilteredAirBuilder.condition to be made public
-        let condition = if let Some(is_real) = is_real {
-            is_real * self.condition().clone()
-        } else {
-            self.condition().clone()
-        };
-        self.inner.query(query_type, relation, Some(condition))
+        // // TODO: This requires FilteredAirBuilder.condition to be made public
+        // let condition = if let Some(is_real) = is_real {
+        //     is_real * self.condition().clone()
+        // } else {
+        //     self.condition().clone()
+        // };
+        // self.inner.query(query_type, relation, Some(condition))
+        self.inner.query(query_type, relation, is_real)
     }
 }
