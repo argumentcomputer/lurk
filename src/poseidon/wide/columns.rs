@@ -30,7 +30,7 @@ use hybrid_array::{typenum::*, Array, ArraySize};
 pub struct Poseidon2WideCols<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize>
 where
     C::R_P: Sub<B1>,
-    <<C as PoseidonConfig<WIDTH>>::R_P as Sub<B1>>::Output: ArraySize,
+    Sub1<C::R_P>: ArraySize,
 {
     pub(crate) external_rounds_state: Array<[T; WIDTH], C::R_F>,
     pub(crate) external_rounds_sbox: Array<[T; WIDTH], C::R_F>,
@@ -38,13 +38,23 @@ where
     pub(crate) internal_rounds_sbox: Array<T, C::R_P>,
     pub(crate) internal_rounds_s0: Array<T, Sub1<C::R_P>>,
 }
-impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2WideCols<C::F, C, WIDTH>
+impl<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2WideCols<T, C, WIDTH>
 where
     C::R_P: Sub<B1>,
-    <<C as PoseidonConfig<WIDTH>>::R_P as Sub<B1>>::Output: ArraySize,
+    Sub1<C::R_P>: ArraySize,
 {
     pub(crate) const fn num_cols() -> usize {
         size_of::<Poseidon2WideCols<u8, C, WIDTH>>()
     }
+
+    #[inline]
+    pub fn from_slice(slice: &[T]) -> &Self {
+        let num_cols = Poseidon2WideCols::<T, C, WIDTH>::num_cols();
+
+        assert_eq!(slice.len(), num_cols);
+        let (_, shorts, _) = unsafe { slice.align_to::<Poseidon2WideCols<T, C, WIDTH>>() };
+        &shorts[0]
+    }
 }
+
 // pub(crate) const NUM_POSEIDON2_COLS: usize = size_of::<Poseidon2Cols<u8>>();

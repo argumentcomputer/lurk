@@ -21,22 +21,26 @@ impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Default for Poseidon2WideChip
 
 #[cfg(test)]
 mod test {
+    use core::array;
     use std::ops::Sub;
 
     use super::Poseidon2WideChip;
-    use crate::poseidon::config::*;
+    use crate::{air::debug::debug_constraints_collecting_queries, poseidon::config::*};
 
-    use hybrid_array::{typenum::B1, ArraySize};
+    use hybrid_array::{
+        typenum::{Sub1, B1},
+        ArraySize,
+    };
     use p3_field::AbstractField;
     use p3_symmetric::Permutation;
 
     fn test_trace_eq_hash_with<const WIDTH: usize, C: PoseidonConfig<WIDTH>>()
     where
         C::R_P: Sub<B1>,
-        <<C as PoseidonConfig<WIDTH>>::R_P as Sub<B1>>::Output: ArraySize,
+        Sub1<C::R_P>: ArraySize,
     {
         let chip = Poseidon2WideChip::<C, WIDTH>::default();
-        let input: [C::F; WIDTH] = core::array::from_fn(C::F::from_canonical_usize);
+        let input: [C::F; WIDTH] = array::from_fn(C::F::from_canonical_usize);
         let hasher = C::hasher();
 
         let expected_output = hasher.permute(input);
@@ -55,7 +59,17 @@ mod test {
         test_trace_eq_hash_with::<40, BabyBearConfig40>();
     }
 
-    fn test_air_constraints_with<const WIDTH: usize, C: PoseidonConfig<WIDTH>>() {}
+    fn test_air_constraints_with<const WIDTH: usize, C: PoseidonConfig<WIDTH>>()
+    where
+        C::R_P: Sub<B1>,
+        Sub1<C::R_P>: ArraySize,
+    {
+        let chip = Poseidon2WideChip::<C, WIDTH>::default();
+        let public_values: [C::F; WIDTH] = array::from_fn(C::F::from_canonical_usize);
+        let (_outputs, trace) = chip.generate_trace(&[public_values]);
+
+        let _ = debug_constraints_collecting_queries(&chip, &public_values, &trace);
+    }
 
     #[test]
     fn test_air_constraints() {

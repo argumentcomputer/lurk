@@ -4,7 +4,10 @@ use std::ops::Sub;
 use super::{columns::Poseidon2WideCols, Poseidon2WideChip};
 use crate::poseidon::config::PoseidonConfig;
 
-use hybrid_array::{typenum::B1, Array, ArraySize};
+use hybrid_array::{
+    typenum::{Sub1, B1},
+    Array, ArraySize,
+};
 use p3_air::BaseAir;
 use p3_field::AbstractField;
 use p3_matrix::dense::RowMajorMatrix;
@@ -13,7 +16,7 @@ use p3_symmetric::Permutation;
 impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2WideChip<C, WIDTH>
 where
     C::R_P: Sub<B1>,
-    <<C as PoseidonConfig<WIDTH>>::R_P as Sub<B1>>::Output: ArraySize,
+    Sub1<C::R_P>: ArraySize,
 {
     pub fn generate_trace(
         &self,
@@ -48,7 +51,7 @@ where
 impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2WideCols<C::F, C, WIDTH>
 where
     C::R_P: Sub<B1>,
-    <<C as PoseidonConfig<WIDTH>>::R_P as Sub<B1>>::Output: ArraySize,
+    Sub1<C::R_P>: ArraySize,
 {
     pub fn populate_columns(&mut self, input: [C::F; WIDTH]) -> [C::F; WIDTH] {
         let mut state = C::external_linear_layer().permute(input);

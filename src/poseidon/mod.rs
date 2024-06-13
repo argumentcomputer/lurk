@@ -32,6 +32,8 @@ impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Default for Poseidon2Chip<WID
 
 #[cfg(test)]
 mod tests {
+    use core::array;
+
     use hybrid_array::typenum::Unsigned;
     use itertools::Itertools;
     use p3_field::AbstractField;
@@ -47,7 +49,7 @@ mod tests {
     fn test_trace_eq_hash_with<const WIDTH: usize, C: PoseidonConfig<WIDTH>>() {
         let chip = Poseidon2Chip::<WIDTH, C>::default();
         let hasher = C::hasher();
-        let input: [C::F; WIDTH] = core::array::from_fn(C::F::from_canonical_usize);
+        let input: [C::F; WIDTH] = array::from_fn(C::F::from_canonical_usize);
 
         let expected_output = hasher.permute(input).to_vec();
 
@@ -70,7 +72,7 @@ mod tests {
 
     fn test_air_constraints_with<const WIDTH: usize, C: PoseidonConfig<WIDTH>>() {
         let chip = Poseidon2Chip::<WIDTH, C>::default();
-        let public_values: [C::F; WIDTH] = core::array::from_fn(C::F::from_canonical_usize);
+        let public_values: [C::F; WIDTH] = array::from_fn(C::F::from_canonical_usize);
         let main = chip.generate_trace(vec![public_values]);
 
         let _ = debug_constraints_collecting_queries(&chip, &public_values, &main);

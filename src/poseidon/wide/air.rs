@@ -1,3 +1,5 @@
+use core::array;
+
 use std::iter::zip;
 use std::ops::Sub;
 
@@ -129,7 +131,7 @@ use p3_symmetric::Permutation;
 impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> BaseAir<C::F> for Poseidon2WideChip<C, WIDTH>
 where
     C::R_P: Sub<B1>,
-    <<C as PoseidonConfig<WIDTH>>::R_P as Sub<B1>>::Output: ArraySize,
+    Sub1<C::R_P>: ArraySize,
 {
     fn width(&self) -> usize {
         Poseidon2WideCols::<C::F, C, WIDTH>::num_cols()
@@ -178,7 +180,7 @@ where
 impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2WideCols<C::F, C, WIDTH>
 where
     C::R_P: Sub<B1>,
-    <<C as PoseidonConfig<WIDTH>>::R_P as Sub<B1>>::Output: ArraySize,
+    Sub1<C::R_P>: ArraySize,
 {
     pub fn eval<AB: AirBuilder<F = C::F>>(
         &self,
@@ -224,18 +226,18 @@ where
 
         let constants = &C::external_constants()[r];
 
-        let add_rc: [AB::Expr; WIDTH] = core::array::from_fn(|i| {
+        let add_rc: [AB::Expr; WIDTH] = array::from_fn(|i| {
             let current_state: AB::Expr = current_state[i].into();
             current_state + is_real.clone() * constants[i]
         });
 
         let sbox_deg_3 = self.external_rounds_sbox[r];
-        let sbox_deg_3_expected: [AB::Expr; WIDTH] = core::array::from_fn(|i| add_rc[i].cube());
+        let sbox_deg_3_expected: [AB::Expr; WIDTH] = array::from_fn(|i| add_rc[i].cube());
         for (sbox, sbox_expected) in zip(sbox_deg_3, sbox_deg_3_expected) {
             builder.assert_eq(sbox, sbox_expected.clone());
         }
 
-        let sbox_deg_7: [AB::Expr; WIDTH] = core::array::from_fn(|i| {
+        let sbox_deg_7: [AB::Expr; WIDTH] = array::from_fn(|i| {
             let sbox_deg_3: AB::Expr = sbox_deg_3[i].into();
             sbox_deg_3.square() * add_rc[i].clone()
         });

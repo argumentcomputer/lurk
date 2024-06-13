@@ -1,5 +1,6 @@
 //! This module defines the columns for the Poseidon 2 chip
 
+use core::array;
 use std::iter::zip;
 use std::mem::size_of;
 
@@ -72,7 +73,7 @@ impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2Cols<C::F, WIDTH, C>
         // Evaluate sbox over add_rc
         self.evaluate_sbox();
 
-        let mut linear_input: [C::F; WIDTH] = core::array::from_fn(|i| {
+        let mut linear_input: [C::F; WIDTH] = array::from_fn(|i| {
             if i == 0 || is_external {
                 self.sbox_deg_7[i]
             } else {
@@ -94,7 +95,7 @@ impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2Cols<C::F, WIDTH, C>
     }
 
     fn evaluate_sbox(&mut self) {
-        self.sbox_deg_3 = core::array::from_fn(|i| self.add_rc[i].cube());
-        self.sbox_deg_7 = core::array::from_fn(|i| self.sbox_deg_3[i].square() * self.add_rc[i]);
+        self.sbox_deg_3 = array::from_fn(|i| self.add_rc[i].cube());
+        self.sbox_deg_7 = array::from_fn(|i| self.sbox_deg_3[i].square() * self.add_rc[i]);
     }
 }
