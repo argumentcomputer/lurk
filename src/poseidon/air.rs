@@ -74,7 +74,7 @@ where
         // Initial Layer: add_rc = input
         // External Layers: Apply the round constants.
         // Internal Layers: Only apply the round constants to the first element.
-        let mut add_rc = local.input.clone().map(Into::into);
+        let mut add_rc = local.input.map(Into::into);
         for (round, (&round_flag, round_constants)) in
             zip(&local.rounds, C::round_constants_iter()).enumerate()
         {

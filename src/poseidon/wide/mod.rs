@@ -27,9 +27,7 @@ mod test {
     use crate::poseidon::config::*;
 
     use hybrid_array::{typenum::B1, ArraySize};
-    use itertools::Itertools;
     use p3_field::AbstractField;
-    use p3_matrix::Matrix;
     use p3_symmetric::Permutation;
 
     fn test_trace_eq_hash_with<const WIDTH: usize, C: PoseidonConfig<WIDTH>>()
@@ -41,11 +39,10 @@ mod test {
         let input: [C::F; WIDTH] = core::array::from_fn(C::F::from_canonical_usize);
         let hasher = C::hasher();
 
-        let expected_output = hasher.permute(input).to_vec();
-        let trace = chip.generate_trace(&vec![input]);
-        let output = trace.row(0).tail(WIDTH).collect::<Vec<_>>();
+        let expected_output = hasher.permute(input);
+        let (output, _trace) = chip.generate_trace(&[input]);
 
-        assert_eq!(output, expected_output);
+        assert_eq!(output[0], expected_output);
     }
 
     #[test]

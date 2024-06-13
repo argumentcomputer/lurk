@@ -6,7 +6,7 @@ use std::mem::size_of;
 use super::config::PoseidonConfig;
 use crate::poseidon::util::{matmul_exterior, matmul_internal};
 
-use hybrid_array::{typenum::Unsigned, Array};
+use hybrid_array::Array;
 use p3_field::AbstractField;
 
 /// The column layout for the chip.
@@ -34,14 +34,14 @@ impl<T, const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2Cols<T, WIDTH, C>
 
 impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2Cols<C::F, WIDTH, C> {
     pub fn set_initial_round(&mut self, input: [C::F; WIDTH]) -> [C::F; WIDTH] {
-        self.input = input.clone();
+        self.input = input;
         self.is_init = C::F::one();
-        self.add_rc = input.clone();
+        self.add_rc = input;
         self.evaluate_sbox();
         self.output = input;
 
         matmul_exterior(&mut self.output);
-        self.output.clone()
+        self.output
     }
 
     pub fn set_round(
@@ -61,7 +61,7 @@ impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2Cols<C::F, WIDTH, C>
 
         self.rounds[round] = C::F::one();
 
-        self.add_rc = self.input.clone();
+        self.add_rc = self.input;
         // Apply the round constants
         // Internal round: constants.len() = 1
         // External round: constants.len() = WIDTH
@@ -90,7 +90,7 @@ impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2Cols<C::F, WIDTH, C>
 
         self.output = linear_input;
 
-        self.output.clone()
+        self.output
     }
 
     fn evaluate_sbox(&mut self) {

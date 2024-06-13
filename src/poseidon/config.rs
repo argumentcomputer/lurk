@@ -40,7 +40,7 @@ pub trait PoseidonConfig<const WIDTH: usize>: Clone + Copy + Sync + ConstantsPro
 
     #[inline]
     fn external_linear_layer() -> Poseidon2ExternalMatrixGeneral {
-        Poseidon2ExternalMatrixGeneral::default()
+        Poseidon2ExternalMatrixGeneral
     }
 
     #[inline]
@@ -128,7 +128,7 @@ macro_rules! impl_poseidon_config {
             type F = $field;
             type R_F = $r_f;
             type R_P = $r_p;
-            type R = operator_aliases::Sum<$r_f, $r_p>;
+            type R = Sum<$r_f, $r_p>;
 
             #[inline]
             fn matrix_diag() -> &'static [$field; $width] {

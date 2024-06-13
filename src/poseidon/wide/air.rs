@@ -193,15 +193,15 @@ where
 
         // Apply the first half of external rounds.
         for r in 0..C::r_f() / 2 {
-            state = self.eval_external_round(builder, state, r, is_real.clone());
+            state = self.eval_external_round(builder, state, r, &is_real);
         }
 
         // Apply the internal rounds.
-        state = self.eval_internal_rounds(builder, state, is_real.clone());
+        state = self.eval_internal_rounds(builder, state, &is_real);
 
         // Apply the second half of external rounds.
         for r in C::r_f() / 2..C::r_f() {
-            state = self.eval_external_round(builder, state, r, is_real.clone());
+            state = self.eval_external_round(builder, state, r, &is_real);
         }
 
         state
@@ -212,7 +212,7 @@ where
         builder: &mut AB,
         state: [AB::Expr; WIDTH],
         r: usize,
-        is_real: AB::Expr,
+        is_real: &AB::Expr,
     ) -> [AB::Expr; WIDTH] {
         let current_state = &self.external_rounds_state[r];
 
@@ -240,22 +240,20 @@ where
             sbox_deg_3.square() * add_rc[i].clone()
         });
 
-        let state = C::external_linear_layer().permute(sbox_deg_7);
-
-        state
+        C::external_linear_layer().permute(sbox_deg_7)
     }
 
     fn eval_internal_rounds<AB: AirBuilder<F = C::F>>(
         &self,
         builder: &mut AB,
         input: [AB::Expr; WIDTH],
-        is_real: AB::Expr,
+        is_real: &AB::Expr,
     ) -> [AB::Expr; WIDTH] {
         for (input, &input_expected) in zip(input, &self.internal_rounds_state) {
             builder.assert_eq(input, input_expected);
         }
 
-        let mut state: [AB::Expr; WIDTH] = self.internal_rounds_state.clone().map(Into::into);
+        let mut state: [AB::Expr; WIDTH] = self.internal_rounds_state.map(Into::into);
 
         let s0 = &self.internal_rounds_s0;
 
@@ -265,12 +263,11 @@ where
 
             let sbox_deg_3 = self.internal_rounds_sbox[r];
             let sbox_deg_3_expected = add_rc.cube();
-            builder.assert_eq(sbox_deg_3.clone(), sbox_deg_3_expected);
+            builder.assert_eq(sbox_deg_3, sbox_deg_3_expected);
 
             let sbox_deg_3: AB::Expr = sbox_deg_3.into();
             let sbox_deg_7 = sbox_deg_3.square() * add_rc;
 
-            // Apply the linear layer.
             // See `populate_internal_rounds` for why we don't have columns for the new state here.
             state[0] = sbox_deg_7.clone();
 
