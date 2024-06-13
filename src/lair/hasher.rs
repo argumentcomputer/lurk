@@ -2,9 +2,8 @@ use p3_baby_bear::BabyBear;
 use p3_poseidon2::{Poseidon2, Poseidon2ExternalMatrixGeneral};
 use p3_symmetric::Permutation;
 
-use crate::poseidon::{
-    config::{BabyBearConfig24, BabyBearConfig32, BabyBearConfig48, InternalDiffusion},
-    Poseidon2Chip,
+use crate::poseidon::config::{
+    BabyBearConfig24, BabyBearConfig32, BabyBearConfig48, InternalDiffusion, PoseidonConfig,
 };
 
 use super::List;
@@ -16,9 +15,27 @@ pub trait Hasher: Default {
 }
 
 pub struct LurkHasher {
-    hasher_24_8: Poseidon2<BabyBear, Poseidon2ExternalMatrixGeneral, InternalDiffusion, 24, 7>,
-    hasher_32_8: Poseidon2<BabyBear, Poseidon2ExternalMatrixGeneral, InternalDiffusion, 32, 7>,
-    hasher_48_8: Poseidon2<BabyBear, Poseidon2ExternalMatrixGeneral, InternalDiffusion, 48, 7>,
+    hasher_24_8: Poseidon2<
+        BabyBear,
+        Poseidon2ExternalMatrixGeneral,
+        InternalDiffusion<BabyBearConfig24>,
+        24,
+        7,
+    >,
+    hasher_32_8: Poseidon2<
+        BabyBear,
+        Poseidon2ExternalMatrixGeneral,
+        InternalDiffusion<BabyBearConfig32>,
+        32,
+        7,
+    >,
+    hasher_48_8: Poseidon2<
+        BabyBear,
+        Poseidon2ExternalMatrixGeneral,
+        InternalDiffusion<BabyBearConfig48>,
+        48,
+        7,
+    >,
     // chip_24_8: Poseidon2Chip<BabyBearConfig24>,
     // chip_32_8: Poseidon2Chip<BabyBearConfig32>,
     // chip_48_8: Poseidon2Chip<BabyBearConfig48>,
@@ -26,12 +43,9 @@ pub struct LurkHasher {
 
 impl Default for LurkHasher {
     fn default() -> Self {
-        let chip_32_8 = Poseidon2Chip::<BabyBearConfig32>::default();
-        let chip_24_8 = Poseidon2Chip::<BabyBearConfig24>::default();
-        let chip_48_8 = Poseidon2Chip::<BabyBearConfig48>::default();
-        let hasher_24_8 = chip_24_8.hasher();
-        let hasher_32_8 = chip_32_8.hasher();
-        let hasher_48_8 = chip_48_8.hasher();
+        let hasher_24_8 = BabyBearConfig24::hasher();
+        let hasher_32_8 = BabyBearConfig32::hasher();
+        let hasher_48_8 = BabyBearConfig48::hasher();
         Self {
             hasher_24_8,
             hasher_32_8,

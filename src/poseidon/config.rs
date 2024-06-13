@@ -261,11 +261,9 @@ impl_poseidon_config!(
 impl_poseidon_config!(
     BabyBearConfig44,
     BabyBear,
-    U44,
     44,
-    42,
-    8,
-    U50,
+    U42,
+    U8,
     FULL_RC_44_8,
     PART_RC_44_42,
     MATRIX_DIAG_44_BABYBEAR
@@ -274,11 +272,9 @@ impl_poseidon_config!(
 impl_poseidon_config!(
     BabyBearConfig48,
     BabyBear,
-    U48,
     48,
-    46,
-    8,
-    U54,
+    U46,
+    U8,
     FULL_RC_48_8,
     PART_RC_48_46,
     MATRIX_DIAG_48_BABYBEAR
