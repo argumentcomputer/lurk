@@ -282,8 +282,43 @@ impl<F: Field> Ctrl<F> {
                     index.restore(init_state);
                 }
 
-                sels.into_iter()
-                    .fold(F::zero().into(), |acc, sel| acc + sel)
+                sels.into_iter().sum()
+            }
+            Ctrl::MatchMany(vars, cases) => {
+                let map_len = map.len();
+                let init_state = index.save();
+                let vals: Vec<_> = vars.iter().map(|&var| map[var].to_expr()).collect();
+                let mut sels = Vec::with_capacity(cases.size());
+
+                for (fs, branch) in cases.branches.iter() {
+                    let sel = branch.eval(builder, local, index, map, toplevel);
+                    vals.iter()
+                        .zip(fs.iter())
+                        .for_each(|(v, f)| builder.when(sel.clone()).assert_eq(v.clone(), *f));
+                    sels.push(sel);
+                    map.truncate(map_len);
+                    index.restore(init_state);
+                }
+
+                if let Some(branch) = &cases.default {
+                    let wit: Vec<Vec<_>> = (0..cases.branches.size())
+                        .map(|_| (0..vars.len()).map(|_| *local.next_aux(index)).collect())
+                        .collect();
+                    let sel = branch.eval(builder, local, index, map, toplevel);
+                    for (coeffs, (fs, _)) in wit.into_iter().zip(cases.branches.iter()) {
+                        let diffs = vals
+                            .iter()
+                            .zip(fs.iter())
+                            .map(|(v, f)| v.clone() - *f)
+                            .collect();
+                        constrain_inequality_witness(sel.clone(), coeffs, diffs, builder);
+                    }
+                    sels.push(sel);
+                    map.truncate(map_len);
+                    index.restore(init_state);
+                }
+
+                sels.into_iter().sum()
             }
             Ctrl::If(b, t, f) => {
                 let map_len = map.len();
@@ -307,21 +342,10 @@ impl<F: Field> Ctrl<F> {
                 let map_len = map.len();
                 let init_state = index.save();
 
-                let coeffs = vars
-                    .iter()
-                    .map(|_| *local.next_aux(index))
-                    .collect::<Vec<_>>();
+                let coeffs = vars.iter().map(|_| *local.next_aux(index)).collect();
+                let vals = vars.iter().map(|&v| map[v].to_expr()).collect();
                 let t_sel = t.eval(builder, local, index, map, toplevel);
-                let one: AB::Expr = F::one().into();
-                let acc = coeffs
-                    .iter()
-                    .zip(vars.iter())
-                    .map(|(coeff, var)| {
-                        let b = map[*var].to_expr();
-                        *coeff * b
-                    })
-                    .fold(one, |acc, expr| acc - expr);
-                builder.when(t_sel.clone()).assert_zero(acc);
+                constrain_inequality_witness(t_sel.clone(), coeffs, vals, builder);
                 map.truncate(map_len);
                 index.restore(init_state);
 
@@ -346,6 +370,20 @@ impl<F: Field> Ctrl<F> {
             }
         }
     }
+}
+
+fn constrain_inequality_witness<AB: AirBuilder>(
+    sel: AB::Expr,
+    coeffs: Vec<AB::Var>,
+    vals: Vec<AB::Expr>,
+    builder: &mut AB,
+) {
+    let acc: AB::Expr = coeffs
+        .into_iter()
+        .zip(vals)
+        .map(|(coeff, val)| coeff * val)
+        .sum();
+    builder.when(sel).assert_one(acc);
 }
 
 #[cfg(test)]
@@ -531,5 +569,73 @@ mod tests {
         assert_eq!(if_many_trace, expected_trace);
 
         let _ = debug_constraints_collecting_queries(&if_many_chip, &[], &expected_trace);
+    }
+
+    #[test]
+    fn lair_match_many_test() {
+        let match_many_func = func!(
+        fn match_many(a: [2]): [2] {
+            match a {
+                [0, 0] => {
+                    let res = [1, 0];
+                    return res
+                }
+                [0, 1] => {
+                    let res = [1, 1];
+                    return res
+                }
+                [1, 0] => {
+                    let res = [1, 2];
+                    return res
+                }
+                [1, 1] => {
+                    let res = [1, 3];
+                    return res
+                }
+            };
+            let fail = [0, 0];
+            return fail
+        });
+        let toplevel = Toplevel::<F>::new(&[match_many_func]);
+        let match_many_chip = FuncChip::from_name("match_many", &toplevel);
+
+        let queries = &mut QueryRecord::new(&toplevel);
+        let f = field_from_u32;
+        let args = [f(0), f(0)].into();
+        match_many_chip.execute_iter(args, queries);
+        let args = [f(0), f(1)].into();
+        match_many_chip.execute_iter(args, queries);
+        let args = [f(1), f(0)].into();
+        match_many_chip.execute_iter(args, queries);
+        let args = [f(1), f(1)].into();
+        match_many_chip.execute_iter(args, queries);
+        let args = [f(0), f(8)].into();
+        match_many_chip.execute_iter(args, queries);
+
+        let match_many_trace = match_many_chip.generate_trace_parallel(queries);
+
+        let match_many_width = match_many_chip.width();
+        let expected_trace = RowMajorMatrix::new(
+            [
+                // 2 inputs, 2 output, mult, 8 witness coefficients, 5 selectors
+                0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, //
+                0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, //
+                1, 0, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, //
+                1, 1, 1, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, //
+                0, 8, 0, 0, 1, 0, 1761607681, 0, 862828252, 2013265920, 0, 2013265920, 0, 0, 0, 0,
+                0, 1, //
+                // dummy queries
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+            ]
+            .into_iter()
+            .map(F::from_canonical_u32)
+            .collect::<Vec<_>>(),
+            match_many_width,
+        );
+        assert_eq!(match_many_trace, expected_trace);
+
+        let _ = debug_constraints_collecting_queries(&match_many_chip, &[], &expected_trace);
     }
 }

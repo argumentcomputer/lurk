@@ -150,6 +150,19 @@ impl<F: PrimeField> Ctrl<F> {
                     branch.populate_row(map, index, slice, queries);
                 }
             }
+            Ctrl::MatchMany(vars, cases) => {
+                let vals = vars.iter().map(|&var| map[var].0).collect();
+                if let Some(branch) = cases.branches.get(&vals) {
+                    branch.populate_row(map, index, slice, queries);
+                } else {
+                    for (fs, _) in cases.branches.iter() {
+                        let diffs = vals.iter().zip(fs.iter()).map(|(val, f)| *val - *f);
+                        push_inequality_witness(index, slice, diffs);
+                    }
+                    let branch = cases.default.as_ref().expect("No match");
+                    branch.populate_row(map, index, slice, queries);
+                }
+            }
             Ctrl::If(b, t, f) => {
                 let (b, _) = map[*b];
                 if b != F::zero() {
@@ -160,18 +173,9 @@ impl<F: PrimeField> Ctrl<F> {
                 }
             }
             Ctrl::IfMany(vars, t, f) => {
-                if let Some(i) = vars.iter().position(|&var| {
-                    let (b, _) = map[var];
-                    b != F::zero()
-                }) {
-                    for j in 0..vars.len() {
-                        if i == j {
-                            let (b, _) = map[vars[i]];
-                            slice.push_aux(index, b.inverse());
-                        } else {
-                            slice.push_aux(index, F::zero());
-                        }
-                    }
+                let vals = vars.iter().map(|&var| map[var].0);
+                if vals.clone().any(|b| b != F::zero()) {
+                    push_inequality_witness(index, slice, vals);
                     t.populate_row(map, index, slice, queries);
                 } else {
                     f.populate_row(map, index, slice, queries);
@@ -179,6 +183,23 @@ impl<F: PrimeField> Ctrl<F> {
             }
         }
     }
+}
+
+fn push_inequality_witness<F: PrimeField, I: Iterator<Item = F>>(
+    index: &mut ColumnIndex,
+    slice: &mut ColumnMutSlice<'_, F>,
+    iter: I,
+) {
+    let mut found = false;
+    for f in iter {
+        if !found && f != F::zero() {
+            slice.push_aux(index, f.inverse());
+            found = true;
+        } else {
+            slice.push_aux(index, F::zero());
+        }
+    }
+    assert!(found);
 }
 
 impl<F: PrimeField> Op<F> {

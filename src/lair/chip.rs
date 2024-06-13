@@ -148,6 +148,27 @@ impl<F> Ctrl<F> {
                 }
                 *aux = max_aux;
             }
+            Ctrl::MatchMany(vars, cases) => {
+                let degrees_len = degrees.len();
+                let mut max_aux = *aux;
+                for (_, block) in cases.branches.iter() {
+                    let block_aux = &mut aux.clone();
+                    block.compute_layout_sizes(degrees, toplevel, block_aux, sel);
+                    degrees.truncate(degrees_len);
+                    max_aux = max_aux.max(*block_aux);
+                }
+                if let Some(block) = &cases.default {
+                    let block_aux = &mut aux.clone();
+                    // It is assumed that all arrays have the same length and matches
+                    // the number of variables in the match statement
+                    let arr_size = vars.len();
+                    *block_aux += cases.branches.size() * arr_size;
+                    block.compute_layout_sizes(degrees, toplevel, block_aux, sel);
+                    degrees.truncate(degrees_len);
+                    max_aux = max_aux.max(*block_aux);
+                }
+                *aux = max_aux;
+            }
             Ctrl::If(_, t, f) => {
                 let degrees_len = degrees.len();
                 let t_aux = &mut aux.clone();
