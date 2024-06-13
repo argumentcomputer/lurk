@@ -12,7 +12,7 @@ pub mod config;
 mod constants;
 pub mod trace;
 mod util;
-mod wide;
+pub mod wide;
 
 /// A chip that implements addition for the Poseidon2 permutation
 pub struct Poseidon2Chip<const WIDTH: usize, C>

@@ -41,14 +41,47 @@
 // }
 
 use std::borrow::BorrowMut;
+use std::iter::zip;
 use std::ops::Sub;
 
-use super::columns::Poseidon2WideCols;
+use super::{columns::Poseidon2WideCols, Poseidon2WideChip};
 use crate::poseidon::config::PoseidonConfig;
 
 use hybrid_array::{typenum::B1, Array, ArraySize};
+use p3_air::BaseAir;
 use p3_field::AbstractField;
+use p3_matrix::dense::RowMajorMatrix;
 use p3_symmetric::Permutation;
+
+impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2WideChip<C, WIDTH>
+where
+    C::R_P: Sub<B1>,
+    <<C as PoseidonConfig<WIDTH>>::R_P as Sub<B1>>::Output: ArraySize,
+{
+    pub fn generate_trace(&self, inputs: Vec<[C::F; WIDTH]>) -> RowMajorMatrix<C::F> {
+        let num_cols = <Poseidon2WideChip<C, WIDTH> as BaseAir<C::F>>::width(self);
+
+        let full_num_rows = inputs.len();
+        let full_trace_len_padded = full_num_rows.next_power_of_two() * num_cols;
+
+        let mut trace = RowMajorMatrix::new(vec![C::F::zero(); full_trace_len_padded], num_cols);
+
+        let (prefix, rows, suffix) = unsafe {
+            trace
+                .values
+                .align_to_mut::<Poseidon2WideCols<C::F, C, WIDTH>>()
+        };
+        assert!(prefix.is_empty(), "Alignment should match");
+        assert!(suffix.is_empty(), "Alignment should match");
+        assert_eq!(rows.len(), full_num_rows.next_power_of_two());
+
+        for (input, row) in zip(inputs, rows.iter_mut()) {
+            let _ = row.populate_columns(input);
+        }
+
+        trace
+    }
+}
 
 impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2WideCols<C::F, C, WIDTH>
 where
@@ -67,7 +100,6 @@ where
         for r in C::r_f() / 2..C::r_f() {
             state = self.populate_external_round(state, r)
         }
-
         state
     }
 
