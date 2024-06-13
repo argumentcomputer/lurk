@@ -5,20 +5,21 @@ use std::slice;
 
 use hybrid_array::{typenum::*, Array, ArraySize};
 use p3_baby_bear::BabyBear;
-use p3_field::Field;
-use p3_poseidon2::matmul_internal;
-use p3_poseidon2::{DiffusionPermutation, Poseidon2, Poseidon2ExternalMatrixGeneral};
+use p3_field::{AbstractField, PrimeField};
+use p3_poseidon2::{
+    matmul_internal, DiffusionPermutation, Poseidon2, Poseidon2ExternalMatrixGeneral,
+};
 use p3_symmetric::Permutation;
 
-use super::{constants::*, Poseidon2Chip};
+use super::constants::*;
 
 /// A sealed trait that provides the constants required for the Poseidon configuration
 trait ConstantsProvided {}
 
 /// The Poseidon configuration trait storing the data needed for
-#[allow(private_bounds)]
+#[allow(non_camel_case_types, private_bounds)]
 pub trait PoseidonConfig<const WIDTH: usize>: Clone + Copy + Sync + ConstantsProvided {
-    type F: Field;
+    type F: PrimeField;
     type R_P: ArraySize;
     type R_F: ArraySize;
     type R: ArraySize;
@@ -29,12 +30,12 @@ pub trait PoseidonConfig<const WIDTH: usize>: Clone + Copy + Sync + ConstantsPro
 
     #[inline]
     fn r_f() -> usize {
-        Self::RF::USIZE
+        Self::R_F::USIZE
     }
 
     #[inline]
     fn r_p() -> usize {
-        Self::RP::USIZE
+        Self::R_P::USIZE
     }
 
     #[inline]
@@ -101,16 +102,18 @@ pub struct InternalDiffusion<T> {
     _marker: std::marker::PhantomData<T>,
 }
 
-impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Permutation<[C::F; WIDTH]>
-for InternalDiffusion<C>
+impl<AF, C: PoseidonConfig<WIDTH>, const WIDTH: usize> Permutation<[AF; WIDTH]>
+    for InternalDiffusion<C>
+where
+    AF: AbstractField<F = C::F>,
 {
-    fn permute_mut(&self, input: &mut [C::F; WIDTH]) {
+    fn permute_mut(&self, input: &mut [AF; WIDTH]) {
         matmul_internal(input, *C::matrix_diag());
     }
 }
 
 impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> DiffusionPermutation<C::F, WIDTH>
-for InternalDiffusion<C>
+    for InternalDiffusion<C>
 {
 }
 

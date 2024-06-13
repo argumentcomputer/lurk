@@ -3,11 +3,11 @@
 use std::iter::zip;
 use std::mem::size_of;
 
+use super::config::PoseidonConfig;
 use crate::poseidon::util::{matmul_exterior, matmul_internal};
+
 use hybrid_array::{typenum::Unsigned, Array};
 use p3_field::AbstractField;
-
-use super::config::PoseidonConfig;
 
 /// The column layout for the chip.
 #[derive(Clone, Debug)]
@@ -25,9 +25,9 @@ pub struct Poseidon2Cols<T, const WIDTH: usize, C: PoseidonConfig<WIDTH>> {
 impl<T, const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2Cols<T, WIDTH, C> {
     #[inline]
     pub fn from_slice(slice: &[T]) -> &Self {
-        let num_cols = size_of::<Poseidon2Cols<u8, C>>();
+        let num_cols = size_of::<Poseidon2Cols<u8, WIDTH, C>>();
         assert_eq!(slice.len(), num_cols);
-        let (_, shorts, _) = unsafe { slice.align_to::<Poseidon2Cols<T, C>>() };
+        let (_, shorts, _) = unsafe { slice.align_to::<Poseidon2Cols<T, WIDTH, C>>() };
         &shorts[0]
     }
 }
@@ -53,8 +53,8 @@ impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2Cols<C::F, WIDTH, C>
         self.input = input;
 
         // Set the boolean flags
-        let rounds_half = <C::R_F as Unsigned>::USIZE / 2;
-        let partial_rounds = <C::R_P as Unsigned>::USIZE;
+        let rounds_half = C::r_f() / 2;
+        let partial_rounds = C::r_p();
         let is_external_first_half = round < rounds_half;
         let is_external_second_half = round >= rounds_half + partial_rounds;
         let is_external = is_external_first_half || is_external_second_half;
@@ -72,7 +72,7 @@ impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2Cols<C::F, WIDTH, C>
         // Evaluate sbox over add_rc
         self.evaluate_sbox();
 
-        let mut linear_input: Array<C::F, C::WIDTH> = Array::from_fn(|i| {
+        let mut linear_input: [C::F; WIDTH] = core::array::from_fn(|i| {
             if i == 0 || is_external {
                 self.sbox_deg_7[i]
             } else {
@@ -94,7 +94,7 @@ impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2Cols<C::F, WIDTH, C>
     }
 
     fn evaluate_sbox(&mut self) {
-        self.sbox_deg_3 = Array::from_fn(|i| self.add_rc[i].cube());
-        self.sbox_deg_7 = Array::from_fn(|i| self.sbox_deg_3[i].square() * self.add_rc[i]);
+        self.sbox_deg_3 = core::array::from_fn(|i| self.add_rc[i].cube());
+        self.sbox_deg_7 = core::array::from_fn(|i| self.sbox_deg_3[i].square() * self.add_rc[i]);
     }
 }

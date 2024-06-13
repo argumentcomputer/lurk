@@ -2,10 +2,8 @@
 
 use core::mem::size_of;
 use std::array;
-
 use std::iter::zip;
 
-use hybrid_array::{typenum::Unsigned, Array};
 use itertools::izip;
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::AbstractField;
@@ -19,7 +17,7 @@ where
     C: PoseidonConfig<WIDTH>,
 {
     fn width(&self) -> usize {
-        size_of::<Poseidon2Cols<u8, C>>()
+        size_of::<Poseidon2Cols<u8, WIDTH, C>>()
     }
 }
 
@@ -32,13 +30,12 @@ where
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
         let local = main.row_slice(0);
-        let local: &Poseidon2Cols<AB::Var, C> = Poseidon2Cols::from_slice(&local);
+        let local: &Poseidon2Cols<AB::Var, WIDTH, C> = Poseidon2Cols::from_slice(&local);
         let next = main.row_slice(1);
-        let next: &Poseidon2Cols<AB::Var, C> = Poseidon2Cols::from_slice(&next);
+        let next: &Poseidon2Cols<AB::Var, WIDTH, C> = Poseidon2Cols::from_slice(&next);
 
-        let W = <C::WIDTH as Unsigned>::USIZE;
-        let R_F = <C::R_F as Unsigned>::USIZE;
-        let R_P = <C::R_P as Unsigned>::USIZE;
+        let R_F = C::r_f();
+        let R_P = C::r_p();
 
         let RF_HALF = R_F / 2;
 
@@ -85,7 +82,7 @@ where
             // first component in the internal partial rounds.
             debug_assert!(
                 if ROUNDS_E1.contains(&round) || ROUNDS_E2.contains(&round) {
-                    round_constants.len() == W
+                    round_constants.len() == WIDTH
                 } else if ROUNDS_P.contains(&round) {
                     round_constants.len() == 1
                 } else {
@@ -126,7 +123,7 @@ where
         // Only apply sbox to
         // - First element in internal and external rounds
         // - All elements in external rounds
-        let sbox_result = Array::<AB::Expr, C::WIDTH>::from_fn(|i| {
+        let sbox_result: [AB::Expr; WIDTH] = core::array::from_fn(|i| {
             if i == 0 {
                 is_init * local.add_rc[i]
                     + (is_internal.clone() + is_external.clone()) * local.sbox_deg_7[i]

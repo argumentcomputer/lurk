@@ -1,6 +1,7 @@
+use std::iter::zip;
+
 use p3_field::{AbstractField, Field};
 use p3_poseidon2::apply_mat4;
-use std::iter::zip;
 
 // Apply the MDS matrix to the external state.
 pub(crate) fn matmul_exterior<F: Field>(state: &mut [F]) {

@@ -1,14 +1,10 @@
+use std::ops::Sub;
+
 use crate::poseidon::config::PoseidonConfig;
 use std::mem::size_of;
 
-use hybrid_array::ArraySize;
+use hybrid_array::{typenum::*, Array, ArraySize};
 
-use std::ops::Sub;
-
-use super::{NUM_EXTERNAL_ROUNDS, NUM_INTERNAL_ROUNDS, WIDTH};
-
-use hybrid_array::typenum::*;
-use hybrid_array::Array;
 // /// Memory columns for Poseidon2.
 // #[derive(Clone, Copy)]
 // #[repr(C)]
@@ -37,10 +33,10 @@ where
     <<C as PoseidonConfig<WIDTH>>::R_P as Sub<B1>>::Output: ArraySize,
 {
     pub(crate) external_rounds_state: Array<[T; WIDTH], C::R_F>,
-    pub(crate) internal_rounds_state: [T; WIDTH],
-    pub(crate) internal_rounds_s0: Array<T, Sub1<C::R_P>>,
     pub(crate) external_rounds_sbox: Array<[T; WIDTH], C::R_F>,
+    pub(crate) internal_rounds_state: [T; WIDTH],
     pub(crate) internal_rounds_sbox: Array<T, C::R_P>,
+    pub(crate) internal_rounds_s0: Array<T, Sub1<C::R_P>>,
 }
 impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2WideCols<C::F, C, WIDTH>
 where
