@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use p3_air::{Air, AirBuilder};
-use p3_field::{AbstractField, Field};
+use p3_field::Field;
 use p3_matrix::Matrix;
 
 use super::{
@@ -282,8 +282,7 @@ impl<F: Field> Ctrl<F> {
                     index.restore(init_state);
                 }
 
-                sels.into_iter()
-                    .fold(F::zero().into(), |acc, sel| acc + sel)
+                sels.into_iter().sum()
             }
             Ctrl::MatchMany(vars, cases) => {
                 let map_len = map.len();
@@ -293,9 +292,9 @@ impl<F: Field> Ctrl<F> {
 
                 for (fs, branch) in cases.branches.iter() {
                     let sel = branch.eval(builder, local, index, map, toplevel);
-                    for (v, f) in vals.iter().zip(fs.iter()) {
-                        builder.when(sel.clone()).assert_eq(v.clone(), *f)
-                    }
+                    vals.iter()
+                        .zip(fs.iter())
+                        .for_each(|(v, f)| builder.when(sel.clone()).assert_eq(v.clone(), *f));
                     sels.push(sel);
                     map.truncate(map_len);
                     index.restore(init_state);
@@ -319,8 +318,7 @@ impl<F: Field> Ctrl<F> {
                     index.restore(init_state);
                 }
 
-                sels.into_iter()
-                    .fold(F::zero().into(), |acc, sel| acc + sel)
+                sels.into_iter().sum()
             }
             Ctrl::If(b, t, f) => {
                 let map_len = map.len();
@@ -380,13 +378,12 @@ fn constrain_inequality_witness<AB: AirBuilder>(
     vals: Vec<AB::Expr>,
     builder: &mut AB,
 ) {
-    let one: AB::Expr = AB::F::one().into();
-    let acc = coeffs
+    let acc: AB::Expr = coeffs
         .into_iter()
         .zip(vals)
         .map(|(coeff, val)| coeff * val)
-        .fold(one, |acc, expr| acc - expr);
-    builder.when(sel).assert_zero(acc);
+        .sum();
+    builder.when(sel).assert_one(acc);
 }
 
 #[cfg(test)]
