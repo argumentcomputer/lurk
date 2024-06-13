@@ -114,47 +114,53 @@ pub fn ingress<F: PrimeField>() -> FuncE<F> {
 pub fn egress<F: PrimeField>() -> FuncE<F> {
     func!(
         fn egress(tag, val): [8] {
-            let zero = 0;
             match tag {
                 Tag::Num | Tag::Char | Tag::Err => {
-                    let (digest: [8]) = (val, zero, zero, zero, zero, zero, zero, zero);
+                    let padding = [0; 7];
+                    let digest: [8] = (val, padding);
                     return digest
                 }
                 Tag::Nil | Tag::U64 | Tag::Comm => {
-                    let (digest: [8]) = load(val);
+                    let digest: [8] = load(val);
                     return digest
                 }
                 Tag::Str | Tag::Sym | Tag::Key => {
                     if !val {
-                        let (digest: [8]) = (zero, zero, zero, zero, zero, zero, zero, zero);
+                        let digest = [0; 8];
                         return digest
                     }
                     let (fst_tag, fst_ptr, snd_tag, snd_ptr) = load(val);
-                    let (fst_digest: [8]) = call(egress, fst_tag, fst_ptr);
-                    let (snd_digest: [8]) = call(egress, snd_tag, snd_ptr);
-                    let (fst_tag_full: [8]) = (fst_tag, zero, zero, zero, zero, zero, zero, zero);
-                    let (snd_tag_full: [8]) = (snd_tag, zero, zero, zero, zero, zero, zero, zero);
-                    let (digest: [8]) = call(hash_32_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
+                    let fst_digest: [8] = call(egress, fst_tag, fst_ptr);
+                    let snd_digest: [8] = call(egress, snd_tag, snd_ptr);
+
+                    let padding = [0; 7];
+                    let fst_tag_full: [8] = (fst_tag, padding);
+                    let snd_tag_full: [8] = (snd_tag, padding);
+                    let digest: [8] = call(hash_32_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
                     return digest
                 }
                 Tag::Cons | Tag::Thunk => {
                     let (fst_tag, fst_ptr, snd_tag, snd_ptr) = load(val);
-                    let (fst_digest: [8]) = call(egress, fst_tag, fst_ptr);
-                    let (snd_digest: [8]) = call(egress, snd_tag, snd_ptr);
-                    let (fst_tag_full: [8]) = (fst_tag, zero, zero, zero, zero, zero, zero, zero);
-                    let (snd_tag_full: [8]) = (snd_tag, zero, zero, zero, zero, zero, zero, zero);
-                    let (digest: [8]) = call(hash_32_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
+                    let fst_digest: [8] = call(egress, fst_tag, fst_ptr);
+                    let snd_digest: [8] = call(egress, snd_tag, snd_ptr);
+
+                    let padding = [0; 7];
+                    let fst_tag_full: [8] = (fst_tag, padding);
+                    let snd_tag_full: [8] = (snd_tag, padding);
+                    let digest: [8] = call(hash_32_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
                     return digest
                 }
                 Tag::Fun | Tag::Env => {
                     let (fst_tag, fst_ptr, snd_tag, snd_ptr, trd_tag, trd_ptr) = load(val);
-                    let (fst_digest: [8]) = call(egress, fst_tag, fst_ptr);
-                    let (snd_digest: [8]) = call(egress, snd_tag, snd_ptr);
-                    let (trd_digest: [8]) = call(egress, trd_tag, trd_ptr);
-                    let (fst_tag_full: [8]) = (fst_tag, zero, zero, zero, zero, zero, zero, zero);
-                    let (snd_tag_full: [8]) = (snd_tag, zero, zero, zero, zero, zero, zero, zero);
-                    let (trd_tag_full: [8]) = (trd_tag, zero, zero, zero, zero, zero, zero, zero);
-                    let (digest: [8]) = call(hash_48_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest, trd_tag_full, trd_digest);
+                    let fst_digest: [8] = call(egress, fst_tag, fst_ptr);
+                    let snd_digest: [8] = call(egress, snd_tag, snd_ptr);
+                    let trd_digest: [8] = call(egress, trd_tag, trd_ptr);
+
+                    let padding = [0; 7];
+                    let fst_tag_full: [8] = (fst_tag, padding);
+                    let snd_tag_full: [8] = (snd_tag, padding);
+                    let trd_tag_full: [8] = (trd_tag, padding);
+                    let digest: [8] = call(hash_48_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest, trd_tag_full, trd_digest);
                     return digest
                 }
             }
