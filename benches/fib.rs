@@ -14,8 +14,7 @@ use loam::{
     },
     lurk::{
         eval::build_lurk_toplevel,
-        reader::{read, ReadData},
-        state::State,
+        zstore::{ZPtr, ZStore},
     },
 };
 
@@ -48,18 +47,15 @@ fn setup<H: Hasher<BabyBear>>(
     QueryRecord<BabyBear>,
 ) {
     let code = build_lurk_expr(arg);
-    let ReadData {
-        tag: expr_tag,
-        digest: expr_digest,
-        hashes,
-    } = read(State::init_lurk_state().rccell(), &code).unwrap();
+    let zstore = &mut ZStore::<_, LurkHasher>::default();
+    let ZPtr { tag, digest } = zstore.read(&code).unwrap();
 
     let mut queries = QueryRecord::new(toplevel);
-    queries.inject_queries("hash_32_8", toplevel, hashes);
+    queries.inject_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
 
     let mut full_input = [BabyBear::zero(); 24];
-    full_input[0] = expr_tag;
-    full_input[8..16].copy_from_slice(&expr_digest);
+    full_input[0] = tag.to_field();
+    full_input[8..16].copy_from_slice(&digest);
 
     let args: List<_> = full_input.into();
     let lurk_main = FuncChip::from_name("lurk_main", toplevel);
@@ -70,7 +66,7 @@ fn setup<H: Hasher<BabyBear>>(
 fn evaluation(c: &mut Criterion) {
     let arg = get_fib_arg();
     c.bench_function(&format!("evaluation-{arg}"), |b| {
-        let toplevel = build_lurk_toplevel::<LurkHasher>();
+        let toplevel = build_lurk_toplevel();
         let (args, lurk_main, queries) = setup(arg, &toplevel);
 
         b.iter_batched(
@@ -86,7 +82,7 @@ fn evaluation(c: &mut Criterion) {
 fn trace_generation(c: &mut Criterion) {
     let arg = get_fib_arg();
     c.bench_function(&format!("trace-generation-{arg}"), |b| {
-        let toplevel = build_lurk_toplevel::<LurkHasher>();
+        let toplevel = build_lurk_toplevel();
         let (args, lurk_main, mut queries) = setup(arg, &toplevel);
 
         lurk_main.execute_iter(args, &mut queries);

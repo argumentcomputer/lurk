@@ -1,11 +1,10 @@
 use p3_field::AbstractField;
+use serde::{Deserialize, Serialize};
 
-pub const EXPR_TAG_INIT: u16 = 0b0000_0000_0000_0000;
-
-#[repr(u16)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u32)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Tag {
-    Nil = EXPR_TAG_INIT,
+    Nil = 0,
     Cons,
     Sym,
     Fun,

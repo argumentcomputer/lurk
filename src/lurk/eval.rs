@@ -7,7 +7,7 @@ use crate::{
     func,
     lair::{
         expr::{BlockE, CasesE, CtrlE, FuncE, OpE, Var},
-        hasher::Hasher,
+        hasher::LurkHasher,
         map::Map,
         toplevel::Toplevel,
         List, Name,
@@ -15,9 +15,9 @@ use crate::{
 };
 
 use super::{
-    reader::read,
     state::{State, StateRcCell, LURK_PACKAGE_SYMBOLS_NAMES},
     tag::Tag,
+    zstore::ZStore,
 };
 
 pub struct BuiltinIndex(usize);
@@ -31,12 +31,21 @@ impl BuiltinIndex {
 pub struct BuiltinMemo<'a, F>(IndexMap<&'a str, List<F>, FxBuildHasher>);
 
 impl<'a> BuiltinMemo<'a, BabyBear> {
-    fn new(state: &StateRcCell) -> Self {
+    fn new(state: &StateRcCell, zstore: &mut ZStore<BabyBear, LurkHasher>) -> Self {
         Self(
             LURK_PACKAGE_SYMBOLS_NAMES
                 .into_iter()
                 .filter(|sym| sym != &"nil")
-                .map(|name| (name, read(state.clone(), name).unwrap().digest.into()))
+                .map(|name| {
+                    (
+                        name,
+                        zstore
+                            .read_with_state(state.clone(), name)
+                            .unwrap()
+                            .digest
+                            .into(),
+                    )
+                })
                 .collect(),
         )
     }
@@ -54,10 +63,11 @@ impl<'a, F> BuiltinMemo<'a, F> {
 
 /// Creates a `Toplevel` with the functions used for Lurk evaluation
 #[inline]
-pub fn build_lurk_toplevel<H: Hasher<BabyBear>>() -> Toplevel<BabyBear, H> {
+pub fn build_lurk_toplevel() -> Toplevel<BabyBear, LurkHasher> {
     let state = State::init_lurk_state().rccell();
-    let builtins = BuiltinMemo::new(&state);
-    let nil = read(state, "nil").unwrap().digest.into();
+    let zstore = &mut ZStore::default();
+    let builtins = BuiltinMemo::new(&state, zstore);
+    let nil = zstore.read_with_state(state, "nil").unwrap().digest.into();
     Toplevel::new(&[
         lurk_main(),
         eval(&builtins),
@@ -1168,8 +1178,8 @@ mod test {
         air::debug::debug_constraints_collecting_queries,
         lair::{execute::QueryRecord, func_chip::FuncChip, hasher::LurkHasher, List},
         lurk::{
-            reader::{read, ReadData},
             state::State,
+            zstore::{ZPtr, ZStore},
         },
     };
 
@@ -1177,7 +1187,7 @@ mod test {
 
     #[test]
     fn eval_test() {
-        let toplevel = &build_lurk_toplevel::<LurkHasher>();
+        let toplevel = &build_lurk_toplevel();
 
         // Chips
         let lurk_main = FuncChip::from_name("lurk_main", toplevel);
@@ -1237,31 +1247,33 @@ mod test {
             &hash_48_8,
         ];
 
+        let state = State::init_lurk_state().rccell();
+
         let eval_aux = |expr: &str, res: &str| {
-            let ReadData {
+            let zstore = &mut ZStore::<_, LurkHasher>::default();
+
+            let ZPtr {
                 tag: expr_tag,
                 digest: expr_digest,
-                hashes,
-            } = read(State::init_lurk_state().rccell(), expr).unwrap();
+            } = zstore.read_with_state(state.clone(), expr).unwrap();
 
             let queries = &mut QueryRecord::new(toplevel);
-            queries.inject_queries("hash_32_8", toplevel, hashes);
+            queries.inject_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
 
-            let ReadData {
+            let ZPtr {
                 tag: expected_tag,
                 digest: expected_digest,
-                hashes: _,
-            } = read(State::init_lurk_state().rccell(), res).unwrap();
+            } = zstore.read_with_state(state.clone(), res).unwrap();
 
             let mut full_input = [F::zero(); 24];
-            full_input[0] = expr_tag;
+            full_input[0] = expr_tag.to_field();
             full_input[8..16].copy_from_slice(&expr_digest);
 
             let full_input: List<_> = full_input.into();
             lurk_main.execute_iter(full_input.clone(), queries);
             let result = queries.get_output(lurk_main.func, &full_input);
 
-            assert_eq!(&result[0], &expected_tag);
+            assert_eq!(&result[0], &expected_tag.to_field());
             assert_eq!(&result[8..], &expected_digest);
 
             all_chips.into_par_iter().for_each(|chip| {
@@ -1329,23 +1341,23 @@ mod test {
 
     #[test]
     fn test_ingress_egress() {
-        let toplevel = &build_lurk_toplevel::<LurkHasher>();
+        let toplevel = &build_lurk_toplevel();
 
         let ingress_chip = FuncChip::from_name("ingress", toplevel);
         let egress_chip = FuncChip::from_name("egress", toplevel);
         let hash_32_8_chip = FuncChip::from_name("hash_32_8", toplevel);
 
+        let state = State::init_lurk_state().rccell();
+
         let assert_ingress_egress_correctness = |code| {
-            let ReadData {
-                tag,
-                digest,
-                hashes,
-            } = read(State::init_lurk_state().rccell(), code).unwrap();
+            let zstore = &mut ZStore::<_, LurkHasher>::default();
+            let ZPtr { tag, digest } = zstore.read_with_state(state.clone(), code).unwrap();
+            let tag = tag.to_field();
 
             let digest: List<_> = digest.into();
 
             let queries = &mut QueryRecord::new(toplevel);
-            queries.inject_queries("hash_32_8", toplevel, hashes);
+            queries.inject_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
 
             let mut ingress_args = [F::zero(); 16];
             ingress_args[0] = tag;
