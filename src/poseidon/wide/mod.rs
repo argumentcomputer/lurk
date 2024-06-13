@@ -42,7 +42,7 @@ mod test {
         let hasher = C::hasher();
 
         let expected_output = hasher.permute(input).to_vec();
-        let trace = chip.generate_trace(vec![input]);
+        let trace = chip.generate_trace(&vec![input]);
         let output = trace.row(0).tail(WIDTH).collect::<Vec<_>>();
 
         assert_eq!(output, expected_output);

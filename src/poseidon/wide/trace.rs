@@ -16,7 +16,7 @@ where
     C::R_P: Sub<B1>,
     <<C as PoseidonConfig<WIDTH>>::R_P as Sub<B1>>::Output: ArraySize,
 {
-    pub fn generate_trace(&self, inputs: Vec<[C::F; WIDTH]>) -> RowMajorMatrix<C::F> {
+    pub fn generate_trace(&self, inputs: &[[C::F; WIDTH]]) -> RowMajorMatrix<C::F> {
         let num_cols = <Poseidon2WideChip<C, WIDTH> as BaseAir<C::F>>::width(self);
 
         let full_num_rows = inputs.len();
@@ -33,7 +33,7 @@ where
         assert!(suffix.is_empty(), "Alignment should match");
         assert_eq!(rows.len(), full_num_rows.next_power_of_two());
 
-        for (input, row) in zip(inputs, rows.iter_mut()) {
+        for (&input, row) in zip(inputs.iter(), rows.iter_mut()) {
             let _ = row.populate_columns(input);
         }
 
@@ -69,11 +69,6 @@ where
             //
             // Optimization: Since adding a constant is a degree 1 operation, we can avoid adding
             // columns for it, and instead include it in the constraint for the x^3 part of the sbox.
-            let round = if round < C::r_f() / 2 {
-                round
-            } else {
-                round + C::r_p()
-            };
             let mut add_rc = *round_state;
             for i in 0..WIDTH {
                 add_rc[i] += (*C::external_constants())[round][i];
@@ -109,8 +104,7 @@ where
             // Add the round constant to the 0th state element.
             // Optimization: Since adding a constant is a degree 1 operation, we can avoid adding
             // columns for it, just like for external rounds.
-            let round = r + C::r_f() / 2;
-            let add_rc = state[0] + (C::internal_constants())[round];
+            let add_rc = state[0] + (C::internal_constants())[r];
 
             // Apply the sboxes.
             // Optimization: since the linear layer that comes after the sbox is degree 1, we can

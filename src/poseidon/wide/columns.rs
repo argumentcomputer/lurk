@@ -44,7 +44,7 @@ where
     <<C as PoseidonConfig<WIDTH>>::R_P as Sub<B1>>::Output: ArraySize,
 {
     pub(crate) const fn num_cols() -> usize {
-        size_of::<Self>()
+        size_of::<Poseidon2WideCols<u8, C, WIDTH>>()
     }
 }
 // pub(crate) const NUM_POSEIDON2_COLS: usize = size_of::<Poseidon2Cols<u8>>();
