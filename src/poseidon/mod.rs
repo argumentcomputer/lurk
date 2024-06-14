@@ -15,14 +15,11 @@ mod util;
 pub mod wide;
 
 /// A chip that implements addition for the Poseidon2 permutation
-pub struct Poseidon2Chip<const WIDTH: usize, C>
-where
-    C: PoseidonConfig<WIDTH>,
-{
+pub struct Poseidon2Chip<C: PoseidonConfig<WIDTH>, const WIDTH: usize> {
     _marker: PhantomData<C>,
 }
 
-impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Default for Poseidon2Chip<WIDTH, C> {
+impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Default for Poseidon2Chip<C, WIDTH> {
     fn default() -> Self {
         Self {
             _marker: PhantomData,
@@ -47,7 +44,7 @@ mod tests {
     use super::{config::*, Poseidon2Chip};
 
     fn test_trace_eq_hash_with<const WIDTH: usize, C: PoseidonConfig<WIDTH>>() {
-        let chip = Poseidon2Chip::<WIDTH, C>::default();
+        let chip = Poseidon2Chip::<C, WIDTH>::default();
         let hasher = C::hasher();
         let input: [C::F; WIDTH] = array::from_fn(C::F::from_canonical_usize);
 
@@ -71,7 +68,7 @@ mod tests {
     }
 
     fn test_air_constraints_with<const WIDTH: usize, C: PoseidonConfig<WIDTH>>() {
-        let chip = Poseidon2Chip::<WIDTH, C>::default();
+        let chip = Poseidon2Chip::<C, WIDTH>::default();
         let public_values: [C::F; WIDTH] = array::from_fn(C::F::from_canonical_usize);
         let main = chip.generate_trace(vec![public_values]);
 
