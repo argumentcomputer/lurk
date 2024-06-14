@@ -59,7 +59,59 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
         Default::default()
     }
 
-    fn append(&mut self, _other: &mut Self) {}
+    fn append(&mut self, other: &mut Self) {
+        assert_eq!(self.func_queries.len(), other.func_queries.len());
+        assert_eq!(self.inv_func_queries.len(), other.inv_func_queries.len());
+        assert_eq!(self.mem_queries.len(), other.mem_queries.len());
+
+        // draining func queries from `other` to `self`, starting from the end
+        let mut func_idx = self.func_queries.len() - 1;
+        while let Some(func_queries) = other.func_queries.pop() {
+            let self_func_queries = &mut self.func_queries[func_idx];
+            for (inp, other_res) in func_queries {
+                if let Some(self_res) = self_func_queries.get_mut(&inp) {
+                    assert_eq!(&self_res.output, &other_res.output);
+                    self_res.mult += other_res.mult;
+                } else {
+                    self_func_queries.insert(inp, other_res);
+                }
+            }
+            func_idx -= 1;
+        }
+
+        // draining inv func queries from `other` to `self`, starting from the end
+        let mut func_idx = self.inv_func_queries.len() - 1;
+        while let Some(other_inv_func_queries_option) = other.inv_func_queries.pop() {
+            let self_inv_func_queries_option = &mut self.inv_func_queries[func_idx];
+            if let Some(other_inv_func_queries) = other_inv_func_queries_option {
+                let self_inv_func_queries = self_inv_func_queries_option.as_mut().unwrap();
+                for (out, other_inp) in other_inv_func_queries {
+                    if let Some(self_inp) = self_inv_func_queries.get(&out) {
+                        assert_eq!(self_inp, &other_inp);
+                    } else {
+                        self_inv_func_queries.insert(out, other_inp);
+                    }
+                }
+            } else {
+                assert!(self_inv_func_queries_option.is_none());
+            }
+            func_idx -= 1;
+        }
+
+        // draining mem queries from `other` to `self`, starting from the end
+        let mut mem_idx = self.mem_queries.len() - 1;
+        while let Some(other_mem_map) = other.mem_queries.pop() {
+            let self_mem_map = &mut self.mem_queries[mem_idx];
+            for (args, other_mult) in other_mem_map {
+                if let Some(self_mult) = self_mem_map.get_mut(&args) {
+                    *self_mult += other_mult;
+                } else {
+                    self_mem_map.insert(args, other_mult);
+                }
+            }
+            mem_idx -= 1;
+        }
+    }
 
     fn shard(self, _config: &Self::Config) -> Vec<Self> {
         vec![]
