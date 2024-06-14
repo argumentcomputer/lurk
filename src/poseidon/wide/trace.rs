@@ -1,49 +1,34 @@
 use std::iter::zip;
 
-use super::{columns::Poseidon2WideCols, Poseidon2WideChip};
 use crate::poseidon::config::PoseidonConfig;
 
+use crate::poseidon::wide::columns::{Poseidon2Cols, Poseidon2PermutationCols};
 use hybrid_array::{typenum::Sub1, ArraySize};
-use p3_air::BaseAir;
 use p3_field::AbstractField;
-use p3_matrix::dense::RowMajorMatrix;
 use p3_symmetric::Permutation;
 
-impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2WideChip<C, WIDTH>
+pub fn populate_witness<C: PoseidonConfig<WIDTH>, const WIDTH: usize>(
+    input: [C::F; WIDTH],
+    witness: &mut [C::F],
+) -> [C::F; WIDTH]
 where
     Sub1<C::R_P>: ArraySize,
 {
-    pub fn generate_trace(
-        &self,
-        inputs: &[[C::F; WIDTH]],
-    ) -> (Vec<[C::F; WIDTH]>, RowMajorMatrix<C::F>) {
-        let num_cols = <Poseidon2WideChip<C, WIDTH> as BaseAir<C::F>>::width(self);
+    let cols = Poseidon2Cols::<C::F, C, WIDTH>::from_slice_mut(witness);
+    cols.populate(input)
+}
 
-        let full_num_rows = inputs.len();
-        let full_trace_len_padded = full_num_rows.next_power_of_two() * num_cols;
-
-        let mut trace = RowMajorMatrix::new(vec![C::F::zero(); full_trace_len_padded], num_cols);
-
-        let (prefix, rows, suffix) = unsafe {
-            trace
-                .values
-                .align_to_mut::<Poseidon2WideCols<C::F, C, WIDTH>>()
-        };
-        assert!(prefix.is_empty(), "Alignment should match");
-        assert!(suffix.is_empty(), "Alignment should match");
-        assert_eq!(rows.len(), full_num_rows.next_power_of_two());
-
-        let mut outputs = vec![];
-        for (&input, row) in zip(inputs.iter(), rows.iter_mut()) {
-            let output = row.populate(input);
-            outputs.push(output);
-        }
-
-        (outputs, trace)
+impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2Cols<C::F, C, WIDTH>
+where
+    Sub1<C::R_P>: ArraySize,
+{
+    pub(crate) fn populate(&mut self, input: [C::F; WIDTH]) -> [C::F; WIDTH] {
+        self.output = self.perm.populate(input);
+        self.output
     }
 }
 
-impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2WideCols<C::F, C, WIDTH>
+impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2PermutationCols<C::F, C, WIDTH>
 where
     Sub1<C::R_P>: ArraySize,
 {
@@ -54,7 +39,6 @@ where
             self.populate_external_round(&mut state, r)
         }
 
-        self.internal_rounds_state_init = state;
         for r in 0..C::r_p() {
             self.populate_internal_round(&mut state, r);
         }
@@ -62,6 +46,7 @@ where
         for r in C::r_f() / 2..C::r_f() {
             self.populate_external_round(&mut state, r)
         }
+
         state
     }
 
@@ -97,7 +82,9 @@ where
         // linear layer is degree 1, so all state elements at the end can be expressed as a
         // degree-3 polynomial of the state at the beginning of the internal rounds and the 0th
         // state element at rounds prior to the current round
-        if round > 0 {
+        if round == 0 {
+            self.internal_rounds_state_init = *state;
+        } else {
             self.internal_rounds_state0[round - 1] = state[0];
         }
 
