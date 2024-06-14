@@ -6,33 +6,27 @@ use std::iter::zip;
 
 use itertools::izip;
 use p3_air::{Air, AirBuilder, BaseAir};
-use p3_field::AbstractField;
 use p3_matrix::Matrix;
-use p3_poseidon2::apply_mat4;
+use p3_symmetric::Permutation;
 
-use super::{columns::Poseidon2Cols, config::PoseidonConfig, util::matmul_internal, Poseidon2Chip};
+use super::{columns::Poseidon2Cols, config::PoseidonConfig, Poseidon2Chip};
 
-impl<F, const WIDTH: usize, C> BaseAir<F> for Poseidon2Chip<WIDTH, C>
-where
-    C: PoseidonConfig<WIDTH>,
-{
+impl<F, C: PoseidonConfig<WIDTH>, const WIDTH: usize> BaseAir<F> for Poseidon2Chip<C, WIDTH> {
     fn width(&self) -> usize {
-        size_of::<Poseidon2Cols<u8, WIDTH, C>>()
+        size_of::<Poseidon2Cols<u8, C, WIDTH>>()
     }
 }
 
-impl<AB, const WIDTH: usize, C> Air<AB> for Poseidon2Chip<WIDTH, C>
-where
-    AB: AirBuilder,
-    C: PoseidonConfig<WIDTH, F = AB::F>,
+impl<AB: AirBuilder, C: PoseidonConfig<WIDTH, F = AB::F>, const WIDTH: usize> Air<AB>
+    for Poseidon2Chip<C, WIDTH>
 {
     #[allow(non_snake_case)]
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
         let local = main.row_slice(0);
-        let local: &Poseidon2Cols<AB::Var, WIDTH, C> = Poseidon2Cols::from_slice(&local);
+        let local = Poseidon2Cols::<AB::Var, C, WIDTH>::from_slice(&local);
         let next = main.row_slice(1);
-        let next: &Poseidon2Cols<AB::Var, WIDTH, C> = Poseidon2Cols::from_slice(&next);
+        let next = Poseidon2Cols::<AB::Var, C, WIDTH>::from_slice(&next);
 
         let R_F = C::r_f();
         let R_P = C::r_p();
@@ -123,7 +117,7 @@ where
         // Only apply sbox to
         // - First element in internal and external rounds
         // - All elements in external rounds
-        let sbox_result: [AB::Expr; WIDTH] = core::array::from_fn(|i| {
+        let sbox_result: [AB::Expr; WIDTH] = array::from_fn(|i| {
             if i == 0 {
                 is_init * local.add_rc[i]
                     + (is_internal.clone() + is_external.clone()) * local.sbox_deg_7[i]
@@ -137,40 +131,21 @@ where
         {
             // First, we apply M_4 to each consecutive four elements of the state.
             // In Appendix B's terminology, this replaces each x_i with x_i'.
-            let mut state = sbox_result.clone();
-            for state_chunk in state.chunks_mut(4) {
-                let state_chunk: &mut [AB::Expr; 4] = state_chunk.try_into().unwrap();
-                apply_mat4(state_chunk);
-            }
-
-            // Now, we apply the outer circulant matrix (to compute the y_i values).
-            //
-            // We first precompute the four sums of every four elements.
-            let mut sums: [AB::Expr; 4] = array::from_fn(|_| AB::Expr::zero());
-            for state_chunk in state.chunks_exact(4) {
-                for (sum, state_item) in zip(sums.iter_mut(), state_chunk) {
-                    *sum += state_item.clone();
-                }
-            }
+            let state = C::external_linear_layer().permute(sbox_result.clone());
 
             // The formula for each y_i involves 2x_i' term and x_j' terms for each j that equals i mod 4.
             // In other words, we can add a single copy of x_i' to the appropriate one of our precomputed sums.
-            for (state, sum, &output_expected) in
-                izip!(state, sums.into_iter().cycle(), &local.output)
-            {
-                let output = state + sum;
+            for (state, &output_expected) in zip(state, &local.output) {
                 builder
                     .when(is_linear.clone())
-                    .assert_eq(output, output_expected);
+                    .assert_eq(state, output_expected);
             }
         }
 
         // INTERNAL LAYER
         {
             // Use a simple matrix multiplication as the permutation.
-            let mut state = sbox_result;
-            let matmul_constants = C::matrix_diag().iter().copied().map(AB::Expr::from);
-            matmul_internal(&mut state, matmul_constants);
+            let state = C::internal_linear_layer().permute(sbox_result);
 
             for (state, &output_expected) in zip(state, &local.output) {
                 builder

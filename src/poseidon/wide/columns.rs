@@ -1,5 +1,3 @@
-use std::ops::Sub;
-
 use crate::poseidon::config::PoseidonConfig;
 use std::mem::size_of;
 
@@ -29,18 +27,22 @@ use hybrid_array::{typenum::*, Array, ArraySize};
 #[repr(C)]
 pub struct Poseidon2WideCols<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize>
 where
-    C::R_P: Sub<B1>,
     Sub1<C::R_P>: ArraySize,
 {
+    /// Input states for all external rounds
     pub(crate) external_rounds_state: Array<[T; WIDTH], C::R_F>,
+    /// Intermediary SBox results for external rounds
     pub(crate) external_rounds_sbox: Array<[T; WIDTH], C::R_F>,
-    pub(crate) internal_rounds_state: [T; WIDTH],
+
+    /// Initial state before internal rounds
+    pub(crate) internal_rounds_state_init: [T; WIDTH],
+    /// Expected value of the first state element in all but the first internal rounds
+    pub(crate) internal_rounds_state0: Array<T, Sub1<C::R_P>>,
+    /// Intermediary SBox results for internal rounds
     pub(crate) internal_rounds_sbox: Array<T, C::R_P>,
-    pub(crate) internal_rounds_s0: Array<T, Sub1<C::R_P>>,
 }
 impl<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2WideCols<T, C, WIDTH>
 where
-    C::R_P: Sub<B1>,
     Sub1<C::R_P>: ArraySize,
 {
     pub(crate) const fn num_cols() -> usize {
@@ -51,9 +53,18 @@ where
     pub fn from_slice(slice: &[T]) -> &Self {
         let num_cols = Poseidon2WideCols::<T, C, WIDTH>::num_cols();
 
-        assert_eq!(slice.len(), num_cols);
+        debug_assert_eq!(slice.len(), num_cols);
         let (_, shorts, _) = unsafe { slice.align_to::<Poseidon2WideCols<T, C, WIDTH>>() };
         &shorts[0]
+    }
+
+    #[inline]
+    pub fn from_slice_mut(slice: &mut [T]) -> &mut Self {
+        let num_cols = Poseidon2WideCols::<T, C, WIDTH>::num_cols();
+
+        debug_assert_eq!(slice.len(), num_cols);
+        let (_, shorts, _) = unsafe { slice.align_to_mut::<Poseidon2WideCols<T, C, WIDTH>>() };
+        &mut shorts[0]
     }
 }
 

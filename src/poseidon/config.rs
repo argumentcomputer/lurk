@@ -1,14 +1,13 @@
 //! This module defines the Poseidon2 configurations and implements the traits for all the supported
 //! widths between 4 and 40.
 
+use std::ops::Sub;
 use std::slice;
 
 use hybrid_array::{typenum::*, Array, ArraySize};
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField};
-use p3_poseidon2::{
-    matmul_internal, DiffusionPermutation, Poseidon2, Poseidon2ExternalMatrixGeneral,
-};
+use p3_poseidon2::{DiffusionPermutation, Poseidon2, Poseidon2ExternalMatrixGeneral};
 use p3_symmetric::Permutation;
 
 use super::constants::*;
@@ -20,7 +19,7 @@ trait ConstantsProvided {}
 #[allow(non_camel_case_types, private_bounds)]
 pub trait PoseidonConfig<const WIDTH: usize>: Clone + Copy + Sync + ConstantsProvided {
     type F: PrimeField;
-    type R_P: ArraySize;
+    type R_P: ArraySize + Sub<B1>;
     type R_F: ArraySize;
     type R: ArraySize;
 
@@ -105,10 +104,17 @@ pub struct InternalDiffusion<T> {
 impl<AF, C: PoseidonConfig<WIDTH>, const WIDTH: usize> Permutation<[AF; WIDTH]>
     for InternalDiffusion<C>
 where
-    AF: AbstractField<F = C::F>,
+    AF: AbstractField + From<C::F>,
 {
     fn permute_mut(&self, input: &mut [AF; WIDTH]) {
-        matmul_internal(input, *C::matrix_diag());
+        // Copied from matmul_external until we fix the traits
+        let diag = C::matrix_diag();
+
+        let sum: AF = input.iter().cloned().sum();
+        for i in 0..WIDTH {
+            input[i] *= AF::from(diag[i]);
+            input[i] += sum.clone();
+        }
     }
 }
 

@@ -1,12 +1,10 @@
-use core::array;
-
 use std::iter::zip;
-use std::ops::Sub;
 
 use super::{columns::Poseidon2WideCols, Poseidon2WideChip};
-use crate::poseidon::{config::PoseidonConfig, util::matmul_internal};
+use crate::poseidon::config::PoseidonConfig;
 
 use hybrid_array::{typenum::*, ArraySize};
+use itertools::{chain, izip};
 
 use p3_air::{AirBuilder, BaseAir};
 use p3_field::AbstractField;
@@ -130,7 +128,6 @@ use p3_symmetric::Permutation;
 
 impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> BaseAir<C::F> for Poseidon2WideChip<C, WIDTH>
 where
-    C::R_P: Sub<B1>,
     Sub1<C::R_P>: ArraySize,
 {
     fn width(&self) -> usize {
@@ -177,111 +174,131 @@ where
 //     );
 // }
 
-impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2WideCols<C::F, C, WIDTH>
+impl<T: Copy, C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2WideCols<T, C, WIDTH> where
+    Sub1<C::R_P>: ArraySize
+{
+}
+
+impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2WideChip<C, WIDTH>
 where
-    C::R_P: Sub<B1>,
     Sub1<C::R_P>: ArraySize,
 {
     pub fn eval<AB: AirBuilder<F = C::F>>(
-        &self,
         builder: &mut AB,
         input: [AB::Expr; WIDTH],
+        output: [AB::Expr; WIDTH],
+        cols: &Poseidon2WideCols<AB::Var, C, WIDTH>,
         is_real: impl Into<AB::Expr>,
-    ) -> [AB::Expr; WIDTH] {
+    ) {
         let is_real = is_real.into();
 
+        // When is_real = 0, set all constants to 0
+        let external_constants = C::external_constants()
+            .iter()
+            .map(|constants| constants.map(|constant| is_real.clone() * constant));
+        let internal_constants = C::internal_constants()
+            .iter()
+            .map(|&constant| is_real.clone() * constant);
+
+        let mut external_rounds = izip!(
+            &cols.external_rounds_state,
+            external_constants,
+            &cols.external_rounds_sbox
+        );
+
+        let internal_state_init = &cols.internal_rounds_state_init;
+        let internal_rounds_state0 = chain([&internal_state_init[0]], &cols.internal_rounds_state0);
+        let internal_rounds = izip!(
+            internal_rounds_state0,
+            internal_constants,
+            &cols.internal_rounds_sbox,
+        );
+
+        // When is_real = 0, the constraints apply the identity to [0; WIDTH]
+        let mut state: [AB::Expr; WIDTH] = input.map(|x| is_real.clone() * x);
+
         // Apply the initial round.
-        let mut state = C::external_linear_layer().permute(input);
+        C::external_linear_layer().permute_mut(&mut state);
 
         // Apply the first half of external rounds.
-        for r in 0..C::r_f() / 2 {
-            state = self.eval_external_round(builder, state, r, &is_real);
+        for (state_expected, constants, sbox_3) in external_rounds.by_ref().take(C::r_f() / 2) {
+            Self::eval_external_round(builder, &mut state, state_expected, sbox_3, constants);
+        }
+
+        // Before applying the internal rounds, ensure the state matches the expected state and replace the expressions
+        // with linear ones.
+        // Note: we skip the first state component since it is checked by `eval_internal_rounds`
+        for (state, &state_expected) in zip(state.iter_mut(), internal_state_init).skip(1) {
+            builder.assert_eq(state.clone(), state_expected);
+            *state = state_expected.into();
         }
 
         // Apply the internal rounds.
-        state = self.eval_internal_rounds(builder, state, &is_real);
-
-        // Apply the second half of external rounds.
-        for r in C::r_f() / 2..C::r_f() {
-            state = self.eval_external_round(builder, state, r, &is_real);
+        for (&state0_expected, constant, &sbox_3) in internal_rounds {
+            Self::eval_internal_round(builder, &mut state, state0_expected, constant, sbox_3);
         }
 
-        state
+        // Apply the second half of external rounds.
+        debug_assert_eq!(external_rounds.len(), C::r_f() / 2);
+        for (state_expected, constants, sbox_3) in external_rounds {
+            Self::eval_external_round(builder, &mut state, state_expected, sbox_3, constants);
+        }
+
+        for (state, output) in zip(state, output) {
+            builder.assert_eq(state, output * is_real.clone());
+        }
     }
 
     fn eval_external_round<AB: AirBuilder<F = C::F>>(
-        &self,
         builder: &mut AB,
-        state: [AB::Expr; WIDTH],
-        r: usize,
-        is_real: &AB::Expr,
-    ) -> [AB::Expr; WIDTH] {
-        let current_state = &self.external_rounds_state[r];
-
-        for (state, &state_expected) in zip(state, current_state) {
-            builder
-                .when(is_real.clone())
-                .assert_eq(state, state_expected);
+        state: &mut [AB::Expr; WIDTH],
+        state_expected: &[AB::Var; WIDTH],
+        sbox_3: &[AB::Var; WIDTH],
+        constants: [AB::Expr; WIDTH],
+    ) {
+        // Check that the input state matches the expected round state, and replace it to ensure `state` is linear
+        for (state, &state_expected) in zip(state.iter_mut(), state_expected) {
+            builder.assert_eq(state.clone(), state_expected);
+            *state = state_expected.into();
         }
 
-        let constants = &C::external_constants()[r];
-
-        let add_rc: [AB::Expr; WIDTH] = array::from_fn(|i| {
-            let current_state: AB::Expr = current_state[i].into();
-            current_state + is_real.clone() * constants[i]
-        });
-
-        let sbox_deg_3 = self.external_rounds_sbox[r];
-        let sbox_deg_3_expected: [AB::Expr; WIDTH] = array::from_fn(|i| add_rc[i].cube());
-        for (sbox, sbox_expected) in zip(sbox_deg_3, sbox_deg_3_expected) {
-            builder.assert_eq(sbox, sbox_expected.clone());
+        // add round constants
+        for (state, constant) in zip(state.iter_mut(), constants) {
+            *state += constant;
         }
 
-        let sbox_deg_7: [AB::Expr; WIDTH] = array::from_fn(|i| {
-            let sbox_deg_3: AB::Expr = sbox_deg_3[i].into();
-            sbox_deg_3.square() * add_rc[i].clone()
-        });
+        // apply sbox
+        for (state, &sbox_3) in zip(state.iter_mut(), sbox_3) {
+            let state_pow3 = state.cube();
+            builder.assert_eq(state_pow3, sbox_3);
 
-        C::external_linear_layer().permute(sbox_deg_7)
+            *state *= sbox_3.into().square();
+        }
+
+        // apply external linear layer
+        C::external_linear_layer().permute_mut(state)
     }
 
-    fn eval_internal_rounds<AB: AirBuilder<F = C::F>>(
-        &self,
+    fn eval_internal_round<AB: AirBuilder<F = C::F>>(
         builder: &mut AB,
-        input: [AB::Expr; WIDTH],
-        is_real: &AB::Expr,
-    ) -> [AB::Expr; WIDTH] {
-        for (input, &input_expected) in zip(input, &self.internal_rounds_state) {
-            builder.assert_eq(input, input_expected);
-        }
+        state: &mut [AB::Expr; WIDTH],
+        state0_expected: AB::Var,
+        constant: AB::Expr,
+        sbox_3: AB::Var,
+    ) {
+        // Check that the first state value matches the expected state, and replace it to ensure `state` is linear
+        // before applying the sbox
+        builder.assert_eq(state[0].clone(), state0_expected);
+        state[0] = state0_expected.into();
 
-        let mut state: [AB::Expr; WIDTH] = self.internal_rounds_state.map(Into::into);
+        // add round constant
+        state[0] += constant;
 
-        let s0 = &self.internal_rounds_s0;
+        // apply sbox
+        builder.assert_eq(state[0].cube(), sbox_3);
+        state[0] *= sbox_3.into().square();
 
-        for r in 0..C::r_p() {
-            // Add the round constant
-            let add_rc: AB::Expr = state[0].clone() + is_real.clone() * C::internal_constants()[r];
-
-            let sbox_deg_3 = self.internal_rounds_sbox[r];
-            let sbox_deg_3_expected = add_rc.cube();
-            builder.assert_eq(sbox_deg_3, sbox_deg_3_expected);
-
-            let sbox_deg_3: AB::Expr = sbox_deg_3.into();
-            let sbox_deg_7 = sbox_deg_3.square() * add_rc;
-
-            // See `populate_internal_rounds` for why we don't have columns for the new state here.
-            state[0] = sbox_deg_7.clone();
-
-            let matmul_constants = C::matrix_diag().iter().copied().map(AB::Expr::from);
-            matmul_internal(&mut state, matmul_constants);
-            // TODO: Want to do this , but AB::Expr::F != AB::F for some reason
-            // C::internal_linear_layer().permute_mut(&mut state);
-
-            if r < C::r_p() - 1 {
-                builder.assert_eq(s0[r], state[0].clone());
-            }
-        }
-        state
+        // apply internal linear layer
+        C::internal_linear_layer().permute_mut(state);
     }
 }

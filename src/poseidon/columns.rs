@@ -13,7 +13,7 @@ use p3_field::AbstractField;
 /// The column layout for the chip.
 #[derive(Clone, Debug)]
 #[repr(C)]
-pub struct Poseidon2Cols<T, const WIDTH: usize, C: PoseidonConfig<WIDTH>> {
+pub struct Poseidon2Cols<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize> {
     pub(crate) input: [T; WIDTH],
     pub(crate) is_init: T,
     pub(crate) rounds: Array<T, C::R>,
@@ -23,17 +23,17 @@ pub struct Poseidon2Cols<T, const WIDTH: usize, C: PoseidonConfig<WIDTH>> {
     pub(crate) output: [T; WIDTH],
 }
 
-impl<T, const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2Cols<T, WIDTH, C> {
+impl<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2Cols<T, C, WIDTH> {
     #[inline]
     pub fn from_slice(slice: &[T]) -> &Self {
-        let num_cols = size_of::<Poseidon2Cols<u8, WIDTH, C>>();
+        let num_cols = size_of::<Poseidon2Cols<u8, C, WIDTH>>();
         assert_eq!(slice.len(), num_cols);
-        let (_, shorts, _) = unsafe { slice.align_to::<Poseidon2Cols<T, WIDTH, C>>() };
+        let (_, shorts, _) = unsafe { slice.align_to::<Poseidon2Cols<T, C, WIDTH>>() };
         &shorts[0]
     }
 }
 
-impl<const WIDTH: usize, C: PoseidonConfig<WIDTH>> Poseidon2Cols<C::F, WIDTH, C> {
+impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2Cols<C::F, C, WIDTH> {
     pub fn set_initial_round(&mut self, input: [C::F; WIDTH]) -> [C::F; WIDTH] {
         self.input = input;
         self.is_init = C::F::one();
