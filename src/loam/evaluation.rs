@@ -459,48 +459,49 @@ ascent! {
         eval(new_expr, env, result);
 
     ////////////////////
+    // function call
 
-    // TODO: parse_fun relation?
+    // TODO: Handle undersaturate function call (returning functions with fewer args than original).
 
-    relation parse_fun_call(Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, Ptr); // (expr, env, fun, args, body, closed_env, rest)
+    relation fun_call(Ptr, Ptr, Ptr, Ptr, Ptr, Ptr); // (expr, env, args, body, closed_env, rest)
 
     ingress(args), ingress(rest),
-    parse_fun_call(expr, env, fun, args, body, closed_env, rest) <--
+    fun_call(expr, env, args, body, closed_env, rest) <--
         eval_input(expr, env),
         cons_rel(fun, rest, expr),
         fun_rel(args, body, closed_env, fun);
 
     // base case: args list is empty
     eval_input(body, closed_env) <--
-        parse_fun_call(expr, env, fun, args, body, closed_env, rest),
+        fun_call(expr, env, args, body, closed_env, rest),
         if args.is_nil() && rest.is_nil(); // TODO: error if arg is nil, but rest is not.
 
     // register base-case evaluation result
     eval(expr, env, result) <--
-        parse_fun_call(expr, env, fun, args, body, closed_env, rest),
+        fun_call(expr, env, args, body, closed_env, rest),
         if args.is_nil(),
         eval(body, closed_env, result);
 
     cons(arg, val) <--
-        parse_fun_call(expr, env, fun, args, body, closed_env, rest),
+        fun_call(expr, env, args, body, closed_env, rest),
         cons_rel(arg, more_args, args),
         cons_rel(val, more_vals, rest);
 
     cons(binding, closed_env) <--
-        parse_fun_call(expr, env, fun, args, body, closed_env, rest),
+        fun_call(expr, env, args, body, closed_env, rest),
         cons_rel(arg, more_args, args),
         cons_rel(val, more_vals, rest),
         cons_rel(arg, val, binding);
 
     eval_input(body, new_closed_env) <--
-        parse_fun_call(expr, env, fun, args, body, closed_env, rest),
+        fun_call(expr, env, args, body, closed_env, rest),
         cons_rel(arg, more_args, args),
         cons_rel(val, more_vals, rest),
         cons_rel(arg, val, binding),
         cons_rel(binding, closed_env, new_closed_env);
 
     eval(expr, env, result) <--
-        parse_fun_call(expr, env, fun, args, body, closed_env, rest),
+        fun_call(expr, env, args, body, closed_env, rest),
         cons_rel(arg, more_args, args),
         cons_rel(val, more_vals, rest),
         cons_rel(arg, val, binding),
@@ -877,7 +878,7 @@ mod test {
             fun_mem,
             fun,
             sym_digest_mem,
-            parse_fun_call,
+            fun_call,
             ..
         } = prog;
 
@@ -905,7 +906,7 @@ mod test {
             fun_mem,
             fun,
             sym_digest_mem,
-            parse_fun_call,
+            fun_call,
         );
     }
 }
