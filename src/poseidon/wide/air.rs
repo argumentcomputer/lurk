@@ -10,8 +10,7 @@ use p3_symmetric::Permutation;
 
 /// Given a witness of size `Poseidon2Cols::num_cols`, apply the Poseidon2 permutation over the input and return the output.
 /// When is_real = 0, the output is unconstrained.
-#[allow(dead_code)]
-pub(crate) fn eval_input<AB: AirBuilder, C: PoseidonConfig<WIDTH, F = AB::F>, const WIDTH: usize>(
+pub fn eval_input<AB: AirBuilder, C: PoseidonConfig<WIDTH, F = AB::F>, const WIDTH: usize>(
     builder: &mut AB,
     input: [AB::Expr; WIDTH],
     witness: &[AB::Var],
