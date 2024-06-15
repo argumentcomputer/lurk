@@ -5,10 +5,10 @@ use std::iter::zip;
 use std::mem::size_of;
 
 use super::config::PoseidonConfig;
-use crate::poseidon::util::{matmul_exterior, matmul_internal};
 
 use hybrid_array::Array;
 use p3_field::AbstractField;
+use p3_symmetric::Permutation;
 
 /// The column layout for the chip.
 #[derive(Clone, Debug)]
@@ -41,7 +41,7 @@ impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2Cols<C::F, C, WIDTH>
         self.evaluate_sbox();
         self.output = input;
 
-        matmul_exterior(&mut self.output);
+        C::external_linear_layer().permute_mut(&mut self.output);
         self.output
     }
 
@@ -83,10 +83,9 @@ impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2Cols<C::F, C, WIDTH>
 
         // Apply the linear layer
         if is_external {
-            matmul_exterior(&mut linear_input)
+            C::external_linear_layer().permute_mut(&mut linear_input)
         } else {
-            let matmul_constants = C::matrix_diag().iter().copied();
-            matmul_internal(&mut linear_input, matmul_constants);
+            C::internal_linear_layer().permute_mut(&mut linear_input);
         }
 
         self.output = linear_input;

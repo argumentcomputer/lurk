@@ -11,7 +11,6 @@ pub mod columns;
 pub mod config;
 mod constants;
 pub mod trace;
-mod util;
 pub mod wide;
 
 /// A chip that implements addition for the Poseidon2 permutation
