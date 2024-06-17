@@ -10,7 +10,10 @@ fn assert_zero_sum<F: PrimeField>(interactions_vecs: Vec<Vec<Query<F>>>) {
     let mut provided = BTreeSet::<Vec<F>>::default();
     let mut required = BTreeSet::<Vec<F>>::default();
     for interactions in interactions_vecs {
-        for Query { query_type, values } in interactions {
+        for Query {
+            query_type, values, ..
+        } in interactions
+        {
             match query_type {
                 QueryType::Receive | QueryType::Provide => {
                     provided.insert(values);
@@ -44,7 +47,7 @@ impl<AB: AirBuilder + LookupBuilder> Air<AB> for MainChip {
 
         builder.assert_bool(is_byte);
 
-        builder.when(is_byte).require([byte]);
+        builder.require([byte], is_byte);
     }
 }
 
@@ -86,7 +89,7 @@ impl<AB: AirBuilder + LookupBuilder> Air<AB> for BytesChip {
 
         builder.when(is_real).assert_eq(byte_expected, byte);
 
-        builder.when(is_real).provide([byte]);
+        builder.provide([byte], is_real);
     }
 }
 

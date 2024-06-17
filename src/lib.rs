@@ -1,8 +1,9 @@
 #[allow(dead_code)]
 pub mod air;
 pub mod lair;
-#[allow(dead_code)]
-pub mod logup;
+// TODO: unused
+// #[allow(dead_code)]
+// pub mod logup;
 pub mod lurk;
 pub mod poseidon;
 pub mod store_core;

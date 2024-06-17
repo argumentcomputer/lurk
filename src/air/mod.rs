@@ -1,4 +1,5 @@
 pub mod builder;
 
 pub mod debug;
-pub mod symbolic;
+// TODO: Unused for now
+// pub mod symbolic;

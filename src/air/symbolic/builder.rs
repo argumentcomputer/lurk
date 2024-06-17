@@ -1,4 +1,4 @@
-use crate::air::builder::{AirBuilderExt, LairBuilder, LookupBuilder, QueryType, Relation};
+use crate::air::builder::{LairBuilder, LookupBuilder, QueryType, Relation};
 use crate::air::symbolic::expression::Expression;
 use crate::air::symbolic::variable::{Entry, Variable};
 use crate::air::symbolic::virtual_col::PairColLC;
@@ -73,16 +73,6 @@ impl<F: Field> AirBuilder for SymbolicAirBuilder<F> {
     fn assert_zero<I: Into<Self::Expr>>(&mut self, x: I) {
         let constraint = x.into();
         self.air.constraints.push(constraint)
-    }
-}
-
-impl<F: Field> AirBuilderExt for SymbolicAirBuilder<F> {
-    fn trace_index(&self) -> usize {
-        0
-    }
-
-    fn row_index(&self) -> Self::Expr {
-        Expression::Identity
     }
 }
 

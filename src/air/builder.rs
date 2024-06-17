@@ -1,4 +1,6 @@
-use p3_air::{AirBuilder, AirBuilderWithPublicValues, FilteredAirBuilder};
+use p3_air::{AirBuilder, AirBuilderWithPublicValues};
+use sphinx_core::air::{AirInteraction, MessageBuilder};
+use sphinx_core::lookup::InteractionKind;
 
 /// Tagged tuple describing an element of a relation
 ///
@@ -23,23 +25,7 @@ impl<T, I: Into<T>, II: IntoIterator<Item = I>> Relation<T> for II {
     }
 }
 
-pub trait LairBuilder:
-    AirBuilder + LookupBuilder + AirBuilderExt + AirBuilderWithPublicValues
-{
-}
-
-/// Extension of [`AirBuilder`] for creating [`Pointer`]s
-pub trait AirBuilderExt: AirBuilder {
-    /// Returns the constant index of the current trace being proved
-    /// Defaults to 0
-    fn trace_index(&self) -> usize;
-
-    /// Return a unique expression for the current row. When using a univariate PCS, this is given
-    /// as the i-th root of unity, since the column it would correspond to would be the
-    /// interpolations of the identity.
-    /// Note that arithmetic is NOT supported on row indices.
-    fn row_index(&self) -> Self::Expr;
-}
+pub trait LairBuilder: AirBuilder + LookupBuilder + AirBuilderWithPublicValues {}
 
 pub enum QueryType {
     Receive,
@@ -56,43 +42,109 @@ pub trait LookupBuilder: AirBuilder {
         &mut self,
         query_type: QueryType,
         relation: impl Relation<Self::Expr>,
-        is_real_bool: Option<Self::Expr>,
+        is_real_bool: impl Into<Self::Expr>,
     );
 
     /// Receive a query (once) that has been sent in another part of the program.
-    fn receive(&mut self, relation: impl Relation<Self::Expr>) {
-        self.query(QueryType::Receive, relation, None);
+    fn receive(
+        &mut self,
+        relation: impl Relation<Self::Expr>,
+        is_real_bool: impl Into<Self::Expr>,
+    ) {
+        self.query(QueryType::Receive, relation, is_real_bool);
     }
 
     /// Send a query (once) to another part of the program.
-    fn send(&mut self, relation: impl Relation<Self::Expr>) {
-        self.query(QueryType::Send, relation, None);
+    fn send(&mut self, relation: impl Relation<Self::Expr>, is_real_bool: impl Into<Self::Expr>) {
+        self.query(QueryType::Send, relation, is_real_bool);
     }
 
     /// Provide a query that can be required multiple times.
-    fn provide(&mut self, relation: impl Relation<Self::Expr>) {
-        self.query(QueryType::Provide, relation, None);
+    fn provide(
+        &mut self,
+        relation: impl Relation<Self::Expr>,
+        is_real_bool: impl Into<Self::Expr>,
+    ) {
+        self.query(QueryType::Provide, relation, is_real_bool);
     }
 
     /// Require a query that has been provided.
-    fn require(&mut self, relation: impl Relation<Self::Expr>) {
-        self.query(QueryType::Require, relation, None);
+    fn require(
+        &mut self,
+        relation: impl Relation<Self::Expr>,
+        is_real_bool: impl Into<Self::Expr>,
+    ) {
+        self.query(QueryType::Require, relation, is_real_bool);
     }
 }
 
-impl<'a, AB: LookupBuilder> LookupBuilder for FilteredAirBuilder<'a, AB> {
+// impl<'a, AB: LookupBuilder> LookupBuilder for FilteredAirBuilder<'a, AB> {
+//     fn query(
+//         &mut self,
+//         query_type: QueryType,
+//         relation: impl Relation<Self::Expr>,
+//         is_real: Option<Self::Expr>,
+//     ) {
+//         // // TODO: This requires FilteredAirBuilder.condition to be made public
+//         // let condition = if let Some(is_real) = is_real {
+//         //     is_real * self.condition().clone()
+//         // } else {
+//         //     self.condition().clone()
+//         // };
+//         // self.inner.query(query_type, relation, Some(condition))
+//         self.inner.query(query_type, relation, is_real)
+//     }
+// }
+
+impl<AB: AirBuilder + MessageBuilder<AirInteraction<AB::Expr>>> LookupBuilder for AB {
     fn query(
         &mut self,
         query_type: QueryType,
         relation: impl Relation<Self::Expr>,
-        is_real: Option<Self::Expr>,
+        is_real_bool: impl Into<Self::Expr>,
     ) {
-        // TODO: This requires FilteredAirBuilder.condition to be made public
-        let condition = if let Some(is_real) = is_real {
-            is_real * self.condition().clone()
-        } else {
-            self.condition().clone()
-        };
-        self.inner.query(query_type, relation, Some(condition))
+        let is_real = is_real_bool.into();
+        match query_type {
+            QueryType::Receive => {
+                <Self as MessageBuilder<AirInteraction<Self::Expr>>>::receive(
+                    self,
+                    AirInteraction::new(
+                        relation.values().into_iter().collect(),
+                        is_real,
+                        InteractionKind::Program,
+                    ),
+                );
+            }
+            QueryType::Send => {
+                <Self as MessageBuilder<AirInteraction<Self::Expr>>>::send(
+                    self,
+                    AirInteraction::new(
+                        relation.values().into_iter().collect(),
+                        is_real,
+                        InteractionKind::Program,
+                    ),
+                );
+            }
+            QueryType::Provide => {
+                <Self as MessageBuilder<AirInteraction<Self::Expr>>>::receive(
+                    self,
+                    AirInteraction::new(
+                        relation.values().into_iter().collect(),
+                        is_real,
+                        InteractionKind::Program,
+                    ),
+                );
+            }
+            QueryType::Require => {
+                <Self as MessageBuilder<AirInteraction<Self::Expr>>>::receive(
+                    self,
+                    AirInteraction::new(
+                        relation.values().into_iter().collect(),
+                        is_real,
+                        InteractionKind::Program,
+                    ),
+                );
+            }
+        }
     }
 }

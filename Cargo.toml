@@ -8,18 +8,19 @@ edition = "2021"
 [workspace.dependencies]
 rayon = "1.10.0"
 itertools = "0.13.0"
-p3-air = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
-p3-baby-bear = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
-p3-field = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
-p3-matrix = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
-p3-mds = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
-p3-commit = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
-p3-challenger = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
-p3-maybe-rayon = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
-p3-poseidon2 = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
-p3-symmetric = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
-p3-uni-stark = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
-p3-util = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "dev" }
+p3-air = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-baby-bear = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-field = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-matrix = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-mds = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-commit = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-challenger = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-maybe-rayon = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-poseidon2 = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-symmetric = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-uni-stark = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+p3-util = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new" }
+sphinx-core = { git = "ssh://git@github.com/lurk-lab/sphinx", branch = "dev"}
 anyhow = "1.0.72"
 arc-swap = "1.7.1"
 base-x = "0.2.11"
@@ -75,6 +76,7 @@ p3-maybe-rayon = { workspace = true }
 p3-poseidon2 = { workspace = true }
 p3-symmetric = { workspace = true }
 p3-util = { workspace = true }
+sphinx-core = {workspace = true}
 
 [dev-dependencies]
 criterion = { workspace = true }
