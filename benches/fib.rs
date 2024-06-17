@@ -5,13 +5,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{mem::take, time::Duration};
 
 use loam::{
-    lair::{
-        chip::FuncChip,
-        execute::QueryRecord,
-        hasher::{Hasher, LurkHasher},
-        toplevel::Toplevel,
-        List,
-    },
+    lair::{chip::FuncChip, execute::QueryRecord, toplevel::Toplevel, List},
     lurk::{
         eval::build_lurk_toplevel,
         memory::Memory,
@@ -39,14 +33,14 @@ fn build_lurk_expr(arg: usize) -> String {
     )
 }
 
-fn setup<'a, H: Hasher<BabyBear>>(
+fn setup<'a>(
     arg: usize,
     mem: &mut Memory<BabyBear, PoseidonBabyBearHasher>,
     store: &ZStore<BabyBear, PoseidonBabyBearHasher>,
-    toplevel: &'a Toplevel<BabyBear, H>,
+    toplevel: &'a Toplevel<BabyBear>,
 ) -> (
     List<BabyBear>,
-    FuncChip<'a, BabyBear, H>,
+    FuncChip<'a, BabyBear>,
     QueryRecord<BabyBear>,
 ) {
     let mut queries = QueryRecord::new_with_init_mem(toplevel, take(&mut mem.map));
@@ -69,7 +63,7 @@ fn evaluation(c: &mut Criterion) {
     c.bench_function(&format!("evaluation-{arg}"), |b| {
         let mem = &mut Memory::init();
         let store = ZStore::<BabyBear, PoseidonBabyBearHasher>::new();
-        let toplevel = build_lurk_toplevel::<_, _, LurkHasher>(mem, &store);
+        let toplevel = build_lurk_toplevel(mem, &store);
         let (args, eval, queries) = setup(arg, mem, &store, &toplevel);
 
         b.iter_batched(
@@ -87,7 +81,7 @@ fn trace_generation(c: &mut Criterion) {
     c.bench_function(&format!("trace-generation-{arg}"), |b| {
         let mem = &mut Memory::init();
         let store = ZStore::<BabyBear, PoseidonBabyBearHasher>::new();
-        let toplevel = build_lurk_toplevel::<_, _, LurkHasher>(mem, &store);
+        let toplevel = build_lurk_toplevel(mem, &store);
         let (args, eval, mut queries) = setup(arg, mem, &store, &toplevel);
 
         eval.execute_iter(args, &mut queries);

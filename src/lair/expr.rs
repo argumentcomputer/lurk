@@ -77,8 +77,6 @@ pub enum OpE<F> {
     /// `Slice([x, ...], [y, ...])` matches the pattern `[x, ...]` against the values
     /// formed by `[y, ...]`
     Slice(VarList, VarList),
-    /// `Hash([x, ...], [y, ...])` binds `x, ...` to the hash of `y, ...`
-    Hash(VarList, VarList),
     /// `Debug(s)` emits debug message `s`
     Debug(&'static str),
 }
