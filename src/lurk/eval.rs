@@ -1052,7 +1052,10 @@ pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
                     let thunk_tag = Tag::Thunk;
                     let thunk = store(expr_tag, expr, env);
                     let ext_env = store(param, thunk_tag, thunk, env);
-                    let (_val_tag, _val) = call(eval, sym_tag, param, ext_env);
+                    // this will preemptively evaluate the thunk, so that we do not skip evaluation in case
+                    // the variable is not used inside the letrec body, and furthermore it follows a strict
+                    // evaluation order
+                    let (_val_tag, _val) = call(eval, expr_tag, expr, ext_env);
                     match rest_binds_tag {
                         Tag::Nil => {
                             let (res_tag, res) = call(eval, body_tag, body, ext_env);
