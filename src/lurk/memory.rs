@@ -7,7 +7,7 @@ use crate::lair::{
     List,
 };
 
-use super::zstore::{HasherTemp, Payload, Tag, ZExpr, ZPtr, ZStore, DIGEST};
+use super::zstore::{Hasher, Payload, Tag, ZExpr, ZPtr, ZStore, DIGEST};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MPtr<F> {
@@ -22,7 +22,7 @@ pub struct Memory<F, H> {
     pub _p: PhantomData<H>,
 }
 
-impl<F: PrimeField, H: HasherTemp<F = F>> Memory<F, H> {
+impl<F: PrimeField, H: Hasher<F = F>> Memory<F, H> {
     pub fn init() -> Self {
         let map = mem_init();
         let cache = BTreeMap::new();

@@ -11,7 +11,6 @@ use super::{
     bytecode::{Block, Ctrl, Func, Op},
     chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
     execute::QueryRecord,
-    hasher::Hasher,
     List,
 };
 
@@ -49,7 +48,7 @@ impl<'a, T> ColumnMutSlice<'a, T> {
     }
 }
 
-impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
+impl<'a, F: PrimeField> FuncChip<'a, F> {
     /// Generates the trace containing only queries with non-zero multiplicities
     pub fn generate_trace(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let filtered_queries = queries.func_queries()[self.func.index]
@@ -65,8 +64,7 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
             let row = &mut rows[start..start + width];
             let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
             slice.push_aux(index, F::from_canonical_u32(res.mult));
-            self.func
-                .populate_row(args, index, slice, queries, &self.toplevel.hasher);
+            self.func.populate_row(args, index, slice, queries);
         }
         RowMajorMatrix::new(rows, width)
     }
@@ -89,55 +87,51 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 slice.push_aux(index, F::from_canonical_u32(res.mult));
-                self.func
-                    .populate_row(args, index, slice, queries, &self.toplevel.hasher);
+                self.func.populate_row(args, index, slice, queries);
             });
         RowMajorMatrix::new(rows, width)
     }
 }
 
 impl<F: PrimeField> Func<F> {
-    pub fn populate_row<H: Hasher<F>>(
+    pub fn populate_row(
         &self,
         args: &[F],
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
         queries: &QueryRecord<F>,
-        hasher: &H,
     ) {
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
         // Variable to value map
         let map = &mut args.iter().map(|arg| (*arg, 1)).collect();
         // One column per input
         args.iter().for_each(|arg| slice.push_input(index, *arg));
-        self.body.populate_row(map, index, slice, queries, hasher);
+        self.body.populate_row(map, index, slice, queries);
     }
 }
 
 impl<F: PrimeField> Block<F> {
-    fn populate_row<H: Hasher<F>>(
+    fn populate_row(
         &self,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
         queries: &QueryRecord<F>,
-        hasher: &H,
     ) {
         self.ops
             .iter()
-            .for_each(|op| op.populate_row(map, index, slice, queries, hasher));
-        self.ctrl.populate_row(map, index, slice, queries, hasher);
+            .for_each(|op| op.populate_row(map, index, slice, queries));
+        self.ctrl.populate_row(map, index, slice, queries);
     }
 }
 
 impl<F: PrimeField> Ctrl<F> {
-    fn populate_row<H: Hasher<F>>(
+    fn populate_row(
         &self,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
         queries: &QueryRecord<F>,
-        hasher: &H,
     ) {
         match self {
             Ctrl::Return(ident, out) => {
@@ -147,44 +141,44 @@ impl<F: PrimeField> Ctrl<F> {
             Ctrl::Match(t, cases) => {
                 let (t, _) = map[*t];
                 if let Some(branch) = cases.branches.get(&t) {
-                    branch.populate_row(map, index, slice, queries, hasher);
+                    branch.populate_row(map, index, slice, queries);
                 } else {
                     for (f, _) in cases.branches.iter() {
                         slice.push_aux(index, (t - *f).inverse());
                     }
                     let branch = cases.default.as_ref().expect("No match");
-                    branch.populate_row(map, index, slice, queries, hasher);
+                    branch.populate_row(map, index, slice, queries);
                 }
             }
             Ctrl::MatchMany(vars, cases) => {
                 let vals = vars.iter().map(|&var| map[var].0).collect();
                 if let Some(branch) = cases.branches.get(&vals) {
-                    branch.populate_row(map, index, slice, queries, hasher);
+                    branch.populate_row(map, index, slice, queries);
                 } else {
                     for (fs, _) in cases.branches.iter() {
                         let diffs = vals.iter().zip(fs.iter()).map(|(val, f)| *val - *f);
                         push_inequality_witness(index, slice, diffs);
                     }
                     let branch = cases.default.as_ref().expect("No match");
-                    branch.populate_row(map, index, slice, queries, hasher);
+                    branch.populate_row(map, index, slice, queries);
                 }
             }
             Ctrl::If(b, t, f) => {
                 let (b, _) = map[*b];
                 if b != F::zero() {
                     slice.push_aux(index, b.inverse());
-                    t.populate_row(map, index, slice, queries, hasher);
+                    t.populate_row(map, index, slice, queries);
                 } else {
-                    f.populate_row(map, index, slice, queries, hasher);
+                    f.populate_row(map, index, slice, queries);
                 }
             }
             Ctrl::IfMany(vars, t, f) => {
                 let vals = vars.iter().map(|&var| map[var].0);
                 if vals.clone().any(|b| b != F::zero()) {
                     push_inequality_witness(index, slice, vals);
-                    t.populate_row(map, index, slice, queries, hasher);
+                    t.populate_row(map, index, slice, queries);
                 } else {
-                    f.populate_row(map, index, slice, queries, hasher);
+                    f.populate_row(map, index, slice, queries);
                 }
             }
         }
@@ -209,13 +203,12 @@ fn push_inequality_witness<F: PrimeField, I: Iterator<Item = F>>(
 }
 
 impl<F: PrimeField> Op<F> {
-    fn populate_row<H: Hasher<F>>(
+    fn populate_row(
         &self,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
         queries: &QueryRecord<F>,
-        hasher: &H,
     ) {
         match self {
             Op::Const(f) => map.push((*f, 0)),
@@ -308,18 +301,6 @@ impl<F: PrimeField> Op<F> {
                     slice.push_aux(index, *f);
                 }
             }
-            Op::Hash(preimg) => {
-                let preimg = preimg.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let witness_size = hasher.witness_size(preimg.len());
-                let mut witness = vec![F::zero(); witness_size];
-                let img = hasher.populate_witness(&preimg, &mut witness);
-                for f in img {
-                    map.push((f, 1));
-                }
-                for f in witness {
-                    slice.push_aux(index, f);
-                }
-            }
             Op::Debug(..) => (),
         }
     }
@@ -330,8 +311,8 @@ mod tests {
     use crate::{
         func,
         lair::{
-            demo_toplevel, execute::QueryRecord, field_from_u32, hasher::LurkHasher,
-            toplevel::Toplevel, trace::LayoutSizes,
+            demo_toplevel, execute::QueryRecord, field_from_u32, toplevel::Toplevel,
+            trace::LayoutSizes,
         },
     };
 
@@ -342,7 +323,7 @@ mod tests {
 
     #[test]
     fn lair_layout_sizes_test() {
-        let toplevel = demo_toplevel::<_, LurkHasher>();
+        let toplevel = demo_toplevel::<F>();
 
         let factorial = toplevel.get_by_name("factorial").unwrap();
         let out = factorial.compute_layout_sizes(&toplevel);
@@ -357,7 +338,7 @@ mod tests {
 
     #[test]
     fn lair_trace_test() {
-        let toplevel = demo_toplevel::<_, LurkHasher>();
+        let toplevel = demo_toplevel::<F>();
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         let queries = &mut QueryRecord::new(&toplevel);
@@ -429,7 +410,7 @@ mod tests {
             let res = call(test, pred, m);
             return res
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new(&[func_e]);
+        let toplevel = Toplevel::<F>::new(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {
@@ -492,7 +473,7 @@ mod tests {
                 }
             }
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new(&[func_e]);
+        let toplevel = Toplevel::<F>::new(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {

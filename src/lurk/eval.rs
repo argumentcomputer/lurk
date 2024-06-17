@@ -2,20 +2,20 @@ use p3_field::{Field, PrimeField};
 
 use crate::{
     func,
-    lair::{expr::FuncE, hasher::Hasher, toplevel::Toplevel},
+    lair::{expr::FuncE, toplevel::Toplevel},
 };
 
 use super::{
     memory::Memory,
-    zstore::{HasherTemp, Tag, ZStore},
+    zstore::{Hasher, Tag, ZStore},
 };
 
 /// Creates a `Toplevel` with the functions used for Lurk evaluation
 #[inline]
-pub fn build_lurk_toplevel<F: PrimeField, HT: HasherTemp<F = F>, H: Hasher<F>>(
-    mem: &mut Memory<F, HT>,
-    store: &ZStore<F, HT>,
-) -> Toplevel<F, H> {
+pub fn build_lurk_toplevel<F: PrimeField, H: Hasher<F = F>>(
+    mem: &mut Memory<F, H>,
+    store: &ZStore<F, H>,
+) -> Toplevel<F> {
     Toplevel::new(&[
         eval(mem, store),
         eval_unop(mem, store),
@@ -164,23 +164,25 @@ pub fn egress<F: PrimeField>() -> FuncE<F> {
 
 pub fn hash_32_8<F: PrimeField>() -> FuncE<F> {
     func!(
-        invertible fn hash_32_8(preimg: [32]): [8] {
-            let (img: [8]) = hash(preimg);
-            return img
+        invertible fn hash_32_8(_preimg: [32]): [8] {
+            let zero = 0;
+            let (dig: [8]) = (zero, zero, zero, zero, zero, zero, zero, zero);
+            return dig
         }
     )
 }
 
 pub fn hash_48_8<F: PrimeField>() -> FuncE<F> {
     func!(
-        invertible fn hash_48_8(preimg: [48]): [8] {
-            let (img: [8]) = hash(preimg);
-            return img
+        fn hash_48_8(_preimg: [48]): [8] {
+            let zero = 0;
+            let (dig: [8]) = (zero, zero, zero, zero, zero, zero, zero, zero);
+            return dig
         }
     )
 }
 
-pub fn eval<F: PrimeField, H: HasherTemp<F = F>>(
+pub fn eval<F: PrimeField, H: Hasher<F = F>>(
     mem: &mut Memory<F, H>,
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
@@ -463,7 +465,7 @@ pub fn eval<F: PrimeField, H: HasherTemp<F = F>>(
     )
 }
 
-pub fn car_cdr<F: PrimeField, H: HasherTemp<F = F>>(
+pub fn car_cdr<F: PrimeField, H: Hasher<F = F>>(
     mem: &mut Memory<F, H>,
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
@@ -513,7 +515,7 @@ pub fn car_cdr<F: PrimeField, H: HasherTemp<F = F>>(
     )
 }
 
-pub fn eval_binop_num<F: PrimeField, H: HasherTemp<F = F>>(
+pub fn eval_binop_num<F: PrimeField, H: Hasher<F = F>>(
     mem: &mut Memory<F, H>,
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
@@ -597,7 +599,7 @@ pub fn eval_binop_num<F: PrimeField, H: HasherTemp<F = F>>(
     )
 }
 
-pub fn eval_binop_misc<F: PrimeField, H: HasherTemp<F = F>>(
+pub fn eval_binop_misc<F: PrimeField, H: Hasher<F = F>>(
     mem: &mut Memory<F, H>,
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
@@ -682,7 +684,7 @@ pub fn eval_binop_misc<F: PrimeField, H: HasherTemp<F = F>>(
     )
 }
 
-pub fn eval_unop<F: PrimeField, H: HasherTemp<F = F>>(
+pub fn eval_unop<F: PrimeField, H: Hasher<F = F>>(
     mem: &mut Memory<F, H>,
     store: &ZStore<F, H>,
 ) -> FuncE<F> {
@@ -1020,9 +1022,7 @@ mod test {
 
     use crate::{
         air::debug::debug_constraints_collecting_queries,
-        lair::{
-            chip::FuncChip, execute::QueryRecord, hasher::LurkHasher, toplevel::Toplevel, List,
-        },
+        lair::{chip::FuncChip, execute::QueryRecord, toplevel::Toplevel, List},
         lurk::{
             reader::{read, ReadData},
             state::State,
@@ -1065,12 +1065,7 @@ mod test {
                 return (res_tag, res)
             }
         );
-        let toplevel = Toplevel::<_, LurkHasher>::new(&[
-            list_lookup,
-            to_env_lookup,
-            env_lookup(),
-            list_to_env(),
-        ]);
+        let toplevel = Toplevel::new(&[list_lookup, to_env_lookup, env_lookup(), list_to_env()]);
         let list_lookup = FuncChip::from_name("list_lookup", &toplevel);
         let to_env_lookup = FuncChip::from_name("to_env_lookup", &toplevel);
 
@@ -1107,7 +1102,7 @@ mod test {
 
         let mem = &mut Memory::init();
         let store = &ZStore::<F, PoseidonBabyBearHasher>::new();
-        let toplevel = &build_lurk_toplevel::<_, _, LurkHasher>(mem, store);
+        let toplevel = &build_lurk_toplevel(mem, store);
         let queries = &mut QueryRecord::new_with_init_mem(toplevel, take(&mut mem.map));
 
         // Chips
@@ -1214,15 +1209,13 @@ mod test {
     }
 
     #[test]
-    fn test_ingress_egress() {
-        let toplevel =
-            Toplevel::<F, LurkHasher>::new(&[ingress(), egress(), hash_32_8(), hash_48_8()]);
+    fn test_ingress_egress_roundtrip() {
+        let toplevel = Toplevel::<F>::new(&[ingress(), egress(), hash_32_8(), hash_48_8()]);
 
         let ingress_chip = FuncChip::from_name("ingress", &toplevel);
         let egress_chip = FuncChip::from_name("egress", &toplevel);
-        let hash_32_8_chip = FuncChip::from_name("hash_32_8", &toplevel);
 
-        let assert_ingress_egress_correctness = |code| {
+        let assert_ingress_egress_roundtrip = |code| {
             let ReadData {
                 tag,
                 digest,
@@ -1252,24 +1245,21 @@ mod test {
                 .unwrap()
                 .output;
 
-            assert_eq!(egress_out, &digest, "ingress -> egress doesn't roundtrip");
-
-            let hash_32_8_trace = hash_32_8_chip.generate_trace_parallel(queries);
-            debug_constraints_collecting_queries(&hash_32_8_chip, &[], &hash_32_8_trace);
+            assert_eq!(egress_out, &digest);
         };
 
-        assert_ingress_egress_correctness("~()");
-        assert_ingress_egress_correctness("~:()");
-        assert_ingress_egress_correctness("()");
-        assert_ingress_egress_correctness("'c'");
-        assert_ingress_egress_correctness("5u64");
-        assert_ingress_egress_correctness("\"\"");
-        assert_ingress_egress_correctness("\"a\"");
-        assert_ingress_egress_correctness("\"test string\"");
-        assert_ingress_egress_correctness(".a");
-        assert_ingress_egress_correctness("TestSymbol");
-        assert_ingress_egress_correctness(":keyword");
-        assert_ingress_egress_correctness("(+ 1 2)");
-        assert_ingress_egress_correctness("(a 'b c)");
+        assert_ingress_egress_roundtrip("~()");
+        assert_ingress_egress_roundtrip("~:()");
+        assert_ingress_egress_roundtrip("()");
+        assert_ingress_egress_roundtrip("'c'");
+        assert_ingress_egress_roundtrip("5u64");
+        assert_ingress_egress_roundtrip("\"\"");
+        assert_ingress_egress_roundtrip("\"a\"");
+        assert_ingress_egress_roundtrip("\"test string\"");
+        assert_ingress_egress_roundtrip(".a");
+        assert_ingress_egress_roundtrip("TestSymbol");
+        assert_ingress_egress_roundtrip(":keyword");
+        assert_ingress_egress_roundtrip("(+ 1 2)");
+        assert_ingress_egress_roundtrip("(a 'b c)");
     }
 }
