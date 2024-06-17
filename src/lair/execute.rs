@@ -33,6 +33,7 @@ pub(crate) type MemMap<F> = FxIndexMap<List<F>, u32>;
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
 pub struct QueryRecord<F: Field> {
+    index: u32,
     pub(crate) func_queries: Vec<QueryMap<F>>,
     pub(crate) inv_func_queries: Vec<Option<InvQueryMap<F>>>,
     pub mem_queries: Vec<MemMap<F>>,
@@ -46,17 +47,58 @@ impl<F: Field> MachineProgram<F> for QueryRecord<F> {
 
 impl<F: Field> Indexed for QueryRecord<F> {
     fn index(&self) -> u32 {
-        0
+        self.index
     }
 }
 
-impl<F: Field> MachineRecord for QueryRecord<F> {
-    type Config = ();
+#[derive(Default)]
+pub struct ShardingConfig {
+    max_shard_size: usize,
+}
 
-    fn set_index(&mut self, _index: u32) {}
+impl<F: Field> MachineRecord for QueryRecord<F> {
+    type Config = ShardingConfig;
+
+    fn set_index(&mut self, index: u32) {
+        self.index = index
+    }
 
     fn stats(&self) -> HashMap<String, usize> {
-        Default::default()
+        // TODO: use `IndexMap` instead so the original insertion order is kept
+        let mut map = HashMap::default();
+
+        map.insert("num_funcs".to_string(), self.func_queries.len());
+        map.insert(
+            "num_func_queries".to_string(),
+            self.func_queries
+                .iter()
+                .map(|im| im.iter().filter(|(_, r)| r.mult > 0).count())
+                .sum(),
+        );
+        map.insert(
+            "sum_func_queries_mults".to_string(),
+            self.func_queries
+                .iter()
+                .map(|im| im.values().map(|r| r.mult as usize).sum::<usize>())
+                .sum(),
+        );
+
+        map.insert("num_mem_tables".to_string(), self.mem_queries.len());
+        map.insert(
+            "num_mem_queries".to_string(),
+            self.mem_queries
+                .iter()
+                .map(|im| im.iter().filter(|(_, mult)| mult > &&0).count())
+                .sum(),
+        );
+        map.insert(
+            "sum_mem_queries_mults".to_string(),
+            self.mem_queries
+                .iter()
+                .map(|im| im.values().map(|mult| *mult as usize).sum::<usize>())
+                .sum(),
+        );
+        map
     }
 
     fn append(&mut self, other: &mut Self) {
@@ -69,6 +111,9 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
         while let Some(func_queries) = other.func_queries.pop() {
             let self_func_queries = &mut self.func_queries[func_idx];
             for (inp, other_res) in func_queries {
+                if other_res.mult == 0 {
+                    continue;
+                }
                 if let Some(self_res) = self_func_queries.get_mut(&inp) {
                     assert_eq!(&self_res.output, &other_res.output);
                     self_res.mult += other_res.mult;
@@ -79,30 +124,39 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
             func_idx -= 1;
         }
 
+        // NOTE: These aren't real queries, just auxiliary data for execution.
+        //       But I'm leaving this code here for now just in case. Meanwhile,
+        //       the next line simply drops it from `self` to save up memory
+        // -------------------------------------------------------------------
+        self.inv_func_queries = vec![];
+        // -------------------------------------------------------------------
         // draining inv func queries from `other` to `self`, starting from the end
-        let mut func_idx = self.inv_func_queries.len() - 1;
-        while let Some(other_inv_func_queries_option) = other.inv_func_queries.pop() {
-            let self_inv_func_queries_option = &mut self.inv_func_queries[func_idx];
-            if let Some(other_inv_func_queries) = other_inv_func_queries_option {
-                let self_inv_func_queries = self_inv_func_queries_option.as_mut().unwrap();
-                for (out, other_inp) in other_inv_func_queries {
-                    if let Some(self_inp) = self_inv_func_queries.get(&out) {
-                        assert_eq!(self_inp, &other_inp);
-                    } else {
-                        self_inv_func_queries.insert(out, other_inp);
-                    }
-                }
-            } else {
-                assert!(self_inv_func_queries_option.is_none());
-            }
-            func_idx -= 1;
-        }
+        // let mut func_idx = self.inv_func_queries.len() - 1;
+        // while let Some(other_inv_func_queries_option) = other.inv_func_queries.pop() {
+        //     let self_inv_func_queries_option = &mut self.inv_func_queries[func_idx];
+        //     if let Some(other_inv_func_queries) = other_inv_func_queries_option {
+        //         let self_inv_func_queries = self_inv_func_queries_option.as_mut().unwrap();
+        //         for (out, other_inp) in other_inv_func_queries {
+        //             if let Some(self_inp) = self_inv_func_queries.get(&out) {
+        //                 assert_eq!(self_inp, &other_inp);
+        //             } else {
+        //                 self_inv_func_queries.insert(out, other_inp);
+        //             }
+        //         }
+        //     } else {
+        //         assert!(self_inv_func_queries_option.is_none());
+        //     }
+        //     func_idx -= 1;
+        // }
 
         // draining mem queries from `other` to `self`, starting from the end
         let mut mem_idx = self.mem_queries.len() - 1;
         while let Some(other_mem_map) = other.mem_queries.pop() {
             let self_mem_map = &mut self.mem_queries[mem_idx];
             for (args, other_mult) in other_mem_map {
+                if other_mult == 0 {
+                    continue;
+                }
                 if let Some(self_mult) = self_mem_map.get_mut(&args) {
                     *self_mult += other_mult;
                 } else {
@@ -113,8 +167,93 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
         }
     }
 
-    fn shard(self, _config: &Self::Config) -> Vec<Self> {
-        vec![]
+    fn shard(self, config: &Self::Config) -> Vec<Self> {
+        let Self {
+            index: _,
+            func_queries,
+            inv_func_queries: _,
+            mem_queries,
+        } = self;
+
+        let num_funcs = func_queries.len();
+        let num_mem_tables = mem_queries.len();
+
+        let mut filtered_func_queries = vec![FxIndexMap::default(); num_funcs];
+        let mut filtered_mem_queries = vec![FxIndexMap::default(); num_mem_tables];
+
+        for (func_idx, queries) in func_queries.into_iter().enumerate() {
+            for (args, r) in queries {
+                if r.mult > 0 {
+                    filtered_func_queries[func_idx].insert(args, r);
+                }
+            }
+        }
+
+        for (mem_idx, queries) in mem_queries.into_iter().enumerate() {
+            for (args, mult) in queries {
+                if mult > 0 {
+                    filtered_mem_queries[mem_idx].insert(args, mult);
+                }
+            }
+        }
+
+        let max_num_func_queries = filtered_func_queries
+            .iter()
+            .map(IndexMap::len)
+            .max()
+            .unwrap_or(0);
+        let max_num_mem_queries = filtered_mem_queries
+            .iter()
+            .map(IndexMap::len)
+            .max()
+            .unwrap_or(0);
+
+        let ceil_div = |numer, denom| (numer + denom - 1) / denom;
+        let max_shard_size = config.max_shard_size;
+
+        let num_shards_needed_for_func_queries = ceil_div(max_num_func_queries, max_shard_size);
+
+        let num_shards_needed_for_mem_queries = ceil_div(max_num_mem_queries, max_shard_size);
+
+        let num_shards_needed =
+            num_shards_needed_for_func_queries.max(num_shards_needed_for_mem_queries);
+
+        if num_shards_needed < 2 {
+            vec![Self {
+                index: 0,
+                func_queries: filtered_func_queries,
+                inv_func_queries: vec![],
+                mem_queries: filtered_mem_queries,
+            }]
+        } else {
+            let empty_func_queries = vec![FxIndexMap::default(); num_funcs];
+            let empty_mem_queries = vec![FxIndexMap::default(); num_mem_tables];
+            let mut shards = Vec::with_capacity(num_shards_needed);
+            let num_shards_needed_u32: u32 = num_shards_needed
+                .try_into()
+                .expect("Number of shards needed is too big");
+            for index in 0..num_shards_needed_u32 {
+                let mut func_queries = empty_func_queries.clone();
+                for func_idx in 0..num_funcs {
+                    let queries = &mut filtered_func_queries[func_idx];
+                    func_queries[func_idx]
+                        .extend(queries.drain(0..max_shard_size.min(queries.len())));
+                }
+                let mut mem_queries = empty_mem_queries.clone();
+                for mem_idx in 0..num_mem_tables {
+                    let queries = &mut filtered_mem_queries[mem_idx];
+                    mem_queries[mem_idx]
+                        .extend(queries.drain(0..max_shard_size.min(queries.len())));
+                }
+                shards.push(QueryRecord {
+                    index,
+                    func_queries,
+                    inv_func_queries: vec![],
+                    mem_queries,
+                });
+            }
+            shards
+        }
     }
 
     fn public_values<F2: AbstractField>(&self) -> Vec<F2> {
@@ -193,6 +332,7 @@ impl<F: Field> QueryRecord<F> {
             .collect();
         assert_eq!(mem_queries.len(), NUM_MEM_TABLES);
         Self {
+            index: 0,
             func_queries,
             inv_func_queries,
             mem_queries,
