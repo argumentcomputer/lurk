@@ -2,6 +2,7 @@ use p3_air::BaseAir;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
+    hasher::Hasher,
     toplevel::Toplevel,
     List,
 };
@@ -23,27 +24,27 @@ impl LayoutSizes {
     }
 }
 
-pub struct FuncChip<'a, F> {
+pub struct FuncChip<'a, F, H: Hasher<F>> {
     pub(crate) func: &'a Func<F>,
-    pub(crate) toplevel: &'a Toplevel<F>,
+    pub(crate) toplevel: &'a Toplevel<F, H>,
     pub(crate) layout_sizes: LayoutSizes,
 }
 
-impl<'a, F> FuncChip<'a, F> {
+impl<'a, F, H: Hasher<F>> FuncChip<'a, F, H> {
     #[inline]
-    pub fn from_name(name: &'static str, toplevel: &'a Toplevel<F>) -> Self {
+    pub fn from_name(name: &'static str, toplevel: &'a Toplevel<F, H>) -> Self {
         let func = toplevel.get_by_name(name).expect("Func not found");
         Self::from_func(func, toplevel)
     }
 
     #[inline]
-    pub fn from_index(idx: usize, toplevel: &'a Toplevel<F>) -> Self {
+    pub fn from_index(idx: usize, toplevel: &'a Toplevel<F, H>) -> Self {
         let func = toplevel.get_by_index(idx).expect("Index out of bounds");
         Self::from_func(func, toplevel)
     }
 
     #[inline]
-    pub fn from_func(func: &'a Func<F>, toplevel: &'a Toplevel<F>) -> Self {
+    pub fn from_func(func: &'a Func<F>, toplevel: &'a Toplevel<F, H>) -> Self {
         let layout_sizes = func.compute_layout_sizes(toplevel);
         Self {
             func,
@@ -53,7 +54,7 @@ impl<'a, F> FuncChip<'a, F> {
     }
 
     #[inline]
-    pub fn from_toplevel(toplevel: &'a Toplevel<F>) -> List<Self> {
+    pub fn from_toplevel(toplevel: &'a Toplevel<F, H>) -> List<Self> {
         toplevel
             .map
             .get_pairs()
@@ -73,12 +74,12 @@ impl<'a, F> FuncChip<'a, F> {
     }
 
     #[inline]
-    pub fn toplevel(&self) -> &Toplevel<F> {
+    pub fn toplevel(&self) -> &Toplevel<F, H> {
         self.toplevel
     }
 }
 
-impl<'a, F: Sync> BaseAir<F> for FuncChip<'a, F> {
+impl<'a, F: Sync, H: Hasher<F>> BaseAir<F> for FuncChip<'a, F, H> {
     fn width(&self) -> usize {
         self.width()
     }
@@ -87,7 +88,7 @@ impl<'a, F: Sync> BaseAir<F> for FuncChip<'a, F> {
 pub type Degree = u8;
 
 impl<F> Func<F> {
-    pub fn compute_layout_sizes(&self, toplevel: &Toplevel<F>) -> LayoutSizes {
+    pub fn compute_layout_sizes<H: Hasher<F>>(&self, toplevel: &Toplevel<F, H>) -> LayoutSizes {
         let input = self.input_size;
         let output = self.output_size;
         // first auxiliary is multiplicity
@@ -106,10 +107,10 @@ impl<F> Func<F> {
 }
 
 impl<F> Block<F> {
-    fn compute_layout_sizes(
+    fn compute_layout_sizes<H: Hasher<F>>(
         &self,
         degrees: &mut Vec<Degree>,
-        toplevel: &Toplevel<F>,
+        toplevel: &Toplevel<F, H>,
         aux: &mut usize,
         sel: &mut usize,
     ) {
@@ -121,10 +122,10 @@ impl<F> Block<F> {
 }
 
 impl<F> Ctrl<F> {
-    fn compute_layout_sizes(
+    fn compute_layout_sizes<H: Hasher<F>>(
         &self,
         degrees: &mut Vec<Degree>,
-        toplevel: &Toplevel<F>,
+        toplevel: &Toplevel<F, H>,
         aux: &mut usize,
         sel: &mut usize,
     ) {
@@ -197,10 +198,10 @@ impl<F> Ctrl<F> {
 }
 
 impl<F> Op<F> {
-    fn compute_layout_sizes(
+    fn compute_layout_sizes<H: Hasher<F>>(
         &self,
         degrees: &mut Vec<Degree>,
-        toplevel: &Toplevel<F>,
+        toplevel: &Toplevel<F, H>,
         aux: &mut usize,
     ) {
         match self {
@@ -258,6 +259,12 @@ impl<F> Op<F> {
             Op::Load(ptr_size, ..) => {
                 *aux += *ptr_size;
                 degrees.extend(vec![1; *ptr_size]);
+            }
+            Op::Hash(preimg) => {
+                let hasher = &toplevel.hasher;
+                let witness_size = hasher.witness_size(preimg.len());
+                *aux += witness_size;
+                degrees.extend(vec![1; witness_size]);
             }
             Op::Debug(..) => (),
         }
