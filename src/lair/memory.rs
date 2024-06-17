@@ -84,7 +84,6 @@ impl MemChip {
 #[cfg(test)]
 mod tests {
     use crate::air::debug::debug_constraints_collecting_queries;
-    use crate::lair::hasher::LurkHasher;
     use crate::{
         func,
         lair::{chip::FuncChip, toplevel::Toplevel},
@@ -105,7 +104,7 @@ mod tests {
             let (_x, y, _z) = load(ptr1);
             return (ptr2, y)
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new(&[func_e]);
+        let toplevel = Toplevel::<F>::new(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
         let queries = &mut QueryRecord::new(&toplevel);
         test_chip.execute([].into(), queries);

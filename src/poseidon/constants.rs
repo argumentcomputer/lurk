@@ -4,7 +4,7 @@
 //! https://github.com/HorizenLabs/poseidon2/blob/main/poseidon2_rust_params.sage
 
 use hybrid_array::{typenum::*, Array};
-use lazy_static::lazy_static;
+use lazy_static::*;
 use p3_baby_bear::BabyBear;
 use p3_field::AbstractField;
 

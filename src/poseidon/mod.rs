@@ -11,27 +11,27 @@ pub mod columns;
 pub mod config;
 mod constants;
 pub mod trace;
-pub mod wide;
+mod util;
 
 /// A chip that implements addition for the Poseidon2 permutation
-pub struct Poseidon2Chip<C: PoseidonConfig<WIDTH>, const WIDTH: usize> {
-    _marker: PhantomData<C>,
+pub struct Poseidon2Chip<C>
+where
+    C: PoseidonConfig,
+{
+    _p: PhantomData<C>,
 }
 
-impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Default for Poseidon2Chip<C, WIDTH> {
+impl<C: PoseidonConfig> Default for Poseidon2Chip<C> {
     fn default() -> Self {
-        Self {
-            _marker: PhantomData,
-        }
+        Self { _p: PhantomData }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use core::array;
-
-    use hybrid_array::typenum::Unsigned;
+    use hybrid_array::{typenum::Unsigned, Array};
     use itertools::Itertools;
+    use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
     use p3_matrix::Matrix;
     use p3_symmetric::Permutation;
@@ -40,47 +40,54 @@ mod tests {
         air::debug::debug_constraints_collecting_queries, poseidon::config::BabyBearConfig16,
     };
 
-    use super::{config::*, Poseidon2Chip};
+    use super::{
+        config::{BabyBearConfig4, PoseidonConfig},
+        Poseidon2Chip,
+    };
 
-    fn test_trace_eq_hash_with<const WIDTH: usize, C: PoseidonConfig<WIDTH>>() {
-        let chip = Poseidon2Chip::<C, WIDTH>::default();
-        let hasher = C::hasher();
-        let input: [C::F; WIDTH] = array::from_fn(C::F::from_canonical_usize);
+    type F = BabyBear;
+
+    #[test]
+    fn test_trace_eq_hash() {
+        // Test arity 4
+        let chip4 = Poseidon2Chip::<BabyBearConfig4>::default();
+        let hasher = chip4.hasher();
+        let input: [F; 4] = core::array::from_fn(F::from_canonical_usize);
 
         let expected_output = hasher.permute(input).to_vec();
 
-        let trace = chip.generate_trace(vec![input]);
-        let output_row = trace.row(<<C as PoseidonConfig<WIDTH>>::R as Unsigned>::USIZE);
-        let output = output_row.tail(WIDTH).collect::<Vec<_>>();
+        let trace = chip4.generate_trace(vec![*Array::from_slice(&input)]);
+        let output_row = trace.row(<<BabyBearConfig4 as PoseidonConfig>::R as Unsigned>::USIZE);
+        let output = output_row.tail(BabyBearConfig4::WIDTH).collect::<Vec<_>>();
+
+        assert_eq!(expected_output, output);
+
+        // Test arity 16
+        let chip16 = Poseidon2Chip::<BabyBearConfig16>::default();
+        let hasher = chip16.hasher();
+        let input: [F; 16] = core::array::from_fn(F::from_canonical_usize);
+
+        let expected_output = hasher.permute(input).to_vec();
+
+        let trace = chip16.generate_trace(vec![*Array::from_slice(&input)]);
+        let output_row = trace.row(<<BabyBearConfig16 as PoseidonConfig>::R as Unsigned>::USIZE);
+        let output = output_row.tail(BabyBearConfig16::WIDTH).collect::<Vec<_>>();
 
         assert_eq!(expected_output, output);
     }
 
     #[test]
-    fn test_trace_eq_hash() {
-        test_trace_eq_hash_with::<4, BabyBearConfig4>();
-        test_trace_eq_hash_with::<8, BabyBearConfig8>();
-        test_trace_eq_hash_with::<12, BabyBearConfig12>();
-        test_trace_eq_hash_with::<16, BabyBearConfig16>();
-        test_trace_eq_hash_with::<24, BabyBearConfig24>();
-        test_trace_eq_hash_with::<40, BabyBearConfig40>();
-    }
-
-    fn test_air_constraints_with<const WIDTH: usize, C: PoseidonConfig<WIDTH>>() {
-        let chip = Poseidon2Chip::<C, WIDTH>::default();
-        let public_values: [C::F; WIDTH] = array::from_fn(C::F::from_canonical_usize);
-        let main = chip.generate_trace(vec![public_values]);
-
-        let _ = debug_constraints_collecting_queries(&chip, &public_values, &main);
-    }
-
-    #[test]
     fn test_air_constraints() {
-        test_air_constraints_with::<4, BabyBearConfig4>();
-        test_air_constraints_with::<8, BabyBearConfig8>();
-        test_air_constraints_with::<12, BabyBearConfig12>();
-        test_air_constraints_with::<16, BabyBearConfig16>();
-        test_air_constraints_with::<24, BabyBearConfig24>();
-        test_air_constraints_with::<40, BabyBearConfig40>();
+        let chip4 = Poseidon2Chip::<BabyBearConfig4>::default();
+        let public_values: [F; 4] = core::array::from_fn(F::from_canonical_usize);
+        let main = chip4.generate_trace(vec![*Array::from_slice(&public_values)]);
+
+        let _ = debug_constraints_collecting_queries(&chip4, &public_values, &main);
+
+        let chip16 = Poseidon2Chip::<BabyBearConfig16>::default();
+        let public_values: [F; 16] = core::array::from_fn(F::from_canonical_usize);
+        let main = chip16.generate_trace(vec![*Array::from_slice(&public_values)]);
+
+        let _ = debug_constraints_collecting_queries(&chip16, &public_values, &main);
     }
 }

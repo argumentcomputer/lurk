@@ -1,11 +1,10 @@
 use std::collections::BTreeMap;
 
-use super::{bytecode::*, expr::*, hasher::Hasher, map::Map, List, Name};
+use super::{bytecode::*, expr::*, map::Map, List, Name};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Toplevel<F, H: Hasher<F>> {
+pub struct Toplevel<F> {
     pub(crate) map: Map<Name, Func<F>>,
-    pub(crate) hasher: H,
 }
 
 pub(crate) struct FuncInfo {
@@ -13,7 +12,7 @@ pub(crate) struct FuncInfo {
     output_size: usize,
 }
 
-impl<F: Clone + Ord, H: Hasher<F>> Toplevel<F, H> {
+impl<F: Clone + Ord> Toplevel<F> {
     pub fn new(funcs: &[FuncE<F>]) -> Self {
         let ordered_funcs = Map::from_vec(funcs.iter().map(|func| (func.name, func)).collect());
         let info_vec = ordered_funcs
@@ -26,20 +25,19 @@ impl<F: Clone + Ord, H: Hasher<F>> Toplevel<F, H> {
                 (*name, func_info)
             })
             .collect();
-        let hasher = H::default();
         let info_map = Map::from_vec_unsafe(info_vec);
         let map = Map::from_vec_unsafe(
             ordered_funcs
                 .iter()
                 .enumerate()
-                .map(|(i, (name, func))| (*name, func.check_and_link(i, &info_map, &hasher)))
+                .map(|(i, (name, func))| (*name, func.check_and_link(i, &info_map)))
                 .collect(),
         );
-        Toplevel { map, hasher }
+        Toplevel { map }
     }
 }
 
-impl<F, H: Hasher<F>> Toplevel<F, H> {
+impl<F> Toplevel<F> {
     #[inline]
     pub fn get_by_index(&self, i: usize) -> Option<&Func<F>> {
         self.map.get_index(i).map(|(_, func)| func)
@@ -99,7 +97,6 @@ struct CheckCtx<'a> {
     var_index: usize,
     block_ident: usize,
     return_ident: usize,
-    return_idents: Vec<usize>,
     return_size: usize,
     bind_map: BindMap,
     used_map: UsedMap,
@@ -120,17 +117,11 @@ impl<'a> CheckCtx<'a> {
 impl<F: Clone + Ord> FuncE<F> {
     /// Checks if a named `Func` is correct, and produces an index-based `Func`
     /// by replacing names with indices
-    fn check_and_link<H: Hasher<F>>(
-        &self,
-        func_index: usize,
-        info_map: &Map<Name, FuncInfo>,
-        hasher: &H,
-    ) -> Func<F> {
+    fn check_and_link(&self, func_index: usize, info_map: &Map<Name, FuncInfo>) -> Func<F> {
         let ctx = &mut CheckCtx {
             var_index: 0,
             block_ident: 0,
             return_ident: 0,
-            return_idents: vec![],
             return_size: self.output_size,
             bind_map: BTreeMap::new(),
             used_map: BTreeMap::new(),
@@ -139,7 +130,7 @@ impl<F: Clone + Ord> FuncE<F> {
         self.input_params.iter().for_each(|var| {
             bind_new(var, ctx);
         });
-        let body = self.body.check_and_link(ctx, hasher);
+        let body = self.body.check_and_link(ctx);
         for ((var, _), used) in ctx.used_map.iter() {
             let ch = var.name.chars().next().expect("Empty var name");
             assert!(
@@ -159,7 +150,7 @@ impl<F: Clone + Ord> FuncE<F> {
 }
 
 impl<F: Clone + Ord> BlockE<F> {
-    fn check_and_link<H: Hasher<F>>(&self, ctx: &mut CheckCtx<'_>, hasher: &H) -> Block<F> {
+    fn check_and_link(&self, ctx: &mut CheckCtx<'_>) -> Block<F> {
         let mut ops = Vec::new();
         for op in self.ops.iter() {
             match op {
@@ -292,38 +283,16 @@ impl<F: Clone + Ord> BlockE<F> {
                         i += pat.size;
                     }
                 }
-                OpE::Hash(img, preimg) => {
-                    assert_eq!(img.total_size(), hasher.img_size());
-                    let preimg: List<_> = preimg
-                        .iter()
-                        .flat_map(|a| use_var(a, ctx).to_vec())
-                        .collect();
-                    let mut i = 0;
-                    for v in img.as_slice() {
-                        let idxs = preimg[i..i + v.size].into();
-                        bind(v, idxs, ctx);
-                        i += v.size;
-                    }
-                    ops.push(Op::Hash(preimg));
-                }
             }
         }
         let ops = ops.into();
-        let saved_return_idents = std::mem::take(&mut ctx.return_idents);
-        let ctrl = self.ctrl.check_and_link(ctx, hasher);
-        let block_return_idents = std::mem::take(&mut ctx.return_idents);
-        ctx.return_idents = saved_return_idents;
-        ctx.return_idents.extend(&block_return_idents);
-        Block {
-            ops,
-            ctrl,
-            return_idents: block_return_idents.into(),
-        }
+        let ctrl = self.ctrl.check_and_link(ctx);
+        Block { ctrl, ops }
     }
 }
 
 impl<F: Clone + Ord> CtrlE<F> {
-    fn check_and_link<H: Hasher<F>>(&self, ctx: &mut CheckCtx<'_>, hasher: &H) -> Ctrl<F> {
+    fn check_and_link(&self, ctx: &mut CheckCtx<'_>) -> Ctrl<F> {
         match &self {
             CtrlE::Return(return_vars) => {
                 let total_size = return_vars.total_size();
@@ -337,7 +306,6 @@ impl<F: Clone + Ord> CtrlE<F> {
                     .flat_map(|arg| use_var(arg, ctx).to_vec())
                     .collect();
                 let ctrl = Ctrl::Return(ctx.return_ident, return_vec);
-                ctx.return_idents.push(ctx.return_ident);
                 ctx.return_ident += 1;
                 ctrl
             }
@@ -348,14 +316,14 @@ impl<F: Clone + Ord> CtrlE<F> {
                 for (f, block) in cases.branches.iter() {
                     ctx.block_ident += 1;
                     let state = ctx.save_bind_state();
-                    let block = block.check_and_link(ctx, hasher);
+                    let block = block.check_and_link(ctx);
                     ctx.restore_bind_state(state);
                     vec.push((f.clone(), block))
                 }
                 let branches = Map::from_vec(vec);
                 let default = cases.default.as_ref().map(|def| {
                     ctx.block_ident += 1;
-                    def.check_and_link(ctx, hasher).into()
+                    def.check_and_link(ctx).into()
                 });
                 let cases = Cases { branches, default };
                 Ctrl::Match(t, cases)
@@ -368,14 +336,14 @@ impl<F: Clone + Ord> CtrlE<F> {
                     assert_eq!(fs.len(), size, "Pattern must have size {size}");
                     ctx.block_ident += 1;
                     let state = ctx.save_bind_state();
-                    let block = block.check_and_link(ctx, hasher);
+                    let block = block.check_and_link(ctx);
                     ctx.restore_bind_state(state);
                     vec.push((fs.clone(), block))
                 }
                 let branches = Map::from_vec(vec);
                 let default = cases.default.as_ref().map(|def| {
                     ctx.block_ident += 1;
-                    def.check_and_link(ctx, hasher).into()
+                    def.check_and_link(ctx).into()
                 });
                 let cases = Cases { branches, default };
                 Ctrl::MatchMany(vars, cases)
@@ -385,11 +353,11 @@ impl<F: Clone + Ord> CtrlE<F> {
 
                 ctx.block_ident += 1;
                 let state = ctx.save_bind_state();
-                let true_block = true_block.check_and_link(ctx, hasher);
+                let true_block = true_block.check_and_link(ctx);
                 ctx.restore_bind_state(state);
 
                 ctx.block_ident += 1;
-                let false_block = false_block.check_and_link(ctx, hasher);
+                let false_block = false_block.check_and_link(ctx);
 
                 if b.size != 1 {
                     Ctrl::IfMany(vars, true_block.into(), false_block.into())
