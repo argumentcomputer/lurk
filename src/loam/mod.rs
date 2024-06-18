@@ -4,6 +4,8 @@ use ascent::Lattice;
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField32};
 
+use crate::lurk::reader::{read, ReadData};
+use crate::lurk::state::{State, LURK_PACKAGE_SYMBOLS_NAMES};
 use crate::lurk::zstore::Tag;
 
 mod allocation;
@@ -39,7 +41,13 @@ pub struct Ptr(pub LE, pub LE);
 
 impl Ptr {
     fn nil() -> Self {
+        // nil is zeroth element in the nil-typed table.
         Self(Tag::Nil.elt(), LE::from_canonical_u32(0))
+    }
+
+    fn t() -> Self {
+        let addr = lurk_sym_index("t").unwrap();
+        Self(Tag::Sym.elt(), LE::from_canonical_u32(addr as u32))
     }
 
     fn f(val: LE) -> Self {
@@ -60,6 +68,9 @@ impl Ptr {
     }
     fn is_fun(&self) -> bool {
         self.0 == Tag::Fun.elt()
+    }
+    fn is_thunk(&self) -> bool {
+        self.0 == Tag::Thunk.elt()
     }
     fn is_err(&self) -> bool {
         self.0 == Tag::Err.elt()
@@ -104,7 +115,9 @@ pub struct WidePtr(pub Wide, pub Wide);
 
 impl WidePtr {
     fn nil() -> Self {
-        Self(Tag::Nil.value(), Wide::widen(LE::from_canonical_u32(0)))
+        // FIXME: cache, don't do expensive read repeatedly.
+        let ReadData { tag, digest, .. } = simple_read("nil");
+        Self(Wide::widen(tag), Wide(digest))
     }
     fn empty_env() -> Self {
         Self::nil()
@@ -121,4 +134,16 @@ impl From<Num> for WidePtr {
     fn from(f: Num) -> Self {
         (&f).into()
     }
+}
+
+pub(crate) fn simple_read(src: &str) -> ReadData {
+    read(State::init_lurk_state().rccell(), src).unwrap()
+}
+
+// TODO: This can use a hashtable lookup, or could even be known at compile-time (but how to make that non-brittle since iter() is not const?).
+pub(crate) fn lurk_sym_index(name: &str) -> Option<usize> {
+    LURK_PACKAGE_SYMBOLS_NAMES
+        .iter()
+        .filter(|name| **name != "nil")
+        .position(|s| *s == name)
 }
