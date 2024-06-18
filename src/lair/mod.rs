@@ -1,3 +1,4 @@
+use hasher::Hasher;
 use p3_field::Field;
 
 use crate::func;
@@ -46,7 +47,7 @@ pub(crate) fn field_from_i32<F: p3_field::AbstractField>(i: i32) -> F {
 pub type List<T> = Box<[T]>;
 
 #[allow(dead_code)]
-pub(crate) fn demo_toplevel<F: Field + Ord>() -> Toplevel<F> {
+pub(crate) fn demo_toplevel<F: Field + Ord, H: Hasher<F>>() -> Toplevel<F, H> {
     let factorial_e = func!(
     fn factorial(n): [1] {
         let one = 1;
@@ -103,5 +104,5 @@ pub(crate) fn demo_toplevel<F: Field + Ord>() -> Toplevel<F> {
         return res
     });
 
-    Toplevel::<F>::new(&[factorial_e, fib_e, even_e, odd_e])
+    Toplevel::new(&[factorial_e, fib_e, even_e, odd_e])
 }
