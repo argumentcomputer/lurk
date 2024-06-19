@@ -163,6 +163,7 @@ impl<F: Sync> BaseAir<F> for MemChip<F> {
 #[cfg(test)]
 mod tests {
     use crate::air::debug::debug_constraints_collecting_queries;
+    use crate::lair::chip::LairChip;
     use crate::lair::hasher::LurkHasher;
     use crate::{
         func,
@@ -307,14 +308,12 @@ mod tests {
             len: mem_len,
             _marker: Default::default(),
         };
-        let chip = Chip::new(mem_chip);
+        let chip = Chip::new(LairChip::Mem(mem_chip));
 
-        // let chip2 =Chip::new(test_chip);
+        let chip2 = Chip::new(LairChip::Func(test_chip));
 
         let config = BabyBearPoseidon2::new();
-        // TODO: StarkMachine only accepts a `Vec` of the same Chip, but we don't necessarily want to create the enum with the derive MachineAir trait
-        //       Can we change the definition to use a dynamic array of chips?
-        let machine = StarkMachine::new(config, vec![chip], 5);
+        let machine = StarkMachine::new(config, vec![chip, chip2], 5);
         // let machine = StarkMachine::new(config, vec![chip, Chip::new(DummyChip{})], 5);
         // TODO: This fails because the machine expects at least one chip to have a preprocessed trace.
         let (pk, vk) = machine.setup(&program);
