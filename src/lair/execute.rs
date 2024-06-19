@@ -102,9 +102,12 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
     }
 
     fn append(&mut self, other: &mut Self) {
-        assert_eq!(self.func_queries.len(), other.func_queries.len());
-        assert_eq!(self.inv_func_queries.len(), other.inv_func_queries.len());
-        assert_eq!(self.mem_queries.len(), other.mem_queries.len());
+        // The following assertions don't work because `Self::default()` creates
+        // empty vectors. We could use arrays of const sizes to make it robust
+        // ---------------------------------------------------------------------
+        // assert_eq!(self.func_queries.len(), other.func_queries.len());
+        // assert_eq!(self.inv_func_queries.len(), other.inv_func_queries.len());
+        // assert_eq!(self.mem_queries.len(), other.mem_queries.len());
 
         // draining func queries from `other` to `self`, starting from the end
         let mut func_idx = self.func_queries.len() - 1;
@@ -197,6 +200,17 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
             }
         }
 
+        let max_shard_size = config.max_shard_size;
+
+        if max_shard_size == 0 {
+            return vec![Self {
+                index: 0,
+                func_queries: filtered_func_queries,
+                inv_func_queries: vec![],
+                mem_queries: filtered_mem_queries,
+            }]
+        }
+
         let max_num_func_queries = filtered_func_queries
             .iter()
             .map(IndexMap::len)
@@ -209,7 +223,6 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
             .unwrap_or(0);
 
         let ceil_div = |numer, denom| (numer + denom - 1) / denom;
-        let max_shard_size = config.max_shard_size;
 
         let num_shards_needed_for_func_queries = ceil_div(max_num_func_queries, max_shard_size);
 
