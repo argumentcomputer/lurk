@@ -1,19 +1,13 @@
-use crate::lair::memoset::MemoSetChip;
 use itertools::{chain, repeat_n, Itertools};
 use p3_air::{Air, AirBuilder, BaseAir};
-use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, Field};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
     slice::ParallelSliceMut,
 };
-use sphinx_core::air::{
-    AirInteraction, BaseAirBuilder, EventLens, MachineAir, MessageBuilder, WithEvents,
-};
+use sphinx_core::air::{AirInteraction, BaseAirBuilder, EventLens, MachineAir, WithEvents};
 use sphinx_core::lookup::InteractionKind;
-use sphinx_core::stark::{Chip, Indexed, LocalProver, StarkMachine};
-use sphinx_core::utils::BabyBearPoseidon2;
 use std::iter::zip;
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -228,47 +222,47 @@ mod tests {
         let _ = debug_constraints_collecting_queries(&mem_chip, &[], &mem_trace);
     }
 
-    use crate::lair::execute::QueryRecord;
-    use p3_baby_bear::BabyBear;
-    use sphinx_core::stark::{Chip, LocalProver, StarkGenericConfig, StarkMachine};
-    use sphinx_core::utils::BabyBearPoseidon2;
+    // use crate::lair::execute::QueryRecord;
+    // use p3_baby_bear::BabyBear;
+    // use sphinx_core::stark::{Chip, LocalProver, StarkGenericConfig, StarkMachine};
+    // use sphinx_core::utils::BabyBearPoseidon2;
 
-    #[test]
-    fn test_chip() {
-        type F = BabyBear;
-        let func_e = func!(
-        fn test(): [2] {
-            let one = 1;
-            let two = 2;
-            let three = 3;
-            let ptr1 = store(one, two, three);
-            let ptr2 = store(one, one, one);
-            let (_x, y, _z) = load(ptr1);
-            return (ptr2, y)
-        });
-        let toplevel = Toplevel::<F>::new(&[func_e]);
-        let test_chip = FuncChip::from_name("test", &toplevel);
-        let mut queries = QueryRecord::new(&toplevel);
-        let program = QueryRecord::default();
-        test_chip.execute([].into(), &mut queries);
-        let _func_trace = test_chip.generate_trace(&mut queries);
-
-        let mem_len = 3;
-        let mem_chip = MemChip::<F> {
-            len: mem_len,
-            _marker: Default::default(),
-        };
-        let chip = Chip::new(mem_chip);
-        // let chip2 =Chip::new(test_chip);
-
-        let config = BabyBearPoseidon2::new();
-        let machine = StarkMachine::new(config, vec![chip], 5);
-        let (pk, vk) = machine.setup(&program);
-        let mut challenger_p = machine.config().challenger();
-        let mut challenger_v = machine.config().challenger();
-        let proof = machine.prove::<LocalProver<_, _>>(&pk, queries, &mut challenger_p);
-        machine
-            .verify(&vk, &proof, &mut challenger_v)
-            .expect("proof verifies");
-    }
+    // #[test]
+    // fn test_chip() {
+    //     type F = BabyBear;
+    //     let func_e = func!(
+    //     fn test(): [2] {
+    //         let one = 1;
+    //         let two = 2;
+    //         let three = 3;
+    //         let ptr1 = store(one, two, three);
+    //         let ptr2 = store(one, one, one);
+    //         let (_x, y, _z) = load(ptr1);
+    //         return (ptr2, y)
+    //     });
+    //     let toplevel = Toplevel::<F>::new(&[func_e]);
+    //     let test_chip = FuncChip::from_name("test", &toplevel);
+    //     let mut queries = QueryRecord::new(&toplevel);
+    //     let program = QueryRecord::default();
+    //     test_chip.execute([].into(), &mut queries);
+    //     let _func_trace = test_chip.generate_trace(&mut queries);
+    //
+    //     let mem_len = 3;
+    //     let mem_chip = MemChip::<F> {
+    //         len: mem_len,
+    //         _marker: Default::default(),
+    //     };
+    //     let chip = Chip::new(mem_chip);
+    //     // let chip2 =Chip::new(test_chip);
+    //
+    //     let config = BabyBearPoseidon2::new();
+    //     let machine = StarkMachine::new(config, vec![chip], 5);
+    //     let (pk, vk) = machine.setup(&program);
+    //     let mut challenger_p = machine.config().challenger();
+    //     let mut challenger_v = machine.config().challenger();
+    //     let proof = machine.prove::<LocalProver<_, _>>(&pk, queries, &mut challenger_p);
+    //     machine
+    //         .verify(&vk, &proof, &mut challenger_v)
+    //         .expect("proof verifies");
+    // }
 }

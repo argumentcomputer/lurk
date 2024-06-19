@@ -1,12 +1,8 @@
-use crate::lair::execute::{mem_index_from_len, MemMap, QueryRecord};
-use crate::lair::memory::MemChip;
-use itertools::{chain, repeat_n};
+use itertools::chain;
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{AbstractField, Field};
-use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::Matrix;
-use rayon::prelude::ParallelSliceMut;
-use sphinx_core::air::{AirInteraction, BaseAirBuilder, EventLens, MachineAir, WithEvents};
+use sphinx_core::air::{AirInteraction, BaseAirBuilder};
 use sphinx_core::lookup::InteractionKind;
 use std::iter::zip;
 use std::marker::PhantomData;
