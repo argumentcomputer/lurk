@@ -117,7 +117,12 @@ impl<F: Field> MachineAir<F> for MemChip<F> {
 
     #[inline]
     fn included(&self, queries: &Self::Record) -> bool {
-        !queries.mem_queries[mem_index_from_len(self.len)].is_empty()
+        let mem_queries = &queries.mem_queries[mem_index_from_len(self.len)];
+        if let Some(max_mult) = mem_queries.values().max() {
+            max_mult > &0
+        } else {
+            false
+        }
     }
 
     #[inline]

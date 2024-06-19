@@ -310,7 +310,15 @@ impl<'a, F: PrimeField, H: Hasher<F>> MachineAir<F> for FuncChip<'a, F, H> {
             .map
             .get_index_of(&self.func.name)
             .expect("Func not found on toplevel");
-        !queries.func_queries[func_idx].is_empty()
+        if let Some(max_mult) = queries.func_queries[func_idx]
+            .values()
+            .map(|r| r.mult)
+            .max()
+        {
+            max_mult > 0
+        } else {
+            false
+        }
     }
 
     #[inline]

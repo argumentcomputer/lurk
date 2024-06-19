@@ -59,8 +59,12 @@ impl<'a, F: PrimeField, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
 
     fn generate_dependencies<EL: EventLens<Self>>(&self, _: &EL, _: &mut Self::Record) {}
 
-    fn included(&self, _: &Self::Record) -> bool {
-        true
+    fn included(&self, queries: &Self::Record) -> bool {
+        match self {
+            Self::Func(func_chip) => func_chip.included(queries),
+            Self::Mem(mem_chip) => mem_chip.included(queries),
+            Self::DummyPreprocessed => true,
+        }
     }
 
     fn preprocessed_width(&self) -> usize {
