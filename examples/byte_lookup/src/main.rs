@@ -10,10 +10,7 @@ fn assert_zero_sum<F: PrimeField>(interactions_vecs: Vec<Vec<Query<F>>>) {
     let mut provided = BTreeSet::<Vec<F>>::default();
     let mut required = BTreeSet::<Vec<F>>::default();
     for interactions in interactions_vecs {
-        for Query {
-            query_type, values, ..
-        } in interactions
-        {
+        for Query { query_type, values } in interactions {
             match query_type {
                 QueryType::Receive | QueryType::Provide => {
                     provided.insert(values);

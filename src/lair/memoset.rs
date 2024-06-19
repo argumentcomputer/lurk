@@ -5,12 +5,8 @@ use p3_matrix::Matrix;
 use std::iter::zip;
 use std::marker::PhantomData;
 
-const MEMOSET_TAG: u32 = 43;
+// const MEMOSET_TAG: u32 = 43;
 
-enum MemosetTag {
-    Require = 1,
-    Provide = 2,
-}
 const REQUIRE_TAG: u32 = 1;
 const PROVIDE_TAG: u32 = 2;
 

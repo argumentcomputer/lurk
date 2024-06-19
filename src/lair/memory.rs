@@ -225,47 +225,104 @@ mod tests {
         let _ = debug_constraints_collecting_queries(&mem_chip, &[], &mem_trace);
     }
 
-    // use crate::lair::execute::QueryRecord;
-    // use p3_baby_bear::BabyBear;
-    // use sphinx_core::stark::{Chip, LocalProver, StarkGenericConfig, StarkMachine};
-    // use sphinx_core::utils::BabyBearPoseidon2;
+    use crate::lair::execute::QueryRecord;
+    use p3_baby_bear::BabyBear;
+    use sphinx_core::stark::{Chip, LocalProver, StarkGenericConfig, StarkMachine};
+    use sphinx_core::utils::BabyBearPoseidon2;
 
-    // #[test]
-    // fn test_chip() {
-    //     type F = BabyBear;
-    //     let func_e = func!(
-    //     fn test(): [2] {
-    //         let one = 1;
-    //         let two = 2;
-    //         let three = 3;
-    //         let ptr1 = store(one, two, three);
-    //         let ptr2 = store(one, one, one);
-    //         let (_x, y, _z) = load(ptr1);
-    //         return (ptr2, y)
-    //     });
-    //     let toplevel = Toplevel::<F>::new(&[func_e]);
-    //     let test_chip = FuncChip::from_name("test", &toplevel);
-    //     let mut queries = QueryRecord::new(&toplevel);
-    //     let program = QueryRecord::default();
-    //     test_chip.execute([].into(), &mut queries);
-    //     let _func_trace = test_chip.generate_trace(&mut queries);
-    //
-    //     let mem_len = 3;
-    //     let mem_chip = MemChip::<F> {
-    //         len: mem_len,
-    //         _marker: Default::default(),
-    //     };
-    //     let chip = Chip::new(mem_chip);
-    //     // let chip2 =Chip::new(test_chip);
-    //
-    //     let config = BabyBearPoseidon2::new();
-    //     let machine = StarkMachine::new(config, vec![chip], 5);
-    //     let (pk, vk) = machine.setup(&program);
-    //     let mut challenger_p = machine.config().challenger();
-    //     let mut challenger_v = machine.config().challenger();
-    //     let proof = machine.prove::<LocalProver<_, _>>(&pk, queries, &mut challenger_p);
-    //     machine
-    //         .verify(&vk, &proof, &mut challenger_v)
-    //         .expect("proof verifies");
-    // }
+    struct DummyChip;
+
+    impl<AB: AirBuilder> Air<AB> for DummyChip {
+        fn eval(&self, _builder: &mut AB) {}
+    }
+
+    impl<'a> WithEvents<'a> for DummyChip {
+        type Events = ();
+    }
+    impl<F: Field> EventLens<DummyChip> for QueryRecord<F> {
+        fn events(&self) -> <DummyChip as WithEvents<'_>>::Events {}
+    }
+
+    impl<F: Field> BaseAir<F> for DummyChip {
+        fn width(&self) -> usize {
+            1
+        }
+    }
+
+    impl<F: Field> MachineAir<F> for DummyChip {
+        type Record = QueryRecord<F>;
+        type Program = QueryRecord<F>;
+
+        fn name(&self) -> String {
+            "Dummy".to_string()
+        }
+
+        fn generate_trace<EL: EventLens<Self>>(
+            &self,
+            _input: &EL,
+            _output: &mut Self::Record,
+        ) -> RowMajorMatrix<F> {
+            RowMajorMatrix::new(vec![F::zero(); 32], 1)
+        }
+
+        fn included(&self, _shard: &Self::Record) -> bool {
+            true
+        }
+        fn preprocessed_width(&self) -> usize {
+            1
+        }
+
+        /// Generate the preprocessed trace given a specific program.
+        fn generate_preprocessed_trace(
+            &self,
+            _program: &Self::Program,
+        ) -> Option<RowMajorMatrix<F>> {
+            Some(RowMajorMatrix::new(vec![F::zero(); 32], 1))
+        }
+    }
+
+    #[test]
+    fn test_chip() {
+        type F = BabyBear;
+        type H = LurkHasher;
+        let func_e = func!(
+        fn test(): [2] {
+            let one = 1;
+            let two = 2;
+            let three = 3;
+            let ptr1 = store(one, two, three);
+            let ptr2 = store(one, one, one);
+            let (_x, y, _z) = load(ptr1);
+            return (ptr2, y)
+        });
+        let toplevel = Toplevel::<F, H>::new(&[func_e]);
+        let test_chip = FuncChip::from_name("test", &toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
+        let program = QueryRecord::default();
+        test_chip.execute([].into(), &mut queries);
+        let _func_trace = test_chip.generate_trace(&queries);
+
+        let mem_len = 3;
+        let mem_chip = MemChip::<F> {
+            len: mem_len,
+            _marker: Default::default(),
+        };
+        let chip = Chip::new(mem_chip);
+
+        // let chip2 =Chip::new(test_chip);
+
+        let config = BabyBearPoseidon2::new();
+        // TODO: StarkMachine only accepts a `Vec` of the same Chip, but we don't necessarily want to create the enum with the derive MachineAir trait
+        //       Can we change the definition to use a dynamic array of chips?
+        let machine = StarkMachine::new(config, vec![chip], 5);
+        // let machine = StarkMachine::new(config, vec![chip, Chip::new(DummyChip{})], 5);
+        // TODO: This fails because the machine expects at least one chip to have a preprocessed trace.
+        let (pk, vk) = machine.setup(&program);
+        let mut challenger_p = machine.config().challenger();
+        let mut challenger_v = machine.config().challenger();
+        let proof = machine.prove::<LocalProver<_, _>>(&pk, queries, &mut challenger_p);
+        machine
+            .verify(&vk, &proof, &mut challenger_v)
+            .expect("proof verifies");
+    }
 }

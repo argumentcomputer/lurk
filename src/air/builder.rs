@@ -85,9 +85,10 @@ impl<AB: AirBuilder + MessageBuilder<AirInteraction<AB::Expr>>> LookupBuilder fo
         relation: impl Relation<Self::Expr>,
         is_real_bool: impl Into<Self::Expr>,
     ) {
+        // We use the `InteractionKind::Program` for all interactions for now
         let is_real = is_real_bool.into();
         match query_type {
-            QueryType::Receive => {
+            QueryType::Receive | QueryType::Require => {
                 <Self as MessageBuilder<AirInteraction<Self::Expr>>>::receive(
                     self,
                     AirInteraction::new(
@@ -97,28 +98,8 @@ impl<AB: AirBuilder + MessageBuilder<AirInteraction<AB::Expr>>> LookupBuilder fo
                     ),
                 );
             }
-            QueryType::Send => {
+            QueryType::Send | QueryType::Provide => {
                 <Self as MessageBuilder<AirInteraction<Self::Expr>>>::send(
-                    self,
-                    AirInteraction::new(
-                        relation.values().into_iter().collect(),
-                        is_real,
-                        InteractionKind::Program,
-                    ),
-                );
-            }
-            QueryType::Provide => {
-                <Self as MessageBuilder<AirInteraction<Self::Expr>>>::receive(
-                    self,
-                    AirInteraction::new(
-                        relation.values().into_iter().collect(),
-                        is_real,
-                        InteractionKind::Program,
-                    ),
-                );
-            }
-            QueryType::Require => {
-                <Self as MessageBuilder<AirInteraction<Self::Expr>>>::receive(
                     self,
                     AirInteraction::new(
                         relation.values().into_iter().collect(),

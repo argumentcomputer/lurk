@@ -110,29 +110,6 @@ impl<'a, F: Field> DebugConstraintBuilder<'a, F> {
     }
 }
 
-// impl<'a, F: Field> LookupBuilder for DebugConstraintBuilder<'a, F> {
-//     fn query(
-//         &mut self,
-//         query_type: QueryType,
-//         relation: impl Relation<Self::Expr>,
-//         is_real: Option<Self::Expr>,
-//     ) {
-//         if let Some(is_real) = is_real {
-//             if is_real.is_zero() {
-//                 return;
-//             }
-//         }
-//
-//         let values = relation.values().into_iter().collect();
-//         // TODO dummy domain
-//         self.queries.push(Query {
-//             query_type,
-//             domain: InteractionKind::Program,
-//             values,
-//         });
-//     }
-// }
-
 impl<'a, F: Field> AirBuilder for DebugConstraintBuilder<'a, F> {
     type F = F;
     type Expr = F;
