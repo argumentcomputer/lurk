@@ -47,7 +47,7 @@ impl<AB: AirBuilder + LookupBuilder> Air<AB> for MainChip {
 
         builder.assert_bool(is_byte);
 
-        builder.when(is_byte).require([byte]);
+        builder.require([byte], is_byte);
     }
 }
 
@@ -89,7 +89,7 @@ impl<AB: AirBuilder + LookupBuilder> Air<AB> for BytesChip {
 
         builder.when(is_real).assert_eq(byte_expected, byte);
 
-        builder.when(is_real).provide([byte]);
+        builder.provide([byte], is_real);
     }
 }
 

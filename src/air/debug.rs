@@ -1,4 +1,4 @@
-use crate::air::builder::{AirBuilderExt, LairBuilder, LookupBuilder, QueryType, Relation};
+use crate::air::builder::{LairBuilder, QueryType};
 use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues};
 use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrixView;
@@ -11,7 +11,6 @@ type LocalRowView<'a, F> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatri
 
 pub struct Query<F> {
     pub query_type: QueryType,
-    pub domain: InteractionKind,
     pub values: Vec<F>,
 }
 
@@ -62,7 +61,6 @@ impl<'a, F: Field> MessageBuilder<AirInteraction<F>> for DebugConstraintBuilder<
         if !message.multiplicity.is_zero() {
             self.queries.push(Query {
                 query_type: QueryType::Send,
-                domain: message.kind,
                 values: message.values,
             })
         }
@@ -72,7 +70,6 @@ impl<'a, F: Field> MessageBuilder<AirInteraction<F>> for DebugConstraintBuilder<
         if !message.multiplicity.is_zero() {
             self.queries.push(Query {
                 query_type: QueryType::Receive,
-                domain: message.kind,
                 values: message.values,
             })
         }
@@ -114,40 +111,28 @@ impl<'a, F: Field> DebugConstraintBuilder<'a, F> {
     }
 }
 
-impl<'a, F: Field> LookupBuilder for DebugConstraintBuilder<'a, F> {
-    fn query(
-        &mut self,
-        query_type: QueryType,
-        relation: impl Relation<Self::Expr>,
-        is_real: Option<Self::Expr>,
-    ) {
-        if let Some(is_real) = is_real {
-            if is_real.is_zero() {
-                return;
-            }
-        }
-
-        let values = relation.values().into_iter().collect();
-        // TODO dummy domain
-        self.queries.push(Query {
-            query_type,
-            domain: InteractionKind::Program,
-            values,
-        });
-    }
-}
-
-impl<'a, F: Field> AirBuilderExt for DebugConstraintBuilder<'a, F> {
-    fn trace_index(&self) -> usize {
-        // TODO: fix
-        0
-    }
-
-    fn row_index(&self) -> Self::Expr {
-        // TODO: roots of unity
-        Self::Expr::from_canonical_usize(self.row)
-    }
-}
+// impl<'a, F: Field> LookupBuilder for DebugConstraintBuilder<'a, F> {
+//     fn query(
+//         &mut self,
+//         query_type: QueryType,
+//         relation: impl Relation<Self::Expr>,
+//         is_real: Option<Self::Expr>,
+//     ) {
+//         if let Some(is_real) = is_real {
+//             if is_real.is_zero() {
+//                 return;
+//             }
+//         }
+//
+//         let values = relation.values().into_iter().collect();
+//         // TODO dummy domain
+//         self.queries.push(Query {
+//             query_type,
+//             domain: InteractionKind::Program,
+//             values,
+//         });
+//     }
+// }
 
 impl<'a, F: Field> AirBuilder for DebugConstraintBuilder<'a, F> {
     type F = F;
