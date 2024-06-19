@@ -9,8 +9,8 @@ use crate::lair::execute::mem_index_from_len;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
-    chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
     execute::QueryRecord,
+    func_chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
     hasher::Hasher,
     List,
 };
@@ -51,7 +51,7 @@ impl<'a, T> ColumnMutSlice<'a, T> {
 
 impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
     /// Generates the trace containing only queries with non-zero multiplicities
-    pub fn generate_trace(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
+    pub fn generate_trace_sequential(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let filtered_queries = queries.func_queries()[self.func.index]
             .iter()
             .filter(|(_, r)| r.mult > 0)
@@ -71,7 +71,7 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
         RowMajorMatrix::new(rows, width)
     }
 
-    /// Per-row parallel version of `generate_trace`
+    /// Per-row parallel version of `generate_trace_sequential`
     pub fn generate_trace_parallel(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let filtered_queries = queries.func_queries()[self.func.index]
             .iter()
@@ -286,8 +286,8 @@ impl<F: PrimeField> Op<F> {
                 }
             }
             Op::Store(args) => {
-                let idx = mem_index_from_len(args.len());
-                let query_map = &queries.mem_queries[idx];
+                let mem_idx = mem_index_from_len(args.len());
+                let query_map = &queries.mem_queries[mem_idx];
                 let args = args.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let i = query_map
                     .get_index_of(&args)
@@ -297,8 +297,8 @@ impl<F: PrimeField> Op<F> {
                 slice.push_aux(index, f);
             }
             Op::Load(len, ptr) => {
-                let idx = mem_index_from_len(*len);
-                let query_map = &queries.mem_queries[idx];
+                let mem_idx = mem_index_from_len(*len);
+                let query_map = &queries.mem_queries[mem_idx];
                 let ptr: usize = map[*ptr].0.as_canonical_biguint().try_into().unwrap();
                 let (args, _) = query_map
                     .get_index(ptr - 1)

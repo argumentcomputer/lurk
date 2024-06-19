@@ -1,15 +1,15 @@
-use std::fmt::Debug;
-
-use crate::air::builder::LookupBuilder;
-use crate::lair::memory::MemoryRelation;
 use p3_air::{Air, AirBuilder};
 use p3_field::Field;
 use p3_matrix::Matrix;
+use std::fmt::Debug;
+
+use crate::air::builder::LookupBuilder;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
-    chip::{ColumnLayout, FuncChip, LayoutSizes},
+    func_chip::{ColumnLayout, FuncChip, LayoutSizes},
     hasher::Hasher,
+    relations::MemoryRelation,
     toplevel::Toplevel,
     trace::ColumnIndex,
 };

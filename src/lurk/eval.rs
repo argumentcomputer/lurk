@@ -1021,7 +1021,7 @@ mod test {
     use crate::{
         air::debug::debug_constraints_collecting_queries,
         lair::{
-            chip::FuncChip, execute::QueryRecord, hasher::LurkHasher, toplevel::Toplevel, List,
+            execute::QueryRecord, func_chip::FuncChip, hasher::LurkHasher, toplevel::Toplevel, List,
         },
         lurk::{
             reader::{read, ReadData},

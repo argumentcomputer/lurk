@@ -8,7 +8,7 @@ use std::slice::Iter;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
-    chip::FuncChip,
+    func_chip::FuncChip,
     hasher::Hasher,
     toplevel::Toplevel,
     List,
@@ -26,9 +26,9 @@ impl<T> QueryResult<T> {
     }
 }
 
-pub(crate) type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
-pub(crate) type QueryMap<F> = FxIndexMap<List<F>, QueryResult<List<F>>>;
-pub(crate) type InvQueryMap<F> = FxIndexMap<List<F>, List<F>>;
+type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
+type QueryMap<F> = FxIndexMap<List<F>, QueryResult<List<F>>>;
+type InvQueryMap<F> = FxIndexMap<List<F>, List<F>>;
 pub(crate) type MemMap<F> = FxIndexMap<List<F>, u32>;
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
@@ -109,13 +109,6 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
     }
 
     fn append(&mut self, other: &mut Self) {
-        // The following assertions don't work because `Self::default()` creates
-        // empty vectors. We could use arrays of const sizes to make it robust
-        // ---------------------------------------------------------------------
-        // assert_eq!(self.func_queries.len(), other.func_queries.len());
-        // assert_eq!(self.inv_func_queries.len(), other.inv_func_queries.len());
-        // assert_eq!(self.mem_queries.len(), other.mem_queries.len());
-
         // draining func queries from `other` to `self`, starting from the end
         let mut func_idx = self.func_queries.len() - 1;
         while let Some(func_queries) = other.func_queries.pop() {
@@ -134,30 +127,8 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
             func_idx -= 1;
         }
 
-        // NOTE: These aren't real queries, just auxiliary data for execution.
-        //       But I'm leaving this code here for now just in case. Meanwhile,
-        //       the next line simply drops it from `self` to save up memory
-        // -------------------------------------------------------------------
+        // dropping to save up memory because this is just auxiliary data for execution
         self.inv_func_queries = vec![];
-        // -------------------------------------------------------------------
-        // draining inv func queries from `other` to `self`, starting from the end
-        // let mut func_idx = self.inv_func_queries.len() - 1;
-        // while let Some(other_inv_func_queries_option) = other.inv_func_queries.pop() {
-        //     let self_inv_func_queries_option = &mut self.inv_func_queries[func_idx];
-        //     if let Some(other_inv_func_queries) = other_inv_func_queries_option {
-        //         let self_inv_func_queries = self_inv_func_queries_option.as_mut().unwrap();
-        //         for (out, other_inp) in other_inv_func_queries {
-        //             if let Some(self_inp) = self_inv_func_queries.get(&out) {
-        //                 assert_eq!(self_inp, &other_inp);
-        //             } else {
-        //                 self_inv_func_queries.insert(out, other_inp);
-        //             }
-        //         }
-        //     } else {
-        //         assert!(self_inv_func_queries_option.is_none());
-        //     }
-        //     func_idx -= 1;
-        // }
 
         // draining mem queries from `other` to `self`, starting from the end
         let mut mem_idx = self.mem_queries.len() - 1;
@@ -229,12 +200,9 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
             .max()
             .unwrap_or(0);
 
-        let ceil_div = |numer, denom| (numer + denom - 1) / denom;
-
-        let num_shards_needed_for_func_queries = ceil_div(max_num_func_queries, max_shard_size);
-
-        let num_shards_needed_for_mem_queries = ceil_div(max_num_mem_queries, max_shard_size);
-
+        let div_ceil = |numer, denom| (numer + denom - 1) / denom;
+        let num_shards_needed_for_func_queries = div_ceil(max_num_func_queries, max_shard_size);
+        let num_shards_needed_for_mem_queries = div_ceil(max_num_mem_queries, max_shard_size);
         let num_shards_needed =
             num_shards_needed_for_func_queries.max(num_shards_needed_for_mem_queries);
 

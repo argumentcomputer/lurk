@@ -6,8 +6,8 @@ use std::{mem::take, time::Duration};
 
 use loam::{
     lair::{
-        chip::FuncChip,
         execute::QueryRecord,
+        func_chip::FuncChip,
         hasher::{Hasher, LurkHasher},
         toplevel::Toplevel,
         List,
