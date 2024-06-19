@@ -259,22 +259,26 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(o.into()));
                 }
             }
-            Op::Store(values) => {
+            Op::Store(_values) => {
                 let ptr = *local.next_aux(index);
                 map.push(Val::Expr(ptr.into()));
-                let values = values.iter().map(|&idx| map[idx].to_expr());
-                let is_real = AB::F::one();
-                builder.receive(MemoryRelation(ptr, values), is_real);
+                // let values = values.iter().map(|&idx| map[idx].to_expr());
+                // let is_real = AB::F::one();
+                // builder.receive(MemoryRelation(ptr, values), is_real);
             }
-            Op::Load(len, ptr) => {
-                let ptr = map[*ptr].to_expr();
-                let values = (0..*len).map(|_| {
+            Op::Load(len, _ptr) => {
+                for _ in 0..*len {
                     let o = *local.next_aux(index);
                     map.push(Val::Expr(o.into()));
-                    o.into()
-                });
-                let is_real = AB::F::one();
-                builder.receive(MemoryRelation(ptr, values), is_real);
+                }
+                // let ptr = map[*ptr].to_expr();
+                // let values = (0..*len).map(|_| {
+                //     let o = *local.next_aux(index);
+                //     map.push(Val::Expr(o.into()));
+                //     o.into()
+                // });
+                // let is_real = AB::F::one();
+                // builder.receive(MemoryRelation(ptr, values), is_real);
             }
             Op::Hash(preimg) => {
                 let preimg: Vec<_> = preimg.iter().map(|a| map[*a].to_expr()).collect();

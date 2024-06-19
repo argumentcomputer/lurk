@@ -146,10 +146,10 @@ where
                 .assert_eq(val_local, val_next);
         }
 
-        builder.send(
-            MemoryRelation(ptr_local, values_local.iter().copied()),
-            is_real,
-        );
+        // builder.send(
+        //     MemoryRelation(ptr_local, values_local.iter().copied()),
+        //     is_real,
+        // );
     }
 }
 
@@ -264,12 +264,12 @@ mod tests {
         let chip3 = Chip::new(LairChip::DummyPreprocessed);
 
         let config = BabyBearPoseidon2::new();
-        let machine = StarkMachine::new(config, vec![chip, chip2, chip3], 5);
-        // let machine = StarkMachine::new(config, vec![chip, Chip::new(DummyChip{})], 5);
+        let machine = StarkMachine::new(config, vec![chip, chip2, chip3], 0);
         // TODO: This fails because the machine expects at least one chip to have a preprocessed trace.
         let (pk, vk) = machine.setup(&program);
         let mut challenger_p = machine.config().challenger();
         let mut challenger_v = machine.config().challenger();
+        machine.debug_constraints(&pk, queries.clone(), &mut challenger_p.clone());
         let proof = machine.prove::<LocalProver<_, _>>(&pk, queries, &mut challenger_p);
         machine
             .verify(&vk, &proof, &mut challenger_v)

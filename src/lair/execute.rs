@@ -51,9 +51,16 @@ impl<F: Field> Indexed for QueryRecord<F> {
     }
 }
 
-#[derive(Default)]
 pub struct ShardingConfig {
     max_shard_size: usize,
+}
+
+impl Default for ShardingConfig {
+    fn default() -> Self {
+        Self {
+            max_shard_size: 1 << 20,
+        }
+    }
 }
 
 impl<F: Field> MachineRecord for QueryRecord<F> {
@@ -208,7 +215,7 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
                 func_queries: filtered_func_queries,
                 inv_func_queries: vec![],
                 mem_queries: filtered_mem_queries,
-            }]
+            }];
         }
 
         let max_num_func_queries = filtered_func_queries
