@@ -146,10 +146,10 @@ where
                 .assert_eq(val_local, val_next);
         }
 
-        // builder.send(
-        //     MemoryRelation(ptr_local, values_local.iter().copied()),
-        //     is_real,
-        // );
+        builder.send(
+            MemoryRelation(ptr_local, values_local.iter().copied()),
+            is_real,
+        );
     }
 }
 

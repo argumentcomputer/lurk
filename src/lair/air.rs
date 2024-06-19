@@ -244,7 +244,7 @@ impl<F: Field> Op<F> {
                 };
                 map.push(x);
             }
-            // Call, PreImg, Store, Load TODO: lookup argument
+            // Call, PreImg TODO: lookup argument
             Op::Call(idx, _) => {
                 let func = toplevel.get_by_index(*idx).unwrap();
                 for _ in 0..func.output_size {
@@ -259,26 +259,20 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(o.into()));
                 }
             }
-            Op::Store(_values) => {
+            Op::Store(values) => {
                 let ptr = *local.next_aux(index);
                 map.push(Val::Expr(ptr.into()));
-                // let values = values.iter().map(|&idx| map[idx].to_expr());
-                // let is_real = AB::F::one();
-                // builder.receive(MemoryRelation(ptr, values), is_real);
+                let values = values.iter().map(|&idx| map[idx].to_expr());
+                builder.receive(MemoryRelation(ptr, values), is_real.clone());
             }
-            Op::Load(len, _ptr) => {
-                for _ in 0..*len {
+            Op::Load(len, ptr) => {
+                let ptr = map[*ptr].to_expr();
+                let values = (0..*len).map(|_| {
                     let o = *local.next_aux(index);
                     map.push(Val::Expr(o.into()));
-                }
-                // let ptr = map[*ptr].to_expr();
-                // let values = (0..*len).map(|_| {
-                //     let o = *local.next_aux(index);
-                //     map.push(Val::Expr(o.into()));
-                //     o.into()
-                // });
-                // let is_real = AB::F::one();
-                // builder.receive(MemoryRelation(ptr, values), is_real);
+                    o.into()
+                });
+                builder.receive(MemoryRelation(ptr, values), is_real.clone());
             }
             Op::Hash(preimg) => {
                 let preimg: Vec<_> = preimg.iter().map(|a| map[*a].to_expr()).collect();
