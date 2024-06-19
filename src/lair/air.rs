@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use crate::air::builder::LookupBuilder;
+use crate::lair::memory::MemoryRelation;
 use p3_air::{Air, AirBuilder};
 use p3_field::Field;
 use p3_matrix::Matrix;
@@ -68,7 +70,7 @@ impl<'a, T> ColumnSlice<'a, T> {
 
 impl<'a, AB, H: Hasher<AB::F>> Air<AB> for FuncChip<'a, AB::F, H>
 where
-    AB: AirBuilder,
+    AB: AirBuilder + LookupBuilder,
     <AB as AirBuilder>::Var: Debug,
 {
     fn eval(&self, builder: &mut AB) {
@@ -98,7 +100,7 @@ impl<F: Field> Func<F> {
         toplevel: &Toplevel<F, H>,
         layout_sizes: LayoutSizes,
     ) where
-        AB: AirBuilder<F = F>,
+        AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
     {
         let main = builder.main();
@@ -129,7 +131,7 @@ impl<F: Field> Block<F> {
         toplevel: &Toplevel<F, H>,
     ) -> AB::Expr
     where
-        AB: AirBuilder<F = F>,
+        AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
     {
         assert!(
@@ -173,7 +175,7 @@ impl<F: Field> Op<F> {
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
     ) where
-        AB: AirBuilder<F = F>,
+        AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
     {
         match self {
@@ -257,15 +259,22 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(o.into()));
                 }
             }
-            Op::Store(_) => {
+            Op::Store(values) => {
                 let ptr = *local.next_aux(index);
                 map.push(Val::Expr(ptr.into()));
+                let values = values.iter().map(|&idx| map[idx].to_expr());
+                let is_real = AB::F::one();
+                builder.receive(MemoryRelation(ptr, values), is_real);
             }
-            Op::Load(len, _) => {
-                for _ in 0..*len {
+            Op::Load(len, ptr) => {
+                let ptr = map[*ptr].to_expr();
+                let values = (0..*len).map(|_| {
                     let o = *local.next_aux(index);
                     map.push(Val::Expr(o.into()));
-                }
+                    o.into()
+                });
+                let is_real = AB::F::one();
+                builder.receive(MemoryRelation(ptr, values), is_real);
             }
             Op::Hash(preimg) => {
                 let preimg: Vec<_> = preimg.iter().map(|a| map[*a].to_expr()).collect();
@@ -292,7 +301,7 @@ impl<F: Field> Ctrl<F> {
         toplevel: &Toplevel<F, H>,
     ) -> AB::Expr
     where
-        AB: AirBuilder<F = F>,
+        AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
     {
         match self {

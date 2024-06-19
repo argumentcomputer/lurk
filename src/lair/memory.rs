@@ -1,3 +1,4 @@
+use crate::air::builder::{LookupBuilder, Relation};
 use itertools::{chain, repeat_n, Itertools};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{AbstractField, Field};
@@ -6,13 +7,31 @@ use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
     slice::ParallelSliceMut,
 };
-use sphinx_core::air::{AirInteraction, BaseAirBuilder, EventLens, MachineAir, WithEvents};
-use sphinx_core::lookup::InteractionKind;
+use sphinx_core::air::{EventLens, MachineAir, WithEvents};
 use std::iter::zip;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
 use super::execute::{mem_index_from_len, MemMap, QueryRecord};
+
+const MEMORY_TAG: u32 = 42;
+pub struct MemoryRelation<Ptr, ValuesIter>(pub Ptr, pub ValuesIter);
+
+impl<T, Ptr, IntoValuesIter, Value> Relation<T> for MemoryRelation<Ptr, IntoValuesIter>
+where
+    T: AbstractField,
+    Ptr: Into<T>,
+    IntoValuesIter: IntoIterator<Item = Value>,
+    Value: Into<T>,
+{
+    fn values(self) -> impl IntoIterator<Item = T> {
+        let Self(ptr, values_iter) = self;
+        chain(
+            [T::from_canonical_u32(MEMORY_TAG), ptr.into()],
+            values_iter.into_iter().map(Into::into),
+        )
+    }
+}
 
 #[derive(Default)]
 pub struct MemChip<F> {
@@ -88,7 +107,7 @@ impl<F: Field> MachineAir<F> for MemChip<F> {
 
 impl<AB> Air<AB> for MemChip<AB::F>
 where
-    AB: BaseAirBuilder,
+    AB: LookupBuilder,
 {
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
@@ -127,26 +146,10 @@ where
                 .assert_eq(val_local, val_next);
         }
 
-        // builder.receive(AirInteraction {
-        //     values: chain(
-        //         [AB::Expr::from_canonical_u32(MEM_TAG)],
-        //         values,
-        //     )
-        //         .collect(),
-        //     multiplicity: is_real.into(),
-        //     kind: InteractionKind::Memory,
-        // })
-
-        const MEM_TAG: u32 = 42;
-        builder.send(AirInteraction {
-            values: chain(
-                [AB::Expr::from_canonical_u32(MEM_TAG)],
-                values_local.iter().copied().map(Into::into),
-            )
-            .collect(),
-            multiplicity: is_real.into(),
-            kind: InteractionKind::Memory,
-        })
+        builder.send(
+            MemoryRelation(ptr_local, values_local.iter().copied()),
+            is_real,
+        );
     }
 }
 

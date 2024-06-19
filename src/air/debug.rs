@@ -5,7 +5,6 @@ use p3_matrix::dense::RowMajorMatrixView;
 use p3_matrix::stack::VerticalPair;
 use p3_matrix::Matrix;
 use sphinx_core::air::{AirInteraction, MessageBuilder};
-use sphinx_core::lookup::InteractionKind;
 
 type LocalRowView<'a, F> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatrixView<'a, F>>;
 

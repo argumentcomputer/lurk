@@ -81,16 +81,15 @@ impl<F: Field> LookupBuilder for SymbolicAirBuilder<F> {
         &mut self,
         query_type: QueryType,
         relation: impl Relation<Self::Expr>,
-        is_real: Option<Self::Expr>,
+        is_real: impl Into<Self::Expr>,
     ) {
         let values = relation
             .values()
             .into_iter()
             .map(|v| PairColLC::try_from(v).expect("queries must contain affine expressions"))
             .collect();
-        let is_real = is_real.map(|is_real| {
-            PairColLC::try_from(is_real).expect("is_real must be an affine expression")
-        });
+        let is_real =
+            PairColLC::try_from(is_real.into()).expect("is_real must be an affine expression");
 
         match query_type {
             QueryType::Receive | QueryType::Provide => {

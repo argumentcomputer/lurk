@@ -1,11 +1,18 @@
-use itertools::chain;
+use crate::air::builder::LookupBuilder;
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{AbstractField, Field};
 use p3_matrix::Matrix;
-use sphinx_core::air::{AirInteraction, BaseAirBuilder};
-use sphinx_core::lookup::InteractionKind;
 use std::iter::zip;
 use std::marker::PhantomData;
+
+const MEMOSET_TAG: u32 = 43;
+
+enum MemosetTag {
+    Require = 1,
+    Provide = 2,
+}
+const REQUIRE_TAG: u32 = 1;
+const PROVIDE_TAG: u32 = 2;
 
 pub struct MemoSetChip<F> {
     len: usize,
@@ -20,7 +27,7 @@ impl<F: Field> BaseAir<F> for MemoSetChip<F> {
 
 impl<AB> Air<AB> for MemoSetChip<AB::F>
 where
-    AB: BaseAirBuilder,
+    AB: LookupBuilder,
 {
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
@@ -57,17 +64,10 @@ where
             builder.when(is_require).assert_eq(val_local, val_next);
         }
 
-        const REQUIRE_TAG: u32 = 1;
-        const PROVIDE_TAG: u32 = 2;
-
-        let tag = AB::Expr::from_canonical_u32(REQUIRE_TAG) * is_require
+        let _tag = AB::Expr::from_canonical_u32(REQUIRE_TAG) * is_require
             + AB::Expr::from_canonical_u32(PROVIDE_TAG) * is_provide;
 
-        builder.send(AirInteraction {
-            values: chain([tag], query_local.iter().copied().map(Into::into)).collect(),
-            multiplicity: is_real,
-            kind: InteractionKind::Instruction,
-        })
+        // builder.send(TaggedRelation(tag, query_local.iter().copied()), is_real);
     }
 }
 
