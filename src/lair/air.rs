@@ -8,7 +8,7 @@ use p3_matrix::Matrix;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
-    chip::{ColumnLayout, FuncChip, LayoutSizes},
+    func_chip::{ColumnLayout, FuncChip, LayoutSizes},
     hasher::Hasher,
     toplevel::Toplevel,
     trace::ColumnIndex,

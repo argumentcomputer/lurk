@@ -7,10 +7,11 @@ use self::toplevel::Toplevel;
 
 pub mod air;
 pub mod bytecode;
-pub mod chip;
 pub mod execute;
 pub mod expr;
+pub mod func_chip;
 pub mod hasher;
+pub mod lair_chip;
 mod macros;
 pub mod map;
 pub mod memory;
