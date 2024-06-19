@@ -231,57 +231,6 @@ mod tests {
     use sphinx_core::stark::{Chip, LocalProver, StarkGenericConfig, StarkMachine};
     use sphinx_core::utils::BabyBearPoseidon2;
 
-    struct DummyChip;
-
-    impl<AB: AirBuilder> Air<AB> for DummyChip {
-        fn eval(&self, _builder: &mut AB) {}
-    }
-
-    impl<'a> WithEvents<'a> for DummyChip {
-        type Events = ();
-    }
-    impl<F: Field> EventLens<DummyChip> for QueryRecord<F> {
-        fn events(&self) -> <DummyChip as WithEvents<'_>>::Events {}
-    }
-
-    impl<F: Field> BaseAir<F> for DummyChip {
-        fn width(&self) -> usize {
-            1
-        }
-    }
-
-    impl<F: Field> MachineAir<F> for DummyChip {
-        type Record = QueryRecord<F>;
-        type Program = QueryRecord<F>;
-
-        fn name(&self) -> String {
-            "Dummy".to_string()
-        }
-
-        fn generate_trace<EL: EventLens<Self>>(
-            &self,
-            _input: &EL,
-            _output: &mut Self::Record,
-        ) -> RowMajorMatrix<F> {
-            RowMajorMatrix::new(vec![F::zero(); 32], 1)
-        }
-
-        fn included(&self, _shard: &Self::Record) -> bool {
-            true
-        }
-        fn preprocessed_width(&self) -> usize {
-            1
-        }
-
-        /// Generate the preprocessed trace given a specific program.
-        fn generate_preprocessed_trace(
-            &self,
-            _program: &Self::Program,
-        ) -> Option<RowMajorMatrix<F>> {
-            Some(RowMajorMatrix::new(vec![F::zero(); 32], 1))
-        }
-    }
-
     #[test]
     fn test_chip() {
         type F = BabyBear;
@@ -312,8 +261,10 @@ mod tests {
 
         let chip2 = Chip::new(LairChip::Func(test_chip));
 
+        let chip3 = Chip::new(LairChip::DummyPreprocessed);
+
         let config = BabyBearPoseidon2::new();
-        let machine = StarkMachine::new(config, vec![chip, chip2], 5);
+        let machine = StarkMachine::new(config, vec![chip, chip2, chip3], 5);
         // let machine = StarkMachine::new(config, vec![chip, Chip::new(DummyChip{})], 5);
         // TODO: This fails because the machine expects at least one chip to have a preprocessed trace.
         let (pk, vk) = machine.setup(&program);
