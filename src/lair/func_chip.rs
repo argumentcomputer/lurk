@@ -8,7 +8,6 @@ use super::{
     execute::QueryRecord,
     hasher::Hasher,
     toplevel::Toplevel,
-    List,
 };
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -58,7 +57,7 @@ impl<'a, F, H: Hasher<F>> FuncChip<'a, F, H> {
     }
 
     #[inline]
-    pub fn from_toplevel(toplevel: &'a Toplevel<F, H>) -> List<Self> {
+    pub fn from_toplevel(toplevel: &'a Toplevel<F, H>) -> Vec<Self> {
         toplevel
             .map
             .get_pairs()

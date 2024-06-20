@@ -250,7 +250,7 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
 }
 
 const NUM_MEM_TABLES: usize = 5;
-const MEM_TABLE_SIZES: [usize; NUM_MEM_TABLES] = [3, 4, 5, 6, 8];
+pub(crate) const MEM_TABLE_SIZES: [usize; NUM_MEM_TABLES] = [3, 4, 5, 6, 8];
 
 #[inline]
 pub fn mem_index_to_len(idx: usize) -> usize {
@@ -262,7 +262,7 @@ pub fn mem_index_from_len(len: usize) -> usize {
     MEM_TABLE_SIZES
         .iter()
         .position(|&i| len == i)
-        .unwrap_or_else(|| panic!("There are no mem tables of size {}", len))
+        .unwrap_or_else(|| panic!("There are no mem tables of size {len}"))
 }
 
 #[inline]

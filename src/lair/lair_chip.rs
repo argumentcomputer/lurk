@@ -1,11 +1,20 @@
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{AbstractField, Field, PrimeField};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
-use sphinx_core::air::{EventLens, MachineAir, WithEvents};
+use sphinx_core::{
+    air::{EventLens, MachineAir, WithEvents},
+    stark::Chip,
+};
 
 use crate::air::builder::LookupBuilder;
 
-use super::{execute::QueryRecord, func_chip::FuncChip, hasher::Hasher, memory::MemChip};
+use super::{
+    execute::{QueryRecord, MEM_TABLE_SIZES},
+    func_chip::FuncChip,
+    hasher::Hasher,
+    memory::MemChip,
+    toplevel::Toplevel,
+};
 
 pub enum LairChip<'a, F, H: Hasher<F>> {
     Func(FuncChip<'a, F, H>),
@@ -100,18 +109,32 @@ where
     }
 }
 
+pub fn build_chip_vector<F: PrimeField, H: Hasher<F>>(
+    toplevel: &Toplevel<F, H>,
+) -> Vec<Chip<F, LairChip<'_, F, H>>> {
+    let mut chip_vector = Vec::with_capacity(1 + toplevel.map.size() + MEM_TABLE_SIZES.len());
+    chip_vector.push(Chip::new(LairChip::DummyPreprocessed));
+    for func_chip in FuncChip::from_toplevel(toplevel) {
+        chip_vector.push(Chip::new(LairChip::Func(func_chip)));
+    }
+    for mem_len in MEM_TABLE_SIZES {
+        chip_vector.push(Chip::new(LairChip::Mem(MemChip::new(mem_len))));
+    }
+    chip_vector
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
         func,
-        lair::{func_chip::FuncChip, hasher::LurkHasher, lair_chip::LairChip, toplevel::Toplevel},
+        lair::{func_chip::FuncChip, hasher::LurkHasher, toplevel::Toplevel},
     };
 
     use super::*;
 
     use crate::lair::execute::QueryRecord;
     use p3_baby_bear::BabyBear;
-    use sphinx_core::stark::{Chip, LocalProver, StarkGenericConfig, StarkMachine};
+    use sphinx_core::stark::{LocalProver, StarkGenericConfig, StarkMachine};
     use sphinx_core::utils::BabyBearPoseidon2;
 
     #[test]
@@ -134,12 +157,8 @@ mod tests {
         let program = QueryRecord::default();
         test_chip.execute([].into(), &mut queries);
 
-        let chip = Chip::new(LairChip::Mem(MemChip::new(3)));
-        let chip2 = Chip::new(LairChip::Func(test_chip));
-        let chip3 = Chip::new(LairChip::DummyPreprocessed);
-
         let config = BabyBearPoseidon2::new();
-        let machine = StarkMachine::new(config, vec![chip, chip2, chip3], 0);
+        let machine = StarkMachine::new(config, build_chip_vector(&toplevel), 0);
 
         let (pk, vk) = machine.setup(&program);
         let mut challenger_p = machine.config().challenger();
