@@ -305,20 +305,9 @@ impl<'a, F: PrimeField, H: Hasher<F>> MachineAir<F> for FuncChip<'a, F, H> {
 
     #[inline]
     fn included(&self, queries: &Self::Record) -> bool {
-        let func_idx = self
-            .toplevel
-            .map
-            .get_index_of(&self.func.name)
-            .expect("Func not found on toplevel");
-        if let Some(max_mult) = queries.func_queries[func_idx]
+        queries.func_queries[self.func.index]
             .values()
-            .map(|r| r.mult)
-            .max()
-        {
-            max_mult > 0
-        } else {
-            false
-        }
+            .any(|r| r.mult > 0)
     }
 
     #[inline]
