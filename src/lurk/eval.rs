@@ -1,21 +1,48 @@
+use once_cell::sync::OnceCell;
+use p3_baby_bear::BabyBear;
 use p3_field::{Field, PrimeField};
 
 use crate::{
     func,
-    lair::{expr::FuncE, hasher::Hasher, toplevel::Toplevel},
+    lair::{
+        expr::{BlockE, CasesE, CtrlE, FuncE, OpE, Var},
+        hasher::Hasher,
+        map::Map,
+        toplevel::Toplevel,
+        Name,
+    },
 };
 
 use super::{
     memory::Memory,
+    reader::read,
+    state::{State, LURK_PACKAGE_NONNIL_SYMBOLS_NAMES},
     zstore::{HasherTemp, Tag, ZStore},
 };
 
+static BUILTIN_BABYBEAR_DIGESTS: OnceCell<Vec<Vec<BabyBear>>> = OnceCell::new();
+fn builtin_digests() -> &'static Vec<Vec<BabyBear>> {
+    BUILTIN_BABYBEAR_DIGESTS.get_or_init(|| {
+        LURK_PACKAGE_NONNIL_SYMBOLS_NAMES
+            .map(|sym| {
+                read(State::init_lurk_state().rccell(), sym)
+                    .unwrap()
+                    .digest
+                    .to_vec()
+            })
+            .into_iter()
+            .collect()
+    })
+}
+
+// let builtins: Vec<Vec<F>> = ;
 /// Creates a `Toplevel` with the functions used for Lurk evaluation
 #[inline]
-pub fn build_lurk_toplevel<F: PrimeField, HT: HasherTemp<F = F>, H: Hasher<F>>(
-    mem: &mut Memory<F, HT>,
-    store: &ZStore<F, HT>,
-) -> Toplevel<F, H> {
+pub fn build_lurk_toplevel<HT: HasherTemp<F = BabyBear>, H: Hasher<BabyBear>>(
+    mem: &mut Memory<BabyBear, HT>,
+    store: &ZStore<BabyBear, HT>,
+) -> Toplevel<BabyBear, H> {
+    let builtins = builtin_digests();
     Toplevel::new(&[
         eval(mem, store),
         eval_unop(mem, store),
@@ -26,6 +53,12 @@ pub fn build_lurk_toplevel<F: PrimeField, HT: HasherTemp<F = F>, H: Hasher<F>>(
         eval_letrec(),
         apply(),
         env_lookup(),
+        ingress(),
+        ingress_builtin(builtins),
+        egress(),
+        egress_builtin(builtins),
+        hash_32_8(),
+        hash_48_8(),
     ])
 }
 
@@ -69,6 +102,10 @@ pub fn ingress<F: PrimeField>() -> FuncE<F> {
                     let ptr = store(digest);
                     return ptr
                 }
+                Tag::Builtin => {
+                    let idx = call(ingress_builtin, digest);
+                    return idx
+                }
                 Tag::Str | Tag::Sym | Tag::Key => {
                     if !digest {
                         let zero = 0;
@@ -111,6 +148,42 @@ pub fn ingress<F: PrimeField>() -> FuncE<F> {
     )
 }
 
+pub fn ingress_builtin<F: PrimeField>(builtins: &[Vec<F>]) -> FuncE<F> {
+    let input_var = Var {
+        name: "digest",
+        size: 8,
+    };
+    let ret_var = Var {
+        name: "res",
+        size: 1,
+    };
+    let branch = |i: usize| BlockE {
+        ops: [OpE::Const(ret_var, F::from_canonical_usize(i))].into(),
+        ctrl: CtrlE::<F>::Return([ret_var].into()),
+    };
+    let branches = Map::from_vec(
+        builtins
+            .iter()
+            .enumerate()
+            .map(|(i, arr)| (arr.clone().into(), branch(i)))
+            .collect(),
+    );
+    let cases = CasesE {
+        branches,
+        default: None,
+    };
+    let ops = [].into();
+    let ctrl = CtrlE::<F>::MatchMany(input_var, cases);
+
+    FuncE {
+        name: Name("ingress_builtin"),
+        invertible: false,
+        input_params: [input_var].into(),
+        output_size: 1,
+        body: BlockE { ops, ctrl },
+    }
+}
+
 pub fn egress<F: PrimeField>() -> FuncE<F> {
     func!(
         fn egress(tag, val): [8] {
@@ -122,6 +195,10 @@ pub fn egress<F: PrimeField>() -> FuncE<F> {
                 }
                 Tag::Nil | Tag::U64 | Tag::Comm => {
                     let digest: [8] = load(val);
+                    return digest
+                }
+                Tag::Builtin => {
+                    let digest: [8] = call(egress_builtin, val);
                     return digest
                 }
                 Tag::Str | Tag::Sym | Tag::Key => {
@@ -166,6 +243,42 @@ pub fn egress<F: PrimeField>() -> FuncE<F> {
             }
         }
     )
+}
+
+pub fn egress_builtin<F: PrimeField>(builtins: &[Vec<F>]) -> FuncE<F> {
+    let input_var = Var {
+        name: "val",
+        size: 1,
+    };
+    let ret_var = Var {
+        name: "digest",
+        size: 8,
+    };
+    let branch = |arr: Vec<F>| BlockE {
+        ops: [OpE::Array(ret_var, arr)].into(),
+        ctrl: CtrlE::<F>::Return([ret_var].into()),
+    };
+    let branches = Map::from_vec(
+        builtins
+            .iter()
+            .enumerate()
+            .map(|(i, arr)| (F::from_canonical_usize(i), branch(arr.clone())))
+            .collect(),
+    );
+    let cases = CasesE {
+        branches,
+        default: None,
+    };
+    let ops = [].into();
+    let ctrl = CtrlE::<F>::Match(input_var, cases);
+
+    FuncE {
+        name: Name("egress_builtin"),
+        invertible: false,
+        input_params: [input_var].into(),
+        output_size: 8,
+        body: BlockE { ops, ctrl },
+    }
 }
 
 pub fn hash_32_8<F: PrimeField>() -> FuncE<F> {
@@ -1113,10 +1226,12 @@ mod test {
 
         let mem = &mut Memory::init();
         let store = &ZStore::<F, PoseidonBabyBearHasher>::new();
-        let toplevel = &build_lurk_toplevel::<_, _, LurkHasher>(mem, store);
+        let toplevel = &build_lurk_toplevel::<_, LurkHasher>(mem, store);
         let queries = &mut QueryRecord::new_with_init_mem(toplevel, take(&mut mem.map));
 
         // Chips
+        let ingress = FuncChip::from_name("ingress", toplevel);
+        let egress = FuncChip::from_name("egress", toplevel);
         let eval = FuncChip::from_name("eval", toplevel);
         let eval_unop = FuncChip::from_name("eval_unop", toplevel);
         let eval_binop_num = FuncChip::from_name("eval_binop_num", toplevel);
@@ -1140,6 +1255,8 @@ mod test {
         expect_eq(car_cdr.width(), expect!["27"]);
         expect_eq(apply.width(), expect!["36"]);
         expect_eq(env_lookup.width(), expect!["16"]);
+        expect_eq(ingress.width(), expect!["87"]);
+        expect_eq(egress.width(), expect!["66"]);
 
         let all_chips = [
             &eval,
@@ -1221,8 +1338,15 @@ mod test {
 
     #[test]
     fn test_ingress_egress() {
-        let toplevel =
-            Toplevel::<F, LurkHasher>::new(&[ingress(), egress(), hash_32_8(), hash_48_8()]);
+        let builtins = builtin_digests();
+        let toplevel = Toplevel::<F, LurkHasher>::new(&[
+            ingress(),
+            ingress_builtin(builtins),
+            egress(),
+            egress_builtin(builtins),
+            hash_32_8(),
+            hash_48_8(),
+        ]);
 
         let ingress_chip = FuncChip::from_name("ingress", &toplevel);
         let egress_chip = FuncChip::from_name("egress", &toplevel);

@@ -69,7 +69,7 @@ fn evaluation(c: &mut Criterion) {
     c.bench_function(&format!("evaluation-{arg}"), |b| {
         let mem = &mut Memory::init();
         let store = ZStore::<BabyBear, PoseidonBabyBearHasher>::new();
-        let toplevel = build_lurk_toplevel::<_, _, LurkHasher>(mem, &store);
+        let toplevel = build_lurk_toplevel::<_, LurkHasher>(mem, &store);
         let (args, eval, queries) = setup(arg, mem, &store, &toplevel);
 
         b.iter_batched(
@@ -87,7 +87,7 @@ fn trace_generation(c: &mut Criterion) {
     c.bench_function(&format!("trace-generation-{arg}"), |b| {
         let mem = &mut Memory::init();
         let store = ZStore::<BabyBear, PoseidonBabyBearHasher>::new();
-        let toplevel = build_lurk_toplevel::<_, _, LurkHasher>(mem, &store);
+        let toplevel = build_lurk_toplevel::<_, LurkHasher>(mem, &store);
         let (args, eval, mut queries) = setup(arg, mem, &store, &toplevel);
 
         eval.execute_iter(args, &mut queries);
