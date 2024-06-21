@@ -266,6 +266,9 @@ impl<F: PrimeField, H: HasherTemp<F = F>> Memory<F, H> {
                 );
                 store.intern_env(sym, val, env)
             }
+            Tag::Builtin => {
+                todo!()
+            }
         }
     }
 }

@@ -12,7 +12,7 @@ use super::{
         syntax::{parse_space, parse_syntax},
         Span,
     },
-    state::{lurk_sym, StateRcCell},
+    state::{lurk_sym, StateRcCell, LURK_PACKAGE_NONNIL_SYMBOLS_NAMES},
     symbol::Symbol,
     syntax::Syntax,
     zstore::Tag,
@@ -84,6 +84,16 @@ fn nil() -> &'static Symbol {
     NIL.get_or_init(|| lurk_sym("nil"))
 }
 
+static BUILTIN_VEC: OnceCell<Vec<Symbol>> = OnceCell::new();
+fn builtin_vec() -> &'static Vec<Symbol> {
+    BUILTIN_VEC.get_or_init(|| {
+        LURK_PACKAGE_NONNIL_SYMBOLS_NAMES
+            .map(lurk_sym)
+            .into_iter()
+            .collect()
+    })
+}
+
 static QUOTE: OnceCell<Symbol> = OnceCell::new();
 fn quote() -> &'static Symbol {
     QUOTE.get_or_init(|| lurk_sym("quote"))
@@ -94,6 +104,8 @@ fn get_symbol_tag(symbol: &Symbol) -> Tag {
         Tag::Key
     } else if symbol == nil() {
         Tag::Nil
+    } else if builtin_vec().contains(symbol) {
+        Tag::Builtin
     } else {
         Tag::Sym
     }

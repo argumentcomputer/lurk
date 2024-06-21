@@ -70,6 +70,7 @@ pub enum Tag {
     Env,
     Err,
     Thunk,
+    Builtin,
 }
 
 impl Tag {

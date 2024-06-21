@@ -175,7 +175,8 @@ impl State {
 
         // bootstrap the lurk package
         let mut lurk_package = Package::new(root_package.intern(LURK_PACKAGE_SYMBOL_NAME));
-        for symbol_name in LURK_PACKAGE_SYMBOLS_NAMES.iter() {
+        lurk_package.intern("nil".to_string());
+        for symbol_name in LURK_PACKAGE_NONNIL_SYMBOLS_NAMES.iter() {
             lurk_package.intern((*symbol_name).to_string());
         }
 
@@ -239,7 +240,7 @@ const LURK_PACKAGE_SYMBOL_NAME: &str = "lurk";
 const USER_PACKAGE_SYMBOL_NAME: &str = "user";
 const META_PACKAGE_SYMBOL_NAME: &str = "meta";
 
-const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 36] = [
+pub(crate) const LURK_PACKAGE_NONNIL_SYMBOLS_NAMES: [&str; 35] = [
     "atom",
     "begin",
     "car",
@@ -258,7 +259,6 @@ const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 36] = [
     "lambda",
     "let",
     "letrec",
-    "nil",
     "num",
     "u64",
     "open",
