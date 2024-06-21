@@ -1228,12 +1228,7 @@ mod test {
 
     #[test]
     fn eval_test() {
-        use std::mem::take;
-
-        let mem = &mut Memory::init();
-        let store = &ZStore::<F, PoseidonBabyBearHasher>::new();
         let toplevel = &build_lurk_toplevel::<LurkHasher>();
-        let queries = &mut QueryRecord::new_with_init_mem(toplevel, take(&mut mem.map));
 
         // Chips
         let lurk_main = FuncChip::from_name("lurk_main", toplevel);
@@ -1250,6 +1245,8 @@ mod test {
         let ingress_builtin = FuncChip::from_name("ingress_builtin", toplevel);
         let egress = FuncChip::from_name("egress", toplevel);
         let egress_builtin = FuncChip::from_name("egress_builtin", toplevel);
+        let hash_32_8 = FuncChip::from_name("hash_32_8", toplevel);
+        let hash_48_8 = FuncChip::from_name("hash_48_8", toplevel);
 
         // Widths
         let expect_eq = |computed: usize, expected: Expect| {
@@ -1269,6 +1266,8 @@ mod test {
         expect_eq(ingress_builtin.width(), expect!["45"]);
         expect_eq(egress.width(), expect!["66"]);
         expect_eq(egress_builtin.width(), expect!["45"]);
+        expect_eq(hash_32_8.width(), expect!["677"]);
+        expect_eq(hash_48_8.width(), expect!["1013"]);
 
         let all_chips = [
             &eval,
@@ -1282,7 +1281,7 @@ mod test {
             &env_lookup,
         ];
 
-        let mut eval_aux = |expr: &str, res: &str| {
+        let eval_aux = |expr: &str, res: &str| {
 
             let ReadData {
                 tag: expr_tag,
@@ -1290,23 +1289,27 @@ mod test {
                 hashes,
             } = read(State::init_lurk_state().rccell(), expr).unwrap();
 
-            // let args: List<_> = [expr.tag, expr.raw, env].into();
+            let queries = &mut QueryRecord::new(&toplevel);
+            queries.inject_queries("hash_32_8", &toplevel, hashes);
+
             let ReadData {
                 tag: expected_tag,
                 digest: expected_digest,
                 hashes: _,
             } = read(State::init_lurk_state().rccell(), res).unwrap();
 
-            mem.map = take(&mut queries.mem_queries);
-            let expr = mem.read_and_ingress(expr, store).unwrap();
-            let res = mem.read_and_ingress(res, store).unwrap();
-            let env = F::zero();
-            let args: List<_> = [expr.tag, expr.raw, env].into();
-            queries.mem_queries = take(&mut mem.map);
-            eval.execute(args.clone(), queries);
-            let result = queries.func_queries[eval.func.index].get(&args).unwrap();
-            let expected = [res.tag, res.raw].into();
-            assert_eq!(result.output, expected);
+            let mut full_input = [F::zero(); 24];
+            full_input[0] = expr_tag;
+            full_input[8..16].copy_from_slice(&expr_digest);
+            full_input[16] = Tag::Env.to_field();
+
+            let full_input: List<_> = full_input.into();
+            lurk_main.execute_iter(full_input.clone(), queries);
+            let result = queries.func_queries[lurk_main.func.index].get(&full_input).unwrap();
+
+            assert_eq!(result.output[0], expected_tag);
+            assert_eq!(&result.output[8..], &expected_digest);
+
             all_chips.into_par_iter().for_each(|chip| {
                 let trace = chip.generate_trace_parallel(queries);
                 debug_constraints_collecting_queries(chip, &[], &trace);
