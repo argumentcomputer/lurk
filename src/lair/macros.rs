@@ -194,9 +194,11 @@ macro_rules! block {
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let $tgt:ident = Sym($sym:literal, $mem:ident, $store:ident); $($tail:tt)+ }, $ops:expr) => {{
-        let sym = $mem.read_and_ingress($sym, $store).unwrap().raw;
-        $ops.push($crate::lair::expr::OpE::Const($crate::var!($tgt), sym));
+    ({ let $tgt:ident = Builtin($sym:literal); $($tail:tt)+ }, $ops:expr) => {{
+        let idx = $crate::lurk::state::LURK_PACKAGE_NONNIL_SYMBOLS_NAMES
+            .iter()
+            .position(|&sym| sym == $sym).expect("Cannot find builtin") as u32;
+        $ops.push($crate::lair::expr::OpE::Const($crate::var!($tgt), $crate::lair::field_from_u32(idx)));
         let $tgt = $crate::var!($tgt);
         $crate::block!({ $($tail)* }, $ops)
     }};
@@ -305,20 +307,24 @@ macro_rules! block {
         let ctrl = $crate::lair::expr::CtrlE::MatchMany($var, cases);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
-    ({ match_sym($mem:ident, $store:ident) $var:ident { $( $sym:literal $(| $other_sym:literal)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
+    ({ match_builtin $var:ident { $( $sym:literal $(| $other_sym:literal)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
         let ops = $ops.into();
         let mut vec = Vec::new();
         {
             $(
-                let sym = $mem.read_and_ingress($sym, $store).unwrap().raw;
+                let idx = $crate::lurk::state::LURK_PACKAGE_NONNIL_SYMBOLS_NAMES
+                    .iter()
+                    .position(|&sym| sym == $sym).expect("Cannot find builtin") as u32;
                 vec.push((
-                    sym,
+                    $crate::lair::field_from_u32(idx),
                     $crate::block_init!( $branch )
                 ));
                 $(
-                    let other_sym = $mem.read_and_ingress($other_sym, $store).unwrap().raw;
+                    let other_idx = $crate::lurk::state::LURK_PACKAGE_NONNIL_SYMBOLS_NAMES
+                        .iter()
+                        .position(|&sym| sym == $other_sym).expect("Cannot find builtin") as u32;
                     vec.push((
-                        other_sym,
+                        $crate::lair::field_from_u32(other_idx),
                         $crate::block_init!( $branch ),
                     ));
                 )*

@@ -14,10 +14,9 @@ use crate::{
 };
 
 use super::{
-    memory::Memory,
     reader::read,
     state::{State, LURK_PACKAGE_NONNIL_SYMBOLS_NAMES},
-    zstore::{HasherTemp, Tag, ZStore},
+    zstore::Tag,
 };
 
 static BUILTIN_BABYBEAR_DIGESTS: OnceCell<Vec<Vec<BabyBear>>> = OnceCell::new();
@@ -38,17 +37,15 @@ fn builtin_digests() -> &'static Vec<Vec<BabyBear>> {
 // let builtins: Vec<Vec<F>> = ;
 /// Creates a `Toplevel` with the functions used for Lurk evaluation
 #[inline]
-pub fn build_lurk_toplevel<HT: HasherTemp<F = BabyBear>, H: Hasher<BabyBear>>(
-    mem: &mut Memory<BabyBear, HT>,
-    store: &ZStore<BabyBear, HT>,
-) -> Toplevel<BabyBear, H> {
+pub fn build_lurk_toplevel<H: Hasher<BabyBear>>() -> Toplevel<BabyBear, H> {
     let builtins = builtin_digests();
     Toplevel::new(&[
-        eval(mem, store),
-        eval_unop(mem, store),
-        eval_binop_num(mem, store),
-        eval_binop_misc(mem, store),
-        car_cdr(mem, store),
+        lurk_main(),
+        eval(),
+        eval_unop(),
+        eval_binop_num(),
+        eval_binop_misc(),
+        car_cdr(),
         eval_let(),
         eval_letrec(),
         apply(),
@@ -80,6 +77,7 @@ enum EvalErr {
     NotComm,
     NotString,
     CannotCastToNum,
+    NonConstantBuiltin,
     Todo,
 }
 
@@ -87,6 +85,27 @@ impl EvalErr {
     fn to_field<F: Field>(self) -> F {
         F::from_canonical_u8(self as u8)
     }
+}
+
+pub fn lurk_main<F: PrimeField>() -> FuncE<F> {
+    func!(
+        fn lurk_main(full_expr_tag: [8], expr_digest: [8], env_digest: [8]): [16] {
+            // Ingress on expr
+            let expr = call(ingress, full_expr_tag, expr_digest);
+            // Ingress on env
+            let padding = [0; 7];
+            let env_tag = Tag::Env;
+            let full_env_tag: [8] = (env_tag, padding);
+            let env = call(ingress, full_env_tag, env_digest);
+            // Evaluate expr, env
+            let (expr_tag, _rest: [7]) = full_expr_tag;
+            let (val_tag, val) = call(eval, expr_tag, expr, env);
+            // Egress on val
+            let val_digest: [8] = call(egress, val_tag, val);
+            let full_val_tag: [8] = (val_tag, padding);
+            return (full_val_tag, val_digest)
+        }
+    )
 }
 
 pub fn ingress<F: PrimeField>() -> FuncE<F> {
@@ -299,28 +318,26 @@ pub fn hash_48_8<F: PrimeField>() -> FuncE<F> {
     )
 }
 
-pub fn eval<F: PrimeField, H: HasherTemp<F = F>>(
-    mem: &mut Memory<F, H>,
-    store: &ZStore<F, H>,
-) -> FuncE<F> {
+pub fn eval<F: PrimeField>() -> FuncE<F> {
     func!(
         fn eval(expr_tag, expr, env): [2] {
             // Constants, tags, etc
-            let t = Sym("t", mem, store);
-            let nil = Sym("nil", mem, store);
+            let t = Builtin("t");
             let nil_tag = Tag::Nil;
             let cons_tag = Tag::Cons;
             let err_tag = Tag::Err;
             let invalid_form = EvalErr::InvalidForm;
 
             match expr_tag {
-                Tag::Sym => {
+                Tag::Builtin => {
                     let not_t = sub(expr, t);
-                    let not_nil = sub(expr, nil);
-                    let not_t_or_nil = mul(not_t, not_nil);
-                    if !not_t_or_nil {
+                    if !not_t {
                         return (expr_tag, expr)
                     }
+                    let non_constant_builtin = EvalErr::NonConstantBuiltin;
+                    return (err_tag, non_constant_builtin)
+                }
+                Tag::Sym => {
                     let (res_tag, res) = call(env_lookup, expr, env);
                     match res_tag {
                         Tag::Thunk => {
@@ -339,8 +356,8 @@ pub fn eval<F: PrimeField, H: HasherTemp<F = F>>(
                 Tag::Cons => {
                     let (head_tag, head, rest_tag, rest) = load(expr);
                     match head_tag {
-                        Tag::Sym => {
-                            match_sym(mem, store) head {
+                        Tag::Builtin => {
+                            match_builtin head {
                                 "lambda" => {
                                     // A lambda expression is a 3 element list
                                     // first element: lambda symbol
@@ -582,13 +599,10 @@ pub fn eval<F: PrimeField, H: HasherTemp<F = F>>(
     )
 }
 
-pub fn car_cdr<F: PrimeField, H: HasherTemp<F = F>>(
-    mem: &mut Memory<F, H>,
-    store: &ZStore<F, H>,
-) -> FuncE<F> {
+pub fn car_cdr<F: PrimeField>() -> FuncE<F> {
     func!(
         fn car_cdr(rest_tag, rest, env): [4] {
-            let nil = Sym("nil", mem, store);
+            let nil = 0;
             let nil_tag = Tag::Nil;
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
@@ -632,10 +646,7 @@ pub fn car_cdr<F: PrimeField, H: HasherTemp<F = F>>(
     )
 }
 
-pub fn eval_binop_num<F: PrimeField, H: HasherTemp<F = F>>(
-    mem: &mut Memory<F, H>,
-    store: &ZStore<F, H>,
-) -> FuncE<F> {
+pub fn eval_binop_num<F: PrimeField>() -> FuncE<F> {
     func!(
         fn eval_binop_num(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
@@ -680,7 +691,7 @@ pub fn eval_binop_num<F: PrimeField, H: HasherTemp<F = F>>(
                 let err = EvalErr::ArgNotNumber;
                 return (err_tag, err)
             }
-            match_sym(mem, store) head {
+            match_builtin head {
                 "+" => {
                     let res = add(val1, val2);
                     return (num_tag, res)
@@ -704,11 +715,11 @@ pub fn eval_binop_num<F: PrimeField, H: HasherTemp<F = F>>(
                 "=" => {
                     let diff = sub(val1, val2);
                     if !diff {
-                        let sym_tag = Tag::Sym;
-                        let t = Sym("t", mem, store);
-                        return (sym_tag, t)
+                        let builtin_tag = Tag::Builtin;
+                        let t = Builtin("t");
+                        return (builtin_tag, t)
                     }
-                    let nil = Sym("nil", mem, store);
+                    let nil = 0;
                     return (nil_tag, nil)
                 }
             }
@@ -716,10 +727,7 @@ pub fn eval_binop_num<F: PrimeField, H: HasherTemp<F = F>>(
     )
 }
 
-pub fn eval_binop_misc<F: PrimeField, H: HasherTemp<F = F>>(
-    mem: &mut Memory<F, H>,
-    store: &ZStore<F, H>,
-) -> FuncE<F> {
+pub fn eval_binop_misc<F: PrimeField>() -> FuncE<F> {
     func!(
         fn eval_binop_misc(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
@@ -752,7 +760,7 @@ pub fn eval_binop_misc<F: PrimeField, H: HasherTemp<F = F>>(
                     return (val2_tag, val2)
                 }
             };
-            match_sym(mem, store) head {
+            match_builtin head {
                 "cons" => {
                     let cons = store(val1_tag, val1, val2_tag, val2);
                     return (cons_tag, cons)
@@ -784,14 +792,14 @@ pub fn eval_binop_misc<F: PrimeField, H: HasherTemp<F = F>>(
                     return (err_tag, invalid_form)
                 }
                 "eq" => {
-                    let sym_tag = Tag::Sym;
-                    let t = Sym("t", mem, store);
-                    let nil = Sym("nil", mem, store);
+                    let t = Builtin("t");
+                    let nil = 0;
                     let eq_tag = eq(val1_tag, val2_tag);
                     let eq_val = eq(val1, val2);
                     let eq = mul(eq_tag, eq_val);
                     if eq {
-                        return (sym_tag, t)
+                        let builtin_tag = Tag::Builtin;
+                        return (builtin_tag, t)
                     }
                     return (nil_tag, nil)
                }
@@ -801,10 +809,7 @@ pub fn eval_binop_misc<F: PrimeField, H: HasherTemp<F = F>>(
     )
 }
 
-pub fn eval_unop<F: PrimeField, H: HasherTemp<F = F>>(
-    mem: &mut Memory<F, H>,
-    store: &ZStore<F, H>,
-) -> FuncE<F> {
+pub fn eval_unop<F: PrimeField>() -> FuncE<F> {
     func!(
         fn eval_unop(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
@@ -830,7 +835,7 @@ pub fn eval_unop<F: PrimeField, H: HasherTemp<F = F>>(
                 }
             };
 
-            match_sym(mem, store) head {
+            match_builtin head {
                 "commit" => {
                     let zero = 0;
                     let comm = store(zero, val_tag, val);
@@ -873,11 +878,11 @@ pub fn eval_unop<F: PrimeField, H: HasherTemp<F = F>>(
                 "atom" => {
                     let val_not_cons = sub(val_tag, cons_tag);
                     if val_not_cons {
-                        let sym_tag = Tag::Sym;
-                        let t = Sym("t", mem, store);
-                        return (sym_tag, t)
+                        let builtin_tag = Tag::Builtin;
+                        let t = Builtin("t");
+                        return (builtin_tag, t)
                     }
-                    let nil = Sym("nil", mem, store);
+                    let nil = 0;
                     return (nil_tag, nil)
                 }
                 "emit" => {
@@ -1143,9 +1148,10 @@ mod test {
             execute::QueryRecord, func_chip::FuncChip, hasher::LurkHasher, toplevel::Toplevel, List,
         },
         lurk::{
+            memory::Memory,
             reader::{read, ReadData},
             state::State,
-            zstore::{PoseidonBabyBearHasher, Tag},
+            zstore::{PoseidonBabyBearHasher, ZStore},
         },
     };
 
@@ -1226,12 +1232,11 @@ mod test {
 
         let mem = &mut Memory::init();
         let store = &ZStore::<F, PoseidonBabyBearHasher>::new();
-        let toplevel = &build_lurk_toplevel::<_, LurkHasher>(mem, store);
+        let toplevel = &build_lurk_toplevel::<LurkHasher>();
         let queries = &mut QueryRecord::new_with_init_mem(toplevel, take(&mut mem.map));
 
         // Chips
-        let ingress = FuncChip::from_name("ingress", toplevel);
-        let egress = FuncChip::from_name("egress", toplevel);
+        let lurk_main = FuncChip::from_name("lurk_main", toplevel);
         let eval = FuncChip::from_name("eval", toplevel);
         let eval_unop = FuncChip::from_name("eval_unop", toplevel);
         let eval_binop_num = FuncChip::from_name("eval_binop_num", toplevel);
@@ -1241,12 +1246,17 @@ mod test {
         let car_cdr = FuncChip::from_name("car_cdr", toplevel);
         let apply = FuncChip::from_name("apply", toplevel);
         let env_lookup = FuncChip::from_name("env_lookup", toplevel);
+        let ingress = FuncChip::from_name("ingress", toplevel);
+        let ingress_builtin = FuncChip::from_name("ingress_builtin", toplevel);
+        let egress = FuncChip::from_name("egress", toplevel);
+        let egress_builtin = FuncChip::from_name("egress_builtin", toplevel);
 
         // Widths
         let expect_eq = |computed: usize, expected: Expect| {
             expected.assert_eq(&computed.to_string());
         };
-        expect_eq(eval.width(), expect!["106"]);
+        expect_eq(lurk_main.width(), expect!["54"]);
+        expect_eq(eval.width(), expect!["107"]);
         expect_eq(eval_unop.width(), expect!["33"]);
         expect_eq(eval_binop_num.width(), expect!["38"]);
         expect_eq(eval_binop_misc.width(), expect!["41"]);
@@ -1256,7 +1266,9 @@ mod test {
         expect_eq(apply.width(), expect!["36"]);
         expect_eq(env_lookup.width(), expect!["16"]);
         expect_eq(ingress.width(), expect!["87"]);
+        expect_eq(ingress_builtin.width(), expect!["45"]);
         expect_eq(egress.width(), expect!["66"]);
+        expect_eq(egress_builtin.width(), expect!["45"]);
 
         let all_chips = [
             &eval,
@@ -1271,6 +1283,20 @@ mod test {
         ];
 
         let mut eval_aux = |expr: &str, res: &str| {
+
+            let ReadData {
+                tag: expr_tag,
+                digest: expr_digest,
+                hashes,
+            } = read(State::init_lurk_state().rccell(), expr).unwrap();
+
+            // let args: List<_> = [expr.tag, expr.raw, env].into();
+            let ReadData {
+                tag: expected_tag,
+                digest: expected_digest,
+                hashes: _,
+            } = read(State::init_lurk_state().rccell(), res).unwrap();
+
             mem.map = take(&mut queries.mem_queries);
             let expr = mem.read_and_ingress(expr, store).unwrap();
             let res = mem.read_and_ingress(res, store).unwrap();
