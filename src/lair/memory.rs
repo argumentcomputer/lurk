@@ -13,6 +13,7 @@ use crate::air::builder::LookupBuilder;
 
 use super::{
     execute::{mem_index_from_len, MemMap, QueryRecord},
+    lair_chip::LairMachineProgram,
     relations::MemoryRelation,
 };
 
@@ -83,7 +84,7 @@ impl<'a, F: Field> WithEvents<'a> for MemChip<F> {
 
 impl<F: Field> MachineAir<F> for MemChip<F> {
     type Record = QueryRecord<F>;
-    type Program = QueryRecord<F>;
+    type Program = LairMachineProgram;
 
     #[inline]
     fn name(&self) -> String {

@@ -7,6 +7,7 @@ use super::{
     bytecode::{Block, Ctrl, Func, Op},
     execute::QueryRecord,
     hasher::Hasher,
+    lair_chip::LairMachineProgram,
     toplevel::Toplevel,
 };
 
@@ -286,7 +287,7 @@ impl<'a, F: Field, H: Hasher<F>> EventLens<FuncChip<'a, F, H>> for QueryRecord<F
 
 impl<'a, F: PrimeField, H: Hasher<F>> MachineAir<F> for FuncChip<'a, F, H> {
     type Record = QueryRecord<F>;
-    type Program = QueryRecord<F>;
+    type Program = LairMachineProgram;
 
     #[inline]
     fn name(&self) -> String {

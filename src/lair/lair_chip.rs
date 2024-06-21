@@ -2,7 +2,7 @@ use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{AbstractField, Field, PrimeField};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use sphinx_core::{
-    air::{EventLens, MachineAir, WithEvents},
+    air::{EventLens, MachineAir, MachineProgram, WithEvents},
     stark::Chip,
 };
 
@@ -42,9 +42,17 @@ impl<'a, F: Sync, H: Hasher<F>> BaseAir<F> for LairChip<'a, F, H> {
     }
 }
 
+pub struct LairMachineProgram;
+
+impl<F: AbstractField> MachineProgram<F> for LairMachineProgram {
+    fn pc_start(&self) -> F {
+        F::zero()
+    }
+}
+
 impl<'a, F: PrimeField, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
     type Record = QueryRecord<F>;
-    type Program = QueryRecord<F>;
+    type Program = LairMachineProgram;
 
     fn name(&self) -> String {
         match self {
@@ -154,13 +162,12 @@ mod tests {
         let toplevel = Toplevel::<F, H>::new(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
-        let program = QueryRecord::default();
         test_chip.execute([].into(), &mut queries);
 
         let config = BabyBearPoseidon2::new();
         let machine = StarkMachine::new(config, build_chip_vector(&toplevel), 0);
 
-        let (pk, vk) = machine.setup(&program);
+        let (pk, vk) = machine.setup(&LairMachineProgram);
         let mut challenger_p = machine.config().challenger();
         let mut challenger_v = machine.config().challenger();
         machine.debug_constraints(&pk, queries.clone(), &mut challenger_p.clone());
