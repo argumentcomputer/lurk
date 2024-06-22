@@ -131,25 +131,44 @@ impl<F: Field> Func<F> {
         let call_ctx = CallCtx { func_idx, call_inp };
 
         let mult = *local.next_aux(index);
-        let toplevel_sel = self
-            .body
-            .eval(builder, local, index, map, toplevel, call_ctx);
+        let toplevel_sel = self.body.return_sel::<AB>(local);
+        self.body.eval(
+            builder,
+            local,
+            &toplevel_sel,
+            index,
+            map,
+            toplevel,
+            call_ctx,
+        );
         builder.assert_bool(toplevel_sel.clone());
         builder.when_ne(toplevel_sel, F::one()).assert_zero(mult);
     }
 }
 
 impl<F: Field> Block<F> {
+    fn return_sel<AB>(&self, local: ColumnSlice<'_, AB::Var>) -> AB::Expr
+    where
+        AB: AirBuilder<F = F>,
+        <AB as AirBuilder>::Var: Debug,
+    {
+        self.return_idents
+            .iter()
+            .map(|i| local.sel[*i].into())
+            .sum()
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn eval<AB, H: Hasher<F>>(
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
+        sel: &AB::Expr,
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
         call_ctx: CallCtx<F, AB::Expr>,
-    ) -> AB::Expr
-    where
+    ) where
         AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
     {
@@ -157,30 +176,11 @@ impl<F: Field> Block<F> {
             !self.return_idents.is_empty(),
             "A block must have at least one return ident"
         );
-        let is_real = self
-            .return_idents
+        self.ops
             .iter()
-            .map(|i| local.sel[*i].into())
-            .sum();
-        let mut constraints = vec![];
-        self.ops.iter().for_each(|op| {
-            op.eval(
-                builder,
-                local,
-                &mut constraints,
-                &is_real,
-                index,
-                map,
-                toplevel,
-            )
-        });
-        let sel = self
-            .ctrl
+            .for_each(|op| op.eval(builder, local, sel, index, map, toplevel));
+        self.ctrl
             .eval(builder, local, index, map, toplevel, call_ctx);
-        for expr in constraints {
-            builder.when(sel.clone()).assert_zero(expr);
-        }
-        sel
     }
 }
 
@@ -190,8 +190,7 @@ impl<F: Field> Op<F> {
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
-        constraints: &mut Vec<AB::Expr>,
-        is_real: &AB::Expr,
+        sel: &AB::Expr,
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
@@ -230,7 +229,9 @@ impl<F: Field> Op<F> {
                     Val::Const(*a * *b)
                 } else {
                     let c = *local.next_aux(index);
-                    constraints.push(a.to_expr() * b.to_expr() - c);
+                    builder
+                        .when(sel.clone())
+                        .assert_eq(a.to_expr() * b.to_expr(), c);
                     Val::Expr(c.into())
                 };
                 map.push(c);
@@ -241,7 +242,7 @@ impl<F: Field> Op<F> {
                     Val::Const(a.inverse())
                 } else {
                     let c = *local.next_aux(index);
-                    constraints.push(a.to_expr() * c - F::one());
+                    builder.when(sel.clone()).assert_one(a.to_expr() * c);
                     Val::Expr(c.into())
                 };
                 map.push(c);
@@ -259,8 +260,8 @@ impl<F: Field> Op<F> {
                     //   a*d + x = 1, for some d
                     // means that a = 0 implies x = 1 and that a != 0 implies x = 0
                     // i.e. x = not(a)
-                    constraints.push(a.to_expr() * x);
-                    constraints.push(a.to_expr() * d + x - F::one());
+                    builder.when(sel.clone()).assert_zero(a.to_expr() * x);
+                    builder.when(sel.clone()).assert_one(a.to_expr() * d + x);
                     Val::Expr(x.into())
                 };
                 map.push(x);
@@ -276,8 +277,8 @@ impl<F: Field> Op<F> {
                 let inp = inp.iter().map(|i| map[*i].to_expr());
                 builder.receive(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
-                    is_real.clone(),
-                )
+                    sel.clone(),
+                );
             }
             Op::PreImg(idx, out) => {
                 let func = toplevel.get_by_index(*idx).unwrap();
@@ -290,14 +291,14 @@ impl<F: Field> Op<F> {
                 let out = out.iter().map(|o| map[*o].to_expr());
                 builder.receive(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
-                    is_real.clone(),
-                )
+                    sel.clone(),
+                );
             }
             Op::Store(values) => {
                 let ptr = *local.next_aux(index);
                 map.push(Val::Expr(ptr.into()));
                 let values = values.iter().map(|&idx| map[idx].to_expr());
-                builder.receive(MemoryRelation(ptr, values), is_real.clone());
+                builder.receive(MemoryRelation(ptr, values), sel.clone());
             }
             Op::Load(len, ptr) => {
                 let ptr = map[*ptr].to_expr();
@@ -306,14 +307,14 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(o.into()));
                     o
                 });
-                builder.receive(MemoryRelation(ptr, values), is_real.clone());
+                builder.receive(MemoryRelation(ptr, values), sel.clone());
             }
             Op::Hash(preimg) => {
                 let preimg: Vec<_> = preimg.iter().map(|a| map[*a].to_expr()).collect();
                 let hasher = &toplevel.hasher;
                 let witness_size = hasher.witness_size(preimg.len());
                 let witness = local.next_n_aux(index, witness_size);
-                let img_vars = hasher.eval_preimg(builder, preimg, witness, is_real.clone());
+                let img_vars = hasher.eval_preimg(builder, preimg, witness, sel.clone());
                 for img_var in img_vars {
                     map.push(Val::Expr(img_var.into()))
                 }
@@ -332,8 +333,7 @@ impl<F: Field> Ctrl<F> {
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
         call_ctx: CallCtx<F, AB::Expr>,
-    ) -> AB::Expr
-    where
+    ) where
         AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
     {
@@ -342,12 +342,11 @@ impl<F: Field> Ctrl<F> {
                 let map_len = map.len();
                 let init_state = index.save();
                 let v = map[*v].to_expr();
-                let mut sels = Vec::with_capacity(cases.size());
 
                 for (f, branch) in cases.branches.iter() {
-                    let sel = branch.eval(builder, local, index, map, toplevel, call_ctx.clone());
-                    builder.when(sel.clone()).assert_eq(v.clone(), *f);
-                    sels.push(sel);
+                    let sel = branch.return_sel::<AB>(local);
+                    branch.eval(builder, local, &sel, index, map, toplevel, call_ctx.clone());
+                    builder.when(sel).assert_eq(v.clone(), *f);
                     map.truncate(map_len);
                     index.restore(init_state);
                 }
@@ -356,29 +355,26 @@ impl<F: Field> Ctrl<F> {
                     let invs = (0..cases.branches.size())
                         .map(|_| *local.next_aux(index))
                         .collect::<Vec<_>>();
-                    let sel = branch.eval(builder, local, index, map, toplevel, call_ctx);
+                    let sel = branch.return_sel::<AB>(local);
+                    branch.eval(builder, local, &sel, index, map, toplevel, call_ctx);
                     for ((f, _), inv) in cases.branches.iter().zip(invs.into_iter()) {
                         builder.when(sel.clone()).assert_one(inv * (v.clone() - *f));
                     }
-                    sels.push(sel);
                     map.truncate(map_len);
                     index.restore(init_state);
                 }
-
-                sels.into_iter().sum()
             }
             Ctrl::MatchMany(vars, cases) => {
                 let map_len = map.len();
                 let init_state = index.save();
                 let vals: Vec<_> = vars.iter().map(|&var| map[var].to_expr()).collect();
-                let mut sels = Vec::with_capacity(cases.size());
 
                 for (fs, branch) in cases.branches.iter() {
-                    let sel = branch.eval(builder, local, index, map, toplevel, call_ctx.clone());
+                    let sel = branch.return_sel::<AB>(local);
+                    branch.eval(builder, local, &sel, index, map, toplevel, call_ctx.clone());
                     vals.iter()
                         .zip(fs.iter())
                         .for_each(|(v, f)| builder.when(sel.clone()).assert_eq(v.clone(), *f));
-                    sels.push(sel);
                     map.truncate(map_len);
                     index.restore(init_state);
                 }
@@ -387,7 +383,8 @@ impl<F: Field> Ctrl<F> {
                     let wit: Vec<Vec<_>> = (0..cases.branches.size())
                         .map(|_| (0..vars.len()).map(|_| *local.next_aux(index)).collect())
                         .collect();
-                    let sel = branch.eval(builder, local, index, map, toplevel, call_ctx);
+                    let sel = branch.return_sel::<AB>(local);
+                    branch.eval(builder, local, &sel, index, map, toplevel, call_ctx);
                     for (coeffs, (fs, _)) in wit.into_iter().zip(cases.branches.iter()) {
                         let diffs = vals
                             .iter()
@@ -396,12 +393,9 @@ impl<F: Field> Ctrl<F> {
                             .collect();
                         constrain_inequality_witness(sel.clone(), coeffs, diffs, builder);
                     }
-                    sels.push(sel);
                     map.truncate(map_len);
                     index.restore(init_state);
                 }
-
-                sels.into_iter().sum()
             }
             Ctrl::If(b, t, f) => {
                 let map_len = map.len();
@@ -409,17 +403,25 @@ impl<F: Field> Ctrl<F> {
                 let b = map[*b].to_expr();
 
                 let inv = *local.next_aux(index);
-                let t_sel = t.eval(builder, local, index, map, toplevel, call_ctx.clone());
-                builder.when(t_sel.clone()).assert_one(inv * b.clone());
+                let t_sel = t.return_sel::<AB>(local);
+                t.eval(
+                    builder,
+                    local,
+                    &t_sel,
+                    index,
+                    map,
+                    toplevel,
+                    call_ctx.clone(),
+                );
+                builder.when(t_sel).assert_one(inv * b.clone());
                 map.truncate(map_len);
                 index.restore(init_state);
 
-                let f_sel = f.eval(builder, local, index, map, toplevel, call_ctx);
-                builder.when(f_sel.clone()).assert_zero(b);
+                let f_sel = f.return_sel::<AB>(local);
+                f.eval(builder, local, &f_sel, index, map, toplevel, call_ctx);
+                builder.when(f_sel).assert_zero(b);
                 map.truncate(map_len);
                 index.restore(init_state);
-
-                t_sel + f_sel
             }
             Ctrl::IfMany(vars, t, f) => {
                 let map_len = map.len();
@@ -427,20 +429,28 @@ impl<F: Field> Ctrl<F> {
 
                 let coeffs = vars.iter().map(|_| *local.next_aux(index)).collect();
                 let vals = vars.iter().map(|&v| map[v].to_expr()).collect();
-                let t_sel = t.eval(builder, local, index, map, toplevel, call_ctx.clone());
-                constrain_inequality_witness(t_sel.clone(), coeffs, vals, builder);
+                let t_sel = t.return_sel::<AB>(local);
+                t.eval(
+                    builder,
+                    local,
+                    &t_sel,
+                    index,
+                    map,
+                    toplevel,
+                    call_ctx.clone(),
+                );
+                constrain_inequality_witness(t_sel, coeffs, vals, builder);
                 map.truncate(map_len);
                 index.restore(init_state);
 
-                let f_sel = f.eval(builder, local, index, map, toplevel, call_ctx);
+                let f_sel = f.return_sel::<AB>(local);
+                f.eval(builder, local, &f_sel, index, map, toplevel, call_ctx);
                 for var in vars.iter() {
                     let b = map[*var].to_expr();
                     builder.when(f_sel.clone()).assert_zero(b);
                 }
                 map.truncate(map_len);
                 index.restore(init_state);
-
-                t_sel + f_sel
             }
             Ctrl::Return(ident, vs) => {
                 let sel = local.sel[*ident];
@@ -453,7 +463,6 @@ impl<F: Field> Ctrl<F> {
                 }
                 let CallCtx { func_idx, call_inp } = call_ctx;
                 builder.send(CallRelation(func_idx, call_inp, out), sel);
-                sel.into()
             }
         }
     }
