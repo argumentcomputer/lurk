@@ -134,9 +134,7 @@ impl Reader {
             buffer.read_tag(Tag::Str);
             buffer.read_slice(&acc);
             let preimg = buffer.extract();
-            let img = self.hash(preimg);
-            self.hashes.insert(preimg, img);
-            img
+            self.hash(preimg)
         });
         self.str_cache.insert(s.to_string(), digest);
         digest
@@ -153,9 +151,7 @@ impl Reader {
             buffer.read_tag(Tag::Sym);
             buffer.read_slice(&acc);
             let preimg = buffer.extract();
-            let img = self.hash(preimg);
-            self.hashes.insert(preimg, img);
-            img
+            self.hash(preimg)
         });
         self.sym_cache.insert(s.clone(), digest);
         digest
@@ -176,7 +172,6 @@ impl Reader {
                 buffer.read_slice(&digest_acc);
                 let preimg = buffer.extract();
                 let img = self.hash(preimg);
-                self.hashes.insert(preimg, img);
                 (Tag::Cons, img)
             })
     }
