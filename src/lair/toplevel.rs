@@ -298,12 +298,7 @@ impl<F: Clone + Ord> BlockE<F> {
                         .iter()
                         .flat_map(|a| use_var(a, ctx).to_vec())
                         .collect();
-                    let mut i = 0;
-                    for v in img.as_slice() {
-                        let idxs = preimg[i..i + v.size].into();
-                        bind(v, idxs, ctx);
-                        i += v.size;
-                    }
+                    img.iter().for_each(|val| bind_new(val, ctx));
                     ops.push(Op::Hash(preimg));
                 }
             }
