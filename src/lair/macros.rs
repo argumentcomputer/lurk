@@ -55,6 +55,12 @@ macro_rules! block {
         let $tgt = $crate::var!($tgt);
         $crate::block!({ $($tail)* }, $ops)
     }};
+    ({ let $tgt:ident = Array($arr:expr); $($tail:tt)+ }, $ops:expr) => {{
+        let size = $arr.len();
+        $ops.push($crate::lair::expr::OpE::Array($crate::var!($tgt, size), $arr));
+        let $tgt = $crate::var!($tgt, size);
+        $crate::block!({ $($tail)* }, $ops)
+    }};
     ({ let $tgt:ident = [$($a:literal),*]; $($tail:tt)+ }, $ops:expr) => {{
         let arr = vec!($($crate::lair::field_from_i32($a)),*);
         let size = arr.len();

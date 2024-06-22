@@ -212,7 +212,10 @@ impl Reader {
                 let nil_hash = self.read_symbol(nil());
                 let quote_hash = self.read_symbol(quote());
                 let x_hash = self.read_syntax(x);
-                self.hash_list(vec![(Tag::Sym, quote_hash), x_hash], (Tag::Nil, nil_hash))
+                self.hash_list(
+                    vec![(Tag::Builtin, quote_hash), x_hash],
+                    (Tag::Nil, nil_hash),
+                )
             }
         };
         self.syn_cache.insert(syn.clone(), res);
