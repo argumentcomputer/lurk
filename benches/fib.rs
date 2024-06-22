@@ -2,7 +2,7 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use p3_baby_bear::BabyBear;
 use p3_field::AbstractField;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use std::{mem::take, time::Duration};
+use std::time::Duration;
 
 use loam::{
     lair::{
@@ -14,8 +14,8 @@ use loam::{
     },
     lurk::{
         eval::build_lurk_toplevel,
-        memory::Memory,
-        zstore::{PoseidonBabyBearHasher, ZStore},
+        reader::{read, ReadData},
+        state::State,
     },
 };
 
@@ -39,43 +39,44 @@ fn build_lurk_expr(arg: usize) -> String {
     )
 }
 
-fn setup<'a, H: Hasher<BabyBear>>(
+fn setup<H: Hasher<BabyBear>>(
     arg: usize,
-    mem: &mut Memory<BabyBear, PoseidonBabyBearHasher>,
-    store: &ZStore<BabyBear, PoseidonBabyBearHasher>,
-    toplevel: &'a Toplevel<BabyBear, H>,
+    toplevel: &Toplevel<BabyBear, H>,
 ) -> (
     List<BabyBear>,
-    FuncChip<'a, BabyBear, H>,
+    FuncChip<'_, BabyBear, H>,
     QueryRecord<BabyBear>,
 ) {
-    let mut queries = QueryRecord::new_with_init_mem(toplevel, take(&mut mem.map));
+    let code = build_lurk_expr(arg);
+    let ReadData {
+        tag: expr_tag,
+        digest: expr_digest,
+        hashes,
+    } = read(State::init_lurk_state().rccell(), &code).unwrap();
 
-    mem.map = take(&mut queries.mem_queries);
-    let expr = mem.read_and_ingress(&build_lurk_expr(arg), store).unwrap();
-    queries.mem_queries = take(&mut mem.map);
+    let mut queries = QueryRecord::new(toplevel);
+    queries.inject_queries("hash_32_8", toplevel, hashes);
 
-    let env = BabyBear::zero();
+    let mut full_input = [BabyBear::zero(); 24];
+    full_input[0] = expr_tag;
+    full_input[8..16].copy_from_slice(&expr_digest);
 
-    let args: List<_> = [expr.tag, expr.raw, env].into();
+    let args: List<_> = full_input.into();
+    let lurk_main = FuncChip::from_name("lurk_main", toplevel);
 
-    let eval = FuncChip::from_name("eval", toplevel);
-
-    (args, eval, queries)
+    (args, lurk_main, queries)
 }
 
 fn evaluation(c: &mut Criterion) {
     let arg = get_fib_arg();
     c.bench_function(&format!("evaluation-{arg}"), |b| {
-        let mem = &mut Memory::init();
-        let store = ZStore::<BabyBear, PoseidonBabyBearHasher>::new();
         let toplevel = build_lurk_toplevel::<LurkHasher>();
-        let (args, eval, queries) = setup(arg, mem, &store, &toplevel);
+        let (args, lurk_main, queries) = setup(arg, &toplevel);
 
         b.iter_batched(
             || (args.clone(), queries.clone()),
             |(args, mut queries)| {
-                eval.execute_iter(args, &mut queries);
+                lurk_main.execute_iter(args, &mut queries);
             },
             BatchSize::SmallInput,
         )
@@ -85,12 +86,10 @@ fn evaluation(c: &mut Criterion) {
 fn trace_generation(c: &mut Criterion) {
     let arg = get_fib_arg();
     c.bench_function(&format!("trace-generation-{arg}"), |b| {
-        let mem = &mut Memory::init();
-        let store = ZStore::<BabyBear, PoseidonBabyBearHasher>::new();
         let toplevel = build_lurk_toplevel::<LurkHasher>();
-        let (args, eval, mut queries) = setup(arg, mem, &store, &toplevel);
+        let (args, lurk_main, mut queries) = setup(arg, &toplevel);
 
-        eval.execute_iter(args, &mut queries);
+        lurk_main.execute_iter(args, &mut queries);
 
         let func_chips = FuncChip::from_toplevel(&toplevel);
 

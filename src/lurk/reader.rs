@@ -15,7 +15,7 @@ use super::{
     state::{lurk_sym, StateRcCell, LURK_PACKAGE_NONNIL_SYMBOLS_NAMES},
     symbol::Symbol,
     syntax::Syntax,
-    zstore::Tag,
+    tag::Tag,
 };
 
 const PREIMG_SIZE: usize = 32;

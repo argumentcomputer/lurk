@@ -16,7 +16,7 @@ use crate::{
 use super::{
     reader::read,
     state::{State, LURK_PACKAGE_NONNIL_SYMBOLS_NAMES},
-    zstore::Tag,
+    tag::Tag,
 };
 
 static BUILTIN_BABYBEAR_DIGESTS: OnceCell<Vec<Vec<BabyBear>>> = OnceCell::new();
@@ -34,7 +34,6 @@ fn builtin_digests() -> &'static Vec<Vec<BabyBear>> {
     })
 }
 
-// let builtins: Vec<Vec<F>> = ;
 /// Creates a `Toplevel` with the functions used for Lurk evaluation
 #[inline]
 pub fn build_lurk_toplevel<H: Hasher<BabyBear>>() -> Toplevel<BabyBear, H> {
@@ -74,7 +73,6 @@ enum EvalErr {
     ArgsNotList,
     ArgNotNumber,
     DivByZero,
-    GenericError,
     NotEnv,
     NotChar,
     NotCons,
@@ -1154,44 +1152,6 @@ pub fn env_lookup<F: Field>() -> FuncE<F> {
     )
 }
 
-pub fn list_to_env<F: PrimeField>() -> FuncE<F> {
-    func!(
-        fn list_to_env(list_tag, list): [2] {
-            let err_tag = Tag::Err;
-            let generic_err = EvalErr::GenericError;
-            let env_tag = Tag::Env;
-            match list_tag {
-                Tag::Nil => {
-                    let env = 0;
-                    return (env_tag, env)
-                }
-                Tag::Cons => {
-                    let (head_tag, head, tail_tag, tail) = load(list);
-                    match head_tag {
-                        Tag::Cons => {
-                            let (y_tag, y, val_tag, val) = load(head);
-                            match y_tag {
-                                Tag::Sym => {
-                                    let (tail_tag, tail_env) = call(list_to_env, tail_tag, tail);
-                                    let not_env = sub(env_tag, tail_tag);
-                                    if not_env {
-                                        return (err_tag, generic_err)
-                                    }
-                                    let env = store(y, val_tag, val, tail_env);
-                                    return (env_tag, env)
-                                }
-                            };
-                            return (err_tag, generic_err)
-                        }
-                    };
-                    return (err_tag, generic_err)
-                }
-            };
-            return (err_tag, generic_err)
-        }
-    )
-}
-
 #[cfg(test)]
 mod test {
     use expect_test::{expect, Expect};
@@ -1201,87 +1161,14 @@ mod test {
 
     use crate::{
         air::debug::debug_constraints_collecting_queries,
-        lair::{
-            execute::QueryRecord, func_chip::FuncChip, hasher::LurkHasher, toplevel::Toplevel, List,
-        },
+        lair::{execute::QueryRecord, func_chip::FuncChip, hasher::LurkHasher, List},
         lurk::{
-            memory::Memory,
             reader::{read, ReadData},
             state::State,
-            zstore::{PoseidonBabyBearHasher, ZStore},
         },
     };
 
     use super::*;
-
-    #[test]
-    fn list_lookup_test() {
-        let list_lookup = func!(
-            fn list_lookup(x, list_tag, list): [2] {
-                match list_tag {
-                    Tag::Nil => {
-                        let err_tag = Tag::Err;
-                        let err = EvalErr::UnboundVar;
-                        return (err_tag, err)
-                    }
-                    Tag::Cons => {
-                        let (_head_tag, head, tail_tag, tail) = load(list);
-                        let (_y_tag, y, val_tag, val) = load(head);
-                        let diff = sub(x, y);
-                        if !diff {
-                            return (val_tag, val)
-                        }
-                        let (res_tag, res) = call(list_lookup, x, tail_tag, tail);
-                        return (res_tag, res)
-                    }
-                }
-            }
-        );
-        let to_env_lookup = func!(
-            fn to_env_lookup(x, list_tag, list): [2] {
-                let (status, env) = call(list_to_env, list_tag, list);
-                if !status {
-                    return (status, status)
-                }
-                let (res_tag, res) = call(env_lookup, x, env);
-                return (res_tag, res)
-            }
-        );
-        let toplevel = Toplevel::<_, LurkHasher>::new(&[
-            list_lookup,
-            to_env_lookup,
-            env_lookup(),
-            list_to_env(),
-        ]);
-        let list_lookup = FuncChip::from_name("list_lookup", &toplevel);
-        let to_env_lookup = FuncChip::from_name("to_env_lookup", &toplevel);
-
-        let mut mem = Memory::init();
-        let store = &ZStore::<F, PoseidonBabyBearHasher>::new();
-        let list = mem
-            .read_and_ingress("((x . 10) (y . 20) (z . 30) (w . 40))", store)
-            .unwrap();
-        let y = mem.read_and_ingress("y", store).unwrap();
-        let z = mem.read_and_ingress("z", store).unwrap();
-
-        let queries = &mut QueryRecord::new_with_init_mem(&toplevel, mem.map);
-
-        let args: List<_> = [y.raw, list.tag, list.raw].into();
-        list_lookup.execute(args.clone(), queries);
-        let result = queries.func_queries[list_lookup.func.index]
-            .get(&args)
-            .unwrap();
-        let expected = [Tag::Num.to_field(), F::from_canonical_u32(20)].into();
-        assert_eq!(result.output, expected);
-
-        let args: List<_> = [z.raw, list.tag, list.raw].into();
-        to_env_lookup.execute(args.clone(), queries);
-        let result = queries.func_queries[to_env_lookup.func.index]
-            .get(&args)
-            .unwrap();
-        let expected = [Tag::Num.to_field(), F::from_canonical_u32(30)].into();
-        assert_eq!(result.output, expected);
-    }
 
     #[test]
     fn eval_test() {
