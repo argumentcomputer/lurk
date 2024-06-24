@@ -19,6 +19,7 @@ jobs:
         run: |
           git config --global url."https://${{ secrets.REPO_TOKEN }}@github.com/".insteadOf ssh://git@github.com
           git config --global url."https://${{ secrets.REPO_TOKEN }}@github.com".insteadOf https://github.com
+          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" | tee -a $GITHUB_ENV
       - uses: actions/checkout@v4
         with:
           repository: lurk-lab/ci-workflows
@@ -38,6 +39,7 @@ jobs:
         run: |
           git config --global url."https://${{ secrets.REPO_TOKEN }}@github.com/".insteadOf ssh://git@github.com
           git config --global url."https://${{ secrets.REPO_TOKEN }}@github.com".insteadOf https://github.com
+          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" | tee -a $GITHUB_ENV
       - uses: actions/checkout@v4
         with:
           repository: lurk-lab/ci-workflows
