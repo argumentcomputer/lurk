@@ -142,8 +142,11 @@ mod tests {
 
     use crate::lair::execute::QueryRecord;
     use p3_baby_bear::BabyBear;
-    use sphinx_core::{stark::{LocalProver, StarkGenericConfig, StarkMachine}, utils::SphinxCoreOpts};
     use sphinx_core::utils::BabyBearPoseidon2;
+    use sphinx_core::{
+        stark::{LocalProver, StarkGenericConfig, StarkMachine},
+        utils::SphinxCoreOpts,
+    };
 
     #[test]
     fn test_prove_and_verify() {
