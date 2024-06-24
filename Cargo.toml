@@ -8,19 +8,19 @@ edition = "2021"
 [workspace.dependencies]
 rayon = "1.10.0"
 itertools = "0.13.0"
-p3-air = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new-tmp" }
-p3-baby-bear = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new-tmp" }
-p3-field = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new-tmp" }
-p3-matrix = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new-tmp" }
-p3-mds = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new-tmp" }
-p3-commit = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new-tmp" }
-p3-challenger = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new-tmp" }
-p3-maybe-rayon = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new-tmp" }
-p3-poseidon2 = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new-tmp" }
-p3-symmetric = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new-tmp" }
-p3-uni-stark = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new-tmp" }
-p3-util = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1-new-tmp" }
-sphinx-core = { git = "ssh://git@github.com/lurk-lab/sphinx.git", branch = "dev-tmp"}
+p3-air = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-baby-bear = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-field = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-matrix = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-mds = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-commit = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-challenger = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-maybe-rayon = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-poseidon2 = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-symmetric = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-uni-stark = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+p3-util = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
+sphinx-core = { git = "ssh://git@github.com/lurk-lab/sphinx.git", branch = "dev"}
 anyhow = "1.0.72"
 arc-swap = "1.7.1"
 base-x = "0.2.11"
@@ -42,6 +42,7 @@ serde_json = "1.0"
 thiserror = "1.0.44"
 hybrid-array = "0.2.0-rc"
 lazy_static = "1.4.0"
+hashbrown = "0.14.5"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -77,6 +78,7 @@ p3-poseidon2 = { workspace = true }
 p3-symmetric = { workspace = true }
 p3-util = { workspace = true }
 sphinx-core = { workspace = true }
+hashbrown = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

@@ -10,7 +10,7 @@ use p3_field::AbstractField;
 
 // +++ t = 4, R_F = 8, R_P = 21 +++
 lazy_static! {
-    pub static ref MATRIX_DIAG_4_BABYBEAR: Array<BabyBear, U4> = Array::clone_from_slice(
+    pub static ref MATRIX_DIAG_4_BABYBEAR: Array<BabyBear, U4> = Array::try_from(
         [
             BabyBear::from_canonical_u32(0x35bf6f46),
             BabyBear::from_canonical_u32(0x6982669e),
@@ -18,7 +18,8 @@ lazy_static! {
             BabyBear::from_canonical_u32(0x375cdab7),
         ]
         .as_ref()
-    );
+    )
+    .unwrap();
     pub static ref FULL_RC_4_8: [[BabyBear; 4]; 8] = [
         [
             BabyBear::from_canonical_u32(0x1b149b6a),
@@ -96,7 +97,7 @@ lazy_static! {
 
 // +++ t = 8, R_F = 8, R_P = 12 +++
 lazy_static! {
-    pub static ref MATRIX_DIAG_8_BABYBEAR: Array<BabyBear, U8> = Array::clone_from_slice(
+    pub static ref MATRIX_DIAG_8_BABYBEAR: Array<BabyBear, U8> = Array::try_from(
         [
             BabyBear::from_canonical_u32(0x17a3691a),
             BabyBear::from_canonical_u32(0x00849878),
@@ -108,7 +109,8 @@ lazy_static! {
             BabyBear::from_canonical_u32(0x468846c4),
         ]
         .as_ref()
-    );
+    )
+    .unwrap();
     pub static ref FULL_RC_8_8: [[BabyBear; 8]; 8] = [
         [
             BabyBear::from_canonical_u32(0x11978cde),
@@ -209,7 +211,7 @@ lazy_static! {
 
 // +++ t = 12, R_F = 8, R_P = 10 +++
 lazy_static! {
-    pub static ref MATRIX_DIAG_12_BABYBEAR: Array<BabyBear, U12> = Array::clone_from_slice(
+    pub static ref MATRIX_DIAG_12_BABYBEAR: Array<BabyBear, U12> = Array::try_from(
         [
             BabyBear::from_canonical_u32(0x5ce6d17e),
             BabyBear::from_canonical_u32(0x392b0106),
@@ -225,7 +227,8 @@ lazy_static! {
             BabyBear::from_canonical_u32(0x63a32984),
         ]
         .as_ref()
-    );
+    )
+    .unwrap();
     pub static ref FULL_RC_12_8: [[BabyBear; 12]; 8] = [
         [
             BabyBear::from_canonical_u32(0x44d3bb88),
@@ -356,7 +359,7 @@ lazy_static! {
 
 // +++ t = 16, R_F = 8, R_P = 13 +++
 lazy_static! {
-    pub static ref MATRIX_DIAG_16_BABYBEAR: Array<BabyBear, U16> = Array::clone_from_slice(
+    pub static ref MATRIX_DIAG_16_BABYBEAR: Array<BabyBear, U16> = Array::try_from(
         [
             BabyBear::from_canonical_u32(0x0a632d93),
             BabyBear::from_canonical_u32(0x6db657b6),
@@ -376,7 +379,8 @@ lazy_static! {
             BabyBear::from_canonical_u32(0x5231c801),
         ]
         .as_ref()
-    );
+    )
+    .unwrap();
     pub static ref FULL_RC_16_8: [[BabyBear; 16]; 8] = [
         [
             BabyBear::from_canonical_u32(0x69cbb6af),
@@ -542,7 +546,7 @@ lazy_static! {
 
 // +++ t = 20, R_F = 8, R_P = 18 +++
 lazy_static! {
-    pub static ref MATRIX_DIAG_20_BABYBEAR: Array<BabyBear, U20> = Array::clone_from_slice(
+    pub static ref MATRIX_DIAG_20_BABYBEAR: Array<BabyBear, U20> = Array::try_from(
         [
             BabyBear::from_canonical_u32(0x60531da2),
             BabyBear::from_canonical_u32(0x332932da),
@@ -566,7 +570,8 @@ lazy_static! {
             BabyBear::from_canonical_u32(0x025b97c2),
         ]
         .as_ref()
-    );
+    )
+    .unwrap();
     pub static ref FULL_RC_20_8: [[BabyBear; 20]; 8] = [
         [
             BabyBear::from_canonical_u32(0x30cd4497),
@@ -769,7 +774,7 @@ lazy_static! {
 
 // +++ t = 24, R_F = 8, R_P = 21 +++
 lazy_static! {
-    pub static ref MATRIX_DIAG_24_BABYBEAR: Array<BabyBear, U24> = Array::clone_from_slice(
+    pub static ref MATRIX_DIAG_24_BABYBEAR: Array<BabyBear, U24> = Array::try_from(
         [
             BabyBear::from_canonical_u32(0x409133ef),
             BabyBear::from_canonical_u32(0x1667a8a0),
@@ -797,7 +802,8 @@ lazy_static! {
             BabyBear::from_canonical_u32(0x36c0e387),
         ]
         .as_ref()
-    );
+    )
+    .unwrap();
     pub static ref FULL_RC_24_8: [[BabyBear; 24]; 8] = [
         [
             BabyBear::from_canonical_u32(0x0fa20c37),
@@ -1035,7 +1041,7 @@ lazy_static! {
 
 // +++ t = 28, R_F = 8, R_P = 25 +++
 lazy_static! {
-    pub static ref MATRIX_DIAG_28_BABYBEAR: Array<BabyBear, U28> = Array::clone_from_slice(
+    pub static ref MATRIX_DIAG_28_BABYBEAR: Array<BabyBear, U28> = Array::try_from(
         [
             BabyBear::from_canonical_u32(0x283b2716),
             BabyBear::from_canonical_u32(0x2c6fc85a),
@@ -1067,7 +1073,8 @@ lazy_static! {
             BabyBear::from_canonical_u32(0x29cd05b9),
         ]
         .as_ref()
-    );
+    )
+    .unwrap();
     pub static ref FULL_RC_28_8: [[BabyBear; 28]; 8] = [
         [
             BabyBear::from_canonical_u32(0x1a4948c3),
@@ -1341,7 +1348,7 @@ lazy_static! {
 
 // +++ t = 32, R_F = 8, R_P = 30 +++
 lazy_static! {
-    pub static ref MATRIX_DIAG_32_BABYBEAR: Array<BabyBear, U32> = Array::clone_from_slice(
+    pub static ref MATRIX_DIAG_32_BABYBEAR: Array<BabyBear, U32> = Array::try_from(
         [
             BabyBear::from_canonical_u32(0x08529dda),
             BabyBear::from_canonical_u32(0x082b3a31),
@@ -1377,7 +1384,8 @@ lazy_static! {
             BabyBear::from_canonical_u32(0x524b3356),
         ]
         .as_ref()
-    );
+    )
+    .unwrap();
     pub static ref FULL_RC_32_8: [[BabyBear; 32]; 8] = [
         [
             BabyBear::from_canonical_u32(0x6710e381),
@@ -1688,7 +1696,7 @@ lazy_static! {
 
 // +++ t = 36, R_F = 8, R_P = 34 +++
 lazy_static! {
-    pub static ref MATRIX_DIAG_36_BABYBEAR: Array<BabyBear, U36> = Array::clone_from_slice(
+    pub static ref MATRIX_DIAG_36_BABYBEAR: Array<BabyBear, U36> = Array::try_from(
         [
             BabyBear::from_canonical_u32(0x14fe3780),
             BabyBear::from_canonical_u32(0x24a66ad4),
@@ -1728,7 +1736,8 @@ lazy_static! {
             BabyBear::from_canonical_u32(0x3835c26b),
         ]
         .as_ref()
-    );
+    )
+    .unwrap();
     pub static ref FULL_RC_36_8: [[BabyBear; 36]; 8] = [
         [
             BabyBear::from_canonical_u32(0x2944306f),
@@ -2075,7 +2084,7 @@ lazy_static! {
 
 // +++ t = 40, R_F = 8, R_P = 38 +++
 lazy_static! {
-    pub static ref MATRIX_DIAG_40_BABYBEAR: Array<BabyBear, U40> = Array::clone_from_slice(
+    pub static ref MATRIX_DIAG_40_BABYBEAR: Array<BabyBear, U40> = Array::try_from(
         [
             BabyBear::from_canonical_u32(0x1777e9b2),
             BabyBear::from_canonical_u32(0x0543f0b4),
@@ -2119,7 +2128,8 @@ lazy_static! {
             BabyBear::from_canonical_u32(0x77215247),
         ]
         .as_ref()
-    );
+    )
+    .unwrap();
     pub static ref FULL_RC_40_8: [[BabyBear; 40]; 8] = [
         [
             BabyBear::from_canonical_u32(0x0267f8f9),
@@ -2502,7 +2512,7 @@ lazy_static! {
 
 // +++ t = 44, R_F = 8, R_P = 42 +++
 lazy_static! {
-    pub static ref MATRIX_DIAG_44_BABYBEAR: Array<BabyBear, U44> = Array::clone_from_slice(
+    pub static ref MATRIX_DIAG_44_BABYBEAR: Array<BabyBear, U44> = Array::try_from(
         [
             BabyBear::from_canonical_u32(0x15c26880),
             BabyBear::from_canonical_u32(0x20f77f08),
@@ -2550,7 +2560,8 @@ lazy_static! {
             BabyBear::from_canonical_u32(0x1c3102da),
         ]
         .as_ref()
-    );
+    )
+    .unwrap();
     pub static ref FULL_RC_44_8: [[BabyBear; 44]; 8] = [
         [
             BabyBear::from_canonical_u32(0x1c9054d7),
@@ -2969,7 +2980,7 @@ lazy_static! {
 
 // +++ t = 48, R_F = 8, R_P = 46 +++
 lazy_static! {
-    pub static ref MATRIX_DIAG_48_BABYBEAR: Array<BabyBear, U48> = Array::clone_from_slice(
+    pub static ref MATRIX_DIAG_48_BABYBEAR: Array<BabyBear, U48> = Array::try_from(
         [
             BabyBear::from_canonical_u32(0x1c9a964a),
             BabyBear::from_canonical_u32(0x5f04c2b2),
@@ -3021,7 +3032,8 @@ lazy_static! {
             BabyBear::from_canonical_u32(0x3b3bd3b0),
         ]
         .as_ref()
-    );
+    )
+    .unwrap();
     pub static ref FULL_RC_48_8: [[BabyBear; 48]; 8] = [
         [
             BabyBear::from_canonical_u32(0x761c8842),

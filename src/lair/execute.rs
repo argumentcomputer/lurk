@@ -1,8 +1,8 @@
 use fxhash::FxBuildHasher;
+use hashbrown::HashMap;
 use indexmap::IndexMap;
 use p3_field::{AbstractField, Field, PrimeField};
 use sphinx_core::stark::{Indexed, MachineRecord};
-use std::collections::HashMap;
 use std::slice::Iter;
 
 use super::{

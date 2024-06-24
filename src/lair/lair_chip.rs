@@ -58,7 +58,9 @@ impl<'a, F: PrimeField, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
         match self {
             Self::Func(func_chip) => format!("Func[{}]", func_chip.name()),
             Self::Mem(mem_chip) => format!("Mem[{}]", mem_chip.name()),
-            Self::DummyPreprocessed => "Dummy".to_string(),
+            // the following is required by sphinx
+            // TODO: engineer our way out of such upstream check
+            Self::DummyPreprocessed => "CPU".to_string(),
         }
     }
 
@@ -142,8 +144,11 @@ mod tests {
 
     use crate::lair::execute::QueryRecord;
     use p3_baby_bear::BabyBear;
-    use sphinx_core::stark::{LocalProver, StarkGenericConfig, StarkMachine};
     use sphinx_core::utils::BabyBearPoseidon2;
+    use sphinx_core::{
+        stark::{LocalProver, StarkGenericConfig, StarkMachine},
+        utils::SphinxCoreOpts,
+    };
 
     #[test]
     fn test_prove_and_verify() {
@@ -171,7 +176,8 @@ mod tests {
         let mut challenger_p = machine.config().challenger();
         let mut challenger_v = machine.config().challenger();
         machine.debug_constraints(&pk, queries.clone(), &mut challenger_p.clone());
-        let proof = machine.prove::<LocalProver<_, _>>(&pk, queries, &mut challenger_p);
+        let opts = SphinxCoreOpts::default();
+        let proof = machine.prove::<LocalProver<_, _>>(&pk, queries, &mut challenger_p, opts);
         machine
             .verify(&vk, &proof, &mut challenger_v)
             .expect("proof verifies");
