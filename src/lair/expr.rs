@@ -47,7 +47,7 @@ pub enum OpE<F> {
     /// `Const(var, x)` binds `var` to the constant `x`
     Const(Var, F),
     /// `Array(var, arr)` binds `var` to the constant array `arr`
-    Array(Var, Vec<F>),
+    Array(Var, List<F>),
     /// `Add(x, y, z)` binds `x` to the sum of the bindings of `y` and `z`
     Add(Var, Var, Var),
     /// `Sub(x, y, z)` binds `x` to the subtraction of the bindings of `y` and `z`

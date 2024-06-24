@@ -51,7 +51,7 @@ macro_rules! block_init {
 macro_rules! block {
     // Operations
     ({ let $tgt:ident = $a:literal; $($tail:tt)+ }, $ops:expr) => {{
-        $ops.push($crate::lair::expr::OpE::Const($crate::var!($tgt), $crate::lair::field_from_i32($a)));
+        $ops.push($crate::lair::expr::OpE::Const($crate::var!($tgt), $crate::lair::field_from_u32($a)));
         let $tgt = $crate::var!($tgt);
         $crate::block!({ $($tail)* }, $ops)
     }};
@@ -62,14 +62,14 @@ macro_rules! block {
         $crate::block!({ $($tail)* }, $ops)
     }};
     ({ let $tgt:ident = [$($a:literal),*]; $($tail:tt)+ }, $ops:expr) => {{
-        let arr = vec!($($crate::lair::field_from_i32($a)),*);
+        let arr: $crate::lair::List<_> = [$($crate::lair::field_from_u32($a)),*].into();
         let size = arr.len();
         $ops.push($crate::lair::expr::OpE::Array($crate::var!($tgt, size), arr));
         let $tgt = $crate::var!($tgt, size);
         $crate::block!({ $($tail)* }, $ops)
     }};
     ({ let $tgt:ident = [$f:literal; $size:literal]; $($tail:tt)+ }, $ops:expr) => {{
-        let arr = [$f; $size].into_iter().map($crate::lair::field_from_i32).collect::<Vec<_>>();
+        let arr: $crate::lair::List<_> = [$f; $size].into_iter().map($crate::lair::field_from_u32).collect();
         let size = arr.len();
         $ops.push($crate::lair::expr::OpE::Array($crate::var!($tgt, size), arr));
         let $tgt = $crate::var!($tgt, size);
@@ -200,14 +200,6 @@ macro_rules! block {
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let $tgt:ident = Builtin($sym:literal); $($tail:tt)+ }, $ops:expr) => {{
-        let idx = $crate::lurk::state::LURK_PACKAGE_NONNIL_SYMBOLS_NAMES
-            .iter()
-            .position(|&sym| sym == $sym).expect("Cannot find builtin") as u32;
-        $ops.push($crate::lair::expr::OpE::Const($crate::var!($tgt), $crate::lair::field_from_u32(idx)));
-        let $tgt = $crate::var!($tgt);
-        $crate::block!({ $($tail)* }, $ops)
-    }};
     ({ let $tgt:ident = $a:ident; $($tail:tt)+ }, $ops:expr) => {{
         let $tgt = $a;
         $crate::block!({ $($tail)* }, $ops)
@@ -242,18 +234,18 @@ macro_rules! block {
         let ctrl = $crate::lair::expr::CtrlE::If($x, false_block, true_block);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
-    ({ match $var:ident { $( Tag::$tag:ident $(| Tag::$other_tag:ident)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
+    ({ match $var:ident { $( $num:literal $(, $other_num:literal)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
         let ops = $ops.into();
         let mut vec = Vec::new();
         {
             $(
                 vec.push((
-                    $crate::lurk::tag::Tag::$tag.to_field(),
+                    $crate::lair::field_from_u32($num),
                     $crate::block_init!( $branch )
                 ));
                 $(
                     vec.push((
-                        $crate::lurk::tag::Tag::$other_tag.to_field(),
+                        $crate::lair::field_from_u32($other_num),
                         $crate::block_init!( $branch ),
                     ));
                 )*
@@ -265,41 +257,18 @@ macro_rules! block {
         let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
-    ({ match $var:ident { $( $num:literal $(| $other_num:literal)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
-        let ops = $ops.into();
-        let mut vec = Vec::new();
-        {
-            $(
-                vec.push((
-                    $crate::lair::field_from_i32($num),
-                    $crate::block_init!( $branch )
-                ));
-                $(
-                    vec.push((
-                        $crate::lair::field_from_i32($other_num),
-                        $crate::block_init!( $branch ),
-                    ));
-                )*
-            )*
-        }
-        let branches = $crate::lair::map::Map::from_vec(vec);
-        let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;
-        let cases = $crate::lair::expr::CasesE { branches, default };
-        let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
-        $crate::lair::expr::BlockE { ops, ctrl }
-    }};
-    ({ match $var:ident { $( $arr:tt $(| $other_arr:tt)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
+    ({ match $var:ident { $( $arr:tt $(, $other_arr:tt)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
         let ops = $ops.into();
         let mut vec = Vec::new();
         {
             $({
-                let arr = $arr.map($crate::lair::field_from_i32).into_iter().collect();
+                let arr = $arr.map($crate::lair::field_from_u32).into_iter().collect();
                 vec.push((
                     arr,
                     $crate::block_init!( $branch )
                 ));
                 $({
-                    let other_arr = $other_arr.map($crate::lair::field_from_i32).into_iter().collect();
+                    let other_arr = $other_arr.map($crate::lair::field_from_u32).into_iter().collect();
                     vec.push((
                         other_arr,
                         $crate::block_init!( $branch ),
@@ -313,24 +282,43 @@ macro_rules! block {
         let ctrl = $crate::lair::expr::CtrlE::MatchMany($var, cases);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
-    ({ match_builtin $var:ident { $( $sym:literal $(| $other_sym:literal)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
+    ({ match $var:ident { $( $raw:expr $(, $other_raw:expr)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
         let ops = $ops.into();
         let mut vec = Vec::new();
+        #[allow(clippy::redundant_closure_call)]
         {
             $(
-                let idx = $crate::lurk::state::LURK_PACKAGE_NONNIL_SYMBOLS_NAMES
-                    .iter()
-                    .position(|&sym| sym == $sym).expect("Cannot find builtin") as u32;
                 vec.push((
-                    $crate::lair::field_from_u32(idx),
+                    $raw.to_field(),
                     $crate::block_init!( $branch )
                 ));
                 $(
-                    let other_idx = $crate::lurk::state::LURK_PACKAGE_NONNIL_SYMBOLS_NAMES
-                        .iter()
-                        .position(|&sym| sym == $other_sym).expect("Cannot find builtin") as u32;
                     vec.push((
-                        $crate::lair::field_from_u32(other_idx),
+                        $other_raw.to_field(),
+                        $crate::block_init!( $branch ),
+                    ));
+                )*
+            )*
+        }
+        let branches = $crate::lair::map::Map::from_vec(vec);
+        let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;
+        let cases = $crate::lair::expr::CasesE { branches, default };
+        let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
+        $crate::lair::expr::BlockE { ops, ctrl }
+    }};
+    ({ match $var:ident [$cloj:expr] { $( $raw:expr $(, $other_raw:expr)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
+        let ops = $ops.into();
+        let mut vec = Vec::new();
+        #[allow(clippy::redundant_closure_call)]
+        {
+            $(
+                vec.push((
+                    $cloj($raw),
+                    $crate::block_init!( $branch )
+                ));
+                $(
+                    vec.push((
+                        $cloj($other_raw),
                         $crate::block_init!( $branch ),
                     ));
                 )*

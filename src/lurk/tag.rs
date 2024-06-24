@@ -1,4 +1,4 @@
-use p3_field::Field;
+use p3_field::AbstractField;
 
 pub const EXPR_TAG_INIT: u16 = 0b0000_0000_0000_0000;
 
@@ -22,7 +22,7 @@ pub enum Tag {
 }
 
 impl Tag {
-    pub fn to_field<F: Field>(self) -> F {
+    pub fn to_field<F: AbstractField>(self) -> F {
         F::from_canonical_u16(self as u16)
     }
 }
