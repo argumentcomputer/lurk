@@ -58,7 +58,9 @@ impl<'a, F: PrimeField, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
         match self {
             Self::Func(func_chip) => format!("Func[{}]", func_chip.name()),
             Self::Mem(mem_chip) => format!("Mem[{}]", mem_chip.name()),
-            Self::DummyPreprocessed => "Dummy".to_string(),
+            // the following is required by sphinx
+            // TODO: engineer our way out of such upstream check
+            Self::DummyPreprocessed => "CPU".to_string(),
         }
     }
 
