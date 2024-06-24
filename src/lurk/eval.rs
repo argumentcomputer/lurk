@@ -1,6 +1,7 @@
-use once_cell::sync::OnceCell;
+use indexmap::{map::Iter, IndexMap};
 use p3_baby_bear::BabyBear;
-use p3_field::{Field, PrimeField};
+use p3_field::AbstractField;
+use rustc_hash::FxBuildHasher;
 
 use crate::{
     func,
@@ -9,54 +10,69 @@ use crate::{
         hasher::Hasher,
         map::Map,
         toplevel::Toplevel,
-        Name,
+        List, Name,
     },
 };
 
 use super::{
     reader::read,
-    state::{State, LURK_PACKAGE_NONNIL_SYMBOLS_NAMES},
+    state::{State, StateRcCell, LURK_PACKAGE_SYMBOLS_NAMES},
     tag::Tag,
 };
 
-static BUILTIN_BABYBEAR_DIGESTS: OnceCell<Vec<Vec<BabyBear>>> = OnceCell::new();
-fn builtin_digests() -> &'static Vec<Vec<BabyBear>> {
-    BUILTIN_BABYBEAR_DIGESTS.get_or_init(|| {
-        LURK_PACKAGE_NONNIL_SYMBOLS_NAMES
-            .map(|sym| {
-                read(State::init_lurk_state().rccell(), sym)
-                    .unwrap()
-                    .digest
-                    .to_vec()
-            })
-            .into_iter()
-            .collect()
-    })
+pub struct BuiltinIndex(usize);
+
+impl BuiltinIndex {
+    fn to_field<F: AbstractField>(&self) -> F {
+        F::from_canonical_usize(self.0)
+    }
+}
+
+pub struct BuiltinMemo<'a, F>(IndexMap<&'a str, List<F>, FxBuildHasher>);
+
+impl<'a> BuiltinMemo<'a, BabyBear> {
+    fn new(state: &StateRcCell) -> Self {
+        Self(
+            LURK_PACKAGE_SYMBOLS_NAMES
+                .into_iter()
+                .filter(|sym| sym != &"nil")
+                .map(|name| (name, read(state.clone(), name).unwrap().digest.into()))
+                .collect(),
+        )
+    }
+}
+
+impl<'a, F> BuiltinMemo<'a, F> {
+    fn index(&self, builtin: &'a str) -> BuiltinIndex {
+        BuiltinIndex(self.0.get_index_of(builtin).expect("Unknown builtin"))
+    }
+
+    fn iter(&self) -> Iter<'_, &str, Box<[F]>> {
+        self.0.iter()
+    }
 }
 
 /// Creates a `Toplevel` with the functions used for Lurk evaluation
 #[inline]
 pub fn build_lurk_toplevel<H: Hasher<BabyBear>>() -> Toplevel<BabyBear, H> {
-    let builtins = builtin_digests();
-    let nil = read(State::init_lurk_state().rccell(), "nil")
-        .unwrap()
-        .digest
-        .to_vec();
+    let state = State::init_lurk_state().rccell();
+    let builtins = BuiltinMemo::new(&state);
+    let nil = read(state, "nil").unwrap().digest.into();
     Toplevel::new(&[
         lurk_main(),
-        eval(),
-        eval_unop(),
-        eval_binop_num(),
-        eval_binop_misc(),
+        eval(&builtins),
+        eval_unop(&builtins),
+        eval_binop_num(&builtins),
+        eval_binop_misc(&builtins),
         car_cdr(),
         eval_let(),
         eval_letrec(),
         apply(),
         env_lookup(),
         ingress(),
-        ingress_builtin(builtins),
+        ingress_builtin(&builtins),
         egress(nil),
-        egress_builtin(builtins),
+        egress_builtin(&builtins),
         hash_32_8(),
         hash_48_8(),
     ])
@@ -84,12 +100,12 @@ enum EvalErr {
 }
 
 impl EvalErr {
-    fn to_field<F: Field>(self) -> F {
+    fn to_field<F: AbstractField>(self) -> F {
         F::from_canonical_u8(self as u8)
     }
 }
 
-pub fn lurk_main<F: PrimeField>() -> FuncE<F> {
+pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
     func!(
         fn lurk_main(full_expr_tag: [8], expr_digest: [8], env_digest: [8]): [16] {
             // Ingress on expr
@@ -110,12 +126,12 @@ pub fn lurk_main<F: PrimeField>() -> FuncE<F> {
     )
 }
 
-pub fn ingress<F: PrimeField>() -> FuncE<F> {
+pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
         fn ingress(tag_full: [8], digest: [8]): [1] {
             let (tag, _rest: [7]) = tag_full;
             match tag {
-                Tag::Num | Tag::Char | Tag::Err => {
+                Tag::Num, Tag::Char, Tag::Err => {
                     let (x, _rest: [7]) = digest;
                     return x
                 }
@@ -123,7 +139,7 @@ pub fn ingress<F: PrimeField>() -> FuncE<F> {
                     let zero = 0;
                     return zero
                 }
-                Tag::U64 | Tag::Comm => {
+                Tag::U64, Tag::Comm => {
                     let ptr = store(digest);
                     return ptr
                 }
@@ -131,7 +147,7 @@ pub fn ingress<F: PrimeField>() -> FuncE<F> {
                     let idx = call(ingress_builtin, digest);
                     return idx
                 }
-                Tag::Str | Tag::Sym | Tag::Key => {
+                Tag::Str, Tag::Sym, Tag::Key => {
                     if !digest {
                         let zero = 0;
                         return zero
@@ -145,7 +161,7 @@ pub fn ingress<F: PrimeField>() -> FuncE<F> {
                     let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr);
                     return ptr
                 }
-                Tag::Cons | Tag::Thunk => {
+                Tag::Cons, Tag::Thunk => {
                     let (fst_tag_full: [8], fst_digest: [8],
                          snd_tag_full: [8], snd_digest: [8]) = preimg(hash_32_8, digest);
                     let fst_ptr = call(ingress, fst_tag_full, fst_digest);
@@ -190,7 +206,7 @@ pub fn ingress<F: PrimeField>() -> FuncE<F> {
     )
 }
 
-pub fn ingress_builtin<F: PrimeField>(builtins: &[Vec<F>]) -> FuncE<F> {
+fn ingress_builtin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     let input_var = Var {
         name: "digest",
         size: 8,
@@ -207,7 +223,7 @@ pub fn ingress_builtin<F: PrimeField>(builtins: &[Vec<F>]) -> FuncE<F> {
         builtins
             .iter()
             .enumerate()
-            .map(|(i, arr)| (arr.clone().into(), branch(i)))
+            .map(|(i, (_, digest))| (digest.clone(), branch(i)))
             .collect(),
     );
     let cases = CasesE {
@@ -226,11 +242,11 @@ pub fn ingress_builtin<F: PrimeField>(builtins: &[Vec<F>]) -> FuncE<F> {
     }
 }
 
-pub fn egress<F: PrimeField>(nil: Vec<F>) -> FuncE<F> {
+pub fn egress<F: AbstractField + Ord>(nil: List<F>) -> FuncE<F> {
     func!(
         fn egress(tag, val): [8] {
             match tag {
-                Tag::Num | Tag::Char | Tag::Err => {
+                Tag::Num, Tag::Char, Tag::Err => {
                     let padding = [0; 7];
                     let digest: [8] = (val, padding);
                     return digest
@@ -239,7 +255,7 @@ pub fn egress<F: PrimeField>(nil: Vec<F>) -> FuncE<F> {
                     let digest = Array(nil);
                     return digest
                 }
-                Tag::U64 | Tag::Comm => {
+                Tag::U64, Tag::Comm => {
                     let digest: [8] = load(val);
                     return digest
                 }
@@ -247,7 +263,7 @@ pub fn egress<F: PrimeField>(nil: Vec<F>) -> FuncE<F> {
                     let digest: [8] = call(egress_builtin, val);
                     return digest
                 }
-                Tag::Str | Tag::Sym | Tag::Key => {
+                Tag::Str, Tag::Sym, Tag::Key => {
                     if !val {
                         let digest = [0; 8];
                         return digest
@@ -319,7 +335,7 @@ pub fn egress<F: PrimeField>(nil: Vec<F>) -> FuncE<F> {
     )
 }
 
-pub fn egress_builtin<F: PrimeField>(builtins: &[Vec<F>]) -> FuncE<F> {
+fn egress_builtin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     let input_var = Var {
         name: "val",
         size: 1,
@@ -328,7 +344,7 @@ pub fn egress_builtin<F: PrimeField>(builtins: &[Vec<F>]) -> FuncE<F> {
         name: "digest",
         size: 8,
     };
-    let branch = |arr: Vec<F>| BlockE {
+    let branch = |arr: List<F>| BlockE {
         ops: [OpE::Array(ret_var, arr)].into(),
         ctrl: CtrlE::<F>::Return([ret_var].into()),
     };
@@ -336,7 +352,7 @@ pub fn egress_builtin<F: PrimeField>(builtins: &[Vec<F>]) -> FuncE<F> {
         builtins
             .iter()
             .enumerate()
-            .map(|(i, arr)| (F::from_canonical_usize(i), branch(arr.clone())))
+            .map(|(i, (_, digest))| (F::from_canonical_usize(i), branch(digest.clone())))
             .collect(),
     );
     let cases = CasesE {
@@ -355,7 +371,7 @@ pub fn egress_builtin<F: PrimeField>(builtins: &[Vec<F>]) -> FuncE<F> {
     }
 }
 
-pub fn hash_32_8<F: PrimeField>() -> FuncE<F> {
+pub fn hash_32_8<F>() -> FuncE<F> {
     func!(
         invertible fn hash_32_8(preimg: [32]): [8] {
             let img: [8] = hash(preimg);
@@ -364,7 +380,7 @@ pub fn hash_32_8<F: PrimeField>() -> FuncE<F> {
     )
 }
 
-pub fn hash_48_8<F: PrimeField>() -> FuncE<F> {
+pub fn hash_48_8<F>() -> FuncE<F> {
     func!(
         invertible fn hash_48_8(preimg: [48]): [8] {
             let (img: [8]) = hash(preimg);
@@ -373,11 +389,11 @@ pub fn hash_48_8<F: PrimeField>() -> FuncE<F> {
     )
 }
 
-pub fn eval<F: PrimeField>() -> FuncE<F> {
+pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
         fn eval(expr_tag, expr, env): [2] {
             // Constants, tags, etc
-            let t = Builtin("t");
+            let t = builtins.index("t");
             let nil_tag = Tag::Nil;
             let cons_tag = Tag::Cons;
             let err_tag = Tag::Err;
@@ -412,7 +428,7 @@ pub fn eval<F: PrimeField>() -> FuncE<F> {
                     let (head_tag, head, rest_tag, rest) = load(expr);
                     match head_tag {
                         Tag::Builtin => {
-                            match_builtin head {
+                            match head [|sym| builtins.index(sym).to_field()] {
                                 "lambda" => {
                                     // A lambda expression is a 3 element list
                                     // first element: lambda symbol
@@ -602,18 +618,11 @@ pub fn eval<F: PrimeField>() -> FuncE<F> {
                                     let (res_tag, res) = call(eval, t_branch_tag, t_branch, env);
                                     return (res_tag, res)
                                 }
-                                "+"
-                                | "-"
-                                | "*"
-                                | "/"
-                                | "=" => {
+                                "+", "-", "*", "/", "=" => {
                                     let (res_tag, res) = call(eval_binop_num, head, rest_tag, rest, env);
                                     return (res_tag, res)
                                 }
-                                "cons"
-                                | "strcons"
-                                | "hide"
-                                | "eq" => {
+                                "cons", "strcons", "hide", "eq" => {
                                     let (res_tag, res) = call(eval_binop_misc, head, rest_tag, rest, env);
                                     return (res_tag, res)
                                 }
@@ -625,15 +634,7 @@ pub fn eval<F: PrimeField>() -> FuncE<F> {
                                     let (_car_tag, _car, cdr_tag, cdr) = call(car_cdr, rest_tag, rest, env);
                                     return (cdr_tag, cdr)
                                 }
-                                "commit"
-                                | "num"
-                                | "u64"
-                                | "comm"
-                                | "char"
-                                | "open"
-                                | "secret"
-                                | "atom"
-                                | "emit" => {
+                                "commit", "num", "u64", "comm", "char", "open", "secret", "atom", "emit" => {
                                     let (res_tag, res) = call(eval_unop, head, rest_tag, rest, env);
                                     return (res_tag, res)
                                 }
@@ -654,7 +655,7 @@ pub fn eval<F: PrimeField>() -> FuncE<F> {
     )
 }
 
-pub fn car_cdr<F: PrimeField>() -> FuncE<F> {
+pub fn car_cdr<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
         fn car_cdr(rest_tag, rest, env): [4] {
             let nil = 0;
@@ -701,7 +702,7 @@ pub fn car_cdr<F: PrimeField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_binop_num<F: PrimeField>() -> FuncE<F> {
+pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
         fn eval_binop_num(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
@@ -746,7 +747,7 @@ pub fn eval_binop_num<F: PrimeField>() -> FuncE<F> {
                 let err = EvalErr::ArgNotNumber;
                 return (err_tag, err)
             }
-            match_builtin head {
+            match head [|sym| builtins.index(sym).to_field()] {
                 "+" => {
                     let res = add(val1, val2);
                     return (num_tag, res)
@@ -771,7 +772,7 @@ pub fn eval_binop_num<F: PrimeField>() -> FuncE<F> {
                     let diff = sub(val1, val2);
                     if !diff {
                         let builtin_tag = Tag::Builtin;
-                        let t = Builtin("t");
+                        let t = builtins.index("t");
                         return (builtin_tag, t)
                     }
                     let nil = 0;
@@ -782,7 +783,7 @@ pub fn eval_binop_num<F: PrimeField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_binop_misc<F: PrimeField>() -> FuncE<F> {
+pub fn eval_binop_misc<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
         fn eval_binop_misc(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
@@ -815,7 +816,7 @@ pub fn eval_binop_misc<F: PrimeField>() -> FuncE<F> {
                     return (val2_tag, val2)
                 }
             };
-            match_builtin head {
+            match head [|sym| builtins.index(sym).to_field()] {
                 "cons" => {
                     let cons = store(val1_tag, val1, val2_tag, val2);
                     return (cons_tag, cons)
@@ -847,7 +848,7 @@ pub fn eval_binop_misc<F: PrimeField>() -> FuncE<F> {
                     return (err_tag, invalid_form)
                 }
                 "eq" => {
-                    let t = Builtin("t");
+                    let t = builtins.index("t");
                     let nil = 0;
                     let eq_tag = eq(val1_tag, val2_tag);
                     let eq_val = eq(val1, val2);
@@ -864,7 +865,7 @@ pub fn eval_binop_misc<F: PrimeField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_unop<F: PrimeField>() -> FuncE<F> {
+pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
         fn eval_unop(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
@@ -890,7 +891,7 @@ pub fn eval_unop<F: PrimeField>() -> FuncE<F> {
                 }
             };
 
-            match_builtin head {
+            match head [|sym| builtins.index(sym).to_field()] {
                 "commit" => {
                     let zero = 0;
                     let comm = store(zero, val_tag, val);
@@ -934,7 +935,7 @@ pub fn eval_unop<F: PrimeField>() -> FuncE<F> {
                     let val_not_cons = sub(val_tag, cons_tag);
                     if val_not_cons {
                         let builtin_tag = Tag::Builtin;
-                        let t = Builtin("t");
+                        let t = builtins.index("t");
                         return (builtin_tag, t)
                     }
                     let nil = 0;
@@ -959,7 +960,7 @@ pub fn eval_unop<F: PrimeField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_let<F: PrimeField>() -> FuncE<F> {
+pub fn eval_let<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
         fn eval_let(binds_tag, binds, body_tag, body, env): [2] {
             let err_tag = Tag::Err;
@@ -1012,7 +1013,7 @@ pub fn eval_let<F: PrimeField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_letrec<F: PrimeField>() -> FuncE<F> {
+pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
         fn eval_letrec(binds_tag, binds, body_tag, body, env): [2] {
             let err_tag = Tag::Err;
@@ -1066,7 +1067,7 @@ pub fn eval_letrec<F: PrimeField>() -> FuncE<F> {
     )
 }
 
-pub fn apply<F: PrimeField>() -> FuncE<F> {
+pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
         fn apply(head_tag, head, args_tag, args, args_env): [2] {
             // Constants, tags, etc
@@ -1133,7 +1134,7 @@ pub fn apply<F: PrimeField>() -> FuncE<F> {
     )
 }
 
-pub fn env_lookup<F: Field>() -> FuncE<F> {
+pub fn env_lookup<F: AbstractField>() -> FuncE<F> {
     func!(
         fn env_lookup(x, env): [2] {
             if !env {

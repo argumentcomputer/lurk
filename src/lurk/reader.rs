@@ -12,7 +12,7 @@ use super::{
         syntax::{parse_space, parse_syntax},
         Span,
     },
-    state::{lurk_sym, StateRcCell, LURK_PACKAGE_NONNIL_SYMBOLS_NAMES},
+    state::{lurk_sym, StateRcCell, LURK_PACKAGE_SYMBOLS_NAMES},
     symbol::Symbol,
     syntax::Syntax,
     tag::Tag,
@@ -87,9 +87,10 @@ fn nil() -> &'static Symbol {
 static BUILTIN_VEC: OnceCell<Vec<Symbol>> = OnceCell::new();
 fn builtin_vec() -> &'static Vec<Symbol> {
     BUILTIN_VEC.get_or_init(|| {
-        LURK_PACKAGE_NONNIL_SYMBOLS_NAMES
-            .map(lurk_sym)
+        LURK_PACKAGE_SYMBOLS_NAMES
             .into_iter()
+            .filter(|sym| sym != &"nil")
+            .map(lurk_sym)
             .collect()
     })
 }
