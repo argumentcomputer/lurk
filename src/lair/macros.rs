@@ -55,8 +55,21 @@ macro_rules! block {
         let $tgt = $crate::var!($tgt);
         $crate::block!({ $($tail)* }, $ops)
     }};
+    ({ let $tgt:ident = Array($arr:expr); $($tail:tt)+ }, $ops:expr) => {{
+        let size = $arr.len();
+        $ops.push($crate::lair::expr::OpE::Array($crate::var!($tgt, size), $arr));
+        let $tgt = $crate::var!($tgt, size);
+        $crate::block!({ $($tail)* }, $ops)
+    }};
     ({ let $tgt:ident = [$($a:literal),*]; $($tail:tt)+ }, $ops:expr) => {{
         let arr = vec!($($crate::lair::field_from_i32($a)),*);
+        let size = arr.len();
+        $ops.push($crate::lair::expr::OpE::Array($crate::var!($tgt, size), arr));
+        let $tgt = $crate::var!($tgt, size);
+        $crate::block!({ $($tail)* }, $ops)
+    }};
+    ({ let $tgt:ident = [$f:literal; $size:literal]; $($tail:tt)+ }, $ops:expr) => {{
+        let arr = [$f; $size].into_iter().map($crate::lair::field_from_i32).collect::<Vec<_>>();
         let size = arr.len();
         $ops.push($crate::lair::expr::OpE::Array($crate::var!($tgt, size), arr));
         let $tgt = $crate::var!($tgt, size);
@@ -101,6 +114,12 @@ macro_rules! block {
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::Store($crate::var!($tgt), inp));
         let $tgt = $crate::var!($tgt);
+        $crate::block!({ $($tail)* }, $ops)
+    }};
+    ({ let $tgt:ident $(: [$size:expr])? = load($arg:ident); $($tail:tt)+ }, $ops:expr) => {{
+        let out = [$crate::var!($tgt $(, $size)?)].into();
+        $ops.push($crate::lair::expr::OpE::Load(out, $arg));
+        let $tgt = $crate::var!($tgt $(, $size)?);
         $crate::block!({ $($tail)* }, $ops)
     }};
     ({ let ($($tgt:ident $(: [$size:expr])?),*) = load($arg:ident); $($tail:tt)+ }, $ops:expr) => {{
@@ -181,9 +200,11 @@ macro_rules! block {
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let $tgt:ident = Sym($sym:literal, $mem:ident, $store:ident); $($tail:tt)+ }, $ops:expr) => {{
-        let sym = $mem.read_and_ingress($sym, $store).unwrap().raw;
-        $ops.push($crate::lair::expr::OpE::Const($crate::var!($tgt), sym));
+    ({ let $tgt:ident = Builtin($sym:literal); $($tail:tt)+ }, $ops:expr) => {{
+        let idx = $crate::lurk::state::LURK_PACKAGE_NONNIL_SYMBOLS_NAMES
+            .iter()
+            .position(|&sym| sym == $sym).expect("Cannot find builtin") as u32;
+        $ops.push($crate::lair::expr::OpE::Const($crate::var!($tgt), $crate::lair::field_from_u32(idx)));
         let $tgt = $crate::var!($tgt);
         $crate::block!({ $($tail)* }, $ops)
     }};
@@ -227,12 +248,12 @@ macro_rules! block {
         {
             $(
                 vec.push((
-                    $crate::lurk::zstore::Tag::$tag.to_field(),
+                    $crate::lurk::tag::Tag::$tag.to_field(),
                     $crate::block_init!( $branch )
                 ));
                 $(
                     vec.push((
-                        $crate::lurk::zstore::Tag::$other_tag.to_field(),
+                        $crate::lurk::tag::Tag::$other_tag.to_field(),
                         $crate::block_init!( $branch ),
                     ));
                 )*
@@ -292,20 +313,24 @@ macro_rules! block {
         let ctrl = $crate::lair::expr::CtrlE::MatchMany($var, cases);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
-    ({ match_sym($mem:ident, $store:ident) $var:ident { $( $sym:literal $(| $other_sym:literal)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
+    ({ match_builtin $var:ident { $( $sym:literal $(| $other_sym:literal)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
         let ops = $ops.into();
         let mut vec = Vec::new();
         {
             $(
-                let sym = $mem.read_and_ingress($sym, $store).unwrap().raw;
+                let idx = $crate::lurk::state::LURK_PACKAGE_NONNIL_SYMBOLS_NAMES
+                    .iter()
+                    .position(|&sym| sym == $sym).expect("Cannot find builtin") as u32;
                 vec.push((
-                    sym,
+                    $crate::lair::field_from_u32(idx),
                     $crate::block_init!( $branch )
                 ));
                 $(
-                    let other_sym = $mem.read_and_ingress($other_sym, $store).unwrap().raw;
+                    let other_idx = $crate::lurk::state::LURK_PACKAGE_NONNIL_SYMBOLS_NAMES
+                        .iter()
+                        .position(|&sym| sym == $other_sym).expect("Cannot find builtin") as u32;
                     vec.push((
-                        other_sym,
+                        $crate::lair::field_from_u32(other_idx),
                         $crate::block_init!( $branch ),
                     ));
                 )*

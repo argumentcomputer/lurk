@@ -12,10 +12,10 @@ use super::{
         syntax::{parse_space, parse_syntax},
         Span,
     },
-    state::{lurk_sym, StateRcCell},
+    state::{lurk_sym, StateRcCell, LURK_PACKAGE_NONNIL_SYMBOLS_NAMES},
     symbol::Symbol,
     syntax::Syntax,
-    zstore::Tag,
+    tag::Tag,
 };
 
 const PREIMG_SIZE: usize = 32;
@@ -84,6 +84,16 @@ fn nil() -> &'static Symbol {
     NIL.get_or_init(|| lurk_sym("nil"))
 }
 
+static BUILTIN_VEC: OnceCell<Vec<Symbol>> = OnceCell::new();
+fn builtin_vec() -> &'static Vec<Symbol> {
+    BUILTIN_VEC.get_or_init(|| {
+        LURK_PACKAGE_NONNIL_SYMBOLS_NAMES
+            .map(lurk_sym)
+            .into_iter()
+            .collect()
+    })
+}
+
 static QUOTE: OnceCell<Symbol> = OnceCell::new();
 fn quote() -> &'static Symbol {
     QUOTE.get_or_init(|| lurk_sym("quote"))
@@ -94,6 +104,8 @@ fn get_symbol_tag(symbol: &Symbol) -> Tag {
         Tag::Key
     } else if symbol == nil() {
         Tag::Nil
+    } else if builtin_vec().contains(symbol) {
+        Tag::Builtin
     } else {
         Tag::Sym
     }
@@ -122,9 +134,7 @@ impl Reader {
             buffer.read_tag(Tag::Str);
             buffer.read_slice(&acc);
             let preimg = buffer.extract();
-            let img = self.hash(preimg);
-            self.hashes.insert(preimg, img);
-            img
+            self.hash(preimg)
         });
         self.str_cache.insert(s.to_string(), digest);
         digest
@@ -141,9 +151,7 @@ impl Reader {
             buffer.read_tag(Tag::Sym);
             buffer.read_slice(&acc);
             let preimg = buffer.extract();
-            let img = self.hash(preimg);
-            self.hashes.insert(preimg, img);
-            img
+            self.hash(preimg)
         });
         self.sym_cache.insert(s.clone(), digest);
         digest
@@ -164,7 +172,6 @@ impl Reader {
                 buffer.read_slice(&digest_acc);
                 let preimg = buffer.extract();
                 let img = self.hash(preimg);
-                self.hashes.insert(preimg, img);
                 (Tag::Cons, img)
             })
     }
@@ -205,7 +212,10 @@ impl Reader {
                 let nil_hash = self.read_symbol(nil());
                 let quote_hash = self.read_symbol(quote());
                 let x_hash = self.read_syntax(x);
-                self.hash_list(vec![(Tag::Sym, quote_hash), x_hash], (Tag::Nil, nil_hash))
+                self.hash_list(
+                    vec![(Tag::Builtin, quote_hash), x_hash],
+                    (Tag::Nil, nil_hash),
+                )
             }
         };
         self.syn_cache.insert(syn.clone(), res);
