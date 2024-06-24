@@ -307,6 +307,10 @@ impl<F: Clone + Ord> BlockE<F> {
         let saved_return_idents = std::mem::take(&mut ctx.return_idents);
         let ctrl = self.ctrl.check_and_link(ctx, hasher);
         let block_return_idents = std::mem::take(&mut ctx.return_idents);
+        assert!(
+            !block_return_idents.is_empty(),
+            "A block must have at least one return ident"
+        );
         ctx.return_idents = saved_return_idents;
         ctx.return_idents.extend(&block_return_idents);
         Block {

@@ -172,10 +172,6 @@ impl<F: Field> Block<F> {
         AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
     {
-        assert!(
-            !self.return_idents.is_empty(),
-            "A block must have at least one return ident"
-        );
         self.ops
             .iter()
             .for_each(|op| op.eval(builder, local, sel, index, map, toplevel));
