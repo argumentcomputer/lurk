@@ -1,7 +1,7 @@
-use fxhash::FxBuildHasher;
 use hashbrown::HashMap;
 use indexmap::IndexMap;
 use p3_field::{AbstractField, Field, PrimeField};
+use rustc_hash::FxBuildHasher;
 use sphinx_core::stark::{Indexed, MachineRecord};
 use std::slice::Iter;
 

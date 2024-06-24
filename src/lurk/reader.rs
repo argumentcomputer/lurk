@@ -1,9 +1,9 @@
 use anyhow::{bail, Result};
-use fxhash::FxHashMap;
 use nom::{sequence::preceded, Parser};
 use once_cell::sync::OnceCell;
 use p3_baby_bear::BabyBear as F;
 use p3_field::AbstractField;
+use rustc_hash::FxHashMap;
 
 use crate::lair::hasher::{Hasher, LurkHasher};
 
