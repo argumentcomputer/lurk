@@ -1052,6 +1052,10 @@ pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
                     let thunk_tag = Tag::Thunk;
                     let thunk = store(expr_tag, expr, env);
                     let ext_env = store(param, thunk_tag, thunk, env);
+                    // this will preemptively evaluate the thunk, so that we do not skip evaluation in case
+                    // the variable is not used inside the letrec body, and furthermore it follows a strict
+                    // evaluation order
+                    let (_val_tag, _val) = call(eval, expr_tag, expr, ext_env);
                     match rest_binds_tag {
                         Tag::Nil => {
                             let (res_tag, res) = call(eval, body_tag, body, ext_env);
@@ -1203,7 +1207,7 @@ mod test {
         expect_eq(eval_binop_num.width(), expect!["38"]);
         expect_eq(eval_binop_misc.width(), expect!["41"]);
         expect_eq(eval_let.width(), expect!["34"]);
-        expect_eq(eval_letrec.width(), expect!["33"]);
+        expect_eq(eval_letrec.width(), expect!["35"]);
         expect_eq(car_cdr.width(), expect!["27"]);
         expect_eq(apply.width(), expect!["36"]);
         expect_eq(env_lookup.width(), expect!["16"]);
@@ -1312,6 +1316,14 @@ mod test {
           (fib 50))
         ",
             "20365011074",
+        );
+        eval_aux(
+            "
+(letrec ((ones (cons 1 (lambda () ones))))
+  (car ((cdr ones))))
+
+",
+            "1",
         );
     }
 
