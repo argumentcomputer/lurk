@@ -9,7 +9,7 @@ use super::{
     bytecode::{Block, Ctrl, Func, Op},
     func_chip::{ColumnLayout, FuncChip, LayoutSizes},
     hasher::Hasher,
-    relations::MemoryRelation,
+    relations::{CallRelation, MemoryRelation},
     toplevel::Toplevel,
     trace::ColumnIndex,
 };
@@ -25,6 +25,12 @@ impl ColumnIndex {
         self.aux = aux;
         self.output = output;
     }
+}
+
+#[derive(Clone)]
+struct CallCtx<F, T> {
+    func_idx: F,
+    call_inp: Vec<T>,
 }
 
 pub type ColumnSlice<'a, T> = ColumnLayout<&'a [T]>;
@@ -109,13 +115,25 @@ impl<F: Field> Func<F> {
 
         let index = &mut ColumnIndex::default();
         let map = &mut vec![];
+        let mut call_inp = Vec::with_capacity(self.input_size);
         for _ in 0..self.input_size {
             let i = *local.next_input(index);
             map.push(Val::Expr(i.into()));
+            call_inp.push(i.into());
         }
 
+        let func_idx = F::from_canonical_usize(
+            toplevel
+                .map
+                .get_index_of(&self.name)
+                .expect("Func not found on toplevel"),
+        );
+        let call_ctx = CallCtx { func_idx, call_inp };
+
         let mult = *local.next_aux(index);
-        let toplevel_sel = self.body.eval(builder, local, index, map, toplevel);
+        let toplevel_sel = self
+            .body
+            .eval(builder, local, index, map, toplevel, call_ctx);
         builder.assert_bool(toplevel_sel.clone());
         builder.when_ne(toplevel_sel, F::one()).assert_zero(mult);
     }
@@ -129,6 +147,7 @@ impl<F: Field> Block<F> {
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
+        call_ctx: CallCtx<F, AB::Expr>,
     ) -> AB::Expr
     where
         AB: AirBuilder<F = F> + LookupBuilder,
@@ -155,7 +174,9 @@ impl<F: Field> Block<F> {
                 toplevel,
             )
         });
-        let sel = self.ctrl.eval(builder, local, index, map, toplevel);
+        let sel = self
+            .ctrl
+            .eval(builder, local, index, map, toplevel, call_ctx);
         for expr in constraints {
             builder.when(sel.clone()).assert_zero(expr);
         }
@@ -244,20 +265,33 @@ impl<F: Field> Op<F> {
                 };
                 map.push(x);
             }
-            // Call, PreImg TODO: lookup argument
-            Op::Call(idx, _) => {
+            Op::Call(idx, inp) => {
                 let func = toplevel.get_by_index(*idx).unwrap();
+                let mut out = Vec::with_capacity(func.output_size);
                 for _ in 0..func.output_size {
                     let o = *local.next_aux(index);
                     map.push(Val::Expr(o.into()));
+                    out.push(o.into());
                 }
+                let inp = inp.iter().map(|i| map[*i].to_expr());
+                builder.receive(
+                    CallRelation(F::from_canonical_usize(*idx), inp, out),
+                    is_real.clone(),
+                )
             }
-            Op::PreImg(idx, _) => {
+            Op::PreImg(idx, out) => {
                 let func = toplevel.get_by_index(*idx).unwrap();
+                let mut inp = Vec::with_capacity(func.input_size);
                 for _ in 0..func.input_size {
-                    let o = *local.next_aux(index);
-                    map.push(Val::Expr(o.into()));
+                    let i = *local.next_aux(index);
+                    map.push(Val::Expr(i.into()));
+                    inp.push(i.into());
                 }
+                let out = out.iter().map(|o| map[*o].to_expr());
+                builder.receive(
+                    CallRelation(F::from_canonical_usize(*idx), inp, out),
+                    is_real.clone(),
+                )
             }
             Op::Store(values) => {
                 let ptr = *local.next_aux(index);
@@ -270,7 +304,7 @@ impl<F: Field> Op<F> {
                 let values = (0..*len).map(|_| {
                     let o = *local.next_aux(index);
                     map.push(Val::Expr(o.into()));
-                    o.into()
+                    o
                 });
                 builder.receive(MemoryRelation(ptr, values), is_real.clone());
             }
@@ -297,6 +331,7 @@ impl<F: Field> Ctrl<F> {
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
+        call_ctx: CallCtx<F, AB::Expr>,
     ) -> AB::Expr
     where
         AB: AirBuilder<F = F> + LookupBuilder,
@@ -310,7 +345,7 @@ impl<F: Field> Ctrl<F> {
                 let mut sels = Vec::with_capacity(cases.size());
 
                 for (f, branch) in cases.branches.iter() {
-                    let sel = branch.eval(builder, local, index, map, toplevel);
+                    let sel = branch.eval(builder, local, index, map, toplevel, call_ctx.clone());
                     builder.when(sel.clone()).assert_eq(v.clone(), *f);
                     sels.push(sel);
                     map.truncate(map_len);
@@ -321,7 +356,7 @@ impl<F: Field> Ctrl<F> {
                     let invs = (0..cases.branches.size())
                         .map(|_| *local.next_aux(index))
                         .collect::<Vec<_>>();
-                    let sel = branch.eval(builder, local, index, map, toplevel);
+                    let sel = branch.eval(builder, local, index, map, toplevel, call_ctx);
                     for ((f, _), inv) in cases.branches.iter().zip(invs.into_iter()) {
                         builder.when(sel.clone()).assert_one(inv * (v.clone() - *f));
                     }
@@ -339,7 +374,7 @@ impl<F: Field> Ctrl<F> {
                 let mut sels = Vec::with_capacity(cases.size());
 
                 for (fs, branch) in cases.branches.iter() {
-                    let sel = branch.eval(builder, local, index, map, toplevel);
+                    let sel = branch.eval(builder, local, index, map, toplevel, call_ctx.clone());
                     vals.iter()
                         .zip(fs.iter())
                         .for_each(|(v, f)| builder.when(sel.clone()).assert_eq(v.clone(), *f));
@@ -352,7 +387,7 @@ impl<F: Field> Ctrl<F> {
                     let wit: Vec<Vec<_>> = (0..cases.branches.size())
                         .map(|_| (0..vars.len()).map(|_| *local.next_aux(index)).collect())
                         .collect();
-                    let sel = branch.eval(builder, local, index, map, toplevel);
+                    let sel = branch.eval(builder, local, index, map, toplevel, call_ctx);
                     for (coeffs, (fs, _)) in wit.into_iter().zip(cases.branches.iter()) {
                         let diffs = vals
                             .iter()
@@ -374,12 +409,12 @@ impl<F: Field> Ctrl<F> {
                 let b = map[*b].to_expr();
 
                 let inv = *local.next_aux(index);
-                let t_sel = t.eval(builder, local, index, map, toplevel);
+                let t_sel = t.eval(builder, local, index, map, toplevel, call_ctx.clone());
                 builder.when(t_sel.clone()).assert_one(inv * b.clone());
                 map.truncate(map_len);
                 index.restore(init_state);
 
-                let f_sel = f.eval(builder, local, index, map, toplevel);
+                let f_sel = f.eval(builder, local, index, map, toplevel, call_ctx);
                 builder.when(f_sel.clone()).assert_zero(b);
                 map.truncate(map_len);
                 index.restore(init_state);
@@ -392,12 +427,12 @@ impl<F: Field> Ctrl<F> {
 
                 let coeffs = vars.iter().map(|_| *local.next_aux(index)).collect();
                 let vals = vars.iter().map(|&v| map[v].to_expr()).collect();
-                let t_sel = t.eval(builder, local, index, map, toplevel);
+                let t_sel = t.eval(builder, local, index, map, toplevel, call_ctx.clone());
                 constrain_inequality_witness(t_sel.clone(), coeffs, vals, builder);
                 map.truncate(map_len);
                 index.restore(init_state);
 
-                let f_sel = f.eval(builder, local, index, map, toplevel);
+                let f_sel = f.eval(builder, local, index, map, toplevel, call_ctx);
                 for var in vars.iter() {
                     let b = map[*var].to_expr();
                     builder.when(f_sel.clone()).assert_zero(b);
@@ -409,11 +444,15 @@ impl<F: Field> Ctrl<F> {
             }
             Ctrl::Return(ident, vs) => {
                 let sel = local.sel[*ident];
+                let mut out = Vec::with_capacity(vs.len());
                 for v in vs.iter() {
                     let v = map[*v].to_expr();
                     let o = *local.next_output(index);
                     builder.when(sel).assert_eq(v, o);
+                    out.push(o.into());
                 }
+                let CallCtx { func_idx, call_inp } = call_ctx;
+                builder.send(CallRelation(func_idx, call_inp, out), sel);
                 sel.into()
             }
         }
