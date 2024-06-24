@@ -1,10 +1,14 @@
 use p3_air::BaseAir;
+use p3_field::{Field, PrimeField};
+use p3_matrix::dense::RowMajorMatrix;
+use sphinx_core::air::{EventLens, MachineAir, WithEvents};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
+    execute::QueryRecord,
     hasher::Hasher,
+    lair_chip::LairMachineProgram,
     toplevel::Toplevel,
-    List,
 };
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -54,7 +58,7 @@ impl<'a, F, H: Hasher<F>> FuncChip<'a, F, H> {
     }
 
     #[inline]
-    pub fn from_toplevel(toplevel: &'a Toplevel<F, H>) -> List<Self> {
+    pub fn from_toplevel(toplevel: &'a Toplevel<F, H>) -> Vec<Self> {
         toplevel
             .map
             .get_pairs()
@@ -269,4 +273,43 @@ impl<F> Op<F> {
             Op::Debug(..) => (),
         }
     }
+}
+
+impl<'a, 'b, F: Field, H: Hasher<F>> WithEvents<'a> for FuncChip<'b, F, H> {
+    type Events = &'a QueryRecord<F>;
+}
+
+impl<'a, F: Field, H: Hasher<F>> EventLens<FuncChip<'a, F, H>> for QueryRecord<F> {
+    fn events(&self) -> <FuncChip<'a, F, H> as WithEvents<'_>>::Events {
+        self
+    }
+}
+
+impl<'a, F: PrimeField, H: Hasher<F>> MachineAir<F> for FuncChip<'a, F, H> {
+    type Record = QueryRecord<F>;
+    type Program = LairMachineProgram;
+
+    #[inline]
+    fn name(&self) -> String {
+        self.func.name.to_string()
+    }
+
+    #[inline]
+    fn generate_trace<EL: EventLens<Self>>(
+        &self,
+        input: &EL,
+        _: &mut Self::Record,
+    ) -> RowMajorMatrix<F> {
+        self.generate_trace_parallel(input.events())
+    }
+
+    #[inline]
+    fn included(&self, queries: &Self::Record) -> bool {
+        queries.func_queries[self.func.index]
+            .values()
+            .any(|r| r.mult > 0)
+    }
+
+    #[inline]
+    fn generate_dependencies<EL: EventLens<Self>>(&self, _: &EL, _: &mut Self::Record) {}
 }

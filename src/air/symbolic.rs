@@ -12,7 +12,7 @@ use p3_field::Field;
 #[derive(Clone)]
 pub struct Interaction<F: Field> {
     pub(crate) values: Vec<PairColLC<F>>,
-    pub(crate) is_real: Option<PairColLC<F>>,
+    pub(crate) is_real: PairColLC<F>,
 }
 
 impl<F: Field> Interaction<F> {

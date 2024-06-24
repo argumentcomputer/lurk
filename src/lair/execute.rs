@@ -1,11 +1,13 @@
 use fxhash::FxBuildHasher;
 use indexmap::IndexMap;
-use p3_field::{Field, PrimeField};
+use p3_field::{AbstractField, Field, PrimeField};
+use sphinx_core::stark::{Indexed, MachineRecord};
+use std::collections::HashMap;
 use std::slice::Iter;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
-    chip::FuncChip,
+    func_chip::FuncChip,
     hasher::Hasher,
     toplevel::Toplevel,
     List,
@@ -23,20 +25,225 @@ impl<T> QueryResult<T> {
     }
 }
 
-pub(crate) type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
-pub(crate) type QueryMap<F> = FxIndexMap<List<F>, QueryResult<List<F>>>;
-pub(crate) type InvQueryMap<F> = FxIndexMap<List<F>, List<F>>;
+type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
+type QueryMap<F> = FxIndexMap<List<F>, QueryResult<List<F>>>;
+type InvQueryMap<F> = FxIndexMap<List<F>, List<F>>;
 pub(crate) type MemMap<F> = FxIndexMap<List<F>, u32>;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Default, Clone, Debug, Eq, PartialEq)]
 pub struct QueryRecord<F: Field> {
+    index: u32,
     pub(crate) func_queries: Vec<QueryMap<F>>,
     pub(crate) inv_func_queries: Vec<Option<InvQueryMap<F>>>,
     pub mem_queries: Vec<MemMap<F>>,
 }
 
+impl<F: Field> Indexed for QueryRecord<F> {
+    fn index(&self) -> u32 {
+        self.index
+    }
+}
+
+pub struct ShardingConfig {
+    max_shard_size: usize,
+}
+
+impl Default for ShardingConfig {
+    fn default() -> Self {
+        Self {
+            max_shard_size: 1 << 20,
+        }
+    }
+}
+
+impl<F: Field> MachineRecord for QueryRecord<F> {
+    type Config = ShardingConfig;
+
+    fn set_index(&mut self, index: u32) {
+        self.index = index
+    }
+
+    fn stats(&self) -> HashMap<String, usize> {
+        // TODO: use `IndexMap` instead so the original insertion order is kept
+        let mut map = HashMap::default();
+
+        map.insert("num_funcs".to_string(), self.func_queries.len());
+        map.insert(
+            "num_func_queries".to_string(),
+            self.func_queries
+                .iter()
+                .map(|im| im.iter().filter(|(_, r)| r.mult > 0).count())
+                .sum(),
+        );
+        map.insert(
+            "sum_func_queries_mults".to_string(),
+            self.func_queries
+                .iter()
+                .map(|im| im.values().map(|r| r.mult as usize).sum::<usize>())
+                .sum(),
+        );
+
+        map.insert("num_mem_tables".to_string(), self.mem_queries.len());
+        map.insert(
+            "num_mem_queries".to_string(),
+            self.mem_queries
+                .iter()
+                .map(|im| im.iter().filter(|(_, mult)| mult > &&0).count())
+                .sum(),
+        );
+        map.insert(
+            "sum_mem_queries_mults".to_string(),
+            self.mem_queries
+                .iter()
+                .map(|im| im.values().map(|mult| *mult as usize).sum::<usize>())
+                .sum(),
+        );
+        map
+    }
+
+    fn append(&mut self, other: &mut Self) {
+        // draining func queries from `other` to `self`, starting from the end
+        let mut func_idx = self.func_queries.len() - 1;
+        while let Some(func_queries) = other.func_queries.pop() {
+            let self_func_queries = &mut self.func_queries[func_idx];
+            for (inp, other_res) in func_queries {
+                if other_res.mult == 0 {
+                    continue;
+                }
+                if let Some(self_res) = self_func_queries.get_mut(&inp) {
+                    assert_eq!(&self_res.output, &other_res.output);
+                    self_res.mult += other_res.mult;
+                } else {
+                    self_func_queries.insert(inp, other_res);
+                }
+            }
+            func_idx -= 1;
+        }
+
+        // dropping to save up memory because this is just auxiliary data for execution
+        self.inv_func_queries = vec![];
+
+        // draining mem queries from `other` to `self`, starting from the end
+        let mut mem_idx = self.mem_queries.len() - 1;
+        while let Some(other_mem_map) = other.mem_queries.pop() {
+            let self_mem_map = &mut self.mem_queries[mem_idx];
+            for (args, other_mult) in other_mem_map {
+                if other_mult == 0 {
+                    continue;
+                }
+                if let Some(self_mult) = self_mem_map.get_mut(&args) {
+                    *self_mult += other_mult;
+                } else {
+                    self_mem_map.insert(args, other_mult);
+                }
+            }
+            mem_idx -= 1;
+        }
+    }
+
+    fn shard(self, config: &Self::Config) -> Vec<Self> {
+        let Self {
+            index: _,
+            func_queries,
+            inv_func_queries: _,
+            mem_queries,
+        } = self;
+
+        let num_funcs = func_queries.len();
+        let num_mem_tables = mem_queries.len();
+
+        let mut filtered_func_queries = vec![FxIndexMap::default(); num_funcs];
+        let mut filtered_mem_queries = vec![FxIndexMap::default(); num_mem_tables];
+
+        for (func_idx, queries) in func_queries.into_iter().enumerate() {
+            for (args, r) in queries {
+                if r.mult > 0 {
+                    filtered_func_queries[func_idx].insert(args, r);
+                }
+            }
+        }
+
+        for (mem_idx, queries) in mem_queries.into_iter().enumerate() {
+            for (args, mult) in queries {
+                if mult > 0 {
+                    filtered_mem_queries[mem_idx].insert(args, mult);
+                }
+            }
+        }
+
+        let max_shard_size = config.max_shard_size;
+
+        if max_shard_size == 0 {
+            return vec![Self {
+                index: 0,
+                func_queries: filtered_func_queries,
+                inv_func_queries: vec![],
+                mem_queries: filtered_mem_queries,
+            }];
+        }
+
+        let max_num_func_queries = filtered_func_queries
+            .iter()
+            .map(IndexMap::len)
+            .max()
+            .unwrap_or(0);
+        let max_num_mem_queries = filtered_mem_queries
+            .iter()
+            .map(IndexMap::len)
+            .max()
+            .unwrap_or(0);
+
+        let div_ceil = |numer, denom| (numer + denom - 1) / denom;
+        let num_shards_needed_for_func_queries = div_ceil(max_num_func_queries, max_shard_size);
+        let num_shards_needed_for_mem_queries = div_ceil(max_num_mem_queries, max_shard_size);
+        let num_shards_needed =
+            num_shards_needed_for_func_queries.max(num_shards_needed_for_mem_queries);
+
+        if num_shards_needed < 2 {
+            vec![Self {
+                index: 0,
+                func_queries: filtered_func_queries,
+                inv_func_queries: vec![],
+                mem_queries: filtered_mem_queries,
+            }]
+        } else {
+            let empty_func_queries = vec![FxIndexMap::default(); num_funcs];
+            let empty_mem_queries = vec![FxIndexMap::default(); num_mem_tables];
+            let mut shards = Vec::with_capacity(num_shards_needed);
+            let num_shards_needed_u32: u32 = num_shards_needed
+                .try_into()
+                .expect("Number of shards needed is too big");
+            for index in 0..num_shards_needed_u32 {
+                let mut func_queries = empty_func_queries.clone();
+                for func_idx in 0..num_funcs {
+                    let queries = &mut filtered_func_queries[func_idx];
+                    func_queries[func_idx]
+                        .extend(queries.drain(0..max_shard_size.min(queries.len())));
+                }
+                let mut mem_queries = empty_mem_queries.clone();
+                for mem_idx in 0..num_mem_tables {
+                    let queries = &mut filtered_mem_queries[mem_idx];
+                    mem_queries[mem_idx]
+                        .extend(queries.drain(0..max_shard_size.min(queries.len())));
+                }
+                shards.push(QueryRecord {
+                    index,
+                    func_queries,
+                    inv_func_queries: vec![],
+                    mem_queries,
+                });
+            }
+            shards
+        }
+    }
+
+    fn public_values<F2: AbstractField>(&self) -> Vec<F2> {
+        vec![]
+    }
+}
+
 const NUM_MEM_TABLES: usize = 5;
-const MEM_TABLE_SIZES: [usize; NUM_MEM_TABLES] = [3, 4, 5, 6, 8];
+pub(crate) const MEM_TABLE_SIZES: [usize; NUM_MEM_TABLES] = [3, 4, 5, 6, 8];
 
 #[inline]
 pub fn mem_index_to_len(idx: usize) -> usize {
@@ -48,7 +255,7 @@ pub fn mem_index_from_len(len: usize) -> usize {
     MEM_TABLE_SIZES
         .iter()
         .position(|&i| len == i)
-        .unwrap_or_else(|| panic!("There are no mem tables of size {}", len))
+        .unwrap_or_else(|| panic!("There are no mem tables of size {len}"))
 }
 
 #[inline]
@@ -106,6 +313,7 @@ impl<F: Field> QueryRecord<F> {
             .collect();
         assert_eq!(mem_queries.len(), NUM_MEM_TABLES);
         Self {
+            index: 0,
             func_queries,
             inv_func_queries,
             mem_queries,

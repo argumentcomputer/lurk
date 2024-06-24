@@ -1,9 +1,10 @@
-use crate::air::builder::{AirBuilderExt, LairBuilder, LookupBuilder, QueryType, Relation};
+use crate::air::builder::{LairBuilder, QueryType};
 use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues};
 use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrixView;
 use p3_matrix::stack::VerticalPair;
 use p3_matrix::Matrix;
+use sphinx_core::air::{AirInteraction, MessageBuilder};
 
 type LocalRowView<'a, F> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatrixView<'a, F>>;
 
@@ -54,6 +55,26 @@ pub struct DebugConstraintBuilder<'a, F> {
     queries: Vec<Query<F>>,
 }
 
+impl<'a, F: Field> MessageBuilder<AirInteraction<F>> for DebugConstraintBuilder<'a, F> {
+    fn send(&mut self, message: AirInteraction<F>) {
+        if !message.multiplicity.is_zero() {
+            self.queries.push(Query {
+                query_type: QueryType::Send,
+                values: message.values,
+            })
+        }
+    }
+
+    fn receive(&mut self, message: AirInteraction<F>) {
+        if !message.multiplicity.is_zero() {
+            self.queries.push(Query {
+                query_type: QueryType::Receive,
+                values: message.values,
+            })
+        }
+    }
+}
+
 impl<'a, F: Field> AirBuilderWithPublicValues for DebugConstraintBuilder<'a, F> {
     type PublicVar = F;
 
@@ -86,36 +107,6 @@ impl<'a, F: Field> DebugConstraintBuilder<'a, F> {
             );
             panic!();
         }
-    }
-}
-
-impl<'a, F: Field> LookupBuilder for DebugConstraintBuilder<'a, F> {
-    fn query(
-        &mut self,
-        query_type: QueryType,
-        relation: impl Relation<Self::Expr>,
-        is_real: Option<Self::Expr>,
-    ) {
-        if let Some(is_real) = is_real {
-            if is_real.is_zero() {
-                return;
-            }
-        }
-
-        let values = relation.values().into_iter().collect();
-        self.queries.push(Query { query_type, values });
-    }
-}
-
-impl<'a, F: Field> AirBuilderExt for DebugConstraintBuilder<'a, F> {
-    fn trace_index(&self) -> usize {
-        // TODO: fix
-        0
-    }
-
-    fn row_index(&self) -> Self::Expr {
-        // TODO: roots of unity
-        Self::Expr::from_canonical_usize(self.row)
     }
 }
 
