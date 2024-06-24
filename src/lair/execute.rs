@@ -319,6 +319,15 @@ impl<F: Field> QueryRecord<F> {
             mem_queries,
         }
     }
+
+    #[inline]
+    pub fn get_output(&self, func: &Func<F>, inp: &[F]) -> &[F] {
+        &self.func_queries[func.index]
+            .get(inp)
+            .expect("No output registered for the provided input")
+            .output
+    }
+
     #[inline]
     pub fn func_queries(&self) -> &Vec<QueryMap<F>> {
         &self.func_queries

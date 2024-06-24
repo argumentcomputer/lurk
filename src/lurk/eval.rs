@@ -1255,12 +1255,10 @@ mod test {
 
             let full_input: List<_> = full_input.into();
             lurk_main.execute_iter(full_input.clone(), queries);
-            let result = queries.func_queries[lurk_main.func.index]
-                .get(&full_input)
-                .unwrap();
+            let result = queries.get_output(lurk_main.func, &full_input);
 
-            assert_eq!(result.output[0], expected_tag);
-            assert_eq!(&result.output[8..], &expected_digest);
+            assert_eq!(&result[0], &expected_tag);
+            assert_eq!(&result[8..], &expected_digest);
 
             all_chips.into_par_iter().for_each(|chip| {
                 let trace = chip.generate_trace_parallel(queries);
@@ -1343,19 +1341,13 @@ mod test {
 
             let ingress_args: List<_> = ingress_args.into();
             ingress_chip.execute_iter(ingress_args.clone(), queries);
-            let ingress_out_ptr = queries.func_queries[ingress_chip.func.index]
-                .get(&ingress_args)
-                .unwrap()
-                .output[0];
+            let ingress_out_ptr = queries.get_output(ingress_chip.func, &ingress_args)[0];
 
             let egress_args: List<_> = [tag, ingress_out_ptr].into();
             egress_chip.execute_iter(egress_args.clone(), queries);
-            let egress_out = &queries.func_queries[egress_chip.func.index]
-                .get(&egress_args)
-                .unwrap()
-                .output;
+            let egress_out = queries.get_output(egress_chip.func, &egress_args);
 
-            assert_eq!(egress_out, &digest, "ingress -> egress doesn't roundtrip");
+            assert_eq!(*egress_out, *digest, "ingress -> egress doesn't roundtrip");
 
             let hash_32_8_trace = hash_32_8_chip.generate_trace_parallel(queries);
             debug_constraints_collecting_queries(&hash_32_8_chip, &[], &hash_32_8_trace);
