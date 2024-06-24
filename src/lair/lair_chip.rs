@@ -142,7 +142,7 @@ mod tests {
 
     use crate::lair::execute::QueryRecord;
     use p3_baby_bear::BabyBear;
-    use sphinx_core::stark::{LocalProver, StarkGenericConfig, StarkMachine};
+    use sphinx_core::{stark::{LocalProver, StarkGenericConfig, StarkMachine}, utils::SphinxCoreOpts};
     use sphinx_core::utils::BabyBearPoseidon2;
 
     #[test]
@@ -171,7 +171,8 @@ mod tests {
         let mut challenger_p = machine.config().challenger();
         let mut challenger_v = machine.config().challenger();
         machine.debug_constraints(&pk, queries.clone(), &mut challenger_p.clone());
-        let proof = machine.prove::<LocalProver<_, _>>(&pk, queries, &mut challenger_p);
+        let opts = SphinxCoreOpts::default();
+        let proof = machine.prove::<LocalProver<_, _>>(&pk, queries, &mut challenger_p, opts);
         machine
             .verify(&vk, &proof, &mut challenger_v)
             .expect("proof verifies");
