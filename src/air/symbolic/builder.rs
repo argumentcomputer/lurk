@@ -76,31 +76,31 @@ impl<F: Field> AirBuilder for SymbolicAirBuilder<F> {
     }
 }
 
-impl<F: Field> LookupBuilder for SymbolicAirBuilder<F> {
-    fn query(
-        &mut self,
-        query_type: QueryType,
-        relation: impl Relation<Self::Expr>,
-        is_real: impl Into<Self::Expr>,
-    ) {
-        let values = relation
-            .values()
-            .into_iter()
-            .map(|v| PairColLC::try_from(v).expect("queries must contain affine expressions"))
-            .collect();
-        let is_real =
-            PairColLC::try_from(is_real.into()).expect("is_real must be an affine expression");
-
-        match query_type {
-            QueryType::Receive | QueryType::Provide => {
-                self.air.provides.push(Interaction { values, is_real })
-            }
-            QueryType::Send | QueryType::Require => {
-                self.air.requires.push(Interaction { values, is_real })
-            }
-        }
-    }
-}
+// impl<F: Field> LookupBuilder for SymbolicAirBuilder<F> {
+//     fn query(
+//         &mut self,
+//         query_type: QueryType,
+//         relation: impl Relation<Self::Expr>,
+//         is_real: impl Into<Self::Expr>,
+//     ) {
+//         let values = relation
+//             .values()
+//             .into_iter()
+//             .map(|v| PairColLC::try_from(v).expect("queries must contain affine expressions"))
+//             .collect();
+//         let is_real =
+//             PairColLC::try_from(is_real.into()).expect("is_real must be an affine expression");
+//
+//         match query_type {
+//             QueryType::Receive | QueryType::Provide => {
+//                 self.air.provides.push(Interaction { values, is_real })
+//             }
+//             QueryType::Send | QueryType::Require => {
+//                 self.air.requires.push(Interaction { values, is_real })
+//             }
+//         }
+//     }
+// }
 
 impl<F: Field> AirBuilderWithPublicValues for SymbolicAirBuilder<F> {
     type PublicVar = Variable<F>;
@@ -110,4 +110,4 @@ impl<F: Field> AirBuilderWithPublicValues for SymbolicAirBuilder<F> {
     }
 }
 
-impl<F: Field> LairBuilder for SymbolicAirBuilder<F> {}
+// impl<F: Field> LairBuilder for SymbolicAirBuilder<F> {}

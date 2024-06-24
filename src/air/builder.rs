@@ -1,4 +1,6 @@
+use itertools::chain;
 use p3_air::{AirBuilder, AirBuilderWithPublicValues};
+use p3_field::AbstractField;
 use sphinx_core::air::{AirInteraction, MessageBuilder};
 use sphinx_core::lookup::InteractionKind;
 
@@ -36,78 +38,96 @@ pub enum QueryType {
 
 /// TODO: The `once` calls are not fully supported, and deferred to their multi-use counterparts.
 pub trait LookupBuilder: AirBuilder {
-    /// Generic query that to be added to the global lookup argument.
-    /// Note: is_real_bool must be a boolean.
-    fn query(
-        &mut self,
-        query_type: QueryType,
-        relation: impl Relation<Self::Expr>,
-        is_real_bool: impl Into<Self::Expr>,
-    );
-
-    /// Receive a query (once) that has been sent in another part of the program.
-    fn receive(
-        &mut self,
-        relation: impl Relation<Self::Expr>,
-        is_real_bool: impl Into<Self::Expr>,
-    ) {
-        self.query(QueryType::Receive, relation, is_real_bool);
-    }
-
-    /// Send a query (once) to another part of the program.
-    fn send(&mut self, relation: impl Relation<Self::Expr>, is_real_bool: impl Into<Self::Expr>) {
-        self.query(QueryType::Send, relation, is_real_bool);
-    }
-
     /// Provide a query that can be required multiple times.
     fn provide(
         &mut self,
         relation: impl Relation<Self::Expr>,
+        nonce: Self::Var,
+        record: ProvideRecord<Self::Expr>,
         is_real_bool: impl Into<Self::Expr>,
-    ) {
-        self.query(QueryType::Provide, relation, is_real_bool);
-    }
+    );
 
     /// Require a query that has been provided.
     fn require(
         &mut self,
         relation: impl Relation<Self::Expr>,
+        nonce: Self::Var,
+        record: RequireRecord<Self::Expr>,
         is_real_bool: impl Into<Self::Expr>,
-    ) {
-        self.query(QueryType::Require, relation, is_real_bool);
-    }
+    );
 }
 
 impl<AB: AirBuilder + MessageBuilder<AirInteraction<AB::Expr>>> LookupBuilder for AB {
-    fn query(
+    fn provide(
         &mut self,
-        query_type: QueryType,
         relation: impl Relation<Self::Expr>,
+        nonce: Self::Var,
+        record: ProvideRecord<Self::Expr>,
         is_real_bool: impl Into<Self::Expr>,
     ) {
-        // We use the `InteractionKind::Program` for all interactions for now
         let is_real = is_real_bool.into();
-        match query_type {
-            QueryType::Receive | QueryType::Require => {
-                <Self as MessageBuilder<AirInteraction<Self::Expr>>>::receive(
-                    self,
-                    AirInteraction::new(
-                        relation.values().into_iter().collect(),
-                        is_real,
-                        InteractionKind::Program,
-                    ),
-                );
-            }
-            QueryType::Send | QueryType::Provide => {
-                <Self as MessageBuilder<AirInteraction<Self::Expr>>>::send(
-                    self,
-                    AirInteraction::new(
-                        relation.values().into_iter().collect(),
-                        is_real,
-                        InteractionKind::Program,
-                    ),
-                );
-            }
-        }
+
+        let ProvideRecord {
+            last_nonce,
+            last_count,
+        } = record;
+
+        let values: Vec<_> = relation.values().into_iter().collect();
+
+        self.receive(AirInteraction {
+            values: chain([last_nonce, last_count], values.clone()).collect(),
+            multiplicity: is_real.clone(),
+            kind: InteractionKind::Memory,
+        });
+        self.send(AirInteraction {
+            values: chain([nonce.into(), AB::Expr::zero()], values).collect(),
+            multiplicity: is_real.clone(),
+            kind: InteractionKind::Memory,
+        })
     }
+
+    fn require(
+        &mut self,
+        relation: impl Relation<Self::Expr>,
+        nonce: Self::Var,
+        record: RequireRecord<Self::Expr>,
+        is_real_bool: impl Into<Self::Expr>,
+    ) {
+        let is_real = is_real_bool.into();
+
+        let RequireRecord {
+            prev_nonce,
+            prev_count,
+            count_inv,
+        } = record;
+
+        let count = prev_count.clone() + AB::Expr::one();
+
+        self.when(is_real.clone())
+            .assert_one(count.clone() * count_inv);
+
+        let values: Vec<_> = relation.values().into_iter().collect();
+
+        self.receive(AirInteraction {
+            values: chain([prev_nonce, prev_count], values.clone()).collect(),
+            multiplicity: is_real.clone(),
+            kind: InteractionKind::Memory,
+        });
+        self.send(AirInteraction {
+            values: chain([nonce.into(), count], values).collect(),
+            multiplicity: is_real.clone(),
+            kind: InteractionKind::Memory,
+        })
+    }
+}
+
+pub struct RequireRecord<E> {
+    pub prev_nonce: E,
+    pub prev_count: E,
+    pub count_inv: E,
+}
+
+pub struct ProvideRecord<E> {
+    pub last_nonce: E,
+    pub last_count: E,
 }
