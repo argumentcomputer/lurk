@@ -14,7 +14,6 @@ use super::{
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct ColumnLayout<T> {
     pub(crate) input: T,
-    pub(crate) output: T,
     pub(crate) aux: T,
     pub(crate) sel: T,
 }
@@ -24,7 +23,7 @@ pub type LayoutSizes = ColumnLayout<usize>;
 impl LayoutSizes {
     #[inline]
     fn total(&self) -> usize {
-        self.input + self.output + self.aux + self.sel
+        self.input + self.aux + self.sel
     }
 }
 
@@ -94,19 +93,13 @@ pub type Degree = u8;
 impl<F> Func<F> {
     pub fn compute_layout_sizes<H: Hasher<F>>(&self, toplevel: &Toplevel<F, H>) -> LayoutSizes {
         let input = self.input_size;
-        let output = self.output_size;
         // first auxiliary is multiplicity
         let mut aux = 1;
         let mut sel = 0;
         let degrees = &mut vec![1; input];
         self.body
             .compute_layout_sizes(degrees, toplevel, &mut aux, &mut sel);
-        LayoutSizes {
-            input,
-            output,
-            aux,
-            sel,
-        }
+        LayoutSizes { input, aux, sel }
     }
 }
 

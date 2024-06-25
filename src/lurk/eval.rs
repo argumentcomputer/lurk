@@ -1201,22 +1201,22 @@ mod test {
         let expect_eq = |computed: usize, expected: Expect| {
             expected.assert_eq(&computed.to_string());
         };
-        expect_eq(lurk_main.width(), expect!["54"]);
-        expect_eq(eval.width(), expect!["107"]);
-        expect_eq(eval_unop.width(), expect!["33"]);
-        expect_eq(eval_binop_num.width(), expect!["38"]);
-        expect_eq(eval_binop_misc.width(), expect!["41"]);
-        expect_eq(eval_let.width(), expect!["34"]);
-        expect_eq(eval_letrec.width(), expect!["35"]);
-        expect_eq(car_cdr.width(), expect!["27"]);
-        expect_eq(apply.width(), expect!["36"]);
-        expect_eq(env_lookup.width(), expect!["16"]);
-        expect_eq(ingress.width(), expect!["96"]);
-        expect_eq(ingress_builtin.width(), expect!["45"]);
-        expect_eq(egress.width(), expect!["68"]);
-        expect_eq(egress_builtin.width(), expect!["45"]);
-        expect_eq(hash_32_8.width(), expect!["677"]);
-        expect_eq(hash_48_8.width(), expect!["1013"]);
+        expect_eq(lurk_main.width(), expect!["38"]);
+        expect_eq(eval.width(), expect!["105"]);
+        expect_eq(eval_unop.width(), expect!["31"]);
+        expect_eq(eval_binop_num.width(), expect!["36"]);
+        expect_eq(eval_binop_misc.width(), expect!["39"]);
+        expect_eq(eval_let.width(), expect!["32"]);
+        expect_eq(eval_letrec.width(), expect!["33"]);
+        expect_eq(car_cdr.width(), expect!["23"]);
+        expect_eq(apply.width(), expect!["34"]);
+        expect_eq(env_lookup.width(), expect!["14"]);
+        expect_eq(ingress.width(), expect!["95"]);
+        expect_eq(ingress_builtin.width(), expect!["44"]);
+        expect_eq(egress.width(), expect!["60"]);
+        expect_eq(egress_builtin.width(), expect!["37"]);
+        expect_eq(hash_32_8.width(), expect!["669"]);
+        expect_eq(hash_48_8.width(), expect!["1005"]);
 
         let all_chips = [
             &lurk_main,

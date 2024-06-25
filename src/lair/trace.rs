@@ -21,26 +21,15 @@ pub type ColumnMutSlice<'a, T> = ColumnLayout<&'a mut [T]>;
 impl<'a, T> ColumnMutSlice<'a, T> {
     pub fn from_slice(slice: &'a mut [T], layout_sizes: LayoutSizes) -> Self {
         let (input, slice) = slice.split_at_mut(layout_sizes.input);
-        let (output, slice) = slice.split_at_mut(layout_sizes.output);
         let (aux, slice) = slice.split_at_mut(layout_sizes.aux);
         let (sel, slice) = slice.split_at_mut(layout_sizes.sel);
         assert!(slice.is_empty());
-        Self {
-            input,
-            output,
-            aux,
-            sel,
-        }
+        Self { input, aux, sel }
     }
 
     pub fn push_input(&mut self, index: &mut ColumnIndex, t: T) {
         self.input[index.input] = t;
         index.input += 1;
-    }
-
-    pub fn push_output(&mut self, index: &mut ColumnIndex, t: T) {
-        self.output[index.output] = t;
-        index.output += 1;
     }
 
     pub fn push_aux(&mut self, index: &mut ColumnIndex, t: T) {
@@ -140,9 +129,8 @@ impl<F: PrimeField> Ctrl<F> {
         hasher: &H,
     ) {
         match self {
-            Ctrl::Return(ident, out) => {
+            Ctrl::Return(ident, _) => {
                 slice.sel[*ident] = F::one();
-                out.iter().for_each(|i| slice.push_output(index, map[*i].0))
             }
             Ctrl::Match(t, cases) => {
                 let (t, _) = map[*t];
@@ -348,7 +336,6 @@ mod tests {
         let out = factorial.compute_layout_sizes(&toplevel);
         let expected_layout_sizes = LayoutSizes {
             input: 1,
-            output: 1,
             aux: 4,
             sel: 2,
         };
@@ -366,16 +353,16 @@ mod tests {
         factorial_chip.execute(args, queries);
         let trace = factorial_chip.generate_trace_parallel(queries);
         let expected_trace = [
-            // in order: n, output, mult, 1/n, fact(n-1), n*fact(n-1), and selectors
-            0, 1, 1, 0, 0, 0, 0, 1, //
-            1, 1, 1, 1, 1, 1, 1, 0, //
-            2, 2, 1, 1006632961, 1, 2, 1, 0, //
-            3, 6, 1, 1342177281, 2, 6, 1, 0, //
-            4, 24, 1, 1509949441, 6, 24, 1, 0, //
-            5, 120, 1, 1610612737, 24, 120, 1, 0, //
+            // in order: n, mult, 1/n, fact(n-1), n*fact(n-1), and selectors
+            0, 1, 0, 0, 0, 0, 1, //
+            1, 1, 1, 1, 1, 1, 0, //
+            2, 1, 1006632961, 1, 2, 1, 0, //
+            3, 1, 1342177281, 2, 6, 1, 0, //
+            4, 1, 1509949441, 6, 24, 1, 0, //
+            5, 1, 1610612737, 24, 120, 1, 0, //
             // dummy
-            0, 0, 0, 0, 0, 0, 0, 0, //
-            0, 0, 0, 0, 0, 0, 0, 0, //
+            0, 0, 0, 0, 0, 0, 0, //
+            0, 0, 0, 0, 0, 0, 0, //
         ]
         .into_iter()
         .map(field_from_u32)
@@ -387,15 +374,15 @@ mod tests {
         let trace = fib_chip.generate_trace_parallel(queries);
 
         let expected_trace = [
-            // in order: n, output, mult, 1/n, 1/(n-1), fib(n-1), fib(n-2), and selectors
-            1, 1, 2, 0, 0, 0, 0, 0, 1, 0, //
-            0, 1, 1, 0, 0, 0, 0, 1, 0, 0, //
-            2, 2, 2, 1006632961, 1, 1, 1, 0, 0, 1, //
-            3, 3, 2, 1342177281, 1006632961, 2, 1, 0, 0, 1, //
-            4, 5, 2, 1509949441, 1342177281, 3, 2, 0, 0, 1, //
-            5, 8, 2, 1610612737, 1509949441, 5, 3, 0, 0, 1, //
-            6, 13, 1, 1677721601, 1610612737, 8, 5, 0, 0, 1, //
-            7, 21, 1, 862828252, 1677721601, 13, 8, 0, 0, 1, //
+            // in order: n, mult, 1/n, 1/(n-1), fib(n-1), fib(n-2), and selectors
+            1, 2, 0, 0, 0, 0, 0, 1, 0, //
+            0, 1, 0, 0, 0, 0, 1, 0, 0, //
+            2, 2, 1006632961, 1, 1, 1, 0, 0, 1, //
+            3, 2, 1342177281, 1006632961, 2, 1, 0, 0, 1, //
+            4, 2, 1509949441, 1342177281, 3, 2, 0, 0, 1, //
+            5, 2, 1610612737, 1509949441, 5, 3, 0, 0, 1, //
+            6, 1, 1677721601, 1610612737, 8, 5, 0, 0, 1, //
+            7, 1, 862828252, 1677721601, 13, 8, 0, 0, 1, //
         ]
         .into_iter()
         .map(field_from_u32)
@@ -434,7 +421,6 @@ mod tests {
 
         let expected_layout_sizes = LayoutSizes {
             input: 2,
-            output: 1,
             aux: 6,
             sel: 5,
         };
@@ -449,11 +435,11 @@ mod tests {
             // the inequalities that appear on the default case. Note that the branch
             // that does not follow the default will reuse the slots for the inverted
             // elements to minimize the number of columns
-            3, 2, 16, 1, 4, 16, 0, 0, 0, 0, 0, 0, 1, 0, //
-            4, 2, 16, 1, 1509949441, 1342177281, 1006632961, 1, 16, 0, 0, 0, 0, 1, //
-            5, 2, 16, 1, 1610612737, 1509949441, 1342177281, 1006632961, 16, 0, 0, 0, 0, 1, //
+            3, 2, 1, 4, 16, 0, 0, 0, 0, 0, 0, 1, 0, //
+            4, 2, 1, 1509949441, 1342177281, 1006632961, 1, 16, 0, 0, 0, 0, 1, //
+            5, 2, 1, 1610612737, 1509949441, 1342177281, 1006632961, 16, 0, 0, 0, 0, 1, //
             // dummy
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
         ]
         .into_iter()
         .map(field_from_u32)
@@ -497,7 +483,6 @@ mod tests {
 
         let expected_layout_sizes = LayoutSizes {
             input: 2,
-            output: 1,
             aux: 1,
             sel: 4,
         };
@@ -515,11 +500,11 @@ mod tests {
         let trace = test_chip.generate_trace_parallel(queries);
 
         let expected_trace = [
-            // two inputs, one output, multiplicity, selectors
-            0, 0, 0, 1, 1, 0, 0, 0, //
-            0, 1, 1, 1, 0, 1, 0, 0, //
-            1, 0, 2, 1, 0, 0, 1, 0, //
-            1, 1, 3, 1, 0, 0, 0, 1, //
+            // two inputs, multiplicity, selectors
+            0, 0, 1, 1, 0, 0, 0, //
+            0, 1, 1, 0, 1, 0, 0, //
+            1, 0, 1, 0, 0, 1, 0, //
+            1, 1, 1, 0, 0, 0, 1, //
         ]
         .into_iter()
         .map(field_from_u32)
