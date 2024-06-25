@@ -3,24 +3,26 @@ use std::iter::zip;
 
 use hybrid_array::{typenum::*, ArraySize};
 
-use crate::poseidon::wide::columns::{Poseidon2Cols, Poseidon2PermutationCols};
+use crate::poseidon::wide::columns::Poseidon2Cols;
 use p3_air::AirBuilder;
 use p3_field::AbstractField;
 use p3_symmetric::Permutation;
 
-/// Given a witness of size `Poseidon2Cols::num_cols`, apply the Poseidon2 permutation over the input and return the output.
+/// Given a witness of size `Poseidon2Cols::num_cols` and an expected output digest,
+/// apply the Poseidon2 permutation over the input and compare the returned state,
+/// potentially truncating it to the image size.
 /// When is_real = 0, the output is unconstrained.
 pub fn eval_input<AB: AirBuilder, C: PoseidonConfig<WIDTH, F = AB::F>, const WIDTH: usize>(
     builder: &mut AB,
     input: [AB::Expr; WIDTH],
+    output: &[AB::Var],
     witness: &[AB::Var],
     is_real: AB::Expr,
-) -> [AB::Var; WIDTH]
-where
+) where
     Sub1<C::R_P>: ArraySize,
 {
     let cols = Poseidon2Cols::<AB::Var, C, WIDTH>::from_slice(witness);
-    cols.eval(builder, input, is_real)
+    cols.eval(builder, input, output, is_real);
 }
 
 impl<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2Cols<T, C, WIDTH>
@@ -31,26 +33,7 @@ where
         &self,
         builder: &mut AB,
         input: [AB::Expr; WIDTH],
-        is_real: AB::Expr,
-    ) -> [AB::Var; WIDTH]
-    where
-        T: Copy + Into<AB::Expr>,
-    {
-        self.perm
-            .eval(builder, input, self.output.map(Into::into), is_real);
-        self.output
-    }
-}
-
-impl<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2PermutationCols<T, C, WIDTH>
-where
-    Sub1<C::R_P>: ArraySize,
-{
-    pub fn eval<AB: AirBuilder<F = C::F, Var = T>>(
-        &self,
-        builder: &mut AB,
-        input: [AB::Expr; WIDTH],
-        output: [AB::Expr; WIDTH],
+        output: &[AB::Var],
         is_real: impl Into<AB::Expr>,
     ) where
         T: Copy + Into<AB::Expr>,
@@ -77,8 +60,9 @@ where
             self.eval_external_round(builder, &mut state, is_real.clone(), round);
         }
 
-        for (state, output) in zip(state, output) {
-            builder.assert_eq(state, output * is_real.clone());
+        // Compare the claimed output against the truncated state
+        for (state, &output) in zip(state, output) {
+            builder.assert_eq(state, is_real.clone() * output);
         }
     }
 

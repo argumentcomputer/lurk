@@ -259,9 +259,11 @@ impl<F> Op<F> {
             }
             Op::Hash(preimg) => {
                 let hasher = &toplevel.hasher;
+                let img_size = hasher.img_size();
                 let witness_size = hasher.witness_size(preimg.len());
-                *aux += witness_size;
-                degrees.extend(vec![1; witness_size]);
+                let aux_size = img_size + witness_size;
+                *aux += aux_size;
+                degrees.extend(vec![1; aux_size]);
             }
             Op::Debug(..) => (),
         }

@@ -303,6 +303,7 @@ impl<F: PrimeField> Op<F> {
                 let img = hasher.populate_witness(&preimg, &mut witness);
                 for f in img {
                     map.push((f, 1));
+                    slice.push_aux(index, f);
                 }
                 for f in witness {
                     slice.push_aux(index, f);

@@ -1215,8 +1215,8 @@ mod test {
         expect_eq(ingress_builtin.width(), expect!["44"]);
         expect_eq(egress.width(), expect!["60"]);
         expect_eq(egress_builtin.width(), expect!["37"]);
-        expect_eq(hash_32_8.width(), expect!["669"]);
-        expect_eq(hash_48_8.width(), expect!["1005"]);
+        expect_eq(hash_32_8.width(), expect!["645"]);
+        expect_eq(hash_48_8.width(), expect!["965"]);
 
         let all_chips = [
             &lurk_main,

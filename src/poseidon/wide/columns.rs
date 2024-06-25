@@ -3,14 +3,6 @@ use std::mem::size_of;
 
 use hybrid_array::{typenum::*, Array, ArraySize};
 
-pub struct Poseidon2Cols<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize>
-where
-    Sub1<C::R_P>: ArraySize,
-{
-    pub(super) perm: Poseidon2PermutationCols<T, C, WIDTH>,
-    pub output: [T; WIDTH],
-}
-
 /// Columns for the "narrow" Poseidon2 chip.
 ///
 /// As an optimization, we can represent all of the internal rounds without columns for intermediate
@@ -20,7 +12,7 @@ where
 /// 2) the rest of the state elements at the beginning of the internal rounds
 #[derive(Clone, Debug)]
 #[repr(C)]
-pub struct Poseidon2PermutationCols<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize>
+pub struct Poseidon2Cols<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize>
 where
     Sub1<C::R_P>: ArraySize,
 {
