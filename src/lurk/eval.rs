@@ -149,7 +149,7 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
                     let zero = 0;
                     return zero
                 }
-                Tag::U64, Tag::Comm => {
+                Tag::Sym, Tag::Key, Tag::U64, Tag::Comm => {
                     let ptr = store(digest);
                     return ptr
                 }
@@ -157,7 +157,7 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
                     let idx = call(ingress_builtin, digest);
                     return idx
                 }
-                Tag::Str, Tag::Sym, Tag::Key => {
+                Tag::Str => {
                     if !digest {
                         let zero = 0;
                         return zero
@@ -265,7 +265,7 @@ pub fn egress<F: AbstractField + Ord>(nil: List<F>) -> FuncE<F> {
                     let digest = Array(nil);
                     return digest
                 }
-                Tag::U64, Tag::Comm => {
+                Tag::Sym, Tag::Key, Tag::U64, Tag::Comm => {
                     let digest: [8] = load(val);
                     return digest
                 }
@@ -273,7 +273,7 @@ pub fn egress<F: AbstractField + Ord>(nil: List<F>) -> FuncE<F> {
                     let digest: [8] = call(egress_builtin, val);
                     return digest
                 }
-                Tag::Str, Tag::Sym, Tag::Key => {
+                Tag::Str => {
                     if !val {
                         let digest = [0; 8];
                         return digest
@@ -1221,9 +1221,9 @@ mod test {
         expect_eq(car_cdr.width(), expect!["23"]);
         expect_eq(apply.width(), expect!["34"]);
         expect_eq(env_lookup.width(), expect!["14"]);
-        expect_eq(ingress.width(), expect!["95"]);
+        expect_eq(ingress.width(), expect!["94"]);
         expect_eq(ingress_builtin.width(), expect!["44"]);
-        expect_eq(egress.width(), expect!["60"]);
+        expect_eq(egress.width(), expect!["59"]);
         expect_eq(egress_builtin.width(), expect!["37"]);
         expect_eq(hash_32_8.width(), expect!["645"]);
         expect_eq(hash_48_8.width(), expect!["965"]);
