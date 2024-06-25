@@ -295,10 +295,12 @@ impl<F: Field> Op<F> {
             Op::Hash(preimg) => {
                 let preimg: Vec<_> = preimg.iter().map(|a| map[*a].to_expr()).collect();
                 let hasher = &toplevel.hasher;
+                let img_size = hasher.img_size();
+                let img_vars = local.next_n_aux(index, img_size);
                 let witness_size = hasher.witness_size(preimg.len());
                 let witness = local.next_n_aux(index, witness_size);
-                let img_vars = hasher.eval_preimg(builder, preimg, witness, sel.clone());
-                for img_var in img_vars {
+                hasher.eval_preimg(builder, preimg, img_vars, witness, sel.clone());
+                for &img_var in img_vars {
                     map.push(Val::Expr(img_var.into()))
                 }
             }

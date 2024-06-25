@@ -2,7 +2,7 @@ use std::iter::zip;
 
 use crate::poseidon::config::PoseidonConfig;
 
-use crate::poseidon::wide::columns::{Poseidon2Cols, Poseidon2PermutationCols};
+use crate::poseidon::wide::columns::Poseidon2Cols;
 use hybrid_array::{typenum::Sub1, ArraySize};
 use p3_field::AbstractField;
 use p3_symmetric::Permutation;
@@ -19,16 +19,6 @@ where
 }
 
 impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2Cols<C::F, C, WIDTH>
-where
-    Sub1<C::R_P>: ArraySize,
-{
-    pub(crate) fn populate(&mut self, input: [C::F; WIDTH]) -> [C::F; WIDTH] {
-        self.output = self.perm.populate(input);
-        self.output
-    }
-}
-
-impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2PermutationCols<C::F, C, WIDTH>
 where
     Sub1<C::R_P>: ArraySize,
 {

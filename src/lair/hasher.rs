@@ -23,9 +23,10 @@ pub trait Hasher<F>: Default + Sync {
         &self,
         builder: &mut AB,
         preimg: Vec<AB::Expr>,
+        img: &[AB::Var],
         witness: &[AB::Var],
         is_real: AB::Expr,
-    ) -> Vec<AB::Var>;
+    );
 }
 
 pub struct LurkHasher {
@@ -92,12 +93,14 @@ impl Hasher<BabyBear> for LurkHasher {
     }
 
     fn populate_witness(&self, preimg: &[BabyBear], witness: &mut [BabyBear]) -> Vec<BabyBear> {
-        match preimg.len() {
+        let mut out: Vec<_> = match preimg.len() {
             24 => populate_witness::<BabyBearConfig24, 24>(sized!(preimg), witness).into(),
             32 => populate_witness::<BabyBearConfig32, 32>(sized!(preimg), witness).into(),
             48 => populate_witness::<BabyBearConfig48, 48>(sized!(preimg), witness).into(),
             _ => unimplemented!(),
-        }
+        };
+        out.truncate(8);
+        out
     }
 
     fn witness_size(&self, preimg_size: usize) -> usize {
@@ -113,16 +116,32 @@ impl Hasher<BabyBear> for LurkHasher {
         &self,
         builder: &mut AB,
         preimg: Vec<AB::Expr>,
+        img: &[AB::Var],
         witness: &[AB::Var],
         is_real: AB::Expr,
-    ) -> Vec<AB::Var> {
+    ) {
         match preimg.len() {
-            24 => eval_input::<AB, BabyBearConfig24, 24>(builder, sized!(preimg), witness, is_real)
-                .into(),
-            32 => eval_input::<AB, BabyBearConfig32, 32>(builder, sized!(preimg), witness, is_real)
-                .into(),
-            48 => eval_input::<AB, BabyBearConfig48, 48>(builder, sized!(preimg), witness, is_real)
-                .into(),
+            24 => eval_input::<AB, BabyBearConfig24, 24>(
+                builder,
+                sized!(preimg),
+                img,
+                witness,
+                is_real,
+            ),
+            32 => eval_input::<AB, BabyBearConfig32, 32>(
+                builder,
+                sized!(preimg),
+                img,
+                witness,
+                is_real,
+            ),
+            48 => eval_input::<AB, BabyBearConfig48, 48>(
+                builder,
+                sized!(preimg),
+                img,
+                witness,
+                is_real,
+            ),
             _ => unimplemented!(),
         }
     }

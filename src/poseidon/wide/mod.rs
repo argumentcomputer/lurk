@@ -29,7 +29,8 @@ mod test {
     {
         is_real: T,
         input: [T; WIDTH],
-        poseidon: Poseidon2Cols<T, C, WIDTH>,
+        output: [T; WIDTH],
+        perm: Poseidon2Cols<T, C, WIDTH>,
     }
 
     impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> BaseAir<C::F> for Chip<C, WIDTH>
@@ -51,9 +52,12 @@ mod test {
             let row = main.row_slice(0);
             let local = Cols::<AB::Var, C, WIDTH>::from_slice(&row);
 
-            local
-                .poseidon
-                .eval(builder, local.input.map(Into::into), local.is_real.into());
+            local.perm.eval(
+                builder,
+                local.input.map(Into::into),
+                &local.output,
+                local.is_real.into(),
+            );
         }
     }
 
@@ -95,7 +99,8 @@ mod test {
                     let cols = Cols::<C::F, C, WIDTH>::from_slice_mut(row);
                     cols.is_real = C::F::one();
                     cols.input = input;
-                    cols.poseidon.populate(input)
+                    cols.output = cols.perm.populate(input);
+                    cols.output
                 })
                 .collect();
 
