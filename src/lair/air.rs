@@ -499,7 +499,7 @@ mod tests {
         let fib_width = fib_chip.width();
         let fib_trace = RowMajorMatrix::new(
             [
-                // in order: n, output, mult, 1/n, 1/(n-1), fib(n-1), fib(n-2), and selectors
+                // in order: n, mult, 1/n, 1/(n-1), fib(n-1), fib(n-2), and selectors
                 0, 1, 0, 0, 0, 0, 1, 0, 0, //
                 1, 2, 0, 0, 0, 0, 0, 1, 0, //
                 2, 2, 1006632961, 1, 1, 1, 0, 0, 1, //
