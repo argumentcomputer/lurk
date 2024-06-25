@@ -48,55 +48,38 @@ impl Memory {
 
 impl Ptr {
     fn is_built_in_named(&self, name: &str) -> bool {
+        if !self.is_sym() {
+            return false;
+        }
+
         self.1.as_canonical_u32() as usize == lurk_sym_index(name).unwrap()
     }
 
     fn is_t(&self) -> bool {
-        if !self.is_sym() {
-            return false;
-        }
         self.is_built_in_named("t")
     }
 
     fn is_binding(&self) -> bool {
-        if !self.is_sym() {
-            return false;
-        }
         self.is_built_in_named("let")
     }
 
     fn is_recursive_binding(&self) -> bool {
-        if !self.is_sym() {
-            return false;
-        }
         self.is_built_in_named("letrec")
     }
 
     fn is_lambda(&self) -> bool {
-        if !self.is_sym() {
-            return false;
-        }
         self.is_built_in_named("lambda")
     }
 
     fn is_if(&self) -> bool {
-        if !self.is_sym() {
-            return false;
-        }
         self.is_built_in_named("if")
     }
 
     fn is_left_foldable(&self) -> bool {
-        if !self.is_sym() {
-            return false;
-        }
         self.is_built_in_named("+") || self.is_built_in_named("*")
     }
 
     fn is_right_foldable(&self) -> bool {
-        if !self.is_sym() {
-            return false;
-        }
         self.is_built_in_named("/") || self.is_built_in_named("-")
     }
 
@@ -104,6 +87,7 @@ impl Ptr {
         if !self.is_sym() {
             return false;
         }
+
         self.1 < Memory::initial_sym_addr()
     }
 
@@ -111,13 +95,11 @@ impl Ptr {
         if !self.is_sym() {
             return false;
         }
+
         self.1 >= Memory::initial_sym_addr()
     }
 
     fn is_relational(&self) -> bool {
-        if !self.is_sym() {
-            return false;
-        }
         self.is_built_in_named("=")
             || self.is_built_in_named("<")
             || self.is_built_in_named(">")
