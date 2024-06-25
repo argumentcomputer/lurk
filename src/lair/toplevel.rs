@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use rustc_hash::FxHashMap;
 
 use super::{bytecode::*, expr::*, hasher::Hasher, map::Map, List, Name};
 
@@ -57,10 +57,10 @@ impl<F, H: Hasher<F>> Toplevel<F, H> {
 }
 
 /// A map from `Var` to its compiled indices and block identifier
-type BindMap = BTreeMap<Var, (List<usize>, usize)>;
+type BindMap = FxHashMap<Var, (List<usize>, usize)>;
 
 /// A map that tells whether a `Var`, from a certain block, has been used or not
-type UsedMap = BTreeMap<(Var, usize), bool>;
+type UsedMap = FxHashMap<(Var, usize), bool>;
 
 #[inline]
 fn bind_new(var: &Var, ctx: &mut CheckCtx<'_>) {
@@ -132,8 +132,8 @@ impl<F: Clone + Ord> FuncE<F> {
             return_ident: 0,
             return_idents: vec![],
             return_size: self.output_size,
-            bind_map: BTreeMap::new(),
-            used_map: BTreeMap::new(),
+            bind_map: FxHashMap::default(),
+            used_map: FxHashMap::default(),
             info_map,
         };
         self.input_params.iter().for_each(|var| {
