@@ -288,18 +288,7 @@ pub fn egress<F: AbstractField + Ord>(nil: List<F>) -> FuncE<F> {
                     let digest: [8] = call(hash_32_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
                     return digest
                 }
-                Tag::Thunk => {
-                    let (fst_tag, fst_ptr, snd_tag, snd_ptr) = load(val);
-                    let fst_digest: [8] = call(egress, fst_tag, fst_ptr);
-                    let snd_digest: [8] = call(egress, snd_tag, snd_ptr);
-
-                    let padding = [0; 7];
-                    let fst_tag_full: [8] = (fst_tag, padding);
-                    let snd_tag_full: [8] = (snd_tag, padding);
-                    let digest: [8] = call(hash_32_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
-                    return digest
-                }
-                Tag::Cons => {
+                Tag::Cons, Tag::Thunk => {
                     let (fst_tag, fst_ptr, snd_tag, snd_ptr) = load(val);
                     let fst_digest: [8] = call(egress, fst_tag, fst_ptr);
                     let snd_digest: [8] = call(egress, snd_tag, snd_ptr);
