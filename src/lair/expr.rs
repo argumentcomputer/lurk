@@ -3,7 +3,7 @@
 use super::{map::Map, List, Name};
 
 /// The type for variable references
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct Var {
     pub name: &'static str,
     pub size: usize,

@@ -87,6 +87,10 @@ criterion = { workspace = true }
 name = "fib"
 harness = false
 
+[[bench]]
+name = "lurk"
+harness = false
+
 [workspace]
 members = ["examples/calculator", "examples/byte_lookup"]
 
