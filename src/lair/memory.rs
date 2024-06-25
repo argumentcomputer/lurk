@@ -196,11 +196,11 @@ mod tests {
         let func_trace = test_chip.generate_trace_sequential(queries);
 
         let expected_trace = [
-            // ptr2, y, mult, ptr1, ptr2, one, two, three, selector
-            2, 2, 1, 1, 2, 1, 2, 3, 1, //
-            0, 0, 0, 0, 0, 0, 0, 0, 0, //
-            0, 0, 0, 0, 0, 0, 0, 0, 0, //
-            0, 0, 0, 0, 0, 0, 0, 0, 0, //
+            // mult, ptr1, ptr2, one, two, three, selector
+            1, 1, 2, 1, 2, 3, 1, //
+            0, 0, 0, 0, 0, 0, 0, //
+            0, 0, 0, 0, 0, 0, 0, //
+            0, 0, 0, 0, 0, 0, 0, //
         ]
         .into_iter()
         .map(F::from_canonical_u32)
