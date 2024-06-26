@@ -507,6 +507,11 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                             let env = 0;
                                             // Eval must be called twice
                                             let (res_tag, res) = call(eval, expr_tag, expr, env);
+                                            match res_tag {
+                                                Tag::Err => {
+                                                    return (res_tag, res)
+                                                }
+                                            };
                                             let (res_tag, res) = call(eval, res_tag, res, env);
                                             return (res_tag, res)
                                         }
@@ -517,8 +522,16 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                                 return (err_tag, invalid_form)
                                             }
                                             let (res_tag, res) = call(eval, expr_tag, expr, env);
+                                            match res_tag {
+                                                Tag::Err => {
+                                                    return (res_tag, res)
+                                                }
+                                            };
                                             let (env_tag, new_env) = call(eval, env_expr_tag, env_expr, env);
                                             match env_tag {
+                                                Tag::Err => {
+                                                    return (env_tag, new_env)
+                                                }
                                                 Tag::Env => {
                                                     let (res_tag, res) = call(eval, res_tag, res, new_env);
                                                     return (res_tag, res)
@@ -1111,6 +1124,11 @@ pub fn eval_let<F: AbstractField + Ord>() -> FuncE<F> {
                     }
 
                     let (val_tag, val) = call(eval, expr_tag, expr, env);
+                    match val_tag {
+                        Tag::Err => {
+                            return (val_tag, val)
+                        }
+                    };
                     let ext_env = store(param, val_tag, val, env);
                     match rest_binds_tag {
                         Tag::Nil => {
@@ -1169,7 +1187,12 @@ pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
                     // this will preemptively evaluate the thunk, so that we do not skip evaluation in case
                     // the variable is not used inside the letrec body, and furthermore it follows a strict
                     // evaluation order
-                    let (_val_tag, _val) = call(eval, expr_tag, expr, ext_env);
+                    let (val_tag, val) = call(eval, expr_tag, expr, ext_env);
+                    match val_tag {
+                        Tag::Err => {
+                            return (val_tag, val)
+                        }
+                    };
                     match rest_binds_tag {
                         Tag::Nil => {
                             let (res_tag, res) = call(eval, body_tag, body, ext_env);
@@ -1194,8 +1217,12 @@ pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
             // Expression must be a function
             let head_not_fun = sub(head_tag, fun_tag);
             if head_not_fun {
-                let err = EvalErr::ApplyNonFunc;
-                return (err_tag, err)
+                let head_not_err = sub(head_tag, fun_tag);
+                if head_not_err {
+                    let err = EvalErr::ApplyNonFunc;
+                    return (err_tag, err)
+                }
+                return (err_tag, head)
             }
 
             let (params_tag, params, body_tag, body, func_env) = load(head);
@@ -1234,6 +1261,11 @@ pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
                             }
                             // evaluate the argument
                             let (arg_tag, arg) = call(eval, arg_tag, arg, args_env);
+                            match arg_tag {
+                                Tag::Err => {
+                                    return (arg_tag, arg)
+                                }
+                            };
                             // and store it in the environment
                             let ext_env = store(param, arg_tag, arg, func_env);
                             let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
@@ -1318,20 +1350,20 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["38"]);
-        expect_eq(eval.width(), expect!["105"]);
+        expect_eq(eval.width(), expect!["108"]);
         expect_eq(eval_unop.width(), expect!["31"]);
         expect_eq(eval_binop_num.width(), expect!["36"]);
         expect_eq(eval_binop_misc.width(), expect!["34"]);
-        expect_eq(eval_let.width(), expect!["32"]);
-        expect_eq(eval_letrec.width(), expect!["33"]);
+        expect_eq(eval_let.width(), expect!["34"]);
+        expect_eq(eval_letrec.width(), expect!["35"]);
         expect_eq(equal.width(), expect!["27"]);
         expect_eq(equal_inner.width(), expect!["51"]);
         expect_eq(car_cdr.width(), expect!["23"]);
-        expect_eq(apply.width(), expect!["34"]);
+        expect_eq(apply.width(), expect!["37"]);
         expect_eq(env_lookup.width(), expect!["14"]);
-        expect_eq(ingress.width(), expect!["94"]);
+        expect_eq(ingress.width(), expect!["93"]);
         expect_eq(ingress_builtin.width(), expect!["44"]);
-        expect_eq(egress.width(), expect!["59"]);
+        expect_eq(egress.width(), expect!["58"]);
         expect_eq(egress_builtin.width(), expect!["37"]);
         expect_eq(hash_32_8.width(), expect!["645"]);
         expect_eq(hash_48_8.width(), expect!["965"]);
