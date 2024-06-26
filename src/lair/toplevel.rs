@@ -168,6 +168,22 @@ impl<F: Clone + Ord> BlockE<F> {
         let mut ops = Vec::new();
         for op in self.ops.iter() {
             match op {
+                OpE::AssertNe(a, b) => {
+                    // As of now it only works on single elements
+                    assert_eq!(a.size, 1);
+                    assert_eq!(b.size, 1);
+                    let a = use_var(a, ctx)[0];
+                    let b = use_var(b, ctx)[0];
+                    ops.push(Op::AssertNe(a, b));
+                }
+                OpE::AssertEq(a, b) => {
+                    assert_eq!(a.size, b.size);
+                    let a = use_var(a, ctx).to_vec();
+                    let b = use_var(b, ctx);
+                    for (a, b) in a.iter().zip(b.iter()) {
+                        ops.push(Op::AssertEq(*a, *b));
+                    }
+                }
                 OpE::Const(tgt, f) => {
                     assert_eq!(tgt.size, 1);
                     ops.push(Op::Const(f.clone()));

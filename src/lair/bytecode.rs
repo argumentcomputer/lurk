@@ -11,6 +11,8 @@ type Ident = usize;
 /// The type for Lair operations
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Op<F> {
+    AssertEq(usize, usize),
+    AssertNe(usize, usize),
     /// `Const(x)` pushes `x` to the stack
     Const(F),
     /// `Add(i, j)` pushes `stack[i] + stack[j]` to the stack

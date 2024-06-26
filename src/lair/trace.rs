@@ -223,6 +223,14 @@ impl<F: PrimeField32> Op<F> {
     ) {
         let queries = &shard.queries();
         match self {
+            Op::AssertEq(..) => {}
+            Op::AssertNe(a, b) => {
+                let (a, a_deg) = map[*a];
+                let (b, b_deg) = map[*b];
+                if a_deg + b_deg > 0 {
+                    slice.push_aux(index, (a - b).inverse());
+                }
+            }
             Op::Const(f) => map.push((*f, 0)),
             Op::Add(a, b) => {
                 let (a, a_deg) = map[*a];

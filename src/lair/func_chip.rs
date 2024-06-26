@@ -207,6 +207,12 @@ impl<F> Op<F> {
         aux: &mut usize,
     ) {
         match self {
+            Op::AssertEq(..) => {}
+            Op::AssertNe(a, b) => {
+                if degrees[*a] + degrees[*b] > 0 {
+                    *aux += 1;
+                }
+            }
             Op::Const(..) => {
                 degrees.push(0);
             }

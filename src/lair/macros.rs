@@ -50,6 +50,14 @@ macro_rules! block_init {
 #[macro_export]
 macro_rules! block {
     // Operations
+    ({ assert_eq!($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
+        $ops.push($crate::lair::expr::OpE::AssertEq($a, $b));
+        $crate::block!({ $($tail)* }, $ops)
+    }};
+    ({ assert_ne!($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
+        $ops.push($crate::lair::expr::OpE::AssertNe($a, $b));
+        $crate::block!({ $($tail)* }, $ops)
+    }};
     ({ let $tgt:ident = $a:literal; $($tail:tt)+ }, $ops:expr) => {{
         $ops.push($crate::lair::expr::OpE::Const($crate::var!($tgt), $crate::lair::field_from_i32($a)));
         let $tgt = $crate::var!($tgt);

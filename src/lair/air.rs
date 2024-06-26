@@ -207,6 +207,21 @@ impl<F: Field> Op<F> {
         <AB as AirBuilder>::Var: Debug,
     {
         match self {
+            Op::AssertNe(a, b) => {
+                let a = &map[*a];
+                let b = &map[*b];
+                let c = local.next_aux(index);
+                builder
+                    .when(sel.clone())
+                    .assert_one(c * (a.to_expr() - b.to_expr()));
+            }
+            Op::AssertEq(a, b) => {
+                let a = &map[*a];
+                let b = &map[*b];
+                builder
+                    .when(sel.clone())
+                    .assert_eq(a.to_expr(), b.to_expr());
+            }
             Op::Const(c) => {
                 map.push(Val::Const(*c));
             }

@@ -44,6 +44,8 @@ impl<const N: usize> From<[Var; N]> for VarList {
 /// Interface for basic Lair operations
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OpE<F> {
+    AssertEq(Var, Var),
+    AssertNe(Var, Var),
     /// `Const(var, x)` binds `var` to the constant `x`
     Const(Var, F),
     /// `Array(var, arr)` binds `var` to the constant array `arr`

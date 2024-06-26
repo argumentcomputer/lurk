@@ -497,6 +497,16 @@ impl<F: PrimeField32> Func<F> {
         let mut func_index = self.index;
         while let Some(exec_entry) = exec_entries_stack.pop() {
             match exec_entry {
+                ExecEntry::Op(Op::AssertEq(a, b)) => {
+                    let a = map[*a];
+                    let b = map[*b];
+                    assert_eq!(a, b);
+                }
+                ExecEntry::Op(Op::AssertNe(a, b)) => {
+                    let a = map[*a];
+                    let b = map[*b];
+                    assert_ne!(a, b);
+                }
                 ExecEntry::Op(Op::Call(callee_index, inp, op_id)) => {
                     // `map_buffer` will become the map for the called function
                     let mut map_buffer = inp.iter().map(|v| map[*v]).collect::<Vec<_>>();
