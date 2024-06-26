@@ -975,7 +975,7 @@ mod tests {
 
         let queries = &mut QueryRecord::new(&toplevel);
         let f = F::from_canonical_u32;
-        queries.inject_queries("double", &toplevel, [([f(1)], [f(2)])]);
+        queries.inject_queries("double", &toplevel, [(&[f(1)], &[f(2)])]);
         let args = [f(2)];
 
         half.execute_iter(args.into(), queries);
@@ -986,7 +986,7 @@ mod tests {
         );
 
         // this injected junk query will be erased because `half` is not invertible
-        queries.inject_queries("half", &toplevel, [([f(10)], [f(10)])]);
+        queries.inject_queries("half", &toplevel, [(&[f(10)], &[f(10)])]);
         queries.clean();
 
         // even after `clean`, the preimg of `double(1)` can still be recovered
