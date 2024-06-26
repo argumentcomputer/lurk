@@ -67,8 +67,8 @@ pub enum OpE<F> {
     /// `Call([x, ...], foo, [y, ...])` binds `x, ...` to the output of `foo`
     /// when applied to the arguments `y, ...`
     Call(VarList, Name, VarList),
-    /// `PreImg([x, ...], foo, [y, ...])` binds `x, ...` to the preimage of `foo`
-    /// when on the arguments `y, ...`
+    /// `PreImg([x, ...], foo, [y, ...])` binds `x, ...` to the latest preimage
+    /// (beware of non-injectivity) of `foo` when called with arguments `y, ...`
     PreImg(VarList, Name, VarList),
     /// `Store(x, [y, ...])` binds `x` to a pointer to `[y, ...]`
     Store(Var, VarList),

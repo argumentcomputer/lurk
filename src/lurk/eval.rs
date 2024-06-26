@@ -1359,7 +1359,11 @@ mod test {
             egress_chip.execute_iter(egress_args.clone(), queries);
             let egress_out = queries.get_output(egress_chip.func, &egress_args);
 
-            assert_eq!(*egress_out, *digest, "ingress -> egress doesn't roundtrip");
+            assert_eq!(
+                egress_out,
+                digest.as_ref(),
+                "ingress -> egress doesn't roundtrip"
+            );
 
             let hash_32_8_trace = hash_32_8_chip.generate_trace_parallel(queries);
             debug_constraints_collecting_queries(&hash_32_8_chip, &[], &hash_32_8_trace);

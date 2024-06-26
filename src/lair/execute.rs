@@ -20,8 +20,8 @@ pub struct QueryResult<T> {
 }
 
 impl<T> QueryResult<T> {
-    fn init(output: T) -> Self {
-        Self { output, mult: 0 }
+    fn new(output: T, mult: u32) -> Self {
+        Self { output, mult }
     }
 }
 
@@ -358,18 +358,26 @@ impl<F: Field> QueryRecord<F> {
                         .expect("Inverse query map not found")
                         .insert(out.clone(), inp.clone());
                 }
-                queries.insert(inp, QueryResult::init(out));
+                queries.insert(inp, QueryResult::new(out, 0));
             }
         }
     }
 
-    /// Resets all multiplicities to zero
-    pub fn reset_multiplicities(&mut self) {
-        self.func_queries.iter_mut().for_each(|query_map| {
-            query_map.iter_mut().for_each(|(_, r)| r.mult = 0);
-        });
+    /// * Erase the records of non-invertible funcs
+    /// * Set the multiplicities of queries for invertible funcs to zero
+    /// * Erase the records of memory queries
+    pub fn clean(&mut self) {
+        for func_idx in 0..self.func_queries.len() {
+            if self.inv_func_queries[func_idx].is_some() {
+                self.func_queries[func_idx]
+                    .iter_mut()
+                    .for_each(|(_, r)| r.mult = 0);
+            } else {
+                self.func_queries[func_idx] = FxIndexMap::default();
+            }
+        }
         self.mem_queries.iter_mut().for_each(|mem_map| {
-            mem_map.iter_mut().for_each(|(_, mult)| *mult = 0);
+            *mem_map = FxIndexMap::default();
         });
     }
 }
@@ -377,26 +385,47 @@ impl<F: Field> QueryRecord<F> {
 impl<F: Field + Ord> QueryRecord<F> {
     pub fn query(&mut self, index: usize, input: &[F]) -> Option<&List<F>> {
         if let Some(event) = self.func_queries[index].get_mut(input) {
-            event.mult += 1;
-            Some(&event.output)
+            if event.mult == 0 {
+                // this is the case of a injected or cleaned up record, which
+                // should signal a recomputation nevertheless in order to avoid
+                // messed up multiplicities by short-circuits
+                None
+            } else {
+                event.mult += 1;
+                Some(&event.output)
+            }
         } else {
             None
         }
     }
 
-    pub fn query_preimage(&mut self, index: usize, input: &[F]) -> Option<&List<F>> {
-        let output = self.inv_func_queries[index].as_ref()?.get(input)?;
-        let event = self.func_queries[index].get_mut(output)?;
-        event.mult += 1;
-        Some(output)
+    pub fn query_preimage(&mut self, index: usize, out: &[F]) -> &List<F> {
+        let inp = self.inv_func_queries[index]
+            .as_ref()
+            .expect("Missing inverse map")
+            .get(out)
+            .expect("Preimg not found");
+        let result = self.func_queries[index]
+            .get_mut(inp)
+            .expect("Data missing on query map");
+        assert_eq!(out, result.output.as_ref());
+        result.mult += 1;
+        inp
     }
 
     pub fn insert_result(&mut self, index: usize, input: List<F>, output: List<F>) {
         if let Some(queries) = &mut self.inv_func_queries[index] {
             queries.insert(output.clone(), input.clone());
+            if let Some(prev) = self.func_queries[index].insert(input, QueryResult::new(output, 1))
+            {
+                // query was injected or cleaned up
+                assert_eq!(prev.mult, 0);
+            }
+        } else {
+            assert!(self.func_queries[index]
+                .insert(input, QueryResult::new(output, 1))
+                .is_none());
         }
-        let result = QueryResult { output, mult: 1 };
-        assert!(self.func_queries[index].insert(input, result).is_none());
     }
 
     pub fn store(&mut self, args: List<F>) -> F {
@@ -670,9 +699,7 @@ impl<F: PrimeField> Op<F> {
             }
             Op::PreImg(idx, inp) => {
                 let args = inp.iter().map(|a| map[*a]).collect::<List<_>>();
-                let out = queries
-                    .query_preimage(*idx, &args)
-                    .expect("Cannot find preimg");
+                let out = queries.query_preimage(*idx, &args);
                 map.extend(out.iter());
             }
             Op::Store(inp) => {
@@ -744,9 +771,7 @@ impl<F: PrimeField> Op<F> {
                 Op::Debug(s) => println!("{}", s),
                 Op::PreImg(idx, inp) => {
                     let args = inp.iter().map(|a| map[*a]).collect::<List<_>>();
-                    let out = queries
-                        .query_preimage(*idx, &args)
-                        .expect("Cannot find preimg");
+                    let out = queries.query_preimage(*idx, &args);
                     map.extend(out.iter());
                 }
                 Op::Call(index, inp) => {
@@ -780,8 +805,8 @@ mod tests {
     use crate::{
         func,
         lair::{
-            demo_toplevel, execute::QueryRecord, field_from_u32, hasher::LurkHasher,
-            toplevel::Toplevel, List,
+            demo_toplevel, execute::QueryRecord, field_from_u32, func_chip::FuncChip,
+            hasher::LurkHasher, toplevel::Toplevel, List,
         },
     };
 
@@ -926,5 +951,61 @@ mod tests {
         let expected_len = 3;
         assert_eq!(out.len(), expected_len);
         assert_eq!(out[0..expected_len], [f(5), f(7), f(9)]);
+    }
+
+    #[test]
+    fn consistent_clean() {
+        let half_e = func!(
+            fn half(x): [1] {
+                let pre = preimg(double, x);
+                return pre
+            }
+        );
+        let double_e = func!(
+            invertible fn double(x): [1] {
+                let two_x = add(x, x);
+                return two_x
+            }
+        );
+
+        let toplevel = Toplevel::<F, LurkHasher>::new(&[half_e, double_e]);
+        let half = FuncChip::from_name("half", &toplevel);
+        let double = FuncChip::from_name("double", &toplevel);
+
+        let queries = &mut QueryRecord::new(&toplevel);
+        let f = F::from_canonical_u32;
+        queries.inject_queries("double", &toplevel, [([f(1)], [f(2)])]);
+        let args = [f(2)];
+
+        half.execute_iter(args.into(), queries);
+        let res1 = queries.get_output(half.func, &args).to_vec();
+        let traces1 = (
+            half.generate_trace_sequential(queries),
+            double.generate_trace_sequential(queries),
+        );
+
+        // this injected junk query will be erased because `half` is not invertible
+        queries.inject_queries("half", &toplevel, [([f(10)], [f(10)])]);
+        queries.clean();
+
+        // even after `clean`, the preimg of `double(1)` can still be recovered
+        half.execute_iter(args.into(), queries);
+        let res2 = queries.get_output(half.func, &args).to_vec();
+        let traces2 = (
+            half.generate_trace_sequential(queries),
+            double.generate_trace_sequential(queries),
+        );
+        assert_eq!(res1, res2);
+        assert_eq!(traces1, traces2);
+
+        queries.clean();
+        half.execute(args.into(), queries);
+        let res3 = queries.get_output(half.func, &args);
+        let traces3 = (
+            half.generate_trace_sequential(queries),
+            double.generate_trace_sequential(queries),
+        );
+        assert_eq!(res2, res3);
+        assert_eq!(traces2, traces3);
     }
 }
