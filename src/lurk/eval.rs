@@ -89,33 +89,6 @@ pub fn build_lurk_toplevel() -> Toplevel<BabyBear, LurkHasher> {
     ])
 }
 
-#[derive(Clone, Copy)]
-#[repr(u8)]
-enum EvalErr {
-    UnboundVar,
-    InvalidForm,
-    ApplyNonFunc,
-    ParamsNotList,
-    ParamNotSymbol,
-    ArgsNotList,
-    ArgNotNumber,
-    DivByZero,
-    NotEnv,
-    NotChar,
-    NotCons,
-    NotComm,
-    NotString,
-    CannotCastToNum,
-    NonConstantBuiltin,
-    Todo,
-}
-
-impl EvalErr {
-    fn to_field<F: AbstractField>(self) -> F {
-        F::from_canonical_u8(self as u8)
-    }
-}
-
 pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
     func!(
         fn lurk_main(full_expr_tag: [8], expr_digest: [8], env_digest: [8]): [16] {
@@ -142,7 +115,7 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
         fn ingress(tag_full: [8], digest: [8]): [1] {
             let (tag, _rest: [7]) = tag_full;
             match tag {
-                Tag::Num, Tag::Char, Tag::Err => {
+                Tag::Num, Tag::Char => {
                     let (x, _rest: [7]) = digest;
                     return x
                 }
@@ -255,7 +228,7 @@ pub fn egress<F: AbstractField + Ord>(nil: List<F>) -> FuncE<F> {
     func!(
         fn egress(tag, val): [8] {
             match tag {
-                Tag::Num, Tag::Char, Tag::Err => {
+                Tag::Num, Tag::Char => {
                     let padding = [0; 7];
                     let digest: [8] = (val, padding);
                     return digest
@@ -392,17 +365,11 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
             let t = builtins.index("t");
             let nil_tag = Tag::Nil;
             let cons_tag = Tag::Cons;
-            let err_tag = Tag::Err;
-            let invalid_form = EvalErr::InvalidForm;
 
             match expr_tag {
                 Tag::Builtin => {
-                    let not_t = sub(expr, t);
-                    if !not_t {
-                        return (expr_tag, expr)
-                    }
-                    let non_constant_builtin = EvalErr::NonConstantBuiltin;
-                    return (err_tag, non_constant_builtin)
+                    assert_eq!(expr, t);
+                    return (expr_tag, expr)
                 }
                 Tag::Sym => {
                     let (res_tag, res) = call(env_lookup, expr, env);
@@ -430,20 +397,11 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                     // first element: lambda symbol
                                     // second element: parameter list
                                     // third element: body
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, cons_tag);
                                     let (params_tag, params, rest_tag, rest) = load(rest);
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, cons_tag);
                                     let (body_tag, body, rest_tag, _rest) = load(rest);
-                                    let rest_not_nil = sub(rest_tag, nil_tag);
-                                    if rest_not_nil {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, nil_tag);
                                     // A function (more precisely, a closure) is an object with a
                                     // parameter list, a body and an environment
                                     let res_tag = Tag::Fun;
@@ -455,114 +413,57 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                     // first element: let symbol
                                     // second element: binding list
                                     // third element: body
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, cons_tag);
                                     let (binds_tag, binds, rest_tag, rest) = load(rest);
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, cons_tag);
                                     let (body_tag, body, rest_tag, _rest) = load(rest);
-                                    let rest_not_nil = sub(rest_tag, nil_tag);
-                                    if rest_not_nil {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, nil_tag);
                                     let (res_tag, res) = call(eval_let, binds_tag, binds, body_tag, body, env);
                                     return (res_tag, res)
                                 }
                                 "letrec" => {
                                     // A letrec expression is analogous to a let expression
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, cons_tag);
                                     let (binds_tag, binds, rest_tag, rest) = load(rest);
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, cons_tag);
                                     let (body_tag, body, rest_tag, _rest) = load(rest);
-                                    let rest_not_nil = sub(rest_tag, nil_tag);
-                                    if rest_not_nil {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, nil_tag);
                                     let (res_tag, res) = call(eval_letrec, binds_tag, binds, body_tag, body, env);
                                     return (res_tag, res)
                                 }
                                 "eval" => {
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, cons_tag);
                                     let (expr_tag, expr, rest_tag, rest) = load(rest);
                                     match rest_tag {
                                         Tag::Nil => {
                                             let env = 0;
                                             // Eval must be called twice
                                             let (res_tag, res) = call(eval, expr_tag, expr, env);
-                                            match res_tag {
-                                                Tag::Err => {
-                                                    return (res_tag, res)
-                                                }
-                                            };
                                             let (res_tag, res) = call(eval, res_tag, res, env);
                                             return (res_tag, res)
                                         }
                                         Tag::Cons => {
                                             let (env_expr_tag, env_expr, rest_tag, _rest) = load(rest);
-                                            let rest_not_nil = sub(rest_tag, nil_tag);
-                                            if rest_not_nil {
-                                                return (err_tag, invalid_form)
-                                            }
+                                            assert_eq!(rest_tag, nil_tag);
                                             let (res_tag, res) = call(eval, expr_tag, expr, env);
-                                            match res_tag {
-                                                Tag::Err => {
-                                                    return (res_tag, res)
-                                                }
-                                            };
-                                            let (env_tag, new_env) = call(eval, env_expr_tag, env_expr, env);
-                                            match env_tag {
-                                                Tag::Err => {
-                                                    return (env_tag, new_env)
-                                                }
-                                                Tag::Env => {
-                                                    let (res_tag, res) = call(eval, res_tag, res, new_env);
-                                                    return (res_tag, res)
-                                                }
-                                            };
-                                            let err = EvalErr::NotEnv;
-                                            return (err_tag, err)
+                                            let (new_env_tag, new_env) = call(eval, env_expr_tag, env_expr, env);
+                                            let env_tag = Tag::Env;
+                                            assert_eq!(new_env_tag, env_tag);
+                                            let (res_tag, res) = call(eval, res_tag, res, new_env);
+                                            return (res_tag, res)
                                         }
-                                    };
-                                    let not_env = EvalErr::NotEnv;
-                                    return (err_tag, not_env)
+                                    }
                                 }
                                 "quote" => {
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, cons_tag);
                                     let (expr_tag, expr, rest_tag, _rest) = load(rest);
-                                    let rest_not_nil = sub(rest_tag, nil_tag);
-                                    if rest_not_nil {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, nil_tag);
                                     return (expr_tag, expr)
                                 }
                                 "begin" => {
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, cons_tag);
                                     let (expr_tag, expr, rest_tag, rest) = load(rest);
                                     let (val_tag, val) = call(eval, expr_tag, expr, env);
-                                    match val_tag {
-                                        Tag::Err => {
-                                            return (val_tag, val)
-                                        }
-                                    };
                                     match rest_tag {
                                         Tag::Nil => {
                                             return (val_tag, val)
@@ -572,56 +473,34 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                             let (val_tag, val) = call(eval, cons_tag, smaller_expr, env);
                                             return (val_tag, val)
                                         }
-                                    };
-                                    return (err_tag, invalid_form)
+                                    }
                                 }
                                 "empty-env" => {
-                                    let rest_not_nil = sub(rest_tag, nil_tag);
-                                    if rest_not_nil {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, nil_tag);
                                     let env_tag = Tag::Env;
                                     let env = 0;
                                     return (env_tag, env)
                                 }
                                 "current-env" => {
-                                    let rest_not_nil = sub(rest_tag, nil_tag);
-                                    if rest_not_nil {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, nil_tag);
                                     let env_tag = Tag::Env;
                                     return (env_tag, env)
                                 }
                                 "if" => {
                                     // An if expression is a list of 4 elements
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, cons_tag);
                                     let (expr_tag, expr, rest_tag, rest) = load(rest);
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, cons_tag);
                                     let (t_branch_tag, t_branch, rest_tag, rest) = load(rest);
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, cons_tag);
                                     let (f_branch_tag, f_branch, rest_tag, _rest) = load(rest);
-                                    let rest_not_nil = sub(rest_tag, nil_tag);
-                                    if rest_not_nil {
-                                        return (err_tag, invalid_form)
-                                    }
+                                    assert_eq!(rest_tag, nil_tag);
 
-                                    let (val_tag, val) = call(eval, expr_tag, expr, env);
+                                    let (val_tag, _val) = call(eval, expr_tag, expr, env);
                                     match val_tag {
                                         Tag::Nil => {
                                             let (res_tag, res) = call(eval, f_branch_tag, f_branch, env);
                                             return (res_tag, res)
-                                        }
-                                        Tag::Err => {
-                                            return (val_tag, val)
                                         }
                                     };
                                     let (res_tag, res) = call(eval, t_branch_tag, t_branch, env);
@@ -673,23 +552,12 @@ pub fn car_cdr<F: AbstractField + Ord>() -> FuncE<F> {
         fn car_cdr(rest_tag, rest, env): [4] {
             let nil = 0;
             let nil_tag = Tag::Nil;
-            let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
-            let invalid_form = EvalErr::InvalidForm;
-            let rest_not_cons = sub(rest_tag, cons_tag);
-            if rest_not_cons {
-                return (err_tag, invalid_form, err_tag, invalid_form)
-            }
+            assert_eq!(rest_tag, cons_tag);
             let (expr_tag, expr, rest_tag, _rest) = load(rest);
-            let rest_not_nil = sub(rest_tag, nil_tag);
-            if rest_not_nil {
-                return (err_tag, invalid_form, err_tag, invalid_form)
-            }
+            assert_eq!(rest_tag, nil_tag);
             let (val_tag, val) = call(eval, expr_tag, expr, env);
             match val_tag {
-                Tag::Err => {
-                    return (val_tag, val, val_tag, val)
-                }
                 Tag::Cons => {
                     let (car_tag, car, cdr_tag, cdr) = load(val);
                     return (car_tag, car, cdr_tag, cdr)
@@ -707,10 +575,7 @@ pub fn car_cdr<F: AbstractField + Ord>() -> FuncE<F> {
                     let str_tag = Tag::Str;
                     return (nil_tag, nil, str_tag, empty)
                 }
-            };
-            let not_cons = EvalErr::NotCons;
-            return (err_tag, not_cons, err_tag, not_cons)
-
+            }
         }
     )
 }
@@ -718,36 +583,15 @@ pub fn car_cdr<F: AbstractField + Ord>() -> FuncE<F> {
 pub fn equal<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
         fn equal(rest_tag, rest, env): [2] {
-            let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let nil_tag = Tag::Nil;
-            let invalid_form = EvalErr::InvalidForm;
-            let rest_not_cons = sub(rest_tag, cons_tag);
-            if rest_not_cons {
-                return (err_tag, invalid_form)
-            }
+            assert_eq!(rest_tag, cons_tag);
             let (exp1_tag, exp1, rest_tag, rest) = load(rest);
-            let rest_not_cons = sub(rest_tag, cons_tag);
-            if rest_not_cons {
-                return (err_tag, invalid_form)
-            }
+            assert_eq!(rest_tag, cons_tag);
             let (exp2_tag, exp2, rest_tag, _rest) = load(rest);
-            let rest_not_nil = sub(rest_tag, nil_tag);
-            if rest_not_nil {
-                return (err_tag, invalid_form)
-            }
+            assert_eq!(rest_tag, nil_tag);
             let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
-            match val1_tag {
-                Tag::Err => {
-                    return (val1_tag, val1)
-                }
-            };
             let (val2_tag, val2) = call(eval, exp2_tag, exp2, env);
-            match val2_tag {
-                Tag::Err => {
-                    return (val2_tag, val2)
-                }
-            };
             let t = call(equal_inner, val1_tag, val1, val2_tag, val2);
             if t {
                 let builtin_tag = Tag::Builtin;
@@ -775,7 +619,7 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
             }
             match a_tag {
                 // The Nil case is impossible
-                Tag::Builtin, Tag::Num, Tag::Char, Tag::Err => {
+                Tag::Builtin, Tag::Num, Tag::Char => {
                     return zero
                 }
                 Tag::Sym, Tag::U64, Tag::Comm => {
@@ -839,48 +683,19 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
 pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
         fn eval_binop_num(head, rest_tag, rest, env): [2] {
-            let err_tag = Tag::Err;
             let num_tag = Tag::Num;
             let cons_tag = Tag::Cons;
             let nil_tag = Tag::Nil;
-            let invalid_form = EvalErr::InvalidForm;
-            let rest_not_cons = sub(rest_tag, cons_tag);
-            if rest_not_cons {
-                return (err_tag, invalid_form)
-            }
+            assert_eq!(rest_tag, cons_tag);
             let (exp1_tag, exp1, rest_tag, rest) = load(rest);
-            let rest_not_cons = sub(rest_tag, cons_tag);
-            if rest_not_cons {
-                return (err_tag, invalid_form)
-            }
+            assert_eq!(rest_tag, cons_tag);
             let (exp2_tag, exp2, rest_tag, _rest) = load(rest);
-            let rest_not_nil = sub(rest_tag, nil_tag);
-            if rest_not_nil {
-                return (err_tag, invalid_form)
-            }
+            assert_eq!(rest_tag, nil_tag);
             let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
-            match val1_tag {
-                Tag::Err => {
-                    return (val1_tag, val1)
-                }
-            };
             let (val2_tag, val2) = call(eval, exp2_tag, exp2, env);
-            match val2_tag {
-                Tag::Err => {
-                    return (val2_tag, val2)
-                }
-            };
             // Both must be numbers
-            let not_num = sub(val1_tag, num_tag);
-            if not_num {
-                let err = EvalErr::ArgNotNumber;
-                return (err_tag, err)
-            }
-            let not_num = sub(val2_tag, num_tag);
-            if not_num {
-                let err = EvalErr::ArgNotNumber;
-                return (err_tag, err)
-            }
+            assert_eq!(val1_tag, num_tag);
+            assert_eq!(val2_tag, num_tag);
             match head [|sym| builtins.index(sym).to_field()] {
                 "+" => {
                     let res = add(val1, val2);
@@ -896,10 +711,8 @@ pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
                 }
                 "/" => {
                     let res = div(val1, val2);
-                    if !val2 {
-                        let err = EvalErr::DivByZero;
-                        return (err_tag, err)
-                    }
+                    let zero = 0;
+                    assert_ne!(val2, zero);
                     return (num_tag, res)
                 }
                 "=" => {
@@ -920,36 +733,15 @@ pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
 pub fn eval_binop_misc<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
         fn eval_binop_misc(head, rest_tag, rest, env): [2] {
-            let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let nil_tag = Tag::Nil;
-            let invalid_form = EvalErr::InvalidForm;
-            let rest_not_cons = sub(rest_tag, cons_tag);
-            if rest_not_cons {
-                return (err_tag, invalid_form)
-            }
+            assert_eq!(rest_tag, cons_tag);
             let (exp1_tag, exp1, rest_tag, rest) = load(rest);
-            let rest_not_cons = sub(rest_tag, cons_tag);
-            if rest_not_cons {
-                return (err_tag, invalid_form)
-            }
+            assert_eq!(rest_tag, cons_tag);
             let (exp2_tag, exp2, rest_tag, _rest) = load(rest);
-            let rest_not_nil = sub(rest_tag, nil_tag);
-            if rest_not_nil {
-                return (err_tag, invalid_form)
-            }
+            assert_eq!(rest_tag, nil_tag);
             let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
-            match val1_tag {
-                Tag::Err => {
-                    return (val1_tag, val1)
-                }
-            };
             let (val2_tag, val2) = call(eval, exp2_tag, exp2, env);
-            match val2_tag {
-                Tag::Err => {
-                    return (val2_tag, val2)
-                }
-            };
             match head [|sym| builtins.index(sym).to_field()] {
                 "cons" => {
                     let cons = store(val1_tag, val1, val2_tag, val2);
@@ -959,30 +751,18 @@ pub fn eval_binop_misc<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) ->
                     let char_tag = Tag::Char;
                     let str_tag = Tag::Str;
                     let strcons = store(val1_tag, val1, val2_tag, val2);
-                    let not_char = sub(val1_tag, char_tag);
-                    let not_str = sub(val2_tag, str_tag);
-                    if not_char {
-                        let err = EvalErr::NotChar;
-                        return (err_tag, err)
-                    }
-                    if not_str {
-                        let err = EvalErr::NotString;
-                        return (err_tag, err)
-                    }
+                    assert_eq!(val1_tag, char_tag);
+                    assert_eq!(val2_tag, str_tag);
                     return (str_tag, strcons)
                 }
                 "hide" => {
-                    match val1_tag {
-                        Tag::Num => {
-                            let comm_tag = Tag::Comm;
-                            let comm = store(val1, val2_tag, val2);
-                            return (comm_tag, comm)
-                        }
-                    };
-                    return (err_tag, invalid_form)
+                    let num_tag = Tag::Num;
+                    assert_eq!(val1_tag, num_tag);
+                    let comm_tag = Tag::Comm;
+                    let comm = store(val1, val2_tag, val2);
+                    return (comm_tag, comm)
                 }
-            };
-            return (err_tag, invalid_form)
+            }
         }
     )
 }
@@ -990,28 +770,14 @@ pub fn eval_binop_misc<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) ->
 pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
         fn eval_unop(head, rest_tag, rest, env): [2] {
-            let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let num_tag = Tag::Num;
             let comm_tag = Tag::Comm;
             let nil_tag = Tag::Nil;
-            let invalid_form = EvalErr::InvalidForm;
-            let todo = EvalErr::Todo;
-            let rest_not_cons = sub(rest_tag, cons_tag);
-            if rest_not_cons {
-                return (err_tag, invalid_form)
-            }
+            assert_eq!(rest_tag, cons_tag);
             let (expr_tag, expr, rest_tag, _rest) = load(rest);
-            let rest_not_nil = sub(rest_tag, nil_tag);
-            if rest_not_nil {
-                return (err_tag, invalid_form)
-            }
+            assert_eq!(rest_tag, nil_tag);
             let (val_tag, val) = call(eval, expr_tag, expr, env);
-            match val_tag {
-                Tag::Err => {
-                    return (val_tag, val)
-                }
-            };
 
             match head [|sym| builtins.index(sym).to_field()] {
                 "commit" => {
@@ -1029,27 +795,17 @@ pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE
                     // Commitments cannot be cast to numbers anymore
                     let acc = mul(val_not_char, val_not_num);
                     let cannot_cast = mul(acc, val_not_u64);
-                    if cannot_cast {
-                        let err = EvalErr::CannotCastToNum;
-                        return(err_tag, err)
-                    }
+                    let zero = 0;
+                    assert_eq!(cannot_cast, zero);
                     return(num_tag, val)
                 }
                 "open" => {
-                    let val_not_comm = sub(val_tag, comm_tag);
-                    if val_not_comm {
-                        let not_comm = EvalErr::NotComm;
-                        return (err_tag, not_comm)
-                    }
+                    assert_eq!(val_tag, comm_tag);
                     let (_secret, res_tag, res) = load(val);
                     return (res_tag, res)
                 }
                 "secret" => {
-                    let val_not_comm = sub(val_tag, comm_tag);
-                    if val_not_comm {
-                        let not_comm = EvalErr::NotComm;
-                        return (err_tag, not_comm)
-                    }
+                    assert_eq!(val_tag, comm_tag);
                     let (secret, _res_tag, _res) = load(val);
                     return (num_tag, secret)
                 }
@@ -1067,16 +823,6 @@ pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE
                     // TODO emit
                     return (val_tag, val)
                 }
-                "u64" => {
-                    return(err_tag, todo)
-                }
-                "comm" => {
-                    // Can you really cast field elements to commitments?
-                    return (err_tag, todo)
-                }
-                "char" => {
-                    return (err_tag, todo)
-                }
              }
         }
     )
@@ -1085,8 +831,6 @@ pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE
 pub fn eval_let<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
         fn eval_let(binds_tag, binds, body_tag, body, env): [2] {
-            let err_tag = Tag::Err;
-            let invalid_form = EvalErr::InvalidForm;
             match binds_tag {
                 Tag::Nil => {
                     let (res_tag, res) = call(eval, body_tag, body, env);
@@ -1098,32 +842,15 @@ pub fn eval_let<F: AbstractField + Ord>() -> FuncE<F> {
                     let sym_tag = Tag::Sym;
                     // `binds` is a list of bindings
                     let (bind_tag, bind, rest_binds_tag, rest_binds) = load(binds);
-                    let bind_not_cons = sub(bind_tag, cons_tag);
-                    if bind_not_cons {
-                        return (err_tag, invalid_form)
-                    }
+                    assert_eq!(bind_tag, cons_tag);
                     // each binding is in turn a 2 element list
                     let (param_tag, param, rest_tag, rest) = load(bind);
-                    let rest_not_cons = sub(rest_tag, cons_tag);
-                    if rest_not_cons {
-                        return (err_tag, invalid_form)
-                    }
-                    let param_not_sym = sub(param_tag, sym_tag);
-                    if param_not_sym {
-                        return (err_tag, invalid_form)
-                    }
+                    assert_eq!(rest_tag, cons_tag);
+                    assert_eq!(param_tag, sym_tag);
                     let (expr_tag, expr, rest_tag, _rest) = load(rest);
-                    let rest_not_nil = sub(rest_tag, nil_tag);
-                    if rest_not_nil {
-                        return (err_tag, invalid_form)
-                    }
+                    assert_eq!(rest_tag, nil_tag);
 
                     let (val_tag, val) = call(eval, expr_tag, expr, env);
-                    match val_tag {
-                        Tag::Err => {
-                            return (val_tag, val)
-                        }
-                    };
                     let ext_env = store(param, val_tag, val, env);
                     match rest_binds_tag {
                         Tag::Nil => {
@@ -1134,8 +861,7 @@ pub fn eval_let<F: AbstractField + Ord>() -> FuncE<F> {
                     let (res_tag, res) = call(eval_let, rest_binds_tag, rest_binds, body_tag, body, ext_env);
                     return (res_tag, res)
                 }
-            };
-            return (err_tag, invalid_form)
+            }
         }
     )
 }
@@ -1143,8 +869,6 @@ pub fn eval_let<F: AbstractField + Ord>() -> FuncE<F> {
 pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
         fn eval_letrec(binds_tag, binds, body_tag, body, env): [2] {
-            let err_tag = Tag::Err;
-            let invalid_form = EvalErr::InvalidForm;
             match binds_tag {
                 Tag::Nil => {
                     let (res_tag, res) = call(eval, body_tag, body, env);
@@ -1156,25 +880,13 @@ pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
                     let sym_tag = Tag::Sym;
                     // `binds` is a list of bindings
                     let (bind_tag, bind, rest_binds_tag, rest_binds) = load(binds);
-                    let bind_not_cons = sub(bind_tag, cons_tag);
-                    if bind_not_cons {
-                        return (err_tag, invalid_form)
-                    }
+                    assert_eq!(bind_tag, cons_tag);
                     // each binding is in turn a 2 element list
                     let (param_tag, param, rest_tag, rest) = load(bind);
-                    let rest_not_cons = sub(rest_tag, cons_tag);
-                    if rest_not_cons {
-                        return (err_tag, invalid_form)
-                    }
-                    let param_not_sym = sub(param_tag, sym_tag);
-                    if param_not_sym {
-                        return (err_tag, invalid_form)
-                    }
+                    assert_eq!(rest_tag, cons_tag);
+                    assert_eq!(param_tag, sym_tag);
                     let (expr_tag, expr, rest_tag, _rest) = load(rest);
-                    let rest_not_nil = sub(rest_tag, nil_tag);
-                    if rest_not_nil {
-                        return (err_tag, invalid_form)
-                    }
+                    assert_eq!(rest_tag, nil_tag);
 
                     let thunk_tag = Tag::Thunk;
                     let thunk = store(expr_tag, expr, env);
@@ -1182,12 +894,7 @@ pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
                     // this will preemptively evaluate the thunk, so that we do not skip evaluation in case
                     // the variable is not used inside the letrec body, and furthermore it follows a strict
                     // evaluation order
-                    let (val_tag, val) = call(eval, expr_tag, expr, ext_env);
-                    match val_tag {
-                        Tag::Err => {
-                            return (val_tag, val)
-                        }
-                    };
+                    let (_val_tag, _val) = call(eval, expr_tag, expr, ext_env);
                     match rest_binds_tag {
                         Tag::Nil => {
                             let (res_tag, res) = call(eval, body_tag, body, ext_env);
@@ -1197,8 +904,7 @@ pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
                     let (res_tag, res) = call(eval_letrec, rest_binds_tag, rest_binds, body_tag, body, ext_env);
                     return (res_tag, res)
                 }
-            };
-            return (err_tag, invalid_form)
+            }
         }
     )
 }
@@ -1207,18 +913,9 @@ pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
         fn apply(head_tag, head, args_tag, args, args_env): [2] {
             // Constants, tags, etc
-            let err_tag = Tag::Err;
             let fun_tag = Tag::Fun;
             // Expression must be a function
-            let head_not_fun = sub(head_tag, fun_tag);
-            if head_not_fun {
-                let head_not_err = sub(head_tag, fun_tag);
-                if head_not_err {
-                    let err = EvalErr::ApplyNonFunc;
-                    return (err_tag, err)
-                }
-                return (err_tag, head)
-            }
+            assert_eq!(head_tag, fun_tag);
 
             let (params_tag, params, body_tag, body, func_env) = load(head);
 
@@ -1235,9 +932,7 @@ pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
                             let (app_res_tag, app_res) = call(apply, res_tag, res, args_tag, args, args_env);
                             return (app_res_tag, app_res)
                         }
-                    };
-                    let err = EvalErr::ArgsNotList;
-                    return (err_tag, err)
+                    }
                 }
                 Tag::Cons => {
                     match args_tag {
@@ -1249,18 +944,9 @@ pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
                             let (param_tag, param, rest_params_tag, rest_params) = load(params);
                             let (arg_tag, arg, rest_args_tag, rest_args) = load(args);
                             let sym_tag = Tag::Sym;
-                            let param_not_sym = sub(param_tag, sym_tag);
-                            if param_not_sym {
-                                let err = EvalErr::ParamNotSymbol;
-                                return (err_tag, err)
-                            }
+                            assert_eq!(param_tag, sym_tag);
                             // evaluate the argument
                             let (arg_tag, arg) = call(eval, arg_tag, arg, args_env);
-                            match arg_tag {
-                                Tag::Err => {
-                                    return (arg_tag, arg)
-                                }
-                            };
                             // and store it in the environment
                             let ext_env = store(param, arg_tag, arg, func_env);
                             let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
@@ -1268,13 +954,9 @@ pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
 
                             return (res_tag, res)
                         }
-                    };
-                    let err = EvalErr::ArgsNotList;
-                    return (err_tag, err)
+                    }
                 }
-            };
-            let err = EvalErr::ParamsNotList;
-            return (err_tag, err)
+            }
         }
     )
 }
@@ -1282,11 +964,8 @@ pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
 pub fn env_lookup<F: AbstractField>() -> FuncE<F> {
     func!(
         fn env_lookup(x, env): [2] {
-            if !env {
-                let err_tag = Tag::Err;
-                let err = EvalErr::UnboundVar;
-                return (err_tag, err)
-            }
+            let zero = 0;
+            assert_ne!(env, zero);
             let (y, val_tag, val, tail_env) = load(env);
             let not_eq = sub(x, y);
             if !not_eq {
@@ -1355,17 +1034,17 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["52"]);
-        expect_eq(eval.width(), expect!["105"]);
-        expect_eq(eval_unop.width(), expect!["42"]);
-        expect_eq(eval_binop_num.width(), expect!["50"]);
-        expect_eq(eval_binop_misc.width(), expect!["50"]);
-        expect_eq(eval_let.width(), expect!["54"]);
-        expect_eq(eval_letrec.width(), expect!["58"]);
-        expect_eq(equal.width(), expect!["44"]);
+        expect_eq(eval.width(), expect!["76"]);
+        expect_eq(eval_unop.width(), expect!["32"]);
+        expect_eq(eval_binop_num.width(), expect!["40"]);
+        expect_eq(eval_binop_misc.width(), expect!["38"]);
+        expect_eq(eval_let.width(), expect!["47"]);
+        expect_eq(eval_letrec.width(), expect!["51"]);
+        expect_eq(equal.width(), expect!["37"]);
         expect_eq(equal_inner.width(), expect!["53"]);
-        expect_eq(car_cdr.width(), expect!["34"]);
-        expect_eq(apply.width(), expect!["60"]);
-        expect_eq(env_lookup.width(), expect!["22"]);
+        expect_eq(car_cdr.width(), expect!["30"]);
+        expect_eq(apply.width(), expect!["52"]);
+        expect_eq(env_lookup.width(), expect!["21"]);
         expect_eq(ingress.width(), expect!["104"]);
         expect_eq(ingress_builtin.width(), expect!["46"]);
         expect_eq(egress.width(), expect!["69"]);
