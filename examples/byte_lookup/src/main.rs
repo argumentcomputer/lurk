@@ -1,28 +1,9 @@
-use loam::air::builder::{LookupBuilder, QueryType};
-use loam::air::debug::{debug_constraints_collecting_queries, Query};
+use loam::air::builder::LookupBuilder;
+use loam::air::debug::{debug_constraints_collecting_queries, TraceQueries};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_baby_bear::BabyBear;
-use p3_field::{AbstractField, PrimeField};
+use p3_field::AbstractField;
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
-use std::collections::BTreeSet;
-
-fn assert_zero_sum<F: PrimeField>(interactions_vecs: Vec<Vec<Query<F>>>) {
-    let mut provided = BTreeSet::<Vec<F>>::default();
-    let mut required = BTreeSet::<Vec<F>>::default();
-    for interactions in interactions_vecs {
-        for Query { query_type, values } in interactions {
-            match query_type {
-                QueryType::Receive | QueryType::Provide => {
-                    provided.insert(values);
-                }
-                QueryType::Send | QueryType::Require => {
-                    required.insert(values);
-                }
-            };
-        }
-    }
-    assert_eq!(provided, required);
-}
 
 /// Columns:
 /// * byte[1]
@@ -123,5 +104,5 @@ fn main() {
     let main_interactions = debug_constraints_collecting_queries(&MainChip, &[], &main_trace);
     let bytes_interactions = debug_constraints_collecting_queries(&BytesChip, &[], &bytes_trace);
 
-    assert_zero_sum(vec![main_interactions, bytes_interactions]);
+    TraceQueries::verify_many([main_interactions, bytes_interactions]);
 }
