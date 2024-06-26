@@ -32,7 +32,7 @@ mod tests {
 
     use hybrid_array::typenum::Unsigned;
     use itertools::Itertools;
-    use p3_field::AbstractField;
+    use p3_field::{AbstractField, PrimeField32};
     use p3_matrix::Matrix;
     use p3_symmetric::Permutation;
 
@@ -66,7 +66,10 @@ mod tests {
         test_trace_eq_hash_with::<40, BabyBearConfig40>();
     }
 
-    fn test_air_constraints_with<const WIDTH: usize, C: PoseidonConfig<WIDTH>>() {
+    fn test_air_constraints_with<const WIDTH: usize, C: PoseidonConfig<WIDTH>>()
+    where
+        C::F: PrimeField32,
+    {
         let chip = Poseidon2Chip::<C, WIDTH>::default();
         let public_values: [C::F; WIDTH] = array::from_fn(C::F::from_canonical_usize);
         let main = chip.generate_trace(vec![public_values]);

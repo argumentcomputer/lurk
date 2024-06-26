@@ -15,7 +15,7 @@ mod test {
     use crate::{air::debug::debug_constraints_collecting_queries, poseidon::config::*};
     use hybrid_array::{typenum::Sub1, ArraySize};
     use p3_air::{Air, AirBuilder, BaseAir};
-    use p3_field::AbstractField;
+    use p3_field::{AbstractField, PrimeField32};
     use p3_matrix::dense::RowMajorMatrix;
     use p3_matrix::Matrix;
     use p3_symmetric::Permutation;
@@ -120,6 +120,7 @@ mod test {
     fn test_air_constraints_with<const WIDTH: usize, C: PoseidonConfig<WIDTH>>()
     where
         Sub1<C::R_P>: ArraySize,
+        C::F: PrimeField32,
     {
         let chip = Chip::<C, WIDTH> {
             _marker: Default::default(),
