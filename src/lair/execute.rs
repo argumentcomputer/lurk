@@ -337,9 +337,10 @@ impl<F: Field> QueryRecord<F> {
     /// Otherwise, add it with multiplicity zero. Further, if the function is invertible, add the query
     /// to its `inv_func_queries` as well.
     pub fn inject_queries<
-        I: Into<List<F>>,
-        O: Into<List<F>>,
-        T: IntoIterator<Item = (I, O)>,
+        'a,
+        I: Clone + Into<List<F>> + 'a,
+        O: Clone + Into<List<F>> + 'a,
+        T: IntoIterator<Item = (&'a I, &'a O)>,
         H: Hasher<F>,
     >(
         &mut self,
@@ -349,7 +350,7 @@ impl<F: Field> QueryRecord<F> {
     ) {
         let func = toplevel.get_by_name(name).expect("Unknown Func");
         for (inp, out) in new_queries_data {
-            let (inp, out) = (inp.into(), out.into());
+            let (inp, out) = (inp.clone().into(), out.clone().into());
             let queries = &mut self.func_queries[func.index];
             if !queries.contains_key(&inp) {
                 if func.invertible {

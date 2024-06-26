@@ -1,12 +1,12 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::time::Duration;
 
-use loam::{lair::hasher::LurkHasher, lurk::eval::build_lurk_toplevel};
+use loam::lurk::eval::build_lurk_toplevel;
 
 fn toplevel(c: &mut Criterion) {
     c.bench_function("toplevel", |b| {
         b.iter(|| {
-            build_lurk_toplevel::<LurkHasher>();
+            build_lurk_toplevel();
         })
     });
 }
