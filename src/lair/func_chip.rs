@@ -207,6 +207,13 @@ impl<F> Op<F> {
         aux: &mut usize,
     ) {
         match self {
+            Op::AssertEq(..) => {}
+            Op::AssertNe(a, _) => {
+                *aux += a.len();
+            }
+            Op::Contains(a, _) => {
+                *aux += a.len() - 1;
+            }
             Op::Const(..) => {
                 degrees.push(0);
             }

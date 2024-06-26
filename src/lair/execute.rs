@@ -1,5 +1,6 @@
 use hashbrown::HashMap;
 use indexmap::{IndexMap, IndexSet};
+use itertools::Itertools;
 use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use sphinx_core::stark::{Indexed, MachineRecord};
@@ -517,6 +518,29 @@ impl<F: PrimeField32> Func<F> {
         let mut func_index = self.index;
         while let Some(exec_entry) = exec_entries_stack.pop() {
             match exec_entry {
+                ExecEntry::Op(Op::AssertEq(a, b)) => {
+                    for (a, b) in a.iter().zip(b.iter()) {
+                        let a = map[*a];
+                        let b = map[*b];
+                        assert_eq!(a, b);
+                    }
+                }
+                ExecEntry::Op(Op::AssertNe(a, b)) => {
+                    let mut unequal = false;
+                    for (a, b) in a.iter().zip(b.iter()) {
+                        let a = map[*a];
+                        let b = map[*b];
+                        if a != b {
+                            unequal = true;
+                            break;
+                        }
+                    }
+                    assert!(unequal)
+                }
+                ExecEntry::Op(Op::Contains(a, b)) => {
+                    let b = map[*b];
+                    assert!(a.iter().map(|&a| map[a]).contains(&b));
+                }
                 ExecEntry::Op(Op::Call(callee_index, inp, op_id)) => {
                     // `map_buffer` will become the map for the called function
                     let mut map_buffer = inp.iter().map(|v| map[*v]).collect::<Vec<_>>();
