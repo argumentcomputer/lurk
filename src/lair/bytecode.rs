@@ -9,6 +9,12 @@ use super::{map::Map, List, Name};
 /// The type for Lair operations
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Op<F> {
+    /// `AssertEq(x, y)` makes sure `x` is equal to `y`
+    AssertEq(List<usize>, List<usize>),
+    /// `AssertNe(x, y)` makes sure `x` is unequal to `y`
+    AssertNe(List<usize>, List<usize>),
+    /// `Contains(x, y)` makes sure an array `x` contains the value `y`
+    Contains(List<usize>, usize),
     /// `Const(x)` pushes `x` to the stack
     Const(F),
     /// `Add(i, j)` pushes `stack[i] + stack[j]` to the stack

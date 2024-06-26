@@ -218,6 +218,42 @@ impl<F: Field> Op<F> {
         <AB as AirBuilder>::Var: Debug,
     {
         match self {
+            Op::AssertNe(a, b) => {
+                let coeffs = (0..a.len()).map(|_| local.next_aux(index)).collect();
+                let diffs = a
+                    .iter()
+                    .zip(b.iter())
+                    .map(|(a, b)| {
+                        let a = map[*a].to_expr();
+                        let b = map[*b].to_expr();
+                        a - b
+                    })
+                    .collect();
+                constrain_inequality_witness(sel.clone(), coeffs, diffs, builder);
+            }
+            Op::AssertEq(a, b) => {
+                for (a, b) in a.iter().zip(b.iter()) {
+                    let a = &map[*a];
+                    let b = &map[*b];
+                    builder
+                        .when(sel.clone())
+                        .assert_eq(a.to_expr(), b.to_expr());
+                }
+            }
+            Op::Contains(a, b) => {
+                let b = map[*b].to_expr();
+                let acc = a
+                    .iter()
+                    .map(|a| map[*a].to_expr() - b.clone())
+                    .reduce(|acc, diff| {
+                        let aux = local.next_aux(index);
+                        let acc = acc * diff;
+                        builder.when(sel.clone()).assert_eq(acc.clone(), aux);
+                        aux.into()
+                    })
+                    .unwrap();
+                builder.when(sel.clone()).assert_zero(acc);
+            }
             Op::Const(c) => {
                 map.push(Val::Const(*c));
             }
@@ -764,5 +800,46 @@ mod tests {
         assert_eq!(match_many_trace, expected_trace);
 
         let _ = debug_constraints_collecting_queries(&match_many_chip, &[], None, &expected_trace);
+    }
+
+    #[test]
+    fn lair_assert_test() {
+        let assert_func = func!(
+        fn assert(a: [4]): [4] {
+            let arr1 = [2, 4, 5, 8];
+            let arr2 = [2, 4, 6, 8];
+            assert_ne!(a, arr1);
+            let two = 2;
+            let four = 4;
+            contains!(a, two);
+            contains!(a, four);
+            assert_eq!(a, arr2);
+            return a
+        });
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[assert_func]);
+        let mut queries = QueryRecord::new(&toplevel);
+        let f = field_from_u32;
+        let args = &[f(2), f(4), f(6), f(8)];
+        toplevel.execute_by_name("assert", args, &mut queries);
+        let chip = FuncChip::from_name("assert", &toplevel);
+        let trace = chip.generate_trace(&Shard::new(&queries));
+
+        #[rustfmt::skip]
+        let expected_trace = RowMajorMatrix::new(
+            [
+                // nonce, 4 inputs, 6 multiplications for the two `contains!`, 4 coefficients for `assert_ne!`, last nonce, last count, selector
+                0, 2, 4, 6, 8, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
+                // dummies
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ]
+            .into_iter()
+            .map(F::from_canonical_u32)
+            .collect::<Vec<_>>(),
+            chip.width(),
+        );
+        assert_eq!(trace, expected_trace);
+        let _ = debug_constraints_collecting_queries(&chip, &[], None, &trace);
     }
 }

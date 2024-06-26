@@ -235,6 +235,19 @@ impl<F: PrimeField32> Op<F> {
         slice: &mut ColumnMutSlice<'_, F>,
     ) {
         match self {
+            Op::AssertEq(..) => {}
+            Op::AssertNe(a, b) => {
+                let diffs = a.iter().zip(b.iter()).map(|(a, b)| map[*a].0 - map[*b].0);
+                push_inequality_witness(index, slice, diffs);
+            }
+            Op::Contains(a, b) => {
+                let (b, _) = map[*b];
+                a.iter().map(|a| map[*a].0 - b).reduce(|acc, diff| {
+                    let acc = acc * diff;
+                    slice.push_aux(index, acc);
+                    acc
+                });
+            }
             Op::Const(f) => map.push((*f, 0)),
             Op::Add(a, b) => {
                 let (a, a_deg) = map[*a];
