@@ -29,15 +29,9 @@ impl<T, I: Into<T>, II: IntoIterator<Item = I>> Relation<T> for II {
 
 pub trait LairBuilder: AirBuilder + LookupBuilder + AirBuilderWithPublicValues {}
 
-pub enum QueryType {
-    Receive,
-    Send,
-    Provide,
-    Require,
-}
-
 /// TODO: The `once` calls are not fully supported, and deferred to their multi-use counterparts.
 pub trait LookupBuilder: AirBuilder {
+    // TODO comment
     // Read a
     fn receive(&mut self, relation: impl Relation<Self::Expr>, is_real_bool: impl Into<Self::Expr>);
 
@@ -47,8 +41,8 @@ pub trait LookupBuilder: AirBuilder {
     fn provide(
         &mut self,
         relation: impl Relation<Self::Expr>,
-        nonce: Self::Var,
-        record: ProvideRecord<Self::Expr>,
+        nonce: impl Into<Self::Expr>,
+        record: ProvideRecord<impl Into<Self::Expr>>,
         is_real_bool: impl Into<Self::Expr>,
     ) {
         let is_real = is_real_bool.into();
@@ -64,7 +58,7 @@ pub trait LookupBuilder: AirBuilder {
 
         // Read the query written by the final require access.
         self.receive(
-            chain([last_nonce, last_count], values.clone()),
+            chain([last_nonce.into(), last_count.into()], values.clone()),
             is_real.clone(),
         );
         // Write it back with a counter initialized to 0, to be read by the first require access.
@@ -78,18 +72,17 @@ pub trait LookupBuilder: AirBuilder {
     fn require(
         &mut self,
         relation: impl Relation<Self::Expr>,
-        nonce: Self::Var,
-        record: RequireRecord<Self::Expr>,
+        nonce: impl Into<Self::Expr>,
+        record: RequireRecord<impl Into<Self::Expr>>,
         is_real_bool: impl Into<Self::Expr>,
     ) {
         let is_real = is_real_bool.into();
 
         // Witness values used when writing the query to the set in the previous access.
-        let RequireRecord {
-            prev_nonce,
-            prev_count,
-            count_inv,
-        } = record;
+
+        let prev_nonce = record.prev_nonce.into();
+        let prev_count = record.prev_count.into();
+        let count_inv = record.count_inv.into();
 
         // The count to be written through this access.
         let count = prev_count.clone() + Self::Expr::one();

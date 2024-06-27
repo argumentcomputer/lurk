@@ -1,8 +1,12 @@
+#[allow(unused)]
+mod memoset;
+
+use crate::memoset::DemoChip;
 use loam::air::builder::LookupBuilder;
 use loam::air::debug::{debug_constraints_collecting_queries, TraceQueries};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_baby_bear::BabyBear;
-use p3_field::AbstractField;
+use p3_field::{AbstractField, PrimeField32};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 
 /// Columns:
@@ -79,7 +83,8 @@ fn mk_matrix<F: Send + Sync + Clone, const H: usize, const W: usize>(
 }
 
 fn main() {
-    let f = BabyBear::from_canonical_u16;
+    type F = BabyBear;
+    let f = F::from_canonical_u16;
     let main_trace = mk_matrix([
         [f(0), f(1)],
         [f(0), f(0)],
@@ -101,8 +106,13 @@ fn main() {
 
     let _multiplicities = [[1], [2], [1], [1], [0]].map(|row| row.map(f));
 
-    let main_interactions = debug_constraints_collecting_queries(&MainChip, &[], &main_trace);
-    let bytes_interactions = debug_constraints_collecting_queries(&BytesChip, &[], &bytes_trace);
+    // let main_interactions = debug_constraints_collecting_queries(&MainChip, &[], &main_trace);
+    // let bytes_interactions = debug_constraints_collecting_queries(&BytesChip, &[], &bytes_trace);
+    //
+    // TraceQueries::verify_many([main_interactions, bytes_interactions]);
 
-    TraceQueries::verify_many([main_interactions, bytes_interactions]);
+    let demo_chip = DemoChip;
+    let demo_trace = DemoChip::generate_demo_trace::<F>(10, 128);
+    let demo_interaction = debug_constraints_collecting_queries(&demo_chip, &[], &demo_trace);
+    demo_interaction.verify();
 }

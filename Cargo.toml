@@ -44,6 +44,7 @@ thiserror = "1.0.44"
 hybrid-array = "0.2.0-rc"
 lazy_static = "1.4.0"
 hashbrown = "0.14.5"
+rand_chacha = "0.3.1"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -60,6 +61,7 @@ nom_locate = { workspace = true }
 num-bigint = { workspace = true }
 once_cell = { workspace = true }
 rand = { workspace = true }
+rand_chacha = { workspace = true }
 rand_xoshiro = { workspace = true }
 rustc-hash = { workspace = true }
 serde = { workspace = true }
