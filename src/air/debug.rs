@@ -132,12 +132,12 @@ pub fn debug_constraints_collecting_queries<
             RowMajorMatrixView::new_row(main_local),
             RowMajorMatrixView::new_row(main_next),
         );
-        {
-            let mut builder =
-                DebugConstraintBuilder::new(public_values, main, row, height, &mut queries);
+        // {
+        let mut builder =
+            DebugConstraintBuilder::new(public_values, main, row, height, &mut queries);
 
-            air.eval(&mut builder);
-        }
+        air.eval(&mut builder);
+        // }
         queries
     });
     queries
