@@ -41,7 +41,6 @@ pub trait LookupBuilder: AirBuilder {
     fn provide(
         &mut self,
         relation: impl Relation<Self::Expr>,
-        nonce: impl Into<Self::Expr>,
         record: ProvideRecord<impl Into<Self::Expr>>,
         is_real_bool: impl Into<Self::Expr>,
     ) {
@@ -62,8 +61,9 @@ pub trait LookupBuilder: AirBuilder {
             is_real.clone(),
         );
         // Write it back with a counter initialized to 0, to be read by the first require access.
+        // The nonce can be zero since there is no security issue with providing a value multiple times.
         self.send(
-            chain([nonce.into(), Self::Expr::zero()], values),
+            chain([Self::Expr::zero(), Self::Expr::zero()], values),
             is_real.clone(),
         );
     }

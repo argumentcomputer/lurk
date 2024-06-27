@@ -41,6 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = debug_constraints_collecting_queries(
                     &Calculator::default(),
                     &public_values,
+                    None,
                     &trace,
                 );
                 let elapsed = now.elapsed().as_millis();

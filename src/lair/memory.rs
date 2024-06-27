@@ -223,6 +223,6 @@ mod tests {
         .collect::<Vec<_>>();
         assert_eq!(mem_trace.values, expected_trace);
 
-        let _ = debug_constraints_collecting_queries(&mem_chip, &[], &mem_trace);
+        let _ = debug_constraints_collecting_queries(&mem_chip, &[], None, &mem_trace);
     }
 }

@@ -1,8 +1,8 @@
 use crate::air::builder::{LairBuilder, LookupBuilder, ProvideRecord, Relation, RequireRecord};
 use hashbrown::HashMap;
-use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues};
+use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues, PairBuilder};
 use p3_field::PrimeField32;
-use p3_matrix::dense::RowMajorMatrixView;
+use p3_matrix::dense::{RowMajorMatrix, RowMajorMatrixView};
 use p3_matrix::stack::VerticalPair;
 use p3_matrix::Matrix;
 use std::collections::BTreeMap;
@@ -114,30 +114,45 @@ impl<F: PrimeField32> TraceQueries<F> {
 pub fn debug_constraints_collecting_queries<
     F: PrimeField32,
     A: for<'a> Air<DebugConstraintBuilder<'a, F>>,
-    M: Matrix<F>,
 >(
     air: &A,
     public_values: &[F],
-    main: &M,
+    preprocessed: Option<&RowMajorMatrix<F>>,
+    main: &RowMajorMatrix<F>,
 ) -> TraceQueries<F> {
     let height = main.height();
+
+    let empty = RowMajorMatrix::new(vec![], 0);
+    let preprocessed = preprocessed.unwrap_or(&empty);
 
     let queries = (0..height).fold(TraceQueries::<F>::default(), |mut queries, row| {
         let row_next = (row + 1) % height;
 
+        let preprocessed_local = &preprocessed.row_slice(row);
+        let preprocessed_next = &preprocessed.row_slice(row_next);
+        let preprocessed = VerticalPair::new(
+            RowMajorMatrixView::new_row(preprocessed_local),
+            RowMajorMatrixView::new_row(preprocessed_next),
+        );
+
         let main_local = &main.row_slice(row);
         let main_next = &main.row_slice(row_next);
-
         let main = VerticalPair::new(
             RowMajorMatrixView::new_row(main_local),
             RowMajorMatrixView::new_row(main_next),
         );
-        // {
-        let mut builder =
-            DebugConstraintBuilder::new(public_values, main, row, height, &mut queries);
+
+        let mut builder = DebugConstraintBuilder::new(
+            public_values,
+            preprocessed,
+            main,
+            row,
+            height,
+            &mut queries,
+        );
 
         air.eval(&mut builder);
-        // }
+
         queries
     });
     queries
@@ -146,10 +161,17 @@ pub fn debug_constraints_collecting_queries<
 /// A builder for debugging constraints.
 pub struct DebugConstraintBuilder<'a, F> {
     public_values: &'a [F],
+    preprocessed: LocalRowView<'a, F>,
     main: LocalRowView<'a, F>,
     row: usize,
     height: usize,
     queries: &'a mut TraceQueries<F>,
+}
+
+impl<'a, F: PrimeField32> PairBuilder for DebugConstraintBuilder<'a, F> {
+    fn preprocessed(&self) -> Self::M {
+        self.preprocessed
+    }
 }
 
 impl<'a, F: PrimeField32> LookupBuilder for DebugConstraintBuilder<'a, F> {
@@ -183,7 +205,6 @@ impl<'a, F: PrimeField32> LookupBuilder for DebugConstraintBuilder<'a, F> {
     fn provide(
         &mut self,
         relation: impl Relation<Self::Expr>,
-        nonce: impl Into<Self::Expr>,
         record: ProvideRecord<impl Into<Self::Expr>>,
         is_real_bool: impl Into<Self::Expr>,
     ) {
@@ -205,7 +226,7 @@ impl<'a, F: PrimeField32> LookupBuilder for DebugConstraintBuilder<'a, F> {
             Record {
                 prev_nonce: last_nonce.into().as_canonical_u32(),
                 prev_count: last_count.into().as_canonical_u32(),
-                nonce: nonce.into().as_canonical_u32(),
+                nonce: 0,
             },
         )
     }
@@ -256,6 +277,7 @@ impl<'a, F: PrimeField32> DebugConstraintBuilder<'a, F> {
     #[inline]
     fn new(
         public_values: &'a [F],
+        preprocessed: LocalRowView<'a, F>,
         main: LocalRowView<'a, F>,
         row: usize,
         height: usize,
@@ -263,6 +285,7 @@ impl<'a, F: PrimeField32> DebugConstraintBuilder<'a, F> {
     ) -> Self {
         Self {
             public_values,
+            preprocessed,
             main,
             row,
             height,
