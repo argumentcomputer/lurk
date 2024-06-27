@@ -128,7 +128,7 @@ mod test {
         let public_values = [C::F::zero(); WIDTH];
         let (_outputs, trace) = chip.generate_trace(&[public_values]);
 
-        let _ = debug_constraints_collecting_queries(&chip, &public_values, &trace);
+        let _ = debug_constraints_collecting_queries(&chip, &public_values, None, &trace);
     }
 
     #[test]

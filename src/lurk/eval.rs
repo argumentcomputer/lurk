@@ -1417,7 +1417,7 @@ mod test {
 
             let lookup_queries = all_chips.into_iter().map(|chip| {
                 let trace = chip.generate_trace_parallel(queries);
-                debug_constraints_collecting_queries(chip, &[], &trace)
+                debug_constraints_collecting_queries(chip, &[], None, &trace)
             });
             crate::air::debug::TraceQueries::verify_many(lookup_queries)
         };
@@ -1518,7 +1518,7 @@ mod test {
             );
 
             let hash_32_8_trace = hash_32_8_chip.generate_trace_parallel(queries);
-            debug_constraints_collecting_queries(&hash_32_8_chip, &[], &hash_32_8_trace);
+            debug_constraints_collecting_queries(&hash_32_8_chip, &[], None, &hash_32_8_trace);
         };
 
         assert_ingress_egress_correctness("~()");

@@ -74,7 +74,7 @@ mod tests {
         let public_values: [C::F; WIDTH] = array::from_fn(C::F::from_canonical_usize);
         let main = chip.generate_trace(vec![public_values]);
 
-        let _ = debug_constraints_collecting_queries(&chip, &public_values, &main);
+        let _ = debug_constraints_collecting_queries(&chip, &public_values, None, &main);
     }
 
     #[test]

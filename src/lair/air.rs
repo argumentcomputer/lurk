@@ -517,8 +517,8 @@ mod tests {
             fib_width,
         );
 
-        let _ = debug_constraints_collecting_queries(&factorial_chip, &[], &factorial_trace);
-        let _ = debug_constraints_collecting_queries(&fib_chip, &[], &fib_trace);
+        let _ = debug_constraints_collecting_queries(&factorial_chip, &[], None, &factorial_trace);
+        let _ = debug_constraints_collecting_queries(&fib_chip, &[], None, &fib_trace);
     }
 
     #[test]
@@ -530,7 +530,7 @@ mod tests {
         fib_chip.execute_iter(args, queries);
         let fib_trace = fib_chip.generate_trace_parallel(queries);
 
-        let _ = debug_constraints_collecting_queries(&fib_chip, &[], &fib_trace);
+        let _ = debug_constraints_collecting_queries(&fib_chip, &[], None, &fib_trace);
     }
 
     #[test]
@@ -596,8 +596,8 @@ mod tests {
             eq_width,
         );
 
-        let _ = debug_constraints_collecting_queries(&not_chip, &[], &not_trace);
-        let _ = debug_constraints_collecting_queries(&eq_chip, &[], &eq_trace);
+        let _ = debug_constraints_collecting_queries(&not_chip, &[], None, &not_trace);
+        let _ = debug_constraints_collecting_queries(&eq_chip, &[], None, &eq_trace);
     }
 
     #[test]
@@ -643,7 +643,7 @@ mod tests {
         );
         assert_eq!(if_many_trace, expected_trace);
 
-        let _ = debug_constraints_collecting_queries(&if_many_chip, &[], &expected_trace);
+        let _ = debug_constraints_collecting_queries(&if_many_chip, &[], None, &expected_trace);
     }
 
     #[test]
@@ -711,6 +711,6 @@ mod tests {
         );
         assert_eq!(match_many_trace, expected_trace);
 
-        let _ = debug_constraints_collecting_queries(&match_many_chip, &[], &expected_trace);
+        let _ = debug_constraints_collecting_queries(&match_many_chip, &[], None, &expected_trace);
     }
 }

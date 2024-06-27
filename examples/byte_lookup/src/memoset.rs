@@ -26,58 +26,11 @@ struct DemoCols<T: Copy> {
 
 const NUM_DEMO_COLS: usize = size_of::<DemoCols<u8>>();
 
-#[derive(Copy, Clone, Default, Eq, PartialEq, Ord, PartialOrd)]
-struct Count(usize);
-#[derive(Copy, Clone, Default, Eq, PartialEq, Ord, PartialOrd)]
-struct Nonce(u32);
-
-#[derive(Copy, Clone, Default, Eq, PartialEq, Ord, PartialOrd)]
-struct Access {
-    nonce: Nonce,
-    count: Count,
-}
-
 #[derive(AlignedBorrow, Clone, Copy)]
 #[repr(C)]
 pub union Record<T: Copy> {
     require: RequireRecord<T>,
     provide: ProvideRecord<T>,
-}
-
-impl<F: PrimeField32> Record<F> {
-    fn new_require_record(prev_access: &Access) -> Self {
-        let Access {
-            nonce: Nonce(prev_nonce),
-            count: Count(prev_count),
-        } = prev_access;
-        let count = prev_count + 1;
-        let prev_nonce = F::from_canonical_u32(*prev_nonce);
-        let prev_count = F::from_canonical_u32(*prev_count as u32);
-        let count_inv = F::from_canonical_u32(count as u32).inverse();
-
-        Record {
-            require: RequireRecord {
-                prev_nonce,
-                prev_count,
-                count_inv,
-            },
-        }
-    }
-    fn new_provide_record(last_access: &Access) -> Self {
-        let Access {
-            nonce: Nonce(last_nonce),
-            count: Count(last_count),
-        } = last_access;
-        let last_nonce = F::from_canonical_u32(*last_nonce);
-        let last_count = F::from_canonical_u32(*last_count as u32);
-
-        Record {
-            provide: ProvideRecord {
-                last_nonce,
-                last_count,
-            },
-        }
-    }
 }
 
 pub struct DemoChip;
@@ -112,12 +65,7 @@ impl<AB: AirBuilder + LookupBuilder> Air<AB> for DemoChip {
             *local.record.require(),
             local.is_require,
         );
-        builder.provide(
-            local.query,
-            local.nonce,
-            *local.record.provide(),
-            local.is_provide,
-        );
+        builder.provide(local.query, *local.record.provide(), local.is_provide);
     }
 }
 
@@ -142,73 +90,69 @@ impl<T: Copy> Record<T> {
 
 impl DemoChip {
     pub fn generate_demo_trace<F: PrimeField32>(
-        log_height: usize,
+        num_rows: usize,
         num_queries: usize,
     ) -> RowMajorMatrix<F>
     where
         Standard: Distribution<[F; QUERY_WIDTH]>,
     {
-        #[derive(Copy, Clone, Default, Eq, PartialEq, Ord, PartialOrd)]
-        struct Index(usize);
-
         let rng = &mut rand_chacha::ChaChaRng::seed_from_u64(0);
         let width = NUM_DEMO_COLS;
-        let height = 1 << log_height;
+        let height = num_rows.next_power_of_two();
 
-        // Generate the queries, with a Vec for logging all accesses
-        let mut records: BTreeMap<Index, (Query<F>, Vec<Access>)> = rng
-            .sample_iter(Standard)
-            .take(num_queries)
-            .enumerate()
-            .map(|(index, query)| (Index(index), (query, vec![])))
-            .collect();
+        let queries: Vec<Query<F>> = rng.sample_iter(Standard).take(num_queries).collect();
 
-        let accesses: Vec<(Index, Access)> = rng
+        // Generate the queries, with a Vec for logging the nonces of the accesses
+        let mut records = vec![Vec::<usize>::new(); num_queries];
+
+        // (query_index, count)
+        let accesses: Vec<(usize, usize)> = rng
             .sample_iter(Uniform::from(0..num_queries))
-            .take(height)
+            .take(num_rows)
             .enumerate()
             .map(|(row, query_index)| {
-                let nonce = Nonce(row as u32);
-                let index = Index(query_index);
+                let records = &mut records[query_index];
 
-                let (_query, accesses) = records
-                    .get_mut(&index)
-                    .expect("query index should be valid");
-                let count = Count(accesses.len());
+                let count = records.len();
+                let nonce = if count == 0 { 0 } else { row };
+                records.push(nonce);
 
-                let access = Access { nonce, count };
-                accesses.push(access);
-
-                (index, access)
+                (query_index, count)
             })
             .collect();
 
         let mut trace = RowMajorMatrix::new(vec![F::zero(); height * width], width);
 
         trace.par_rows_mut().zip(accesses).enumerate().for_each(
-            |(nonce, (row, (index, access)))| {
+            |(nonce, (row, (query_index, count)))| {
                 let cols: &mut DemoCols<F> = row.borrow_mut();
 
-                let (query, accesses) = records
-                    .get(&index)
-                    .expect("records should contain a query for the index");
-
                 cols.nonce = F::from_canonical_usize(nonce);
-                cols.query = *query;
+                cols.query = queries[query_index];
+                let records = &records[query_index];
 
-                match access.count {
-                    Count(0) => {
+                match count {
+                    // Provide
+                    0 => {
                         cols.is_provide = F::one();
-                        let last_access = accesses.last().expect("accesses should not be empty");
-                        cols.record = Record::new_provide_record(last_access)
+                        let last_count = records.len() - 1;
+                        let last_nonce = records[last_count];
+                        cols.record.provide = ProvideRecord {
+                            last_nonce: F::from_canonical_usize(last_nonce),
+                            last_count: F::from_canonical_usize(last_count),
+                        }
                     }
-                    Count(count) => {
+                    // Require
+                    count => {
                         cols.is_require = F::one();
                         let prev_count = count - 1;
-                        let prev_access = accesses
-                            .get(prev_count)
-                            .expect("accesses should not be empty");
-                        cols.record = Record::new_require_record(prev_access)
+                        let prev_nonce = records[prev_count];
+
+                        cols.record.require = RequireRecord {
+                            prev_nonce: F::from_canonical_usize(prev_nonce),
+                            prev_count: F::from_canonical_usize(prev_count),
+                            count_inv: F::from_canonical_usize(count).inverse(),
+                        }
                     }
                 }
             },
