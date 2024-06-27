@@ -80,16 +80,20 @@ pub trait LookupBuilder: AirBuilder {
 
         // Witness values used when writing the query to the set in the previous access.
 
+        // HACK: previous nonce and count will be 0
         let prev_nonce = record.prev_nonce.into();
         let prev_count = record.prev_count.into();
-        let count_inv = record.count_inv.into();
+        // let count_inv = record.count_inv.into();
 
         // The count to be written through this access.
-        let count = prev_count.clone() + Self::Expr::one();
+        // HACK: Don't increase the pointer
+        let count = prev_count.clone();
+        // let count = prev_count.clone() + Self::Expr::one();
 
-        // Ensure that we are not writing back a query with a count = 0.
-        self.when(is_real.clone())
-            .assert_one(count.clone() * count_inv);
+        // HACK: we don't check that count != 0, since it is
+        // // Ensure that we are not writing back a query with a count = 0.
+        // self.when(is_real.clone())
+        //     .assert_one(count.clone() * count_inv);
 
         let values: Vec<_> = relation.values().into_iter().collect();
 

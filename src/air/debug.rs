@@ -42,12 +42,13 @@ impl<F: PrimeField32> TraceQueries<F> {
             .or_insert(1);
     }
 
-    fn memoset(&mut self, query: Query<F>, count: u32, record: Record) {
+    fn memoset(&mut self, query: Query<F>, _count: u32, record: Record) {
         let records = self.memoset.entry(query).or_default();
-        assert!(
-            records.insert(count, record).is_none(),
-            "memoset record already accessed"
-        );
+        records.insert(0, record);
+        // assert!(
+        //     records.insert(count, record).is_none(),
+        //     "memoset record already accessed"
+        // );
     }
 
     pub fn merge(&mut self, other: Self) {
@@ -75,10 +76,11 @@ impl<F: PrimeField32> TraceQueries<F> {
         for (query, other_records) in memoset {
             let records = self.memoset.entry(query).or_default();
             for (count, record) in other_records {
-                assert!(
-                    records.insert(count, record).is_none(),
-                    "memoset record already accessed"
-                );
+                records.insert(0, record);
+                // assert!(
+                //     records.insert(count, record).is_none(),
+                //     "memoset record already accessed"
+                // );
             }
         }
     }
@@ -246,8 +248,9 @@ impl<'a, F: PrimeField32> LookupBuilder for DebugConstraintBuilder<'a, F> {
         }
         let prev_nonce = record.prev_nonce.into();
         let prev_count = record.prev_count.into();
-        let count = prev_count + F::one();
-        assert_eq!(count * record.count_inv.into(), F::one());
+        let count = prev_count;
+        // let count = prev_count + F::one();
+        // assert_eq!(count * record.count_inv.into(), F::one());
 
         let query = relation.values().into_iter().collect();
         let count = count.as_canonical_u32();

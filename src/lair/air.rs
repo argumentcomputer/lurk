@@ -1,9 +1,9 @@
 use p3_air::{Air, AirBuilder};
-use p3_field::Field;
+use p3_field::{AbstractField, Field};
 use p3_matrix::Matrix;
 use std::fmt::Debug;
 
-use crate::air::builder::LookupBuilder;
+use crate::air::builder::{LookupBuilder, ProvideRecord, RequireRecord};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
@@ -258,8 +258,14 @@ impl<F: Field> Op<F> {
                     out.push(o.into());
                 }
                 let inp = inp.iter().map(|i| map[*i].to_expr());
-                builder.receive(
+                builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
+                    AB::Expr::zero(),
+                    RequireRecord {
+                        prev_nonce: AB::Expr::zero(),
+                        prev_count: AB::Expr::zero(),
+                        count_inv: AB::Expr::zero(),
+                    },
                     sel.clone(),
                 );
             }
@@ -272,8 +278,15 @@ impl<F: Field> Op<F> {
                     inp.push(i.into());
                 }
                 let out = out.iter().map(|o| map[*o].to_expr());
-                builder.receive(
+                // HACK: we set the nonce = 0, and set the record to zero, so the call actually cancels out in the log up argument
+                builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
+                    AB::Expr::zero(),
+                    RequireRecord {
+                        prev_nonce: AB::Expr::zero(),
+                        prev_count: AB::Expr::zero(),
+                        count_inv: AB::Expr::zero(),
+                    },
                     sel.clone(),
                 );
             }
@@ -444,7 +457,14 @@ impl<F: Field> Ctrl<F> {
                 let sel = local.sel[*ident];
                 let out = vs.iter().map(|v| map[*v].to_expr());
                 let CallCtx { func_idx, call_inp } = call_ctx;
-                builder.send(CallRelation(func_idx, call_inp, out), sel);
+                builder.provide(
+                    CallRelation(func_idx, call_inp, out),
+                    ProvideRecord {
+                        last_nonce: AB::Expr::zero(),
+                        last_count: AB::Expr::zero(),
+                    },
+                    sel,
+                );
             }
         }
     }

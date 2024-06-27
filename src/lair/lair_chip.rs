@@ -6,7 +6,7 @@ use sphinx_core::{
     stark::Chip,
 };
 
-use crate::air::builder::LookupBuilder;
+use crate::air::builder::{LookupBuilder, RequireRecord};
 
 use super::{
     execute::{QueryRecord, MEM_TABLE_SIZES},
@@ -122,8 +122,14 @@ where
             Self::Func(func_chip) => func_chip.eval(builder),
             Self::Mem(mem_chip) => mem_chip.eval(builder),
             Self::Entrypoint { func_idx, inp, out } => {
-                builder.receive(
+                builder.require(
                     CallRelation(*func_idx, inp.clone(), out.clone()),
+                    AB::Expr::zero(),
+                    RequireRecord {
+                        prev_nonce: AB::Expr::zero(),
+                        prev_count: AB::Expr::zero(),
+                        count_inv: AB::Expr::zero(),
+                    },
                     AB::F::one(),
                 );
                 // Dummy constraint of degree 3
