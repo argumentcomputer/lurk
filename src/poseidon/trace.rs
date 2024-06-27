@@ -1,12 +1,14 @@
 //! This module defines the trace generation for the Poseidon2 AIR Chip
-use std::iter::zip;
 
 use super::{columns::Poseidon2Cols, config::PoseidonConfig, Poseidon2Chip};
 
-use itertools::Itertools;
 use p3_air::BaseAir;
 use p3_field::AbstractField;
 use p3_matrix::dense::RowMajorMatrix;
+use p3_maybe_rayon::prelude::*;
+
+use itertools::Itertools;
+use std::borrow::BorrowMut;
 
 impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2Chip<C, WIDTH> {
     pub fn generate_trace(&self, inputs: Vec<[C::F; WIDTH]>) -> RowMajorMatrix<C::F> {
@@ -20,25 +22,26 @@ impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2Chip<C, WIDTH> {
 
         let mut trace = RowMajorMatrix::new(vec![C::F::zero(); full_trace_len_padded], num_cols);
 
-        let (prefix, rows, suffix) =
-            unsafe { trace.values.align_to_mut::<Poseidon2Cols<C::F, C, WIDTH>>() };
-        assert!(prefix.is_empty(), "Alignment should match");
-        assert!(suffix.is_empty(), "Alignment should match");
-        assert_eq!(rows.len(), full_num_rows.next_power_of_two());
+        trace
+            .par_row_chunks_exact_mut(rounds + 1)
+            .zip_eq(inputs.into_par_iter())
+            .for_each(|(mut round_rows, input)| {
+                let constants = C::round_constants_iter();
 
-        for (input, rounds_row) in zip(inputs, rows.chunks_mut(rounds + 1)) {
-            let constants = C::round_constants_iter();
+                let mut rows_iter = round_rows.rows_mut().map(|row| {
+                    let cols: &mut Poseidon2Cols<C::F, C, WIDTH> = row.borrow_mut();
+                    cols
+                });
 
-            // Generate the initial round
-            let mut next_input = rounds_row[0].set_initial_round(input);
+                // Generate the initial round
+                let mut next_input = rows_iter.next().unwrap().set_initial_round(input);
 
-            for (round, (row, constants)) in
-                rounds_row.iter_mut().skip(1).zip_eq(constants).enumerate()
-            {
-                let input = next_input;
-                next_input = row.set_round(input, round, constants);
-            }
-        }
+                for (round, (row, constants)) in rows_iter.zip_eq(constants).enumerate() {
+                    let input = next_input;
+                    next_input = row.set_round(input, round, constants);
+                }
+            });
+
         trace
     }
 }

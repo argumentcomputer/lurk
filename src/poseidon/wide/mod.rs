@@ -6,6 +6,7 @@ pub mod trace;
 mod test {
 
     use core::array;
+    use std::borrow::{Borrow, BorrowMut};
     use std::iter::zip;
     use std::marker::PhantomData;
     use std::mem::size_of;
@@ -18,11 +19,13 @@ mod test {
     use p3_matrix::dense::RowMajorMatrix;
     use p3_matrix::Matrix;
     use p3_symmetric::Permutation;
+    use sphinx_derive::AlignedBorrow;
 
     struct Chip<C: PoseidonConfig<WIDTH>, const WIDTH: usize> {
         _marker: PhantomData<C>,
     }
 
+    #[derive(AlignedBorrow)]
     struct Cols<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize>
     where
         Sub1<C::R_P>: ArraySize,
@@ -50,7 +53,7 @@ mod test {
         fn eval(&self, builder: &mut AB) {
             let main = builder.main();
             let row = main.row_slice(0);
-            let local = Cols::<AB::Var, C, WIDTH>::from_slice(&row);
+            let local: &Cols<AB::Var, C, WIDTH> = (*row).borrow();
 
             local.perm.eval(
                 builder,
@@ -58,26 +61,6 @@ mod test {
                 &local.output,
                 local.is_real.into(),
             );
-        }
-    }
-
-    impl<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize> Cols<T, C, WIDTH>
-    where
-        Sub1<C::R_P>: ArraySize,
-    {
-        #[inline]
-        fn from_slice(slice: &[T]) -> &Self {
-            let num_cols = size_of::<Cols<u8, C, WIDTH>>();
-            assert_eq!(slice.len(), num_cols);
-            let (_, shorts, _) = unsafe { slice.align_to::<Cols<T, C, WIDTH>>() };
-            &shorts[0]
-        }
-        #[inline]
-        fn from_slice_mut(slice: &mut [T]) -> &mut Self {
-            let num_cols = size_of::<Cols<u8, C, WIDTH>>();
-            assert_eq!(slice.len(), num_cols);
-            let (_, shorts, _) = unsafe { slice.align_to_mut::<Cols<T, C, WIDTH>>() };
-            &mut shorts[0]
         }
     }
 
@@ -96,7 +79,7 @@ mod test {
 
             let outputs = zip(trace.rows_mut(), inputs)
                 .map(|(row, &input)| {
-                    let cols = Cols::<C::F, C, WIDTH>::from_slice_mut(row);
+                    let cols: &mut Cols<C::F, C, WIDTH> = row.borrow_mut();
                     cols.is_real = C::F::one();
                     cols.input = input;
                     cols.output = cols.perm.populate(input);

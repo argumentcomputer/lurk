@@ -2,16 +2,16 @@
 
 use core::array;
 use std::iter::zip;
-use std::mem::size_of;
 
 use super::config::PoseidonConfig;
 
 use hybrid_array::Array;
 use p3_field::AbstractField;
 use p3_symmetric::Permutation;
+use sphinx_derive::AlignedBorrow;
 
 /// The column layout for the chip.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, AlignedBorrow)]
 #[repr(C)]
 pub struct Poseidon2Cols<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize> {
     pub(crate) input: [T; WIDTH],
@@ -21,16 +21,6 @@ pub struct Poseidon2Cols<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize> {
     pub(crate) sbox_deg_3: [T; WIDTH],
     pub(crate) sbox_deg_7: [T; WIDTH],
     pub(crate) output: [T; WIDTH],
-}
-
-impl<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2Cols<T, C, WIDTH> {
-    #[inline]
-    pub fn from_slice(slice: &[T]) -> &Self {
-        let num_cols = size_of::<Poseidon2Cols<u8, C, WIDTH>>();
-        assert_eq!(slice.len(), num_cols);
-        let (_, shorts, _) = unsafe { slice.align_to::<Poseidon2Cols<T, C, WIDTH>>() };
-        &shorts[0]
-    }
 }
 
 impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Poseidon2Cols<C::F, C, WIDTH> {
