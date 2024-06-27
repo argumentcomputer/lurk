@@ -2,6 +2,7 @@ use crate::poseidon::config::PoseidonConfig;
 use std::mem::size_of;
 
 use hybrid_array::{typenum::*, Array, ArraySize};
+use sphinx_derive::AlignedBorrow;
 
 /// Columns for the "narrow" Poseidon2 chip.
 ///
@@ -10,7 +11,7 @@ use hybrid_array::{typenum::*, Array, ArraySize};
 /// degree 1, so all state elements at the end can be expressed as a degree-3 polynomial of:
 /// 1) the 0th state element at rounds prior to the current round
 /// 2) the rest of the state elements at the beginning of the internal rounds
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, AlignedBorrow)]
 #[repr(C)]
 pub struct Poseidon2Cols<T, C: PoseidonConfig<WIDTH>, const WIDTH: usize>
 where
@@ -35,23 +36,5 @@ where
 {
     pub const fn num_cols() -> usize {
         size_of::<Poseidon2Cols<u8, C, WIDTH>>()
-    }
-
-    #[inline]
-    pub fn from_slice(slice: &[T]) -> &Self {
-        let num_cols = Poseidon2Cols::<T, C, WIDTH>::num_cols();
-
-        debug_assert_eq!(slice.len(), num_cols);
-        let (_, shorts, _) = unsafe { slice.align_to::<Poseidon2Cols<T, C, WIDTH>>() };
-        &shorts[0]
-    }
-
-    #[inline]
-    pub fn from_slice_mut(slice: &mut [T]) -> &mut Self {
-        let num_cols = Poseidon2Cols::<T, C, WIDTH>::num_cols();
-
-        debug_assert_eq!(slice.len(), num_cols);
-        let (_, shorts, _) = unsafe { slice.align_to_mut::<Poseidon2Cols<T, C, WIDTH>>() };
-        &mut shorts[0]
     }
 }

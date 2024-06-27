@@ -2,6 +2,7 @@
 
 use core::mem::size_of;
 use std::array;
+use std::borrow::Borrow;
 use std::iter::zip;
 
 use itertools::izip;
@@ -24,9 +25,9 @@ impl<AB: AirBuilder, C: PoseidonConfig<WIDTH, F = AB::F>, const WIDTH: usize> Ai
     fn eval(&self, builder: &mut AB) {
         let main = builder.main();
         let local = main.row_slice(0);
-        let local = Poseidon2Cols::<AB::Var, C, WIDTH>::from_slice(&local);
+        let local: &Poseidon2Cols<AB::Var, C, WIDTH> = (*local).borrow();
         let next = main.row_slice(1);
-        let next = Poseidon2Cols::<AB::Var, C, WIDTH>::from_slice(&next);
+        let next: &Poseidon2Cols<AB::Var, C, WIDTH> = (*next).borrow();
 
         let R_F = C::r_f();
         let R_P = C::r_p();

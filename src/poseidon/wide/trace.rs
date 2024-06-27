@@ -1,11 +1,10 @@
-use std::iter::zip;
-
 use crate::poseidon::config::PoseidonConfig;
-
 use crate::poseidon::wide::columns::Poseidon2Cols;
 use hybrid_array::{typenum::Sub1, ArraySize};
 use p3_field::AbstractField;
 use p3_symmetric::Permutation;
+use std::borrow::BorrowMut;
+use std::iter::zip;
 
 pub fn populate_witness<C: PoseidonConfig<WIDTH>, const WIDTH: usize>(
     input: [C::F; WIDTH],
@@ -14,7 +13,7 @@ pub fn populate_witness<C: PoseidonConfig<WIDTH>, const WIDTH: usize>(
 where
     Sub1<C::R_P>: ArraySize,
 {
-    let cols = Poseidon2Cols::<C::F, C, WIDTH>::from_slice_mut(witness);
+    let cols: &mut Poseidon2Cols<C::F, C, WIDTH> = witness.borrow_mut();
     cols.populate(input)
 }
 

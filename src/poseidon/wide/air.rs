@@ -1,12 +1,13 @@
 use crate::poseidon::config::PoseidonConfig;
-use std::iter::zip;
+use crate::poseidon::wide::columns::Poseidon2Cols;
 
 use hybrid_array::{typenum::*, ArraySize};
-
-use crate::poseidon::wide::columns::Poseidon2Cols;
 use p3_air::AirBuilder;
 use p3_field::AbstractField;
 use p3_symmetric::Permutation;
+
+use std::borrow::Borrow;
+use std::iter::zip;
 
 /// Given a witness of size `Poseidon2Cols::num_cols` and an expected output digest,
 /// apply the Poseidon2 permutation over the input and compare the returned state,
@@ -21,7 +22,7 @@ pub fn eval_input<AB: AirBuilder, C: PoseidonConfig<WIDTH, F = AB::F>, const WID
 ) where
     Sub1<C::R_P>: ArraySize,
 {
-    let cols = Poseidon2Cols::<AB::Var, C, WIDTH>::from_slice(witness);
+    let cols: &Poseidon2Cols<AB::Var, C, WIDTH> = witness.borrow();
     cols.eval(builder, input, output, is_real);
 }
 
