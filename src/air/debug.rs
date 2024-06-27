@@ -1,5 +1,5 @@
 use crate::air::builder::{LairBuilder, LookupBuilder, ProvideRecord, Relation, RequireRecord};
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashMap;
 use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues};
 use p3_field::PrimeField32;
 use p3_matrix::dense::RowMajorMatrixView;
@@ -22,18 +22,24 @@ type MemoSetAccessRecords = BTreeMap<u32, Record>;
 
 #[derive(Default)]
 pub struct TraceQueries<F> {
-    sends: HashSet<Query<F>>,
-    receives: HashSet<Query<F>>,
+    sends: HashMap<Query<F>, usize>,
+    receives: HashMap<Query<F>, usize>,
     memoset: HashMap<Query<F>, MemoSetAccessRecords>,
 }
 
 impl<F: PrimeField32> TraceQueries<F> {
     fn receive(&mut self, query: Query<F>) {
-        assert!(self.receives.insert(query), "query was already received");
+        self.receives
+            .entry(query)
+            .and_modify(|count| *count += 1)
+            .or_insert(1);
     }
 
     fn send(&mut self, query: Query<F>) {
-        assert!(self.sends.insert(query), "query was already sent");
+        self.sends
+            .entry(query)
+            .and_modify(|count| *count += 1)
+            .or_insert(1);
     }
 
     fn memoset(&mut self, query: Query<F>, count: u32, record: Record) {
@@ -51,12 +57,18 @@ impl<F: PrimeField32> TraceQueries<F> {
             memoset,
         } = other;
 
-        for query in sends {
-            self.send(query);
+        for (query, other_count) in sends {
+            self.sends
+                .entry(query)
+                .and_modify(|count| *count += other_count)
+                .or_insert(other_count);
         }
 
-        for query in receives {
-            self.receive(query);
+        for (query, other_count) in receives {
+            self.receives
+                .entry(query)
+                .and_modify(|count| *count += other_count)
+                .or_insert(other_count);
         }
 
         // Iterate over all memoset queries in other
