@@ -192,54 +192,78 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
     // Relations
 
-    // The standard tag mapping.
+    // NOTE: Relations are designated as either 'signal' or 'final'. Signal relations are not required for proving and
+    // need not be present in the second-pass program.
+    // Final relations must be present in the second pass..
+
+    // Final: The standard tag mapping.
     relation tag(LE, Wide) = Memory::initial_tag_relation(); // (short-tag, wide-tag)
 
+    // Final
     relation ptr_value(Ptr, Wide); // (ptr, value)}
+    // Final (but could be optimized out).
     relation ptr_tag(Ptr, Wide); // (ptr, tag)
 
     // triggers memoized/deduplicated allocation of input conses by populating cons outside of testing, this indirection
     // is likely unnecessary.
     // relation input_cons(Ptr, Ptr); // (car, cdr)
 
+    // Final
     relation toplevel_input(WidePtr, WidePtr); // (expr, env)
+    // Final
     relation output_expr(WidePtr); // (expr)
+    // Final
     relation input_ptr(Ptr, Ptr); // (expr, env)
+    // Final
     relation output_ptr(Ptr); // (wide-ptr)
 
-    // triggers allocation once per unique cons
+    // Signal: triggers allocation once per unique cons
     relation cons(Ptr, Ptr); // (car, cdr)
+    // Final
     relation car(Ptr, Ptr); // (cons, car)
+    // Final
     relation cdr(Ptr, Ptr); // (cons, cdr)
+    // Final
     relation hash4(Ptr, Wide, Wide, Wide, Wide); // (a, b, c, d)
+    // Signal
     relation unhash4(LE, Wide, Ptr); // (tag, digest, ptr)
+    // Final
     relation hash4_rel(Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, digest)
 
+    // Signal
     relation fun(Ptr, Ptr, Ptr); // (args, body, closed_env)
+    // Final
     relation hash6(Ptr, Wide, Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, e, f)
+    // Signal
     relation unhash6(LE, Wide, Ptr); // (tag, digest, ptr)
+    // Final
     relation hash6_rel(Wide, Wide, Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, e, f, digest)
 
+    // Signal
     relation thunk(Ptr, Ptr); // (body, closed_env)
 
-    // inclusion triggers *_value relations.
+    // Signal: inclusion triggers *_value relations.
     relation egress(Ptr); // (ptr)
+    // Signal (is that right?)
     relation f_value(Ptr, Wide); // (ptr, immediate-wide-value)
+    // Signal (is that right?)
     relation cons_value(Ptr, Wide); // (cons, value)
 
     // all known `Ptr`s should be added to ptr.
+    // Signal
     relation ptr(Ptr); // (ptr)
+    // Final
     relation ptr_tag(Ptr, Wide); // (ptr, tag)
+    // Final
     relation ptr_value(Ptr, Wide); // (ptr, value)
 
     // supporting ingress
     // inclusion triggers *_value relations.
+    // Signal
     relation ingress(Ptr); // (ptr)
 
-
-
+    // Signal
     relation alloc(LE, Wide); // (tag, value)
-
 
     ////////////////////////////////////////////////////////////////////////////////
     // Memory
@@ -247,11 +271,12 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
     // Cons
 
-    // The canonical cons Ptr relation.
+    // Final: The canonical cons Ptr relation.
     relation cons_rel(Ptr, Ptr, Ptr); // (car, cdr, cons)
 
-    // Memory to support conses allocated by digest or contents.
+    // Final: Memory to support conses allocated by digest or contents.
     lattice cons_digest_mem(Wide, Dual<LEWrap>); // (value, addr)
+    // Final
     lattice cons_mem(Ptr, Ptr, Dual<LEWrap>); // (car, cdr, addr)
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
@@ -279,9 +304,11 @@ ascent! {
 
     // TODO: this was copied directly from the cons memory, so we should be able to formalize with a macro.
 
+    // Final
     relation fun_rel(Ptr, Ptr, Ptr, Ptr); // (args, body, closed-env, fun)
-
+    // Final
     lattice fun_digest_mem(Wide, Dual<LEWrap>); // (value, addr)
+    // Final
     lattice fun_mem(Ptr, Ptr, Ptr, Dual<LEWrap>); // (args, body, closed-env, addr)
 
     fun_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Fun.elt(), LE::zero())))) <-- alloc(tag, value), if *tag == Tag::Fun.elt();
@@ -305,9 +332,11 @@ ascent! {
 
     // TODO: this was copied directly from the fun memory, so we should be able to formalize with a macro.
 
+    // Final
     relation thunk_rel(Ptr, Ptr, Ptr); // (body, closed-env, thunk)
-
+    // Final
     lattice thunk_digest_mem(Wide, Dual<LEWrap>); // (value, addr)
+    // Final
     lattice thunk_mem(Ptr, Ptr, Dual<LEWrap>); // (body, closed-env, addr)
 
     thunk_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Thunk.elt(), LE::zero())))) <-- alloc(tag, value), if *tag == Tag::Thunk.elt();
@@ -330,6 +359,7 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
     // Sym
 
+    // Final
     lattice sym_digest_mem(Wide, Dual<LEWrap>) = Memory::initial_sym_relation(); // (digest, addr)
 
     // Populating alloc(...) triggers allocation in sym_digest_mem.
@@ -341,6 +371,9 @@ ascent! {
 
     ////////////////////////////////////////////////////////////////////////////////
     // Nil
+
+    // Final
+    // Can this be combined with sym_digest_mem? Can it be eliminated? (probably eventually).
     lattice nil_digest_mem(Wide, Dual<LEWrap>) = Memory::initial_nil_relation(); // (digest, addr)
 
     nil_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Nil.elt(), Memory::initial_nil_addr())))) <-- alloc(tag, value), if *tag == Tag::Nil.elt();
@@ -491,7 +524,9 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
     // eval
 
+    // Signal
     relation eval_input(Ptr, Ptr); // (expr, env)
+    // Final
     relation eval(Ptr, Ptr, Ptr); // (input-expr, env, output-expr)
 
     eval_input(expr, env) <-- input_ptr(expr, env);
@@ -504,7 +539,7 @@ ascent! {
 
     ////////////////////////////////////////
     // expr is Sym
-
+    // Final
     relation lookup(Ptr, Ptr, Ptr, Ptr); // (input_expr, input_env, var, env)
 
     // If expr is not a built-in sym, look it up.
@@ -531,7 +566,7 @@ ascent! {
     ////////////////////
     // looked-up value is thunk
 
-    relation lookup_thunk(Ptr, Ptr, Ptr, Ptr); // (input_expr, input_env, body, closed_env)
+    // relation lookup_thunk(Ptr, Ptr, Ptr, Ptr); // (input_expr, input_env, body, closed_env)
 
     ingress(value) <--
         lookup(input_expr, input_env, var, env),
@@ -581,33 +616,6 @@ ascent! {
     // expr is Cons
     ingress(expr) <-- eval_input(expr, env), if expr.is_cons();
 
-    relation eval_head_parse(Ptr, Ptr, Ptr, Ptr); // (expr, env, head, rest)
-
-    // if head is a cons [or eventually other non-built-in]
-    ingress(head),
-    eval_head_parse(expr, env, head, rest),
-    eval_input(head, env) <--
-        eval_input(expr, env), cons_rel(head, rest, expr), if head.is_cons();
-
-    // construct new expression to evaluate, using evaled head
-    cons(evaled_head, rest) <--
-        eval_head_parse(expr, env, head, rest),
-        eval(head, env, evaled_head);
-
-    // mark the new expression for evaluation
-    // Signal rule
-    ingress(rest),
-    eval_input(new_expr, env) <--
-        eval_head_parse(expr, env, head, rest),
-        eval(head, env, evaled_head),
-        cons_rel(evaled_head, rest, new_expr);
-
-    // register evaluation result
-    eval(expr, env, result) <--
-        eval_head_parse(expr, env, head, rest),
-        eval(head, env, evaled_head),
-        cons_rel(evaled_head, rest, new_expr),
-        eval(new_expr, env, result);
 
     ////////////////////
     // conditional
@@ -657,7 +665,9 @@ ascent! {
 
     // TODO: Handle undersaturate function call (returning functions with fewer args than original).
 
+    // Final
     relation fun_call(Ptr, Ptr, Ptr, Ptr, Ptr, Ptr); // (expr, env, args, body, closed_env, rest)
+    // Signal
     relation maybe_fun_call(Ptr, Ptr, Ptr, Ptr); // (expr, env, maybe_fun, rest)
 
     // If head is  fun.
@@ -673,6 +683,7 @@ ascent! {
         eval_input(expr, env), cons_rel(maybe_fun, rest, expr), if !maybe_fun.is_fun() && !maybe_fun.is_built_in(); // the built_in exclusion may be redundant.
 
     // If head did eval to a fun.
+    // TODO: factor out signal (maybe_fun_call)
     ingress(args), ingress(rest),
     fun_call(expr, env, args, body, closed_env, rest) <--
         maybe_fun_call(expr, env, maybe_fun, rest), eval(maybe_fun, env, fun), fun_rel(args, body, closed_env, fun);
@@ -722,13 +733,20 @@ ascent! {
     ////////////////////
     // let binding
 
+    // Signal
     relation bind_parse(Ptr, Ptr, Ptr); // (expr, env, bindings-and-body)
+    // Signal
     relation rec_bind_parse(Ptr, Ptr, Ptr); // (expr, env, bindings-and-body)
+
+    // Final
     relation bind(Ptr, Ptr, Ptr, Ptr, Ptr, bool); // (expr, env, body, extended-env, bindings, is-rec)
 
     // These rules act, morally, as continuations and are all 'signal relations'.
+    // Signal
     relation bind_cont1(Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, bool); // (expr, env, body, extended-env, binding, more-bindings, var, binding-tail, is-rec)
+    // Signal
     relation bind_cont2(Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, bool); // (expr, env, body, extended-env, var, unevaled, more-bindings, is-rec)
+    // Signal
     relation bind_cont3(Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, Ptr); // (expr, env, body, extended-env, var, evaled, more-bindings)
 
     ingress(tail), bind_parse(expr, env, tail) <--
@@ -752,6 +770,7 @@ ascent! {
 
     // letrec base case: bindings list is empty.
     bind(expr, env, body, env, bindings, true) <--
+        // TODO: eliminate signal relation (rec_bind_parse) in primarily rule for second pass..
         rec_bind_parse(expr, env, tail),
         cons_rel(bindings, rest, tail),
         cons_rel(body, end, rest), if end.is_nil(); // TODO: error otherwise
@@ -854,18 +873,19 @@ ascent! {
     ////////////////////
     // lambda
 
+    // Signal
     relation lambda_parse(Ptr, Ptr, Ptr); // (expr, env, args-and-body)
 
     ingress(tail), lambda_parse(expr, env, tail) <--
         eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
         if head.is_lambda();
 
-    // // Signal rule
+    // Signal
     ingress(rest) <--
         lambda_parse(expr, env, tail),
         cons_rel(args, rest, tail);
 
-    // create a fun from a parsed lambda evaluation
+    // Signal: create a fun from a parsed lambda evaluation
     fun(args, body, env) <--
         lambda_parse(expr, env, tail),
         cons_rel(args, rest, tail),
@@ -882,9 +902,11 @@ ascent! {
     ////////////////////
     // fold -- default folding is fold_left
 
+    // Real
     relation fold(Ptr, Ptr, Ptr, Num, Ptr); // (expr, env, op, acc, tail)
 
     // If head is left-foldable op, reduce it with its neutral element.
+    // signal (?)
     ingress(tail), fold(expr, env, head, head.neutral_element(), tail) <--
         eval_input(expr, env), cons_rel(head, tail, expr), if head.is_left_foldable();
 
@@ -902,6 +924,7 @@ ascent! {
     ////////////////////
     // fold_right
 
+    // Real
     relation fold_right(Ptr, Ptr, Ptr, Ptr); // (expr, env, op, tail)
 
     // If head is right-foldable op, initiate fold_right.
@@ -927,7 +950,9 @@ ascent! {
     // bool_fold
     // TODO: error if args are not Num.
 
+    // Signal
     relation bool_fold0(Ptr, Ptr, Ptr, Ptr); // (expr, env, op, tail)
+    // Real
     relation bool_fold(Ptr, Ptr, Ptr, Num, Ptr); // (expr, env, op, acc, tail)
 
     // If head is relational op, reduce it with its neutral element.
@@ -935,6 +960,7 @@ ascent! {
         eval_input(expr, env), cons_rel(head, tail, expr), if head.is_relational();
 
     // bool0-folding operation with an empty (nil) tail (and no acc)
+    // TODO: factor out signal relation (bool_fold0)
     eval(expr, env, Ptr::t()) <-- bool_fold0(expr, env, _op, tail), if tail.is_nil();
 
     // bool-folding operation with an empty (nil) tail
@@ -944,6 +970,7 @@ ascent! {
     eval_input(car, env), ingress(car), ingress(cdr) <--
         bool_fold0(expr, env, _op, tail), cons_rel(car, cdr, tail);
 
+    // TODO: inline signal relation (bool_fold0)
     ingress(tail), bool_fold(expr, env, op, Num(evaled_car.1), cdr) <--
         bool_fold0(expr, env, op, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car);
 
@@ -958,7 +985,6 @@ ascent! {
     if cdr.is_cons(),
     let x = op.apply_relop(*acc, Num(evaled_car.1)),
     if x.is_t();
-
 
     ////////////////////////////////////////////////////////////////////////////////
 
@@ -1299,6 +1325,11 @@ mod test {
         test_aux(&fibonacci(1), "1", None);
         test_aux(&fibonacci(5), "8", None);
         test_aux(&fibonacci(7), "21", None);
+    }
+
+    #[test]
+    fn test_show_summary() {
+        println!("{}", EvaluationProgram::summary());
     }
 
     fn debug_prog(prog: EvaluationProgram) {
