@@ -1308,10 +1308,14 @@ mod test {
     use expect_test::{expect, Expect};
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
+    use sphinx_core::air::MachineAir;
 
     use crate::{
         air::debug::debug_constraints_collecting_queries,
-        lair::{execute::QueryRecord, func_chip::FuncChip, hasher::LurkHasher, List},
+        lair::{
+            execute::QueryRecord, func_chip::FuncChip, hasher::LurkHasher,
+            lair_chip::build_lair_chip_vector, List,
+        },
         lurk::{
             state::State,
             zstore::{ZPtr, ZStore},
@@ -1367,25 +1371,6 @@ mod test {
         expect_eq(hash_32_8.width(), expect!["645"]);
         expect_eq(hash_48_8.width(), expect!["965"]);
 
-        let all_chips = [
-            &lurk_main,
-            &eval,
-            &eval_unop,
-            &eval_binop_num,
-            &eval_binop_misc,
-            &eval_let,
-            &eval_letrec,
-            &car_cdr,
-            &apply,
-            &env_lookup,
-            &ingress,
-            &ingress_builtin,
-            &egress,
-            &egress_builtin,
-            &hash_32_8,
-            &hash_48_8,
-        ];
-
         let state = State::init_lurk_state().rccell();
 
         let eval_aux = |expr: &str, res: &str| {
@@ -1415,8 +1400,10 @@ mod test {
             assert_eq!(&result[0], &expected_tag.to_field());
             assert_eq!(&result[8..], &expected_digest);
 
-            let lookup_queries = all_chips.into_iter().map(|chip| {
-                let trace = chip.generate_trace_parallel(queries);
+            let lair_chips = build_lair_chip_vector(&lurk_main, full_input.into(), result.to_vec());
+
+            let lookup_queries = lair_chips.iter().map(|chip| {
+                let trace = chip.generate_trace(queries, &mut Default::default());
                 debug_constraints_collecting_queries(chip, &[], None, &trace)
             });
             crate::air::debug::TraceQueries::verify_many(lookup_queries)
