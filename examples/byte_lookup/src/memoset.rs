@@ -39,7 +39,7 @@ struct Access {
 
 #[derive(AlignedBorrow, Clone, Copy)]
 #[repr(C)]
-union Record<T: Copy> {
+pub union Record<T: Copy> {
     require: RequireRecord<T>,
     provide: ProvideRecord<T>,
 }
