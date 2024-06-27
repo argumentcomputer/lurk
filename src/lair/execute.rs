@@ -943,7 +943,16 @@ mod tests {
                 return (a_b, b_c, c_d)
             }
         );
-        let toplevel = Toplevel::<_, LurkHasher>::new(&[test1_e, test2_e]);
+        let test3_e = func!(
+            fn test3(a: [4]): [4] {
+                let b = [2, 3, 7, 5];
+                let c = [-1, -1, 0, 2];
+                let tmp = div(a, b);
+                let res = add(tmp, c);
+                return res
+            }
+        );
+        let toplevel = Toplevel::<_, LurkHasher>::new(&[test1_e, test2_e, test3_e]);
         let test = toplevel.get_by_name("test1").unwrap();
         let f = F::from_canonical_u32;
         let args = &[f(1), f(2), f(3), f(4), f(5), f(6), f(7)];
@@ -952,6 +961,15 @@ mod tests {
         let expected_len = 3;
         assert_eq!(out.len(), expected_len);
         assert_eq!(out[0..expected_len], [f(5), f(7), f(9)]);
+
+        let test = toplevel.get_by_name("test3").unwrap();
+        let f = F::from_canonical_u32;
+        let args = &[f(4), f(9), f(21), f(10)];
+        let record = &mut QueryRecord::new(&toplevel);
+        let out = test.execute(args, &toplevel, record);
+        let expected_len = 4;
+        assert_eq!(out.len(), expected_len);
+        assert_eq!(out[0..expected_len], [f(1), f(2), f(3), f(4)]);
     }
 
     #[test]

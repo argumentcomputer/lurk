@@ -74,6 +74,8 @@ pub fn build_lurk_toplevel() -> Toplevel<BabyBear, LurkHasher> {
         eval_unop(&builtins),
         eval_binop_num(&builtins),
         eval_binop_misc(&builtins),
+        equal(&builtins),
+        equal_inner(),
         car_cdr(),
         eval_let(),
         eval_letrec(),
@@ -149,7 +151,7 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
                     let zero = 0;
                     return zero
                 }
-                Tag::U64, Tag::Comm => {
+                Tag::Sym, Tag::Key, Tag::U64, Tag::Comm => {
                     let ptr = store(digest);
                     return ptr
                 }
@@ -157,7 +159,7 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
                     let idx = call(ingress_builtin, digest);
                     return idx
                 }
-                Tag::Str, Tag::Sym, Tag::Key => {
+                Tag::Str => {
                     if !digest {
                         let zero = 0;
                         return zero
@@ -265,7 +267,7 @@ pub fn egress<F: AbstractField + Ord>(nil: List<F>) -> FuncE<F> {
                     let digest = Array(nil);
                     return digest
                 }
-                Tag::U64, Tag::Comm => {
+                Tag::Sym, Tag::Key, Tag::U64, Tag::Comm => {
                     let digest: [8] = load(val);
                     return digest
                 }
@@ -273,7 +275,7 @@ pub fn egress<F: AbstractField + Ord>(nil: List<F>) -> FuncE<F> {
                     let digest: [8] = call(egress_builtin, val);
                     return digest
                 }
-                Tag::Str, Tag::Sym, Tag::Key => {
+                Tag::Str => {
                     if !val {
                         let digest = [0; 8];
                         return digest
@@ -288,18 +290,7 @@ pub fn egress<F: AbstractField + Ord>(nil: List<F>) -> FuncE<F> {
                     let digest: [8] = call(hash_32_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
                     return digest
                 }
-                Tag::Thunk => {
-                    let (fst_tag, fst_ptr, snd_tag, snd_ptr) = load(val);
-                    let fst_digest: [8] = call(egress, fst_tag, fst_ptr);
-                    let snd_digest: [8] = call(egress, snd_tag, snd_ptr);
-
-                    let padding = [0; 7];
-                    let fst_tag_full: [8] = (fst_tag, padding);
-                    let snd_tag_full: [8] = (snd_tag, padding);
-                    let digest: [8] = call(hash_32_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
-                    return digest
-                }
-                Tag::Cons => {
+                Tag::Cons, Tag::Thunk => {
                     let (fst_tag, fst_ptr, snd_tag, snd_ptr) = load(val);
                     let fst_digest: [8] = call(egress, fst_tag, fst_ptr);
                     let snd_digest: [8] = call(egress, snd_tag, snd_ptr);
@@ -516,6 +507,11 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                             let env = 0;
                                             // Eval must be called twice
                                             let (res_tag, res) = call(eval, expr_tag, expr, env);
+                                            match res_tag {
+                                                Tag::Err => {
+                                                    return (res_tag, res)
+                                                }
+                                            };
                                             let (res_tag, res) = call(eval, res_tag, res, env);
                                             return (res_tag, res)
                                         }
@@ -526,8 +522,16 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                                 return (err_tag, invalid_form)
                                             }
                                             let (res_tag, res) = call(eval, expr_tag, expr, env);
+                                            match res_tag {
+                                                Tag::Err => {
+                                                    return (res_tag, res)
+                                                }
+                                            };
                                             let (env_tag, new_env) = call(eval, env_expr_tag, env_expr, env);
                                             match env_tag {
+                                                Tag::Err => {
+                                                    return (env_tag, new_env)
+                                                }
                                                 Tag::Env => {
                                                     let (res_tag, res) = call(eval, res_tag, res, new_env);
                                                     return (res_tag, res)
@@ -632,7 +636,11 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                     let (res_tag, res) = call(eval_binop_num, head, rest_tag, rest, env);
                                     return (res_tag, res)
                                 }
-                                "cons", "strcons", "hide", "eq" => {
+                                "eq" => {
+                                    let res: [2] = call(equal, rest_tag, rest, env);
+                                    return res
+                                }
+                                "cons", "strcons", "hide" => {
                                     let (res_tag, res) = call(eval_binop_misc, head, rest_tag, rest, env);
                                     return (res_tag, res)
                                 }
@@ -708,6 +716,127 @@ pub fn car_cdr<F: AbstractField + Ord>() -> FuncE<F> {
             let not_cons = EvalErr::NotCons;
             return (err_tag, not_cons, err_tag, not_cons)
 
+        }
+    )
+}
+
+pub fn equal<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
+    func!(
+        fn equal(rest_tag, rest, env): [2] {
+            let err_tag = Tag::Err;
+            let cons_tag = Tag::Cons;
+            let nil_tag = Tag::Nil;
+            let invalid_form = EvalErr::InvalidForm;
+            let rest_not_cons = sub(rest_tag, cons_tag);
+            if rest_not_cons {
+                return (err_tag, invalid_form)
+            }
+            let (exp1_tag, exp1, rest_tag, rest) = load(rest);
+            let rest_not_cons = sub(rest_tag, cons_tag);
+            if rest_not_cons {
+                return (err_tag, invalid_form)
+            }
+            let (exp2_tag, exp2, rest_tag, _rest) = load(rest);
+            let rest_not_nil = sub(rest_tag, nil_tag);
+            if rest_not_nil {
+                return (err_tag, invalid_form)
+            }
+            let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
+            match val1_tag {
+                Tag::Err => {
+                    return (val1_tag, val1)
+                }
+            };
+            let (val2_tag, val2) = call(eval, exp2_tag, exp2, env);
+            match val2_tag {
+                Tag::Err => {
+                    return (val2_tag, val2)
+                }
+            };
+            let t = call(equal_inner, val1_tag, val1, val2_tag, val2);
+            if t {
+                let builtin_tag = Tag::Builtin;
+                let t = builtins.index("t");
+                return (builtin_tag, t)
+            }
+            let nil = 0;
+            return (nil_tag, nil)
+        }
+    )
+}
+
+pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
+    func!(
+        fn equal_inner(a_tag, a, b_tag, b): [1] {
+            let not_eq_tag = sub(a_tag, b_tag);
+            let zero = 0;
+            let one = 1;
+            if not_eq_tag {
+                return zero
+            }
+            let not_eq = sub(a, b);
+            if !not_eq {
+                return one
+            }
+            match a_tag {
+                // The Nil case is impossible
+                Tag::Builtin, Tag::Num, Tag::Char, Tag::Err => {
+                    return zero
+                }
+                Tag::Sym, Tag::U64, Tag::Comm => {
+                    let a_digest: [8] = load(a);
+                    let b_digest: [8] = load(b);
+                    let diff = sub(a_digest, b_digest);
+                    if diff {
+                        return zero
+                    }
+                    return one
+                }
+                Tag::Str, Tag::Key => {
+                    let a_and_b = mul(a, b);
+                    if !a_and_b {
+                        return zero
+                    }
+                    let (a_fst: [2], a_snd: [2]) = load(a);
+                    let (b_fst: [2], b_snd: [2]) = load(b);
+                    let fst_eq = call(equal_inner, a_fst, b_fst);
+                    let snd_eq = call(equal_inner, a_snd, b_snd);
+                    let eq = mul(fst_eq, snd_eq);
+                    return eq
+                }
+                Tag::Cons, Tag::Thunk => {
+                    let (a_fst: [2], a_snd: [2]) = load(a);
+                    let (b_fst: [2], b_snd: [2]) = load(b);
+                    let fst_eq = call(equal_inner, a_fst, b_fst);
+                    let snd_eq = call(equal_inner, a_snd, b_snd);
+                    let eq = mul(fst_eq, snd_eq);
+                    return eq
+                }
+                Tag::Fun => {
+                    let (a_fst: [2], a_snd: [2], a_trd: [2]) = load(a);
+                    let (b_fst: [2], b_snd: [2], b_trd: [2]) = load(b);
+                    let fst_eq = call(equal_inner, a_fst, b_fst);
+                    let snd_eq = call(equal_inner, a_snd, b_snd);
+                    let trd_eq = call(equal_inner, a_trd, b_trd);
+                    let eq = mul(fst_eq, snd_eq);
+                    let eq = mul(eq, trd_eq);
+                    return eq
+                }
+                Tag::Env => {
+                    let a_and_b = mul(a, b);
+                    if !a_and_b {
+                        return zero
+                    }
+                    let (a_fst: [2], a_snd: [2], a_trd: [2]) = load(a);
+                    let (b_fst: [2], b_snd: [2], b_trd: [2]) = load(b);
+                    let fst_eq = call(equal_inner, a_fst, b_fst);
+                    let snd_eq = call(equal_inner, a_snd, b_snd);
+                    let trd_eq = call(equal_inner, a_trd, b_trd);
+                    let eq = mul(fst_eq, snd_eq);
+                    let eq = mul(eq, trd_eq);
+                    return eq
+                }
+            }
         }
     )
 }
@@ -815,12 +944,12 @@ pub fn eval_binop_misc<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) ->
                 return (err_tag, invalid_form)
             }
             let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
-            let (val2_tag, val2) = call(eval, exp2_tag, exp2, env);
             match val1_tag {
                 Tag::Err => {
                     return (val1_tag, val1)
                 }
             };
+            let (val2_tag, val2) = call(eval, exp2_tag, exp2, env);
             match val2_tag {
                 Tag::Err => {
                     return (val2_tag, val2)
@@ -857,18 +986,6 @@ pub fn eval_binop_misc<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) ->
                     };
                     return (err_tag, invalid_form)
                 }
-                "eq" => {
-                    let t = builtins.index("t");
-                    let nil = 0;
-                    let eq_tag = eq(val1_tag, val2_tag);
-                    let eq_val = eq(val1, val2);
-                    let eq = mul(eq_tag, eq_val);
-                    if eq {
-                        let builtin_tag = Tag::Builtin;
-                        return (builtin_tag, t)
-                    }
-                    return (nil_tag, nil)
-               }
             };
             return (err_tag, invalid_form)
         }
@@ -1007,6 +1124,11 @@ pub fn eval_let<F: AbstractField + Ord>() -> FuncE<F> {
                     }
 
                     let (val_tag, val) = call(eval, expr_tag, expr, env);
+                    match val_tag {
+                        Tag::Err => {
+                            return (val_tag, val)
+                        }
+                    };
                     let ext_env = store(param, val_tag, val, env);
                     match rest_binds_tag {
                         Tag::Nil => {
@@ -1065,7 +1187,12 @@ pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
                     // this will preemptively evaluate the thunk, so that we do not skip evaluation in case
                     // the variable is not used inside the letrec body, and furthermore it follows a strict
                     // evaluation order
-                    let (_val_tag, _val) = call(eval, expr_tag, expr, ext_env);
+                    let (val_tag, val) = call(eval, expr_tag, expr, ext_env);
+                    match val_tag {
+                        Tag::Err => {
+                            return (val_tag, val)
+                        }
+                    };
                     match rest_binds_tag {
                         Tag::Nil => {
                             let (res_tag, res) = call(eval, body_tag, body, ext_env);
@@ -1090,8 +1217,12 @@ pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
             // Expression must be a function
             let head_not_fun = sub(head_tag, fun_tag);
             if head_not_fun {
-                let err = EvalErr::ApplyNonFunc;
-                return (err_tag, err)
+                let head_not_err = sub(head_tag, fun_tag);
+                if head_not_err {
+                    let err = EvalErr::ApplyNonFunc;
+                    return (err_tag, err)
+                }
+                return (err_tag, head)
             }
 
             let (params_tag, params, body_tag, body, func_env) = load(head);
@@ -1130,6 +1261,11 @@ pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
                             }
                             // evaluate the argument
                             let (arg_tag, arg) = call(eval, arg_tag, arg, args_env);
+                            match arg_tag {
+                                Tag::Err => {
+                                    return (arg_tag, arg)
+                                }
+                            };
                             // and store it in the environment
                             let ext_env = store(param, arg_tag, arg, func_env);
                             let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
@@ -1197,6 +1333,8 @@ mod test {
         let eval_binop_misc = FuncChip::from_name("eval_binop_misc", toplevel);
         let eval_let = FuncChip::from_name("eval_let", toplevel);
         let eval_letrec = FuncChip::from_name("eval_letrec", toplevel);
+        let equal = FuncChip::from_name("equal", toplevel);
+        let equal_inner = FuncChip::from_name("equal_inner", toplevel);
         let car_cdr = FuncChip::from_name("car_cdr", toplevel);
         let apply = FuncChip::from_name("apply", toplevel);
         let env_lookup = FuncChip::from_name("env_lookup", toplevel);
@@ -1212,18 +1350,20 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["38"]);
-        expect_eq(eval.width(), expect!["105"]);
+        expect_eq(eval.width(), expect!["108"]);
         expect_eq(eval_unop.width(), expect!["31"]);
         expect_eq(eval_binop_num.width(), expect!["36"]);
-        expect_eq(eval_binop_misc.width(), expect!["39"]);
-        expect_eq(eval_let.width(), expect!["32"]);
-        expect_eq(eval_letrec.width(), expect!["33"]);
+        expect_eq(eval_binop_misc.width(), expect!["34"]);
+        expect_eq(eval_let.width(), expect!["34"]);
+        expect_eq(eval_letrec.width(), expect!["35"]);
+        expect_eq(equal.width(), expect!["27"]);
+        expect_eq(equal_inner.width(), expect!["51"]);
         expect_eq(car_cdr.width(), expect!["23"]);
-        expect_eq(apply.width(), expect!["34"]);
+        expect_eq(apply.width(), expect!["37"]);
         expect_eq(env_lookup.width(), expect!["14"]);
-        expect_eq(ingress.width(), expect!["95"]);
+        expect_eq(ingress.width(), expect!["93"]);
         expect_eq(ingress_builtin.width(), expect!["44"]);
-        expect_eq(egress.width(), expect!["60"]);
+        expect_eq(egress.width(), expect!["58"]);
         expect_eq(egress_builtin.width(), expect!["37"]);
         expect_eq(hash_32_8.width(), expect!["645"]);
         expect_eq(hash_48_8.width(), expect!["965"]);

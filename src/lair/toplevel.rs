@@ -176,48 +176,55 @@ impl<F: Clone + Ord> BlockE<F> {
                     bind_new(tgt, ctx);
                 }
                 OpE::Add(tgt, a, b) => {
-                    assert_eq!(tgt.size, 1);
-                    assert_eq!(a.size, 1);
-                    assert_eq!(b.size, 1);
-                    let a = use_var(a, ctx)[0];
-                    let b = use_var(b, ctx)[0];
-                    ops.push(Op::Add(a, b));
+                    assert_eq!(a.size, b.size);
+                    assert_eq!(a.size, tgt.size);
+                    let a = use_var(a, ctx).to_vec();
+                    let b = use_var(b, ctx);
+                    for (a, b) in a.iter().zip(b.iter()) {
+                        ops.push(Op::Add(*a, *b));
+                    }
                     bind_new(tgt, ctx);
                 }
                 OpE::Mul(tgt, a, b) => {
-                    assert_eq!(tgt.size, 1);
-                    assert_eq!(a.size, 1);
-                    assert_eq!(b.size, 1);
-                    let a = use_var(a, ctx)[0];
-                    let b = use_var(b, ctx)[0];
-                    ops.push(Op::Mul(a, b));
+                    assert_eq!(a.size, b.size);
+                    assert_eq!(a.size, tgt.size);
+                    let a = use_var(a, ctx).to_vec();
+                    let b = use_var(b, ctx);
+                    for (a, b) in a.iter().zip(b.iter()) {
+                        ops.push(Op::Mul(*a, *b));
+                    }
                     bind_new(tgt, ctx);
                 }
                 OpE::Sub(tgt, a, b) => {
-                    assert_eq!(tgt.size, 1);
-                    assert_eq!(a.size, 1);
-                    assert_eq!(b.size, 1);
-                    let a = use_var(a, ctx)[0];
-                    let b = use_var(b, ctx)[0];
-                    ops.push(Op::Sub(a, b));
+                    assert_eq!(a.size, b.size);
+                    assert_eq!(a.size, tgt.size);
+                    let a = use_var(a, ctx).to_vec();
+                    let b = use_var(b, ctx);
+                    for (a, b) in a.iter().zip(b.iter()) {
+                        ops.push(Op::Sub(*a, *b));
+                    }
                     bind_new(tgt, ctx);
                 }
                 OpE::Div(tgt, a, b) => {
-                    assert_eq!(tgt.size, 1);
-                    assert_eq!(a.size, 1);
-                    assert_eq!(b.size, 1);
-                    let a = use_var(a, ctx)[0];
-                    let b = use_var(b, ctx)[0];
-                    ops.push(Op::Inv(b));
-                    ops.push(Op::Mul(a, ctx.var_index));
-                    ctx.var_index += 1;
+                    assert_eq!(a.size, b.size);
+                    assert_eq!(a.size, tgt.size);
+                    let b = use_var(b, ctx);
+                    for b in b.iter() {
+                        ops.push(Op::Inv(*b));
+                    }
+                    let a = use_var(a, ctx).to_vec();
+                    for a in a.iter() {
+                        ops.push(Op::Mul(*a, ctx.var_index));
+                        ctx.var_index += 1;
+                    }
                     bind_new(tgt, ctx);
                 }
                 OpE::Inv(tgt, a) => {
-                    assert_eq!(tgt.size, 1);
-                    assert_eq!(a.size, 1);
-                    let a = use_var(a, ctx)[0];
-                    ops.push(Op::Inv(a));
+                    assert_eq!(a.size, tgt.size);
+                    let a = use_var(a, ctx);
+                    for a in a.iter() {
+                        ops.push(Op::Inv(*a));
+                    }
                     bind_new(tgt, ctx);
                 }
                 OpE::Not(tgt, a) => {

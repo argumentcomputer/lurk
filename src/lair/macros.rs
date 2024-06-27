@@ -51,7 +51,7 @@ macro_rules! block_init {
 macro_rules! block {
     // Operations
     ({ let $tgt:ident = $a:literal; $($tail:tt)+ }, $ops:expr) => {{
-        $ops.push($crate::lair::expr::OpE::Const($crate::var!($tgt), $crate::lair::field_from_u32($a)));
+        $ops.push($crate::lair::expr::OpE::Const($crate::var!($tgt), $crate::lair::field_from_i32($a)));
         let $tgt = $crate::var!($tgt);
         $crate::block!({ $($tail)* }, $ops)
     }};
@@ -62,42 +62,47 @@ macro_rules! block {
         $crate::block!({ $($tail)* }, $ops)
     }};
     ({ let $tgt:ident = [$($a:literal),*]; $($tail:tt)+ }, $ops:expr) => {{
-        let arr: $crate::lair::List<_> = [$($crate::lair::field_from_u32($a)),*].into();
+        let arr: $crate::lair::List<_> = [$($crate::lair::field_from_i32($a)),*].into();
         let size = arr.len();
         $ops.push($crate::lair::expr::OpE::Array($crate::var!($tgt, size), arr));
         let $tgt = $crate::var!($tgt, size);
         $crate::block!({ $($tail)* }, $ops)
     }};
     ({ let $tgt:ident = [$f:literal; $size:literal]; $($tail:tt)+ }, $ops:expr) => {{
-        let arr: $crate::lair::List<_> = [$f; $size].into_iter().map($crate::lair::field_from_u32).collect();
+        let arr: $crate::lair::List<_> = [$f; $size].into_iter().map($crate::lair::field_from_i32).collect();
         let size = arr.len();
         $ops.push($crate::lair::expr::OpE::Array($crate::var!($tgt, size), arr));
         let $tgt = $crate::var!($tgt, size);
         $crate::block!({ $($tail)* }, $ops)
     }};
     ({ let $tgt:ident = add($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
-        $ops.push($crate::lair::expr::OpE::Add($crate::var!($tgt), $a, $b));
-        let $tgt = $crate::var!($tgt);
+        let tgt_size = $a.size;
+        $ops.push($crate::lair::expr::OpE::Add($crate::var!($tgt, tgt_size), $a, $b));
+        let $tgt = $crate::var!($tgt, tgt_size);
         $crate::block!({ $($tail)* }, $ops)
     }};
     ({ let $tgt:ident = sub($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
-        $ops.push($crate::lair::expr::OpE::Sub($crate::var!($tgt), $a, $b));
-        let $tgt = $crate::var!($tgt);
+        let tgt_size = $a.size;
+        $ops.push($crate::lair::expr::OpE::Sub($crate::var!($tgt, tgt_size), $a, $b));
+        let $tgt = $crate::var!($tgt, tgt_size);
         $crate::block!({ $($tail)* }, $ops)
     }};
     ({ let $tgt:ident = mul($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
-        $ops.push($crate::lair::expr::OpE::Mul($crate::var!($tgt), $a, $b));
-        let $tgt = $crate::var!($tgt);
+        let tgt_size = $a.size;
+        $ops.push($crate::lair::expr::OpE::Mul($crate::var!($tgt, tgt_size), $a, $b));
+        let $tgt = $crate::var!($tgt, tgt_size);
         $crate::block!({ $($tail)* }, $ops)
     }};
     ({ let $tgt:ident = div($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
-        $ops.push($crate::lair::expr::OpE::Div($crate::var!($tgt), $a, $b));
-        let $tgt = $crate::var!($tgt);
+        let tgt_size = $a.size;
+        $ops.push($crate::lair::expr::OpE::Div($crate::var!($tgt, tgt_size), $a, $b));
+        let $tgt = $crate::var!($tgt, tgt_size);
         $crate::block!({ $($tail)* }, $ops)
     }};
     ({ let $tgt:ident = inv($a:ident); $($tail:tt)+ }, $ops:expr) => {{
-        $ops.push($crate::lair::expr::OpE::Inv($crate::var!($tgt), $a));
-        let $tgt = $crate::var!($tgt);
+        let tgt_size = $a.size;
+        $ops.push($crate::lair::expr::OpE::Inv($crate::var!($tgt, tgt_size), $a));
+        let $tgt = $crate::var!($tgt, tgt_size);
         $crate::block!({ $($tail)* }, $ops)
     }};
     ({ let $tgt:ident = eq($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
@@ -240,12 +245,12 @@ macro_rules! block {
         {
             $(
                 vec.push((
-                    $crate::lair::field_from_u32($num),
+                    $crate::lair::field_from_i32($num),
                     $crate::block_init!( $branch )
                 ));
                 $(
                     vec.push((
-                        $crate::lair::field_from_u32($other_num),
+                        $crate::lair::field_from_i32($other_num),
                         $crate::block_init!( $branch ),
                     ));
                 )*
@@ -262,13 +267,13 @@ macro_rules! block {
         let mut vec = Vec::new();
         {
             $({
-                let arr = $arr.map($crate::lair::field_from_u32).into_iter().collect();
+                let arr = $arr.map($crate::lair::field_from_i32).into_iter().collect();
                 vec.push((
                     arr,
                     $crate::block_init!( $branch )
                 ));
                 $({
-                    let other_arr = $other_arr.map($crate::lair::field_from_u32).into_iter().collect();
+                    let other_arr = $other_arr.map($crate::lair::field_from_i32).into_iter().collect();
                     vec.push((
                         other_arr,
                         $crate::block_init!( $branch ),
