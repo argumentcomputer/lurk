@@ -11,3 +11,8 @@ p3-air = { workspace = true }
 p3-baby-bear = { workspace = true }
 p3-field = { workspace = true }
 p3-matrix = { workspace = true }
+p3-maybe-rayon = { workspace = true }
+sphinx-core = { workspace = true }
+sphinx-derive = { workspace = true }
+rand =  { workspace = true }
+rand_chacha =  { workspace = true }

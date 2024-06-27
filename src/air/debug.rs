@@ -171,8 +171,8 @@ impl<'a, F: PrimeField32> LookupBuilder for DebugConstraintBuilder<'a, F> {
     fn provide(
         &mut self,
         relation: impl Relation<Self::Expr>,
-        nonce: Self::Var,
-        record: ProvideRecord<Self::Expr>,
+        nonce: impl Into<Self::Expr>,
+        record: ProvideRecord<impl Into<Self::Expr>>,
         is_real_bool: impl Into<Self::Expr>,
     ) {
         let is_real = is_real_bool.into();
@@ -183,13 +183,17 @@ impl<'a, F: PrimeField32> LookupBuilder for DebugConstraintBuilder<'a, F> {
         }
         let query = relation.values().into_iter().collect();
         let count = 0;
+        let ProvideRecord {
+            last_nonce,
+            last_count,
+        } = record;
         self.queries.memoset(
             query,
             count,
             Record {
-                prev_nonce: record.last_nonce.as_canonical_u32(),
-                prev_count: record.last_nonce.as_canonical_u32(),
-                nonce: nonce.as_canonical_u32(),
+                prev_nonce: last_nonce.into().as_canonical_u32(),
+                prev_count: last_count.into().as_canonical_u32(),
+                nonce: nonce.into().as_canonical_u32(),
             },
         )
     }
@@ -197,8 +201,8 @@ impl<'a, F: PrimeField32> LookupBuilder for DebugConstraintBuilder<'a, F> {
     fn require(
         &mut self,
         relation: impl Relation<Self::Expr>,
-        nonce: Self::Var,
-        record: RequireRecord<Self::Expr>,
+        nonce: impl Into<Self::Expr>,
+        record: RequireRecord<impl Into<Self::Expr>>,
         is_real_bool: impl Into<Self::Expr>,
     ) {
         let is_real = is_real_bool.into();
@@ -207,9 +211,10 @@ impl<'a, F: PrimeField32> LookupBuilder for DebugConstraintBuilder<'a, F> {
         } else {
             assert!(is_real.is_one());
         }
-
-        let count = record.prev_count + F::one();
-        assert_eq!(count * record.count_inv, F::one());
+        let prev_nonce = record.prev_nonce.into();
+        let prev_count = record.prev_count.into();
+        let count = prev_count + F::one();
+        assert_eq!(count * record.count_inv.into(), F::one());
 
         let query = relation.values().into_iter().collect();
         let count = count.as_canonical_u32();
@@ -217,9 +222,9 @@ impl<'a, F: PrimeField32> LookupBuilder for DebugConstraintBuilder<'a, F> {
             query,
             count,
             Record {
-                prev_nonce: record.prev_nonce.as_canonical_u32(),
-                prev_count: record.prev_count.as_canonical_u32(),
-                nonce: nonce.as_canonical_u32(),
+                prev_nonce: prev_nonce.as_canonical_u32(),
+                prev_count: prev_count.as_canonical_u32(),
+                nonce: nonce.into().as_canonical_u32(),
             },
         )
     }
