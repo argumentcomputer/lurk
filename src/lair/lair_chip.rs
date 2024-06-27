@@ -134,28 +134,39 @@ where
     }
 }
 
-pub fn build_chip_vector<'a, F: PrimeField, H: Hasher<F>>(
+pub fn build_lair_chip_vector<'a, F: PrimeField, H: Hasher<F>>(
     entry_func_chip: &FuncChip<'a, F, H>,
     inp: Vec<F>,
     out: Vec<F>,
-) -> Vec<Chip<F, LairChip<'a, F, H>>> {
+) -> Vec<LairChip<'a, F, H>> {
     let toplevel = &entry_func_chip.toplevel;
     let func = &entry_func_chip.func;
     assert_eq!(func.input_size, inp.len());
     assert_eq!(func.output_size, out.len());
     let mut chip_vector = Vec::with_capacity(1 + toplevel.map.size() + MEM_TABLE_SIZES.len());
-    chip_vector.push(Chip::new(LairChip::entrypoint(
+    chip_vector.push(LairChip::entrypoint(
         F::from_canonical_usize(func.index),
         inp,
         out,
-    )));
+    ));
     for func_chip in FuncChip::from_toplevel(toplevel) {
-        chip_vector.push(Chip::new(LairChip::Func(func_chip)));
+        chip_vector.push(LairChip::Func(func_chip));
     }
     for mem_len in MEM_TABLE_SIZES {
-        chip_vector.push(Chip::new(LairChip::Mem(MemChip::new(mem_len))));
+        chip_vector.push(LairChip::Mem(MemChip::new(mem_len)));
     }
     chip_vector
+}
+
+pub fn build_chip_vector<'a, F: PrimeField, H: Hasher<F>>(
+    entry_func_chip: &FuncChip<'a, F, H>,
+    inp: Vec<F>,
+    out: Vec<F>,
+) -> Vec<Chip<F, LairChip<'a, F, H>>> {
+    build_lair_chip_vector(entry_func_chip, inp, out)
+        .into_iter()
+        .map(Chip::new)
+        .collect()
 }
 
 pub fn set_chip_vector_io<F: PrimeField, H: Hasher<F>>(
