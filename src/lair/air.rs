@@ -285,11 +285,12 @@ impl<F: Field> Op<F> {
             }
             Op::Load(len, ptr) => {
                 let ptr = map[*ptr].to_expr();
+                // This must be collected to ensure the side effects take place
                 let values = (0..*len).map(|_| {
                     let o = *local.next_aux(index);
                     map.push(Val::Expr(o.into()));
                     o
-                });
+                }).collect::<Vec<_>>();
                 builder.receive(MemoryRelation(ptr, values), sel.clone());
             }
             Op::Hash(preimg) => {
