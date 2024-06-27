@@ -125,8 +125,6 @@ where
 
         // is_real is 1 for all valid entries, then 0 for padding rows until the last row.
         builder.assert_bool(is_real);
-        // is_real starts with one
-        builder.when_first_row().assert_one(is_real);
 
         // all but the last rows where is_real = 1
         let is_real_transition = is_real_next * builder.is_transition();
@@ -135,7 +133,7 @@ where
         builder.when(is_real_transition.clone()).assert_one(is_real);
 
         // First valid pointer is 1
-        builder.when_first_row().assert_one(ptr_local);
+        builder.when_first_row().when(is_real).assert_one(ptr_local);
 
         // Next pointer is either the same, or increased by 1
         let is_next_ptr_diff = ptr_next - ptr_local;
