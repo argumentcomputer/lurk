@@ -333,10 +333,9 @@ impl<F: Field> QueryRecord<F> {
         &self.func_queries
     }
 
-    /// Injects new queries for a function referenced by name. If a query is already present, do nothing.
-    /// Otherwise, add it with multiplicity zero. Further, if the function is invertible, add the query
-    /// to its `inv_func_queries` as well.
-    pub fn inject_queries<
+    /// Injects queries for invertible functions, allowing `Op::PreImg` to work smoothly
+    /// without needing a first execution pass.
+    pub fn inject_inv_queries<
         'a,
         I: Clone + Into<List<F>> + 'a,
         O: Clone + Into<List<F>> + 'a,
@@ -349,34 +348,20 @@ impl<F: Field> QueryRecord<F> {
         new_queries_data: T,
     ) {
         let func = toplevel.get_by_name(name).expect("Unknown Func");
+        let inv_func_queries = self.inv_func_queries[func.index]
+            .as_mut()
+            .expect("Inverse query map not found");
         for (inp, out) in new_queries_data {
-            let (inp, out) = (inp.clone().into(), out.clone().into());
-            let queries = &mut self.func_queries[func.index];
-            if !queries.contains_key(&inp) {
-                if func.invertible {
-                    self.inv_func_queries[func.index]
-                        .as_mut()
-                        .expect("Inverse query map not found")
-                        .insert(out.clone(), inp.clone());
-                }
-                queries.insert(inp, QueryResult::new(out, 0));
-            }
+            inv_func_queries.insert(out.clone().into(), inp.clone().into());
         }
     }
 
-    /// * Erase the records of non-invertible funcs
-    /// * Set the multiplicities of queries for invertible funcs to zero
-    /// * Erase the records of memory queries
+    /// Erases the records of func and memory queries, but leaves the history of
+    /// invertible queries untouched
     pub fn clean(&mut self) {
-        for func_idx in 0..self.func_queries.len() {
-            if self.inv_func_queries[func_idx].is_some() {
-                self.func_queries[func_idx]
-                    .iter_mut()
-                    .for_each(|(_, r)| r.mult = 0);
-            } else {
-                self.func_queries[func_idx] = FxIndexMap::default();
-            }
-        }
+        self.func_queries.iter_mut().for_each(|func_query| {
+            *func_query = FxIndexMap::default();
+        });
         self.mem_queries.iter_mut().for_each(|mem_map| {
             *mem_map = FxIndexMap::default();
         });
@@ -386,15 +371,8 @@ impl<F: Field> QueryRecord<F> {
 impl<F: Field + Ord> QueryRecord<F> {
     pub fn query(&mut self, index: usize, input: &[F]) -> Option<&List<F>> {
         if let Some(event) = self.func_queries[index].get_mut(input) {
-            if event.mult == 0 {
-                // this is the case of a injected or cleaned up record, which
-                // should signal a recomputation nevertheless in order to avoid
-                // messed up multiplicities by short-circuits
-                None
-            } else {
-                event.mult += 1;
-                Some(&event.output)
-            }
+            event.mult += 1;
+            Some(&event.output)
         } else {
             None
         }
@@ -406,27 +384,23 @@ impl<F: Field + Ord> QueryRecord<F> {
             .expect("Missing inverse map")
             .get(out)
             .expect("Preimg not found");
-        let result = self.func_queries[index]
-            .get_mut(inp)
-            .expect("Data missing on query map");
-        assert_eq!(out, result.output.as_ref());
-        result.mult += 1;
+        let func_queries = &mut self.func_queries[index];
+        if let Some(result) = func_queries.get_mut(inp) {
+            assert_eq!(out, result.output.as_ref());
+            result.mult += 1;
+        } else {
+            func_queries.insert(inp.clone(), QueryResult::new(out.into(), 1));
+        }
         inp
     }
 
     pub fn insert_result(&mut self, index: usize, input: List<F>, output: List<F>) {
         if let Some(queries) = &mut self.inv_func_queries[index] {
             queries.insert(output.clone(), input.clone());
-            if let Some(prev) = self.func_queries[index].insert(input, QueryResult::new(output, 1))
-            {
-                // query was injected or cleaned up
-                assert_eq!(prev.mult, 0);
-            }
-        } else {
-            assert!(self.func_queries[index]
-                .insert(input, QueryResult::new(output, 1))
-                .is_none());
         }
+        assert!(self.func_queries[index]
+            .insert(input, QueryResult::new(output, 1))
+            .is_none());
     }
 
     pub fn store(&mut self, args: List<F>) -> F {
@@ -993,7 +967,7 @@ mod tests {
 
         let queries = &mut QueryRecord::new(&toplevel);
         let f = F::from_canonical_u32;
-        queries.inject_queries("double", &toplevel, [(&[f(1)], &[f(2)])]);
+        queries.inject_inv_queries("double", &toplevel, [(&[f(1)], &[f(2)])]);
         let args = [f(2)];
 
         half.execute_iter(args.into(), queries);
@@ -1003,11 +977,8 @@ mod tests {
             double.generate_trace_sequential(queries),
         );
 
-        // this injected junk query will be erased because `half` is not invertible
-        queries.inject_queries("half", &toplevel, [(&[f(10)], &[f(10)])]);
-        queries.clean();
-
         // even after `clean`, the preimg of `double(1)` can still be recovered
+        queries.clean();
         half.execute_iter(args.into(), queries);
         let res2 = queries.get_output(half.func, &args).to_vec();
         let traces2 = (

@@ -51,7 +51,7 @@ fn setup<H: Hasher<BabyBear>>(
     let ZPtr { tag, digest } = zstore.read(&code).unwrap();
 
     let mut queries = QueryRecord::new(toplevel);
-    queries.inject_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
+    queries.inject_inv_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
 
     let mut full_input = [BabyBear::zero(); 24];
     full_input[0] = tag.to_field();
