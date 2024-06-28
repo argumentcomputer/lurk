@@ -45,12 +45,13 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
         let width = self.width();
         let height = func_queries.len().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
-        for (i, (args, res)) in func_queries.iter().enumerate() {
+        for (i, (args, _res)) in func_queries.iter().enumerate() {
             let start = i * width;
             let index = &mut ColumnIndex::default();
             let row = &mut rows[start..start + width];
             let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-            slice.push_aux(index, F::from_canonical_u32(res.mult));
+            // Fixme: nonce
+            slice.push_aux(index, F::zero());
             self.func
                 .populate_row(args, index, slice, queries, &self.toplevel.hasher);
         }
@@ -68,10 +69,11 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
             .par_chunks_mut(width)
             .enumerate()
             .for_each(|(i, row)| {
-                let (args, res) = func_queries.get_index(i).unwrap();
+                let (args, _res) = func_queries.get_index(i).unwrap();
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-                slice.push_aux(index, F::from_canonical_u32(res.mult));
+                // Fixme: nonce
+                slice.push_aux(index, F::zero());
                 self.func
                     .populate_row(args, index, slice, queries, &self.toplevel.hasher);
             });
@@ -125,6 +127,9 @@ impl<F: PrimeField> Ctrl<F> {
         match self {
             Ctrl::Return(ident, _) => {
                 slice.sel[*ident] = F::one();
+                // Fixme: last_nonce, last_count
+                slice.push_aux(index, F::zero());
+                slice.push_aux(index, F::zero());
             }
             Ctrl::Match(t, cases) => {
                 let (t, _) = map[*t];
@@ -255,6 +260,10 @@ impl<F: PrimeField> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
+                // Fixme: prev_nonce, prev_count, count_inv
+                slice.push_aux(index, F::zero());
+                slice.push_aux(index, F::zero());
+                slice.push_aux(index, F::zero());
             }
             Op::PreImg(idx, inp) => {
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
@@ -266,6 +275,10 @@ impl<F: PrimeField> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
+                // Fixme: prev_nonce, prev_count, count_inv
+                slice.push_aux(index, F::zero());
+                slice.push_aux(index, F::zero());
+                slice.push_aux(index, F::zero());
             }
             Op::Store(args) => {
                 let mem_idx = mem_index_from_len(args.len());

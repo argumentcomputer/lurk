@@ -93,7 +93,7 @@ pub type Degree = u8;
 impl<F> Func<F> {
     pub fn compute_layout_sizes<H: Hasher<F>>(&self, toplevel: &Toplevel<F, H>) -> LayoutSizes {
         let input = self.input_size;
-        // first auxiliary is multiplicity
+        // nonce: row index
         let mut aux = 1;
         let mut sel = 0;
         let degrees = &mut vec![1; input];
@@ -127,7 +127,12 @@ impl<F> Ctrl<F> {
         sel: &mut usize,
     ) {
         match self {
-            Ctrl::Return(..) => *sel += 1,
+            Ctrl::Return(..) => {
+                // exactly one selector per return
+                *sel += 1;
+                // last nonce, last count
+                *aux += 2;
+            }
             Ctrl::Match(_, cases) => {
                 let degrees_len = degrees.len();
                 let mut max_aux = *aux;
@@ -240,14 +245,16 @@ impl<F> Op<F> {
             Op::Call(f_idx, ..) => {
                 let func = toplevel.get_by_index(*f_idx).unwrap();
                 let out_size = func.output_size;
-                *aux += out_size;
+                // output of function, prev_nonce, prev_count, count_inv
+                *aux += out_size + 3;
                 degrees.extend(vec![1; out_size]);
             }
             Op::PreImg(f_idx, ..) => {
                 let func = toplevel.get_by_index(*f_idx).unwrap();
-                let out_size = func.input_size;
-                *aux += out_size;
-                degrees.extend(vec![1; out_size]);
+                let inp_size = func.input_size;
+                // input of function, prev_nonce, prev_count, count_inv
+                *aux += inp_size + 3;
+                degrees.extend(vec![1; inp_size]);
             }
             Op::Store(..) => {
                 *aux += 1;

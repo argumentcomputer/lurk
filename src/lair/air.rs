@@ -3,7 +3,7 @@ use p3_field::Field;
 use p3_matrix::Matrix;
 use std::fmt::Debug;
 
-use crate::air::builder::LookupBuilder;
+use crate::air::builder::{LookupBuilder, ProvideRecord, RequireRecord};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
@@ -258,8 +258,19 @@ impl<F: Field> Op<F> {
                     out.push(o.into());
                 }
                 let inp = inp.iter().map(|i| map[*i].to_expr());
-                builder.receive(
+                let nonce = local.aux[0];
+                let prev_nonce = *local.next_aux(index);
+                let prev_count = *local.next_aux(index);
+                let count_inv = *local.next_aux(index);
+                let record = RequireRecord {
+                    prev_nonce,
+                    prev_count,
+                    count_inv,
+                };
+                builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
+                    nonce,
+                    record,
                     sel.clone(),
                 );
             }
@@ -272,8 +283,19 @@ impl<F: Field> Op<F> {
                     inp.push(i.into());
                 }
                 let out = out.iter().map(|o| map[*o].to_expr());
-                builder.receive(
+                let nonce = local.aux[0];
+                let prev_nonce = *local.next_aux(index);
+                let prev_count = *local.next_aux(index);
+                let count_inv = *local.next_aux(index);
+                let record = RequireRecord {
+                    prev_nonce,
+                    prev_count,
+                    count_inv,
+                };
+                builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
+                    nonce,
+                    record,
                     sel.clone(),
                 );
             }
@@ -444,7 +466,13 @@ impl<F: Field> Ctrl<F> {
                 let sel = local.sel[*ident];
                 let out = vs.iter().map(|v| map[*v].to_expr());
                 let CallCtx { func_idx, call_inp } = call_ctx;
-                builder.send(CallRelation(func_idx, call_inp, out), sel);
+                let last_nonce = *local.next_aux(index);
+                let last_count = *local.next_aux(index);
+                let record = ProvideRecord {
+                    last_nonce,
+                    last_count,
+                };
+                builder.provide(CallRelation(func_idx, call_inp, out), record, sel);
             }
         }
     }
