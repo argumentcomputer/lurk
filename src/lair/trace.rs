@@ -45,24 +45,19 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
         let width = self.width();
         let non_dummy_height = func_queries.len();
         let height = non_dummy_height.next_power_of_two().max(4);
-        // TODO initialize rows with nonce values already set
         let mut rows = vec![F::zero(); height * width];
+        // initializing nonces
+        rows.chunks_mut(width)
+            .enumerate()
+            .for_each(|(i, row)| row[0] = F::from_canonical_usize(i));
         for (i, (args, _res)) in func_queries.iter().enumerate() {
             let start = i * width;
             let index = &mut ColumnIndex::default();
+            index.aux += 1; // skip nonce, which is already set
             let row = &mut rows[start..start + width];
             let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-            slice.push_aux(index, F::from_canonical_usize(i));
             self.func
                 .populate_row(args, index, slice, queries, &self.toplevel.hasher);
-        }
-        // Setting the nonce values
-        for i in non_dummy_height..height {
-            let start = i * width;
-            let index = &mut ColumnIndex::default();
-            let row = &mut rows[start..start + width];
-            let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-            slice.push_aux(index, F::from_canonical_usize(i));
         }
         RowMajorMatrix::new(rows, width)
     }
@@ -73,8 +68,11 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
         let width = self.width();
         let non_dummy_height = func_queries.len();
         let height = non_dummy_height.next_power_of_two().max(4);
-        // TODO initialize rows with nonce values already set
         let mut rows = vec![F::zero(); height * width];
+        // initializing nonces
+        rows.chunks_mut(width)
+            .enumerate()
+            .for_each(|(i, row)| row[0] = F::from_canonical_usize(i));
         let non_dummies = &mut rows[0..func_queries.len() * width];
         non_dummies
             .par_chunks_mut(width)
@@ -82,19 +80,11 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
             .for_each(|(i, row)| {
                 let (args, _res) = func_queries.get_index(i).unwrap();
                 let index = &mut ColumnIndex::default();
+                index.aux += 1; // skip nonce, which is already set
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-                slice.push_aux(index, F::from_canonical_usize(i));
                 self.func
                     .populate_row(args, index, slice, queries, &self.toplevel.hasher);
             });
-        // Setting the nonce values
-        for i in non_dummy_height..height {
-            let start = i * width;
-            let index = &mut ColumnIndex::default();
-            let row = &mut rows[start..start + width];
-            let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-            slice.push_aux(index, F::from_canonical_usize(i));
-        }
         RowMajorMatrix::new(rows, width)
     }
 }
