@@ -1398,7 +1398,7 @@ mod test {
             } = zstore.read_with_state(state.clone(), expr).unwrap();
 
             let queries = &mut QueryRecord::new(toplevel);
-            queries.inject_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
+            queries.inject_inv_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
 
             let ZPtr {
                 tag: expected_tag,
@@ -1497,7 +1497,7 @@ mod test {
             let digest: List<_> = digest.into();
 
             let queries = &mut QueryRecord::new(toplevel);
-            queries.inject_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
+            queries.inject_inv_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
 
             let mut ingress_args = [F::zero(); 16];
             ingress_args[0] = tag;
