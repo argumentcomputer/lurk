@@ -43,17 +43,26 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
     pub fn generate_trace_sequential(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let func_queries = &queries.func_queries()[self.func.index];
         let width = self.width();
-        let height = func_queries.len().next_power_of_two().max(4);
+        let non_dummy_height = func_queries.len();
+        let height = non_dummy_height.next_power_of_two().max(4);
+        // TODO initialize rows with nonce values already set
         let mut rows = vec![F::zero(); height * width];
         for (i, (args, _res)) in func_queries.iter().enumerate() {
             let start = i * width;
             let index = &mut ColumnIndex::default();
             let row = &mut rows[start..start + width];
             let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-            // Fixme: nonce
-            slice.push_aux(index, F::zero());
+            slice.push_aux(index, F::from_canonical_usize(i));
             self.func
                 .populate_row(args, index, slice, queries, &self.toplevel.hasher);
+        }
+        // Setting the nonce values
+        for i in non_dummy_height..height {
+            let start = i * width;
+            let index = &mut ColumnIndex::default();
+            let row = &mut rows[start..start + width];
+            let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
+            slice.push_aux(index, F::from_canonical_usize(i));
         }
         RowMajorMatrix::new(rows, width)
     }
@@ -62,7 +71,9 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
     pub fn generate_trace_parallel(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let func_queries = &queries.func_queries()[self.func.index];
         let width = self.width();
-        let height = func_queries.len().next_power_of_two().max(4);
+        let non_dummy_height = func_queries.len();
+        let height = non_dummy_height.next_power_of_two().max(4);
+        // TODO initialize rows with nonce values already set
         let mut rows = vec![F::zero(); height * width];
         let non_dummies = &mut rows[0..func_queries.len() * width];
         non_dummies
@@ -72,11 +83,18 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
                 let (args, _res) = func_queries.get_index(i).unwrap();
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-                // Fixme: nonce
-                slice.push_aux(index, F::zero());
+                slice.push_aux(index, F::from_canonical_usize(i));
                 self.func
                     .populate_row(args, index, slice, queries, &self.toplevel.hasher);
             });
+        // Setting the nonce values
+        for i in non_dummy_height..height {
+            let start = i * width;
+            let index = &mut ColumnIndex::default();
+            let row = &mut rows[start..start + width];
+            let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
+            slice.push_aux(index, F::from_canonical_usize(i));
+        }
         RowMajorMatrix::new(rows, width)
     }
 }

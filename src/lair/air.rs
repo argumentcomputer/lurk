@@ -97,8 +97,17 @@ impl<F: Field> Func<F> {
         <AB as AirBuilder>::Var: Debug,
     {
         let main = builder.main();
-        let slice = main.row_slice(0);
-        let local = ColumnSlice::from_slice(&slice, layout_sizes);
+        let local_slice = main.row_slice(0);
+        let prev_slice = main.row_slice(1);
+        let local = ColumnSlice::from_slice(&local_slice, layout_sizes);
+        let next = ColumnSlice::from_slice(&prev_slice, layout_sizes);
+
+        // nonces are unique, even for dummy rows
+        let nonce = local.aux[0];
+        let next_nonce = next.aux[0];
+        builder
+            .when_transition()
+            .assert_eq(next_nonce, nonce + F::one());
 
         let index = &mut ColumnIndex::default();
         let map = &mut vec![];
