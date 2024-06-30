@@ -1,12 +1,12 @@
 use anyhow::{bail, Result};
 use nom::{sequence::preceded, Parser};
 use once_cell::sync::OnceCell;
-use p3_field::{AbstractField, Field};
+use p3_field::{AbstractField, Field, PrimeField32};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    lair::hasher::Hasher,
+    lair::{hasher::Hasher, List},
     lurk::{
         parser::{
             syntax::{parse_maybe_meta, parse_space},
@@ -68,7 +68,14 @@ impl<const N: usize, F> SizedBuffer<N, F> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[inline]
+fn into_sized<F: AbstractField + Copy, const N: usize>(slice: &[F]) -> [F; N] {
+    let mut buffer = SizedBuffer::default();
+    buffer.write_slice(slice);
+    buffer.extract()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ZPtr<F> {
     pub tag: Tag,
     pub digest: [F; DIGEST_SIZE],
@@ -133,14 +140,14 @@ impl<F: AbstractField + Copy> ZPtr<F> {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum ZPtrType<F> {
     Atom,
     Tuple2(ZPtr<F>, ZPtr<F>),
     Tuple3(ZPtr<F>, ZPtr<F>, ZPtr<F>),
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ZStore<F, H: Hasher<F>> {
     hasher: H,
     dag: FxHashMap<ZPtr<F>, ZPtrType<F>>,
@@ -320,6 +327,11 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
     }
 
     #[inline]
+    pub fn intern_cons(&mut self, car: ZPtr<F>, cdr: ZPtr<F>) -> ZPtr<F> {
+        self.intern_tuple2(Tag::Cons, car, cdr)
+    }
+
+    #[inline]
     pub fn intern_fun(&mut self, args: ZPtr<F>, body: ZPtr<F>, env: ZPtr<F>) -> ZPtr<F> {
         self.intern_tuple3(Tag::Fun, args, body, env)
     }
@@ -391,5 +403,231 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
     #[inline]
     pub fn tuple3_hashes(&self) -> &FxHashMap<[F; TUPLE3_SIZE], [F; DIGEST_SIZE]> {
         &self.tuple3_hashes
+    }
+
+    /// Memoizes the Lurk data dependencies of a tag/digest pair
+    pub fn memoize_dag<'a>(
+        &mut self,
+        tag: Tag,
+        mut digest: &'a [F],
+        tuple2_hashes_inv: &'a FxHashMap<List<F>, List<F>>,
+        tuple3_hashes_inv: &'a FxHashMap<List<F>, List<F>>,
+    ) where
+        F: PrimeField32,
+    {
+        let zptr = ZPtr {
+            tag,
+            digest: into_sized(digest),
+        };
+        if self.dag.contains_key(&zptr) {
+            return;
+        };
+        let zeros = [F::zero(); DIGEST_SIZE];
+        macro_rules! recurse {
+            ($tag:expr, $digest:expr) => {
+                self.memoize_dag($tag, $digest, tuple2_hashes_inv, tuple3_hashes_inv);
+            };
+        }
+        macro_rules! memoize_tuple2 {
+            ($fst_tag:expr, $fst_digest:expr, $snd_tag:expr, $snd_digest:expr) => {
+                let fst = ZPtr {
+                    tag: $fst_tag,
+                    digest: into_sized($fst_digest),
+                };
+                let snd = ZPtr {
+                    tag: $snd_tag,
+                    digest: into_sized($snd_digest),
+                };
+                self.dag.insert(zptr, ZPtrType::Tuple2(fst, snd));
+            };
+        }
+        macro_rules! memoize_tuple3 {
+            ($fst_tag:expr, $fst_digest:expr, $snd_tag:expr, $snd_digest:expr, $trd_tag:expr, $trd_digest:expr) => {
+                let fst = ZPtr {
+                    tag: $fst_tag,
+                    digest: into_sized($fst_digest),
+                };
+                let snd = ZPtr {
+                    tag: $snd_tag,
+                    digest: into_sized($snd_digest),
+                };
+                let trd = ZPtr {
+                    tag: $trd_tag,
+                    digest: into_sized($trd_digest),
+                };
+                self.dag.insert(zptr, ZPtrType::Tuple3(fst, snd, trd));
+            };
+        }
+        match tag {
+            Tag::Str => loop {
+                if digest == zeros {
+                    self.memoize_atom_dag(ZPtr { tag, digest: zeros });
+                    break;
+                }
+                let preimg = tuple2_hashes_inv
+                    .get(digest)
+                    .expect("Tuple2 preimg not found");
+                let (head, tail) = preimg.split_at(ZPTR_SIZE);
+                let head_digest = &head[DIGEST_SIZE..];
+                let tail_digest = &tail[DIGEST_SIZE..];
+                memoize_tuple2!(Tag::Char, head_digest, Tag::Str, tail_digest);
+                digest = tail_digest;
+            },
+            Tag::Cons => loop {
+                let preimg = tuple2_hashes_inv
+                    .get(digest)
+                    .expect("Tuple2 preimg not found");
+                let (car, cdr) = preimg.split_at(ZPTR_SIZE);
+                let (car_tag, car_digest) = car.split_at(DIGEST_SIZE);
+                let (cdr_tag, cdr_digest) = cdr.split_at(DIGEST_SIZE);
+                let car_tag = Tag::from_field(&car_tag[0]);
+                let cdr_tag = Tag::from_field(&cdr_tag[0]);
+                recurse!(car_tag, car_digest);
+                memoize_tuple2!(car_tag, car_digest, cdr_tag, cdr_digest);
+                if cdr_tag != Tag::Cons {
+                    recurse!(cdr_tag, cdr_digest);
+                    break;
+                }
+                digest = cdr_digest;
+            },
+            Tag::Thunk => {
+                let preimg = tuple2_hashes_inv
+                    .get(digest)
+                    .expect("Tuple2 preimg not found");
+                let (fst, snd) = preimg.split_at(ZPTR_SIZE);
+                let (fst_tag, fst_digest) = fst.split_at(DIGEST_SIZE);
+                let (snd_tag, snd_digest) = snd.split_at(DIGEST_SIZE);
+                let fst_tag = Tag::from_field(&fst_tag[0]);
+                let snd_tag = Tag::from_field(&snd_tag[0]);
+                recurse!(fst_tag, fst_digest);
+                recurse!(snd_tag, snd_digest);
+                memoize_tuple2!(fst_tag, fst_digest, snd_tag, snd_digest);
+            }
+            Tag::Env => loop {
+                if digest == zeros {
+                    self.memoize_atom_dag(ZPtr { tag, digest: zeros });
+                    break;
+                }
+                let preimg = tuple3_hashes_inv
+                    .get(digest)
+                    .expect("Tuple3 preimg not found");
+                let (sym, rst) = preimg.split_at(ZPTR_SIZE);
+                let (val, env) = rst.split_at(ZPTR_SIZE);
+                let sym_digest = &sym[DIGEST_SIZE..];
+                let (val_tag, val_digest) = val.split_at(DIGEST_SIZE);
+                let val_tag = Tag::from_field(&val_tag[0]);
+                let env_digest = &env[DIGEST_SIZE..];
+                memoize_tuple3!(
+                    Tag::Sym,
+                    sym_digest,
+                    val_tag,
+                    val_digest,
+                    Tag::Env,
+                    env_digest
+                );
+                digest = env_digest;
+            },
+            Tag::Fun => {
+                let preimg = tuple3_hashes_inv
+                    .get(digest)
+                    .expect("Tuple3 preimg not found");
+                let (fst, rst) = preimg.split_at(ZPTR_SIZE);
+                let (snd, trd) = rst.split_at(ZPTR_SIZE);
+                let (fst_tag, fst_digest) = fst.split_at(DIGEST_SIZE);
+                let (snd_tag, snd_digest) = snd.split_at(DIGEST_SIZE);
+                let (trd_tag, trd_digest) = trd.split_at(DIGEST_SIZE);
+                let fst_tag = Tag::from_field(&fst_tag[0]);
+                let snd_tag = Tag::from_field(&snd_tag[0]);
+                let trd_tag = Tag::from_field(&trd_tag[0]);
+                recurse!(fst_tag, fst_digest);
+                recurse!(snd_tag, snd_digest);
+                recurse!(trd_tag, trd_digest);
+                memoize_tuple3!(fst_tag, fst_digest, snd_tag, snd_digest, trd_tag, trd_digest);
+            }
+            Tag::Sym | Tag::Key | Tag::Nil | Tag::Builtin => (), // these should be already memoized
+            Tag::Num | Tag::U64 | Tag::Char | Tag::Err | Tag::Comm => {
+                self.memoize_atom_dag(ZPtr {
+                    tag,
+                    digest: into_sized(digest),
+                });
+            }
+        }
+    }
+
+    pub fn fetch_tuple2(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>) {
+        let Some(ZPtrType::Tuple2(a, b)) = self.dag.get(zptr) else {
+            panic!("Tuple2 data not found on DAG")
+        };
+        (a, b)
+    }
+
+    pub fn fetch_tuple3(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>, &ZPtr<F>) {
+        let Some(ZPtrType::Tuple3(a, b, c)) = self.dag.get(zptr) else {
+            panic!("Tuple3 data not found on DAG")
+        };
+        (a, b, c)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use p3_baby_bear::BabyBear;
+    use p3_field::AbstractField;
+
+    use crate::{
+        lair::execute::QueryRecord,
+        lurk::{eval::build_lurk_toplevel, state::user_sym, tag::Tag},
+    };
+
+    use super::{into_sized, ZPtr};
+
+    #[test]
+    fn test_dag_memoization() {
+        let (toplevel, mut zstore) = build_lurk_toplevel();
+
+        let ZPtr {
+            tag: expr_tag,
+            digest: expr_digest,
+        } = zstore.read("(cons \"hi\" (lambda (x) x))").unwrap();
+
+        let record = &mut QueryRecord::new(&toplevel);
+        record.inject_inv_queries("hash_32_8", &toplevel, zstore.tuple2_hashes());
+
+        let mut input = [BabyBear::zero(); 24];
+        input[0] = expr_tag.to_field();
+        input[8..16].copy_from_slice(&expr_digest);
+
+        let output = toplevel.execute_by_name("lurk_main", &input, record);
+
+        let output_tag = Tag::from_field(&output[0]);
+        let output_digest = &output[8..];
+
+        let tuple2_hashes_inv = record.get_inv_queries("hash_32_8", &toplevel);
+        let tuple3_hashes_inv = record.get_inv_queries("hash_48_8", &toplevel);
+
+        zstore.memoize_dag(
+            output_tag,
+            output_digest,
+            tuple2_hashes_inv,
+            tuple3_hashes_inv,
+        );
+
+        let zptr = ZPtr {
+            tag: output_tag,
+            digest: into_sized(output_digest),
+        };
+
+        let hi = zstore.intern_string("hi");
+        let x_sym = zstore.intern_symbol(&user_sym("x"));
+        let expected_args = zstore.intern_list([x_sym]);
+        let expected_env = zstore.intern_null(Tag::Env);
+
+        let (car, cdr) = zstore.fetch_tuple2(&zptr);
+        let (args, body, env) = zstore.fetch_tuple3(cdr);
+
+        assert_eq!(car, &hi);
+        assert_eq!(args, &expected_args);
+        assert_eq!(body, &x_sym);
+        assert_eq!(env, &expected_env);
     }
 }

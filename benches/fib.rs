@@ -72,7 +72,7 @@ fn setup<H: Hasher<BabyBear>>(
 fn evaluation(c: &mut Criterion) {
     let arg = get_fib_arg();
     c.bench_function(&format!("evaluation-{arg}"), |b| {
-        let toplevel = build_lurk_toplevel();
+        let (toplevel, _) = build_lurk_toplevel();
         let (args, lurk_main, record) = setup(arg, &toplevel);
         b.iter_batched(
             || (args.clone(), record.clone()),
@@ -87,7 +87,7 @@ fn evaluation(c: &mut Criterion) {
 fn trace_generation(c: &mut Criterion) {
     let arg = get_fib_arg();
     c.bench_function(&format!("trace-generation-{arg}"), |b| {
-        let toplevel = build_lurk_toplevel();
+        let (toplevel, _) = build_lurk_toplevel();
         let (args, lurk_main, mut record) = setup(arg, &toplevel);
         toplevel.execute(lurk_main.func(), &args, &mut record);
         let lair_chips = build_lair_chip_vector(&lurk_main);
@@ -103,7 +103,7 @@ fn trace_generation(c: &mut Criterion) {
 fn e2e(c: &mut Criterion) {
     let arg = get_fib_arg();
     c.bench_function(&format!("e2e-{arg}"), |b| {
-        let toplevel = build_lurk_toplevel();
+        let (toplevel, _) = build_lurk_toplevel();
         let (args, lurk_main, record) = setup(arg, &toplevel);
 
         b.iter_batched(

@@ -41,6 +41,8 @@ match_opt = "0.1.2"
 nom = "7.1.3"
 nom_locate = "4.1.0"
 num-bigint = "0.4.3"
+num-derive = "0.3"
+num-traits = "0.2"
 once_cell = "1.18.0"
 rand = "0.8.5"
 rand_xoshiro = "0.6.0"
@@ -71,6 +73,8 @@ match_opt = { workspace = true }
 nom = { workspace = true }
 nom_locate = { workspace = true }
 num-bigint = { workspace = true }
+num-derive = { workspace = true }
+num-traits = { workspace = true }
 once_cell = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }

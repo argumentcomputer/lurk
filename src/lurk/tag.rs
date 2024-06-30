@@ -1,8 +1,12 @@
-use p3_field::AbstractField;
+use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
+use p3_field::{AbstractField, PrimeField32};
 use serde::{Deserialize, Serialize};
 
 #[repr(u32)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, FromPrimitive,
+)]
 pub enum Tag {
     Nil = 0,
     Cons,
@@ -21,7 +25,13 @@ pub enum Tag {
 }
 
 impl Tag {
+    #[inline]
     pub fn to_field<F: AbstractField>(self) -> F {
-        F::from_canonical_u16(self as u16)
+        F::from_canonical_u32(self as u32)
+    }
+
+    #[inline]
+    pub fn from_field<F: PrimeField32>(f: &F) -> Tag {
+        Tag::from_u32(f.as_canonical_u32()).expect("Field element doesn't map to a Tag")
     }
 }
