@@ -98,18 +98,22 @@ impl<F: Field> Func<F> {
     {
         let main = builder.main();
         let local_slice = main.row_slice(0);
-        let prev_slice = main.row_slice(1);
+        let next_slice = main.row_slice(1);
         let local = ColumnSlice::from_slice(&local_slice, layout_sizes);
-        let next = ColumnSlice::from_slice(&prev_slice, layout_sizes);
+        let next = ColumnSlice::from_slice(&next_slice, layout_sizes);
+        let index = &mut ColumnIndex::default();
+
+        let nonce = *local.next_aux(index);
+        let next_nonce = next.aux[0];
+
+        // this prevents evil provers from starting ahead (maybe close to |F|)
+        builder.when_first_row().assert_zero(nonce);
 
         // nonces are unique, even for dummy rows
-        let nonce = local.aux[0];
-        let next_nonce = next.aux[0];
         builder
             .when_transition()
             .assert_eq(next_nonce, nonce + F::one());
 
-        let index = &mut ColumnIndex::default();
         let map = &mut vec![];
         let mut call_inp = Vec::with_capacity(self.input_size);
         for _ in 0..self.input_size {
@@ -258,7 +262,7 @@ impl<F: Field> Op<F> {
                 };
                 map.push(x);
             }
-            Op::Call(idx, inp) => {
+            Op::Call(idx, inp, _) => {
                 let func = toplevel.get_by_index(*idx).unwrap();
                 let mut out = Vec::with_capacity(func.output_size);
                 for _ in 0..func.output_size {
@@ -283,7 +287,7 @@ impl<F: Field> Op<F> {
                     sel.clone(),
                 );
             }
-            Op::PreImg(idx, out) => {
+            Op::PreImg(idx, out, _) => {
                 let func = toplevel.get_by_index(*idx).unwrap();
                 let mut inp = Vec::with_capacity(func.input_size);
                 for _ in 0..func.input_size {

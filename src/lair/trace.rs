@@ -260,11 +260,11 @@ impl<F: PrimeField> Op<F> {
                     slice.push_aux(index, f);
                 }
             }
-            Op::Call(idx, inp) => {
+            Op::Call(idx, inp, _ident) => {
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let query_map = &queries.func_queries()[*idx];
                 let result = query_map.get(&args).expect("Cannot find query result");
-                for f in result.output.iter() {
+                for f in result.expect_output().iter() {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
@@ -273,7 +273,7 @@ impl<F: PrimeField> Op<F> {
                 slice.push_aux(index, F::zero());
                 slice.push_aux(index, F::zero());
             }
-            Op::PreImg(idx, inp) => {
+            Op::PreImg(idx, inp, _ident) => {
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let inv_map = queries.inv_func_queries[*idx]
                     .as_ref()

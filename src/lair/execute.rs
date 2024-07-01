@@ -13,15 +13,27 @@ use super::{
     List,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct QueryResult<F> {
-    pub(crate) output: List<F>,
-    pub(crate) mult: u32,
+    pub(crate) output: Option<List<F>>,
+    pub(crate) mult: u32, // TODO: remove this and use callers_nonces.len() instead
+    pub(crate) callers_nonces: Vec<usize>,
+    // /// (func_idx, caller_nonce, call_ident)
+    // pub(crate) callers_nonces: IndexSet<(usize, usize, usize)>,
 }
 
 impl<F> QueryResult<F> {
-    fn once(output: List<F>) -> Self {
-        Self { output, mult: 1 }
+    fn init(output: List<F>, caller_nonce: usize) -> Self {
+        Self {
+            output: Some(output),
+            mult: 1,
+            callers_nonces: vec![caller_nonce],
+        }
+    }
+
+    #[inline]
+    pub(crate) fn expect_output(&self) -> &[F] {
+        self.output.as_ref().expect("Result not computed").as_ref()
     }
 }
 
@@ -35,7 +47,7 @@ pub struct QueryRecord<F: Field> {
     index: u32,
     pub(crate) func_queries: Vec<QueryMap<F>>,
     pub(crate) inv_func_queries: Vec<Option<InvQueryMap<F>>>,
-    pub mem_queries: Vec<MemMap<F>>,
+    pub(crate) mem_queries: Vec<MemMap<F>>,
 }
 
 impl<F: Field> Indexed for QueryRecord<F> {
@@ -251,10 +263,10 @@ impl<F: PrimeField> QueryRecord<F> {
 
     #[inline]
     pub fn get_output(&self, func: &Func<F>, inp: &[F]) -> &[F] {
-        &self.func_queries[func.index]
+        self.func_queries[func.index]
             .get(inp)
             .expect("No output registered for the provided input")
-            .output
+            .expect_output()
     }
 
     #[inline]
@@ -297,15 +309,16 @@ impl<F: PrimeField> QueryRecord<F> {
     }
 
     pub fn query(&mut self, index: usize, input: &[F]) -> Option<&List<F>> {
-        if let Some(event) = self.func_queries[index].get_mut(input) {
-            event.mult += 1;
-            Some(&event.output)
-        } else {
-            None
-        }
+        // if let Some(event) = self.func_queries[index].get_mut(input) {
+        //     event.mult += 1;
+        //     Some(&event.output)
+        // } else {
+        //     None
+        // }
+        todo!()
     }
 
-    pub fn query_preimage(&mut self, index: usize, out: &[F]) -> &List<F> {
+    pub fn query_preimage(&mut self, index: usize, out: &[F], caller_nonce: usize) -> &List<F> {
         let inp = self.inv_func_queries[index]
             .as_ref()
             .expect("Missing inverse map")
@@ -313,21 +326,26 @@ impl<F: PrimeField> QueryRecord<F> {
             .expect("Preimg not found");
         let func_queries = &mut self.func_queries[index];
         if let Some(result) = func_queries.get_mut(inp) {
-            assert_eq!(out, result.output.as_ref());
+            assert_eq!(out, result.expect_output());
             result.mult += 1;
+            result.callers_nonces.push(caller_nonce);
         } else {
-            func_queries.insert(inp.clone(), QueryResult::once(out.into()));
+            func_queries.insert(inp.clone(), QueryResult::init(out.into(), caller_nonce));
         }
         inp
     }
 
-    pub fn insert_result(&mut self, index: usize, input: List<F>, output: List<F>) {
+    pub fn insert_result(
+        &mut self,
+        index: usize,
+        input: List<F>,
+        output: List<F>,
+        caller_nonce: usize,
+    ) {
         if let Some(queries) = &mut self.inv_func_queries[index] {
             queries.insert(output.clone(), input.clone());
         }
-        assert!(self.func_queries[index]
-            .insert(input, QueryResult::once(output))
-            .is_none());
+        self.func_queries[index].insert(input, QueryResult::init(output, caller_nonce));
     }
 
     fn record_event_and_return<H: Hasher<F>>(
@@ -341,7 +359,7 @@ impl<F: PrimeField> QueryRecord<F> {
             out.clone()
         } else {
             let out = func.execute(&args, toplevel, self);
-            self.insert_result(func_idx, args, out.clone());
+            self.insert_result(func_idx, args, out.clone(), todo!());
             out
         }
     }
@@ -378,16 +396,13 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
         let toplevel = self.toplevel;
         if queries.query(index, &args).is_none() {
             let out = self.func.execute(&args, toplevel, queries);
-            queries.insert_result(index, args, out);
+            queries.insert_result(index, args, out, todo!());
         }
     }
 
     pub fn execute_iter(&self, args: List<F>, queries: &mut QueryRecord<F>) {
-        let index = self.func.index;
-        let toplevel = self.toplevel;
-        if queries.query(index, &args).is_none() {
-            let out = self.func.execute_iter(&args, toplevel, queries);
-            queries.insert_result(index, args, out);
+        if !queries.func_queries[self.func.index].contains_key(&args) {
+            self.func.execute_iter(&args, self.toplevel, queries);
         }
     }
 }
@@ -399,6 +414,7 @@ struct Frame<'a, F> {
     ops: Iter<'a, Op<F>>,
     ctrl: &'a Ctrl<F>,
     map: VarMap<F>,
+    caller_nonce: usize,
 }
 type Stack<'a, F> = Vec<Frame<'a, F>>;
 enum Continuation<F> {
@@ -424,13 +440,19 @@ impl<F: PrimeField> Func<F> {
         toplevel: &Toplevel<F, H>,
         queries: &mut QueryRecord<F>,
     ) -> List<F> {
+        // Fixme
+        let args: List<F> = args.into();
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
         let mut map = args.to_vec();
+        let (mut caller_nonce, prev) =
+            queries.func_queries[self.index].insert_full(args, QueryResult::default());
+        assert!(prev.is_none());
         let mut ops = self.body.ops.iter();
         let mut ctrl = &self.body.ctrl;
         let mut stack = vec![];
         loop {
-            let cont = Op::execute_step(ops, ctrl, map, &mut stack, toplevel, queries);
+            let cont =
+                Op::execute_step(ops, ctrl, map, &mut stack, toplevel, queries, caller_nonce);
             match cont {
                 Continuation::Return(out) => {
                     if let Some(frame) = stack.pop() {
@@ -438,7 +460,12 @@ impl<F: PrimeField> Func<F> {
                         ops = frame.ops;
                         map = frame.map;
                         map.extend(out.iter());
-                        queries.insert_result(frame.index, frame.args, out.into());
+                        queries.insert_result(
+                            frame.index,
+                            frame.args,
+                            out.into(),
+                            frame.caller_nonce,
+                        );
                     } else {
                         map = out;
                         break;
@@ -446,9 +473,13 @@ impl<F: PrimeField> Func<F> {
                 }
                 Continuation::Apply(idx, args) => {
                     let func = toplevel.get_by_index(idx).unwrap();
-                    map = args;
+                    map = args.clone();
                     ctrl = &func.body.ctrl;
                     ops = func.body.ops.iter();
+                    let (caller_nonce_new, prev) = queries.func_queries[func.index]
+                        .insert_full(args.into(), QueryResult::default());
+                    assert!(prev.is_none());
+                    caller_nonce = caller_nonce_new;
                 }
             }
         }
@@ -475,10 +506,11 @@ impl<F: PrimeField> Block<F> {
         stack: &mut Stack<'a, F>,
         toplevel: &Toplevel<F, H>,
         queries: &mut QueryRecord<F>,
+        caller_nonce: usize,
     ) -> Continuation<F> {
         let ops = self.ops.iter();
         let ctrl = &self.ctrl;
-        Op::execute_step(ops, ctrl, map, stack, toplevel, queries)
+        Op::execute_step(ops, ctrl, map, stack, toplevel, queries, caller_nonce)
     }
 }
 
@@ -532,6 +564,7 @@ impl<F: PrimeField> Ctrl<F> {
         stack: &mut Stack<'a, F>,
         toplevel: &Toplevel<F, H>,
         queries: &mut QueryRecord<F>,
+        caller_nonce: usize,
     ) -> Continuation<F> {
         match self {
             Ctrl::Return(_, vars) => {
@@ -541,9 +574,9 @@ impl<F: PrimeField> Ctrl<F> {
             Ctrl::If(b, t, f) => {
                 let b = map.get(*b).unwrap();
                 if b.is_zero() {
-                    f.execute_step(map, stack, toplevel, queries)
+                    f.execute_step(map, stack, toplevel, queries, caller_nonce)
                 } else {
-                    t.execute_step(map, stack, toplevel, queries)
+                    t.execute_step(map, stack, toplevel, queries, caller_nonce)
                 }
             }
             Ctrl::IfMany(vars, t, f) => {
@@ -551,24 +584,30 @@ impl<F: PrimeField> Ctrl<F> {
                     let b = map[var];
                     b != F::zero()
                 }) {
-                    t.execute_step(map, stack, toplevel, queries)
+                    t.execute_step(map, stack, toplevel, queries, caller_nonce)
                 } else {
-                    f.execute_step(map, stack, toplevel, queries)
+                    f.execute_step(map, stack, toplevel, queries, caller_nonce)
                 }
             }
             Ctrl::Match(v, cases) => {
                 let v = map.get(*v).unwrap();
-                cases
-                    .match_case(v)
-                    .expect("No match")
-                    .execute_step(map, stack, toplevel, queries)
+                cases.match_case(v).expect("No match").execute_step(
+                    map,
+                    stack,
+                    toplevel,
+                    queries,
+                    caller_nonce,
+                )
             }
             Ctrl::MatchMany(v, cases) => {
                 let v = v.iter().map(|&v| map[v]).collect();
-                cases
-                    .match_case(&v)
-                    .expect("No match")
-                    .execute_step(map, stack, toplevel, queries)
+                cases.match_case(&v).expect("No match").execute_step(
+                    map,
+                    stack,
+                    toplevel,
+                    queries,
+                    caller_nonce,
+                )
             }
         }
     }
@@ -609,14 +648,14 @@ impl<F: PrimeField> Op<F> {
                 let b = if a.is_zero() { F::one() } else { F::zero() };
                 map.push(b);
             }
-            Op::Call(idx, inp) => {
+            Op::Call(idx, inp, _) => {
                 let args = inp.iter().map(|a| map[*a]).collect();
                 let out = queries.record_event_and_return(toplevel, *idx, args);
                 map.extend(out.iter());
             }
-            Op::PreImg(idx, inp) => {
+            Op::PreImg(idx, inp, _) => {
                 let args = inp.iter().map(|a| map[*a]).collect::<List<_>>();
-                let out = queries.query_preimage(*idx, &args);
+                let out = queries.query_preimage(*idx, &args, todo!());
                 map.extend(out.iter());
             }
             Op::Store(inp) => {
@@ -645,6 +684,7 @@ impl<F: PrimeField> Op<F> {
         stack: &mut Stack<'a, F>,
         toplevel: &Toplevel<F, H>,
         queries: &mut QueryRecord<F>,
+        caller_nonce: usize,
     ) -> Continuation<F> {
         while let Some(op) = ops.next() {
             match op {
@@ -686,24 +726,27 @@ impl<F: PrimeField> Op<F> {
                     map.extend(args);
                 }
                 Op::Debug(s) => println!("{}", s),
-                Op::PreImg(idx, inp) => {
+                Op::PreImg(idx, inp, _ident) => {
                     let args = inp.iter().map(|a| map[*a]).collect::<List<_>>();
-                    let out = queries.query_preimage(*idx, &args);
+                    let out = queries.query_preimage(*idx, &args, caller_nonce);
                     map.extend(out.iter());
                 }
-                Op::Call(index, inp) => {
-                    let args = inp.iter().map(|a| map[*a]).collect::<Vec<_>>();
-                    if let Some(out) = queries.query(*index, &args) {
-                        map.extend(out.iter())
+                Op::Call(index, inp, _ident) => {
+                    let args = inp.iter().map(|a| map[*a]).collect::<List<_>>();
+                    if let Some(result) = queries.func_queries[*index].get_mut(&args) {
+                        map.extend(result.output.as_ref().expect("Loop detected").iter());
+                        result.mult += 1;
+                        result.callers_nonces.push(caller_nonce);
                     } else {
                         stack.push(Frame {
                             index: *index,
-                            args: args.clone().into(),
+                            args: args.clone(),
                             ops,
                             ctrl,
                             map,
+                            caller_nonce,
                         });
-                        return Continuation::Apply(*index, args);
+                        return Continuation::Apply(*index, args.to_vec());
                     }
                 }
                 Op::Hash(inp) => {
@@ -713,7 +756,7 @@ impl<F: PrimeField> Op<F> {
                 }
             }
         }
-        ctrl.execute_step(map, stack, toplevel, queries)
+        ctrl.execute_step(map, stack, toplevel, queries, caller_nonce)
     }
 }
 

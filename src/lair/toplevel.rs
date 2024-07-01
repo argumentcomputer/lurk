@@ -98,6 +98,7 @@ fn use_var<'a>(var: &Var, ctx: &'a mut CheckCtx<'_>) -> &'a [usize] {
 struct CheckCtx<'a> {
     var_index: usize,
     block_ident: usize,
+    call_ident: usize,
     return_ident: usize,
     return_idents: Vec<usize>,
     return_size: usize,
@@ -129,6 +130,7 @@ impl<F: Clone + Ord> FuncE<F> {
         let ctx = &mut CheckCtx {
             var_index: 0,
             block_ident: 0,
+            call_ident: 0,
             return_ident: 0,
             return_idents: vec![],
             return_size: self.output_size,
@@ -257,7 +259,8 @@ impl<F: Clone + Ord> BlockE<F> {
                     assert_eq!(inp.total_size(), input_size);
                     assert_eq!(out.total_size(), output_size);
                     let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
-                    ops.push(Op::Call(name_idx, inp));
+                    ops.push(Op::Call(name_idx, inp, ctx.call_ident));
+                    ctx.call_ident += 1;
                     out.iter().for_each(|t| bind_new(t, ctx));
                 }
                 OpE::PreImg(out, name, inp) => {
@@ -272,7 +275,8 @@ impl<F: Clone + Ord> BlockE<F> {
                     assert_eq!(out.total_size(), input_size);
                     assert_eq!(inp.total_size(), output_size);
                     let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
-                    ops.push(Op::PreImg(name_idx, inp));
+                    ops.push(Op::PreImg(name_idx, inp, ctx.call_ident));
+                    ctx.call_ident += 1;
                     out.iter().for_each(|t| bind_new(t, ctx));
                 }
                 OpE::Store(ptr, vals) => {
