@@ -14,19 +14,19 @@ use super::{
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct QueryResult<T> {
-    pub(crate) output: T,
+pub struct QueryResult<F> {
+    pub(crate) output: List<F>,
     pub(crate) mult: u32,
 }
 
-impl<T> QueryResult<T> {
-    fn new(output: T, mult: u32) -> Self {
+impl<F> QueryResult<F> {
+    fn new(output: List<F>, mult: u32) -> Self {
         Self { output, mult }
     }
 }
 
 type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
-type QueryMap<F> = FxIndexMap<List<F>, QueryResult<List<F>>>;
+type QueryMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
 type InvQueryMap<F> = FxIndexMap<List<F>, List<F>>;
 pub(crate) type MemMap<F> = FxIndexMap<List<F>, u32>;
 
@@ -258,47 +258,10 @@ pub fn mem_index_from_len(len: usize) -> usize {
         .unwrap_or_else(|| panic!("There are no mem tables of size {len}"))
 }
 
-#[inline]
-pub fn mem_init<F: Clone>() -> Vec<MemMap<F>> {
-    vec![FxIndexMap::default(); NUM_MEM_TABLES]
-}
-
-pub fn mem_store<F: Field>(mem: &mut [MemMap<F>], args: List<F>) -> F {
-    let len = args.len();
-    let mem_idx = mem_index_from_len(len);
-    let mem_map_idx = if let Some((i, _, mult)) = mem[mem_idx].get_full_mut(&args) {
-        *mult += 1;
-        i
-    } else {
-        mem[mem_idx].insert_full(args, 1).0
-    };
-    F::from_canonical_usize(mem_map_idx + 1)
-}
-
-pub fn mem_load<F: PrimeField>(mem: &mut [MemMap<F>], len: usize, ptr: F) -> &[F] {
-    let ptr_f: usize = ptr
-        .as_canonical_biguint()
-        .try_into()
-        .expect("Field element is too big for a pointer");
-    let mem_idx = mem_index_from_len(len);
-    let (args, mult) = mem[mem_idx]
-        .get_index_mut(ptr_f - 1)
-        .expect("Unbound pointer");
-    *mult += 1;
-    args
-}
-
-impl<F: Field> QueryRecord<F> {
+impl<F: PrimeField> QueryRecord<F> {
     #[inline]
     pub fn new<H: Hasher<F>>(toplevel: &Toplevel<F, H>) -> Self {
-        Self::new_with_init_mem(toplevel, mem_init())
-    }
-
-    #[inline]
-    pub fn new_with_init_mem<H: Hasher<F>>(
-        toplevel: &Toplevel<F, H>,
-        mem_queries: Vec<MemMap<F>>,
-    ) -> Self {
+        let mem_queries = vec![FxIndexMap::default(); NUM_MEM_TABLES];
         let func_queries = vec![FxIndexMap::default(); toplevel.size()];
         let inv_func_queries = toplevel
             .map
@@ -311,7 +274,6 @@ impl<F: Field> QueryRecord<F> {
                 }
             })
             .collect();
-        assert_eq!(mem_queries.len(), NUM_MEM_TABLES);
         Self {
             index: 0,
             func_queries,
@@ -366,9 +328,7 @@ impl<F: Field> QueryRecord<F> {
             *mem_map = FxIndexMap::default();
         });
     }
-}
 
-impl<F: Field + Ord> QueryRecord<F> {
     pub fn query(&mut self, index: usize, input: &[F]) -> Option<&List<F>> {
         if let Some(event) = self.func_queries[index].get_mut(input) {
             event.mult += 1;
@@ -403,12 +363,6 @@ impl<F: Field + Ord> QueryRecord<F> {
             .is_none());
     }
 
-    pub fn store(&mut self, args: List<F>) -> F {
-        mem_store(&mut self.mem_queries, args)
-    }
-}
-
-impl<F: PrimeField> QueryRecord<F> {
     fn record_event_and_return<H: Hasher<F>>(
         &mut self,
         toplevel: &Toplevel<F, H>,
@@ -425,8 +379,29 @@ impl<F: PrimeField> QueryRecord<F> {
         }
     }
 
+    pub fn store(&mut self, args: List<F>) -> F {
+        let mem_idx = mem_index_from_len(args.len());
+        let mem_map = &mut self.mem_queries[mem_idx];
+        let mem_map_idx = if let Some((i, _, mult)) = mem_map.get_full_mut(&args) {
+            *mult += 1;
+            i
+        } else {
+            mem_map.insert_full(args, 1).0
+        };
+        F::from_canonical_usize(mem_map_idx + 1)
+    }
+
     pub fn load(&mut self, len: usize, ptr: F) -> &[F] {
-        mem_load(&mut self.mem_queries, len, ptr)
+        let ptr_f: usize = ptr
+            .as_canonical_biguint()
+            .try_into()
+            .expect("Field element is too big for a pointer");
+        let mem_idx = mem_index_from_len(len);
+        let (args, mult) = self.mem_queries[mem_idx]
+            .get_index_mut(ptr_f - 1)
+            .expect("Unbound pointer");
+        *mult += 1;
+        args
     }
 }
 
