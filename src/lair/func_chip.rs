@@ -93,8 +93,8 @@ pub type Degree = u8;
 impl<F> Func<F> {
     pub fn compute_layout_sizes<H: Hasher<F>>(&self, toplevel: &Toplevel<F, H>) -> LayoutSizes {
         let input = self.input_size;
-        // nonce: row index
-        let mut aux = 1;
+        // nonce and multiplicity
+        let mut aux = 2;
         let mut sel = 0;
         let degrees = &mut vec![1; input];
         self.body

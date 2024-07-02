@@ -50,12 +50,13 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
         rows.chunks_mut(width)
             .enumerate()
             .for_each(|(i, row)| row[0] = F::from_canonical_usize(i));
-        for (i, (args, _res)) in func_queries.iter().enumerate() {
+        for (i, (args, res)) in func_queries.iter().enumerate() {
             let start = i * width;
             let index = &mut ColumnIndex::default();
             index.aux += 1; // skip nonce, which is already set
             let row = &mut rows[start..start + width];
             let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
+            slice.push_aux(index, F::from_canonical_u32(res.mult));
             self.func
                 .populate_row(args, index, slice, queries, &self.toplevel.hasher);
         }
@@ -78,10 +79,11 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
             .par_chunks_mut(width)
             .enumerate()
             .for_each(|(i, row)| {
-                let (args, _res) = func_queries.get_index(i).unwrap();
+                let (args, res) = func_queries.get_index(i).unwrap();
                 let index = &mut ColumnIndex::default();
                 index.aux += 1; // skip nonce, which is already set
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
+                slice.push_aux(index, F::from_canonical_u32(res.mult));
                 self.func
                     .populate_row(args, index, slice, queries, &self.toplevel.hasher);
             });
