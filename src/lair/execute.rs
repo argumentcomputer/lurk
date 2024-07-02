@@ -443,27 +443,6 @@ impl<F: PrimeField> QueryRecord<F> {
 }
 
 impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
-    // NOTE: This function is executing something in terms of the "toplevel" function call, used only for tests
-    // TODO: This function should be moved to the TopLevel, and specify which function goes in the Entrypoint chip
-    // (this is different from `Func::execute`)
-    pub fn entrypoint_execute(&self, args: &List<F>) -> QueryRecord<F> {
-        let index = self.func.index;
-        let toplevel = self.toplevel;
-        let mut queries = QueryRecord::new(toplevel);
-        let (nonce, _) =
-            queries.func_queries[index].insert_full(args.clone(), QueryResult::default());
-        let out = self.func.execute(args, toplevel, &mut queries, nonce);
-        let QueryResult {
-            output,
-            mult,
-            callers_nonces,
-        } = queries.func_queries[index].get_mut(args).unwrap();
-        *output = Some(out);
-        *mult = 1;
-        callers_nonces.insert((0, 0, 0));
-        queries
-    }
-
     // fixme deprecate this function
     pub fn execute(&self, args: List<F>, queries: &mut QueryRecord<F>) {
         todo!()
@@ -507,7 +486,7 @@ enum Continuation<F> {
 }
 
 impl<F: PrimeField> Func<F> {
-    fn execute<H: Hasher<F>>(
+    pub(crate) fn execute<H: Hasher<F>>(
         &self,
         args: &[F],
         toplevel: &Toplevel<F, H>,

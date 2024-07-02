@@ -1,6 +1,14 @@
+use p3_field::PrimeField;
 use rustc_hash::FxHashMap;
 
-use super::{bytecode::*, expr::*, hasher::Hasher, map::Map, List, Name};
+use super::{
+    bytecode::*,
+    execute::{QueryRecord, QueryResult},
+    expr::*,
+    hasher::Hasher,
+    map::Map,
+    List, Name,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Toplevel<F, H: Hasher<F>> {
@@ -53,6 +61,31 @@ impl<F, H: Hasher<F>> Toplevel<F, H> {
     #[inline]
     pub fn size(&self) -> usize {
         self.map.size()
+    }
+}
+
+impl<F: PrimeField, H: Hasher<F>> Toplevel<F, H> {
+    pub fn execute(&self, func: &Func<F>, args: &List<F>, record: &mut QueryRecord<F>) {
+        let index = func.index;
+        let (nonce, _) =
+            record.func_queries[index].insert_full(args.clone(), QueryResult::default());
+        let out = func.execute(args, self, record, nonce);
+        let QueryResult {
+            output,
+            mult,
+            callers_nonces,
+        } = record.func_queries[index].get_mut(args).unwrap();
+        *output = Some(out);
+        *mult = 1;
+        callers_nonces.insert((0, 0, 0));
+    }
+
+    #[inline]
+    pub fn execute_by_name(&self, name: &'static str, args: &List<F>, record: &mut QueryRecord<F>) {
+        let func = self
+            .get_by_name(name)
+            .expect("Entrypoint function not found");
+        self.execute(func, args, record)
     }
 }
 
