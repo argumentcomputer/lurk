@@ -6,7 +6,7 @@ use sphinx_core::{
     stark::Chip,
 };
 
-use crate::air::builder::LookupBuilder;
+use crate::air::builder::{LookupBuilder, RequireRecord};
 
 use super::{
     execute::{QueryRecord, MEM_TABLE_SIZES},
@@ -122,8 +122,15 @@ where
             Self::Func(func_chip) => func_chip.eval(builder),
             Self::Mem(mem_chip) => mem_chip.eval(builder),
             Self::Entrypoint { func_idx, inp, out } => {
-                builder.receive(
+                // TODO: this func now needs to start with count = 1, since we are already requiring the initial provide
+                builder.require(
                     CallRelation(*func_idx, inp.clone(), out.clone()),
+                    AB::F::zero(),
+                    RequireRecord {
+                        prev_nonce: AB::F::zero(),
+                        prev_count: AB::F::zero(),
+                        count_inv: AB::F::one(),
+                    },
                     AB::F::one(),
                 );
                 // Dummy constraint of degree 3
