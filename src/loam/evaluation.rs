@@ -418,11 +418,7 @@ ascent! {
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
 
-    // ptr(ptr), ptr_value(ptr, Wide::widen(f)) <-- alloc(&Tag::Nil.elt(), value), let f = value.f(), let ptr = Ptr(Tag::Nil.elt(), f);
     f_value(Ptr(Tag::Num.elt(), value.f()), value) <-- alloc(&Tag::Num.elt(), value); // let f = value.f();
-
-    // FIXME: Nil is handled weirdly. We should ensure only the 'real nil value' is possible.
-    // ptr(ptr), ptr_value(ptr, value) <-- alloc(&Tag::Nil.elt(), value), let ptr = Ptr(Tag::Nil.elt(), value.f());
 
     cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0.0)),
     cons_mem(car, cdr, addr) <--
@@ -479,24 +475,12 @@ ascent! {
         ptr_tag(car, wide_car_tag), ptr_tag(cdr, wide_cdr_tag),
         ptr_value(car, car_value), ptr_value(cdr, cdr_value);
 
-    alloc(car_tag, car_value), alloc(cdr_tag, cdr_value) <--
-        cons_digest_mem(digest, addr),
-        hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
-        tag(car_tag, wide_car_tag), tag(cdr_tag, wide_cdr_tag);
-
     // Thunk
     hash4(thunk, body_tag, body_value, closed_env_tag, closed_env_value) <--
         egress(thunk),
         cons_rel(body, closed_env, thunk),
         ptr_tag(body, body_tag), ptr_tag(closed_env, closed_env_tag),
         ptr_value(body, body_value), ptr_value(closed_env, closed_env_value);
-
-    alloc(body_tag, body_value), alloc(closed_env_tag, closed_env_value) <--
-        thunk_digest_mem(digest, addr),
-        hash4_rel(wide_body_tag, body_value, wide_closed_env_tag, closed_env_value, digest),
-        tag(body_tag, wide_body_tag), tag(closed_env_tag, wide_closed_env_tag);
-
-
 
     // Fun
     hash6(fun, args_tag, args_value, body_tag, body_value, closed_env_tag, closed_env_value) <--
@@ -515,11 +499,6 @@ ascent! {
         hash6_rel(args_tag, args_value, body_tag, body_value, closed_env_tag, closed_env_value, _),
         ptr_tag(args, args_tag), ptr_tag(body, body_tag), ptr_tag(closed_env, closed_env_tag),
         ptr_value(args, args_value), ptr_value(body, body_value), ptr_value(closed_env, closed_env_value);
-
-    alloc(args_tag, args_value), alloc(body_tag, body_value), alloc(closed_env_tag, closed_env_value) <--
-        fun_digest_mem(digest, addr),
-        hash6_rel(wide_args_tag, args_value, wide_body_tag, body_value, wide_closed_env_tag, closed_env_value, digest),
-        tag(args_tag, wide_args_tag), tag(body_tag, wide_body_tag), tag(closed_env_tag, wide_closed_env_tag);
 
     ////////////////////////////////////////////////////////////////////////////////
     // eval
@@ -597,6 +576,7 @@ ascent! {
         cons_rel(var, thunk, new_binding),
         cons_rel(new_binding, closed_env, extended_env);
 
+    // When evaluating a looked-up thunk, add a binding for the var to the thunk before evaling body...
     eval(input_expr, input_env, result) <--
         lookup(input_expr, input_env, var, env),
         cons_rel(binding, tail, env),
@@ -605,12 +585,6 @@ ascent! {
         cons_rel(var, thunk, new_binding),
         cons_rel(new_binding, closed_env, extended_env),
         eval(body, extended_env, result);
-
-    // lookup_thunk(input_expr, input_env, body, closed_env),
-    // eval_input(body, closed_env)
-    //     <-- lookup(input_expr, input_env, var, env), cons_rel(binding, tail, env), cons_rel(var, value, binding), thunk_rel(body, closed_env, thunk);
-
-    // eval(input_expr, input_env, result) <-- lookup_thunk(input_expr, input_env, body, closed_env), eval(body, closed_env, result);
 
     ////////////////////////////////////////
     // expr is Cons
