@@ -20,8 +20,8 @@ pub struct QueryResult<F> {
 }
 
 impl<F> QueryResult<F> {
-    fn new(output: List<F>, mult: u32) -> Self {
-        Self { output, mult }
+    fn once(output: List<F>) -> Self {
+        Self { output, mult: 1 }
     }
 }
 
@@ -316,7 +316,7 @@ impl<F: PrimeField> QueryRecord<F> {
             assert_eq!(out, result.output.as_ref());
             result.mult += 1;
         } else {
-            func_queries.insert(inp.clone(), QueryResult::new(out.into(), 1));
+            func_queries.insert(inp.clone(), QueryResult::once(out.into()));
         }
         inp
     }
@@ -326,7 +326,7 @@ impl<F: PrimeField> QueryRecord<F> {
             queries.insert(output.clone(), input.clone());
         }
         assert!(self.func_queries[index]
-            .insert(input, QueryResult::new(output, 1))
+            .insert(input, QueryResult::once(output))
             .is_none());
     }
 
