@@ -72,11 +72,9 @@ impl<F: PrimeField, H: Hasher<F>> Toplevel<F, H> {
         let out = func.execute(args, self, record, nonce);
         let QueryResult {
             output,
-            mult,
             callers_nonces,
         } = record.func_queries[index].get_mut(args).unwrap();
         *output = Some(out);
-        *mult = 1;
         callers_nonces.insert((0, 0, 0)); // This corresponds to the builder.receive done in the Entrypoint chip
     }
 

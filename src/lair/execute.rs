@@ -16,32 +16,12 @@ use super::{
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct QueryResult<F> {
     pub(crate) output: Option<List<F>>,
-    pub(crate) mult: u32, // TODO: remove this and use callers_nonces.len() instead
     // pub(crate) callers_nonces: Vec<usize>,
     /// (func_idx, caller_nonce, call_ident)
     pub(crate) callers_nonces: IndexSet<(usize, usize, usize)>,
-    // let pos = callers_nonces.get((func_idx, cur_nonce, cur_ident));
-    // if Some(..) = pos {
-    //     (_, prev_nonce, _) = callers_nonces.get_index(pos - 1);
-    //     prev_count = pos // or pos - 1
-    // }
-
-    // if Some(last) = callers_nonces.last() {
-    //     (_, last_nonce, _) = last;
-    //     last_count = callers_nonces.len(); // or callers_nonces.len() - 1
-    // }
 }
 
 impl<F> QueryResult<F> {
-    fn init(output: List<F>, caller_nonce: (usize, usize, usize)) -> Self {
-        Self {
-            output: Some(output),
-            mult: 1,
-            // fixme
-            callers_nonces: IndexSet::new(),
-        }
-    }
-
     #[inline]
     pub(crate) fn expect_output(&self) -> &[F] {
         self.output.as_ref().expect("Result not computed").as_ref()
@@ -99,7 +79,7 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
             "sum_func_queries_mults".to_string(),
             self.func_queries
                 .iter()
-                .map(|im| im.values().map(|r| r.mult as usize).sum::<usize>())
+                .map(|im| im.values().map(|r| r.callers_nonces.len()).sum::<usize>())
                 .sum(),
         );
 
@@ -124,12 +104,13 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
         while let Some(func_queries) = other.func_queries.pop() {
             let self_func_queries = &mut self.func_queries[func_idx];
             for (inp, other_res) in func_queries {
-                if other_res.mult == 0 {
+                if other_res.callers_nonces.is_empty() {
                     continue;
                 }
                 if let Some(self_res) = self_func_queries.get_mut(&inp) {
                     assert_eq!(&self_res.output, &other_res.output);
-                    self_res.mult += other_res.mult;
+                    // TODO merge caller nonces somehow
+                    todo!()
                 } else {
                     self_func_queries.insert(inp, other_res);
                 }
@@ -328,7 +309,6 @@ impl<F: PrimeField> QueryRecord<F> {
     ) -> Option<&List<F>> {
         if let Some(event) = self.func_queries[index].get_mut(input) {
             let output = event.output.as_ref().expect("Loop detected");
-            event.mult += 1;
             event
                 .callers_nonces
                 .insert((caller_index, caller_nonce, call_ident));
@@ -354,7 +334,6 @@ impl<F: PrimeField> QueryRecord<F> {
         let func_queries = &mut self.func_queries[index];
         if let Some(event) = func_queries.get_mut(inp) {
             assert_eq!(out, event.expect_output());
-            event.mult += 1;
             event
                 .callers_nonces
                 .insert((caller_index, caller_nonce, call_ident));
@@ -363,7 +342,6 @@ impl<F: PrimeField> QueryRecord<F> {
             callers_nonces.insert((caller_index, caller_nonce, call_ident));
             let result = QueryResult {
                 output: Some(out.into()),
-                mult: 1,
                 callers_nonces,
             };
             func_queries.insert(inp.clone(), result);
@@ -404,12 +382,10 @@ impl<F: PrimeField> QueryRecord<F> {
             let out = func.execute(&args, toplevel, self, nonce);
             let QueryResult {
                 output,
-                mult,
                 callers_nonces,
             } = self.func_queries[func_idx].get_mut(&args).unwrap();
             assert_eq!(*output, None);
             *output = Some(out.clone());
-            *mult = 1;
             callers_nonces.insert((caller_index, caller_nonce, call_ident));
             out
         }
@@ -445,12 +421,6 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
     // fixme deprecate this function
     pub fn execute(&self, args: List<F>, queries: &mut QueryRecord<F>) {
         todo!()
-        // let index = self.func.index;
-        // let toplevel = self.toplevel;
-        // if queries.query(index, &args).is_none() {
-        //     let out = self.func.execute(&args, toplevel, queries);
-        //     queries.insert_result(index, args, out, todo!());
-        // }
     }
 
     pub fn execute_iter(&self, args: List<F>, queries: &mut QueryRecord<F>) {
@@ -459,15 +429,6 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
         }
     }
 }
-
-// pub fn execute(&self, args: List<F>, queries: &mut QueryRecord<F>) {
-//         let index = self.func.index;
-//         let toplevel = self.toplevel;
-//         if queries.query(index, &args).is_none() {
-//             let out = self.func.execute(&args, toplevel, queries);
-//             queries.insert_result(index, args, out);
-//         }
-//     }
 
 type VarMap<F> = Vec<F>;
 struct Frame<'a, F> {
@@ -813,7 +774,6 @@ impl<F: PrimeField> Op<F> {
                     let args = inp.iter().map(|a| map[*a]).collect::<List<_>>();
                     if let Some(result) = queries.func_queries[*index].get_mut(&args) {
                         map.extend(result.output.as_ref().expect("Loop detected").iter());
-                        result.mult += 1;
                         // fixme
                         // result.callers_nonces.push(caller_nonce);
                     } else {

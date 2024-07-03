@@ -72,7 +72,7 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
             let index = &mut ColumnIndex::default();
             let row = &mut rows[start..start + width];
             let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-            slice.push_aux(index, F::from_canonical_u32(res.mult));
+            slice.push_aux(index, F::from_canonical_usize(res.callers_nonces.len()));
             self.func
                 .populate_row(args, index, slice, queries, &self.toplevel.hasher);
         }
@@ -98,7 +98,7 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
                 let (args, res) = func_queries.get_index(i).unwrap();
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-                slice.push_aux(index, F::from_canonical_u32(res.mult));
+                slice.push_aux(index, F::from_canonical_usize(res.callers_nonces.len()));
                 self.func
                     .populate_row(args, index, slice, queries, &self.toplevel.hasher);
             });
