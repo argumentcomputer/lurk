@@ -41,14 +41,11 @@ impl<'a, T> ColumnMutSlice<'a, T> {
 impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
     /// Generates the trace containing only queries with non-zero multiplicities
     pub fn generate_trace_sequential(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
-        let filtered_queries = queries.func_queries()[self.func.index]
-            .iter()
-            .filter(|(_, r)| r.mult > 0)
-            .collect::<List<_>>();
+        let func_queries = &queries.func_queries()[self.func.index];
         let width = self.width();
-        let height = filtered_queries.len().next_power_of_two().max(4);
+        let height = func_queries.len().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
-        for (i, (args, res)) in filtered_queries.iter().enumerate() {
+        for (i, (args, res)) in func_queries.iter().enumerate() {
             let start = i * width;
             let index = &mut ColumnIndex::default();
             let row = &mut rows[start..start + width];
@@ -62,19 +59,16 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
 
     /// Per-row parallel version of `generate_trace_sequential`
     pub fn generate_trace_parallel(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
-        let filtered_queries = queries.func_queries()[self.func.index]
-            .iter()
-            .filter(|(_, r)| r.mult > 0)
-            .collect::<List<_>>();
+        let func_queries = &queries.func_queries()[self.func.index];
         let width = self.width();
-        let height = filtered_queries.len().next_power_of_two().max(4);
+        let height = func_queries.len().next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
-        let non_dummies = &mut rows[0..filtered_queries.len() * width];
+        let non_dummies = &mut rows[0..func_queries.len() * width];
         non_dummies
             .par_chunks_mut(width)
             .enumerate()
             .for_each(|(i, row)| {
-                let (args, res) = filtered_queries[i];
+                let (args, res) = func_queries.get_index(i).unwrap();
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 slice.push_aux(index, F::from_canonical_u32(res.mult));

@@ -14,19 +14,19 @@ use super::{
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct QueryResult<T> {
-    pub(crate) output: T,
+pub struct QueryResult<F> {
+    pub(crate) output: List<F>,
     pub(crate) mult: u32,
 }
 
-impl<T> QueryResult<T> {
-    fn new(output: T, mult: u32) -> Self {
-        Self { output, mult }
+impl<F> QueryResult<F> {
+    fn once(output: List<F>) -> Self {
+        Self { output, mult: 1 }
     }
 }
 
 type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
-type QueryMap<F> = FxIndexMap<List<F>, QueryResult<List<F>>>;
+type QueryMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
 type InvQueryMap<F> = FxIndexMap<List<F>, List<F>>;
 pub(crate) type MemMap<F> = FxIndexMap<List<F>, u32>;
 
@@ -70,10 +70,7 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
         map.insert("num_funcs".to_string(), self.func_queries.len());
         map.insert(
             "num_func_queries".to_string(),
-            self.func_queries
-                .iter()
-                .map(|im| im.iter().filter(|(_, r)| r.mult > 0).count())
-                .sum(),
+            self.func_queries.iter().map(|im| im.iter().count()).sum(),
         );
         map.insert(
             "sum_func_queries_mults".to_string(),
@@ -86,10 +83,7 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
         map.insert("num_mem_tables".to_string(), self.mem_queries.len());
         map.insert(
             "num_mem_queries".to_string(),
-            self.mem_queries
-                .iter()
-                .map(|im| im.iter().filter(|(_, mult)| mult > &&0).count())
-                .sum(),
+            self.mem_queries.iter().map(|im| im.iter().count()).sum(),
         );
         map.insert(
             "sum_mem_queries_mults".to_string(),
@@ -144,54 +138,27 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
     fn shard(self, config: &Self::Config) -> Vec<Self> {
         let Self {
             index: _,
-            func_queries,
+            mut func_queries,
             inv_func_queries: _,
-            mem_queries,
+            mut mem_queries,
         } = self;
 
         let num_funcs = func_queries.len();
         let num_mem_tables = mem_queries.len();
-
-        let mut filtered_func_queries = vec![FxIndexMap::default(); num_funcs];
-        let mut filtered_mem_queries = vec![FxIndexMap::default(); num_mem_tables];
-
-        for (func_idx, queries) in func_queries.into_iter().enumerate() {
-            for (args, r) in queries {
-                if r.mult > 0 {
-                    filtered_func_queries[func_idx].insert(args, r);
-                }
-            }
-        }
-
-        for (mem_idx, queries) in mem_queries.into_iter().enumerate() {
-            for (args, mult) in queries {
-                if mult > 0 {
-                    filtered_mem_queries[mem_idx].insert(args, mult);
-                }
-            }
-        }
 
         let max_shard_size = config.max_shard_size;
 
         if max_shard_size == 0 {
             return vec![Self {
                 index: 0,
-                func_queries: filtered_func_queries,
+                func_queries,
                 inv_func_queries: vec![],
-                mem_queries: filtered_mem_queries,
+                mem_queries,
             }];
         }
 
-        let max_num_func_queries = filtered_func_queries
-            .iter()
-            .map(IndexMap::len)
-            .max()
-            .unwrap_or(0);
-        let max_num_mem_queries = filtered_mem_queries
-            .iter()
-            .map(IndexMap::len)
-            .max()
-            .unwrap_or(0);
+        let max_num_func_queries = func_queries.iter().map(IndexMap::len).max().unwrap_or(0);
+        let max_num_mem_queries = mem_queries.iter().map(IndexMap::len).max().unwrap_or(0);
 
         let div_ceil = |numer, denom| (numer + denom - 1) / denom;
         let num_shards_needed_for_func_queries = div_ceil(max_num_func_queries, max_shard_size);
@@ -202,9 +169,9 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
         if num_shards_needed < 2 {
             vec![Self {
                 index: 0,
-                func_queries: filtered_func_queries,
+                func_queries,
                 inv_func_queries: vec![],
-                mem_queries: filtered_mem_queries,
+                mem_queries,
             }]
         } else {
             let empty_func_queries = vec![FxIndexMap::default(); num_funcs];
@@ -214,23 +181,23 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
                 .try_into()
                 .expect("Number of shards needed is too big");
             for index in 0..num_shards_needed_u32 {
-                let mut func_queries = empty_func_queries.clone();
+                let mut sharded_func_queries = empty_func_queries.clone();
                 for func_idx in 0..num_funcs {
-                    let queries = &mut filtered_func_queries[func_idx];
-                    func_queries[func_idx]
+                    let queries = &mut func_queries[func_idx];
+                    sharded_func_queries[func_idx]
                         .extend(queries.drain(0..max_shard_size.min(queries.len())));
                 }
-                let mut mem_queries = empty_mem_queries.clone();
+                let mut sharded_mem_queries = empty_mem_queries.clone();
                 for mem_idx in 0..num_mem_tables {
-                    let queries = &mut filtered_mem_queries[mem_idx];
-                    mem_queries[mem_idx]
+                    let queries = &mut mem_queries[mem_idx];
+                    sharded_mem_queries[mem_idx]
                         .extend(queries.drain(0..max_shard_size.min(queries.len())));
                 }
                 shards.push(QueryRecord {
                     index,
-                    func_queries,
+                    func_queries: sharded_func_queries,
                     inv_func_queries: vec![],
-                    mem_queries,
+                    mem_queries: sharded_mem_queries,
                 });
             }
             shards
@@ -258,47 +225,10 @@ pub fn mem_index_from_len(len: usize) -> usize {
         .unwrap_or_else(|| panic!("There are no mem tables of size {len}"))
 }
 
-#[inline]
-pub fn mem_init<F: Clone>() -> Vec<MemMap<F>> {
-    vec![FxIndexMap::default(); NUM_MEM_TABLES]
-}
-
-pub fn mem_store<F: Field>(mem: &mut [MemMap<F>], args: List<F>) -> F {
-    let len = args.len();
-    let mem_idx = mem_index_from_len(len);
-    let mem_map_idx = if let Some((i, _, mult)) = mem[mem_idx].get_full_mut(&args) {
-        *mult += 1;
-        i
-    } else {
-        mem[mem_idx].insert_full(args, 1).0
-    };
-    F::from_canonical_usize(mem_map_idx + 1)
-}
-
-pub fn mem_load<F: PrimeField>(mem: &mut [MemMap<F>], len: usize, ptr: F) -> &[F] {
-    let ptr_f: usize = ptr
-        .as_canonical_biguint()
-        .try_into()
-        .expect("Field element is too big for a pointer");
-    let mem_idx = mem_index_from_len(len);
-    let (args, mult) = mem[mem_idx]
-        .get_index_mut(ptr_f - 1)
-        .expect("Unbound pointer");
-    *mult += 1;
-    args
-}
-
-impl<F: Field> QueryRecord<F> {
+impl<F: PrimeField> QueryRecord<F> {
     #[inline]
     pub fn new<H: Hasher<F>>(toplevel: &Toplevel<F, H>) -> Self {
-        Self::new_with_init_mem(toplevel, mem_init())
-    }
-
-    #[inline]
-    pub fn new_with_init_mem<H: Hasher<F>>(
-        toplevel: &Toplevel<F, H>,
-        mem_queries: Vec<MemMap<F>>,
-    ) -> Self {
+        let mem_queries = vec![FxIndexMap::default(); NUM_MEM_TABLES];
         let func_queries = vec![FxIndexMap::default(); toplevel.size()];
         let inv_func_queries = toplevel
             .map
@@ -311,7 +241,6 @@ impl<F: Field> QueryRecord<F> {
                 }
             })
             .collect();
-        assert_eq!(mem_queries.len(), NUM_MEM_TABLES);
         Self {
             index: 0,
             func_queries,
@@ -366,9 +295,7 @@ impl<F: Field> QueryRecord<F> {
             *mem_map = FxIndexMap::default();
         });
     }
-}
 
-impl<F: Field + Ord> QueryRecord<F> {
     pub fn query(&mut self, index: usize, input: &[F]) -> Option<&List<F>> {
         if let Some(event) = self.func_queries[index].get_mut(input) {
             event.mult += 1;
@@ -389,7 +316,7 @@ impl<F: Field + Ord> QueryRecord<F> {
             assert_eq!(out, result.output.as_ref());
             result.mult += 1;
         } else {
-            func_queries.insert(inp.clone(), QueryResult::new(out.into(), 1));
+            func_queries.insert(inp.clone(), QueryResult::once(out.into()));
         }
         inp
     }
@@ -399,16 +326,10 @@ impl<F: Field + Ord> QueryRecord<F> {
             queries.insert(output.clone(), input.clone());
         }
         assert!(self.func_queries[index]
-            .insert(input, QueryResult::new(output, 1))
+            .insert(input, QueryResult::once(output))
             .is_none());
     }
 
-    pub fn store(&mut self, args: List<F>) -> F {
-        mem_store(&mut self.mem_queries, args)
-    }
-}
-
-impl<F: PrimeField> QueryRecord<F> {
     fn record_event_and_return<H: Hasher<F>>(
         &mut self,
         toplevel: &Toplevel<F, H>,
@@ -425,8 +346,29 @@ impl<F: PrimeField> QueryRecord<F> {
         }
     }
 
+    pub fn store(&mut self, args: List<F>) -> F {
+        let mem_idx = mem_index_from_len(args.len());
+        let mem_map = &mut self.mem_queries[mem_idx];
+        let mem_map_idx = if let Some((i, _, mult)) = mem_map.get_full_mut(&args) {
+            *mult += 1;
+            i
+        } else {
+            mem_map.insert_full(args, 1).0
+        };
+        F::from_canonical_usize(mem_map_idx + 1)
+    }
+
     pub fn load(&mut self, len: usize, ptr: F) -> &[F] {
-        mem_load(&mut self.mem_queries, len, ptr)
+        let ptr_f: usize = ptr
+            .as_canonical_biguint()
+            .try_into()
+            .expect("Field element is too big for a pointer");
+        let mem_idx = mem_index_from_len(len);
+        let (args, mult) = self.mem_queries[mem_idx]
+            .get_index_mut(ptr_f - 1)
+            .expect("Unbound pointer");
+        *mult += 1;
+        args
     }
 }
 

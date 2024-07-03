@@ -300,9 +300,7 @@ impl<'a, F: PrimeField, H: Hasher<F>> MachineAir<F> for FuncChip<'a, F, H> {
 
     #[inline]
     fn included(&self, queries: &Self::Record) -> bool {
-        queries.func_queries[self.func.index]
-            .values()
-            .any(|r| r.mult > 0)
+        !queries.func_queries[self.func.index].is_empty()
     }
 
     #[inline]
