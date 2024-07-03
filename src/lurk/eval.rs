@@ -1308,13 +1308,21 @@ mod test {
     use expect_test::{expect, Expect};
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
-    use sphinx_core::air::MachineAir;
+    use sphinx_core::{
+        air::MachineAir,
+        stark::{LocalProver, StarkGenericConfig, StarkMachine},
+        utils::BabyBearPoseidon2,
+        utils::SphinxCoreOpts,
+    };
 
     use crate::{
-        air::debug::debug_constraints_collecting_queries,
+        air::debug::{debug_constraints_collecting_queries, TraceQueries},
         lair::{
-            execute::QueryRecord, func_chip::FuncChip, hasher::LurkHasher,
-            lair_chip::build_lair_chip_vector, List,
+            execute::QueryRecord,
+            func_chip::FuncChip,
+            hasher::LurkHasher,
+            lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
+            List,
         },
         lurk::{
             state::State,
@@ -1400,13 +1408,26 @@ mod test {
             assert_eq!(&result[0], &expected_tag.to_field());
             assert_eq!(&result[8..], &expected_digest);
 
-            let lair_chips = build_lair_chip_vector(&lurk_main, full_input.into(), result.to_vec());
+            let lair_chips = build_lair_chip_vector(&lurk_main, full_input.clone().into(), result.to_vec());
 
-            let lookup_queries = lair_chips.iter().map(|chip| {
+            let lookup_queries: Vec<_> = lair_chips.iter().map(|chip| {
                 let trace = chip.generate_trace(record, &mut Default::default());
                 debug_constraints_collecting_queries(chip, &[], None, &trace)
-            });
-            crate::air::debug::TraceQueries::verify_many(lookup_queries)
+            }).collect();
+            TraceQueries::verify_many(lookup_queries);
+
+            let config = BabyBearPoseidon2::new();
+            let machine = StarkMachine::new(config, build_chip_vector(&lurk_main, full_input.into(), result.into()), 0);
+
+            let (pk, vk) = machine.setup(&LairMachineProgram);
+            let mut challenger_p = machine.config().challenger();
+            let mut challenger_v = machine.config().challenger();
+            machine.debug_constraints(&pk, record.clone(), &mut challenger_p.clone());
+            let opts = SphinxCoreOpts::default();
+            let proof = machine.prove::<LocalProver<_, _>>(&pk, record.clone(), &mut challenger_p, opts);
+            machine
+                .verify(&vk, &proof, &mut challenger_v)
+                .expect("proof verifies");
         };
 
         eval_aux("t", "t");

@@ -137,8 +137,7 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
             func_idx -= 1;
         }
 
-        // dropping to save up memory because this is just auxiliary data for execution
-        self.inv_func_queries = vec![];
+        // do nothing to inv_func_queries: it's needed for auxiliary trace generation information, every shard has a full copy
 
         // draining mem queries from `other` to `self`, starting from the end
         let mut mem_idx = self.mem_queries.len() - 1;
@@ -162,7 +161,7 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
         let Self {
             index: _,
             mut func_queries,
-            inv_func_queries: _,
+            mut inv_func_queries,
             mut mem_queries,
         } = self;
 
@@ -175,7 +174,7 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
             return vec![Self {
                 index: 0,
                 func_queries,
-                inv_func_queries: vec![],
+                inv_func_queries,
                 mem_queries,
             }];
         }
@@ -193,7 +192,7 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
             vec![Self {
                 index: 0,
                 func_queries,
-                inv_func_queries: vec![],
+                inv_func_queries,
                 mem_queries,
             }]
         } else {
@@ -219,7 +218,7 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
                 shards.push(QueryRecord {
                     index,
                     func_queries: sharded_func_queries,
-                    inv_func_queries: vec![],
+                    inv_func_queries: inv_func_queries.clone(), // We can use the same inverse map for all shards
                     mem_queries: sharded_mem_queries,
                 });
             }
@@ -732,10 +731,10 @@ impl<F: PrimeField> Op<F> {
                 );
                 map.extend(out.iter());
             }
-            Op::PreImg(idx, inp, call_ident) => {
-                let args = inp.iter().map(|a| map[*a]).collect::<List<_>>();
-                let out = queries.query_preimage(*idx, &args, func_index, nonce, *call_ident);
-                map.extend(out.iter());
+            Op::PreImg(idx, out, call_ident) => {
+                let out = out.iter().map(|a| map[*a]).collect::<List<_>>();
+                let inp = queries.query_preimage(*idx, &out, func_index, nonce, *call_ident);
+                map.extend(inp.iter());
             }
             Op::Store(inp) => {
                 let args = inp.iter().map(|a| map[*a]).collect();

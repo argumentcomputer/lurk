@@ -122,7 +122,6 @@ where
             Self::Func(func_chip) => func_chip.eval(builder),
             Self::Mem(mem_chip) => mem_chip.eval(builder),
             Self::Entrypoint { func_idx, inp, out } => {
-                // TODO: this func now needs to start with count = 1, since we are already requiring the initial provide
                 builder.require(
                     CallRelation(*func_idx, inp.clone(), out.clone()),
                     AB::F::zero(),
@@ -230,7 +229,7 @@ mod tests {
         let mut queries = QueryRecord::new(&toplevel);
 
         let inp: List<F> = [].into();
-        test_chip.execute(inp.clone(), &mut queries);
+        toplevel.execute(test_chip.func, &inp, &mut queries);
         let out = queries.get_output(test_chip.func, &inp).to_vec();
 
         let config = BabyBearPoseidon2::new();

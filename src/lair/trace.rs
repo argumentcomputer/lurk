@@ -15,6 +15,13 @@ use super::{
     List,
 };
 
+// TODO: Should we reuse the existing CallCtx instead and remove this? (probably yes if we can)
+#[derive(Clone)]
+struct FuncCtx<F> {
+    func_idx: usize,
+    call_inp: List<F>,
+}
+
 #[derive(Default)]
 pub struct NA;
 
@@ -63,7 +70,6 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
         for (i, (args, res)) in func_queries.iter().enumerate() {
             let start = i * width;
             let index = &mut ColumnIndex::default();
-            index.aux += 1; // skip nonce, which is already set
             let row = &mut rows[start..start + width];
             let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
             slice.push_aux(index, F::from_canonical_u32(res.mult));
@@ -91,7 +97,6 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
             .for_each(|(i, row)| {
                 let (args, res) = func_queries.get_index(i).unwrap();
                 let index = &mut ColumnIndex::default();
-                index.aux += 1; // skip nonce, which is already set
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 slice.push_aux(index, F::from_canonical_u32(res.mult));
                 self.func
@@ -113,15 +118,22 @@ impl<F: PrimeField> Func<F> {
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
         // Variable to value map
         let map = &mut args.iter().map(|arg| (*arg, 1)).collect();
+        // Context of which function this is
+        let func_ctx = FuncCtx {
+            func_idx: self.index,
+            call_inp: args.into(),
+        };
         // One column per input
         args.iter().for_each(|arg| slice.push_input(index, *arg));
-        self.body.populate_row(map, index, slice, queries, hasher);
+        self.body
+            .populate_row(&func_ctx, map, index, slice, queries, hasher);
     }
 }
 
 impl<F: PrimeField> Block<F> {
     fn populate_row<H: Hasher<F>>(
         &self,
+        func_ctx: &FuncCtx<F>,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
@@ -130,14 +142,16 @@ impl<F: PrimeField> Block<F> {
     ) {
         self.ops
             .iter()
-            .for_each(|op| op.populate_row(map, index, slice, queries, hasher));
-        self.ctrl.populate_row(map, index, slice, queries, hasher);
+            .for_each(|op| op.populate_row(func_ctx, map, index, slice, queries, hasher));
+        self.ctrl
+            .populate_row(func_ctx, map, index, slice, queries, hasher);
     }
 }
 
 impl<F: PrimeField> Ctrl<F> {
     fn populate_row<H: Hasher<F>>(
         &self,
+        func_ctx: &FuncCtx<F>,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
@@ -148,50 +162,59 @@ impl<F: PrimeField> Ctrl<F> {
             Ctrl::Return(ident, _) => {
                 slice.sel[*ident] = F::one();
                 // Fixme: last_nonce, last_count
-                slice.push_aux(index, F::zero());
-                slice.push_aux(index, F::zero());
+                let query_map = &queries.func_queries()[func_ctx.func_idx];
+                let result = query_map
+                    .get(&func_ctx.call_inp)
+                    .expect("Cannot find query result");
+                let last_count = result.callers_nonces.len();
+                let (_, last_nonce, _) = result
+                    .callers_nonces
+                    .last()
+                    .expect("Must have at least one caller");
+                slice.push_aux(index, F::from_canonical_usize(*last_nonce));
+                slice.push_aux(index, F::from_canonical_usize(last_count));
             }
             Ctrl::Match(t, cases) => {
                 let (t, _) = map[*t];
                 if let Some(branch) = cases.branches.get(&t) {
-                    branch.populate_row(map, index, slice, queries, hasher);
+                    branch.populate_row(func_ctx, map, index, slice, queries, hasher);
                 } else {
                     for (f, _) in cases.branches.iter() {
                         slice.push_aux(index, (t - *f).inverse());
                     }
                     let branch = cases.default.as_ref().expect("No match");
-                    branch.populate_row(map, index, slice, queries, hasher);
+                    branch.populate_row(func_ctx, map, index, slice, queries, hasher);
                 }
             }
             Ctrl::MatchMany(vars, cases) => {
                 let vals = vars.iter().map(|&var| map[var].0).collect();
                 if let Some(branch) = cases.branches.get(&vals) {
-                    branch.populate_row(map, index, slice, queries, hasher);
+                    branch.populate_row(func_ctx, map, index, slice, queries, hasher);
                 } else {
                     for (fs, _) in cases.branches.iter() {
                         let diffs = vals.iter().zip(fs.iter()).map(|(val, f)| *val - *f);
                         push_inequality_witness(index, slice, diffs);
                     }
                     let branch = cases.default.as_ref().expect("No match");
-                    branch.populate_row(map, index, slice, queries, hasher);
+                    branch.populate_row(func_ctx, map, index, slice, queries, hasher);
                 }
             }
             Ctrl::If(b, t, f) => {
                 let (b, _) = map[*b];
                 if b != F::zero() {
                     slice.push_aux(index, b.inverse());
-                    t.populate_row(map, index, slice, queries, hasher);
+                    t.populate_row(func_ctx, map, index, slice, queries, hasher);
                 } else {
-                    f.populate_row(map, index, slice, queries, hasher);
+                    f.populate_row(func_ctx, map, index, slice, queries, hasher);
                 }
             }
             Ctrl::IfMany(vars, t, f) => {
                 let vals = vars.iter().map(|&var| map[var].0);
                 if vals.clone().any(|b| b != F::zero()) {
                     push_inequality_witness(index, slice, vals);
-                    t.populate_row(map, index, slice, queries, hasher);
+                    t.populate_row(func_ctx, map, index, slice, queries, hasher);
                 } else {
-                    f.populate_row(map, index, slice, queries, hasher);
+                    f.populate_row(func_ctx, map, index, slice, queries, hasher);
                 }
             }
         }
@@ -218,6 +241,7 @@ fn push_inequality_witness<F: PrimeField, I: Iterator<Item = F>>(
 impl<F: PrimeField> Op<F> {
     fn populate_row<H: Hasher<F>>(
         &self,
+        func_ctx: &FuncCtx<F>,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
@@ -272,7 +296,7 @@ impl<F: PrimeField> Op<F> {
                     slice.push_aux(index, f);
                 }
             }
-            Op::Call(idx, inp, _ident) => {
+            Op::Call(idx, inp, call_ident) => {
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let query_map = &queries.func_queries()[*idx];
                 let result = query_map.get(&args).expect("Cannot find query result");
@@ -281,24 +305,68 @@ impl<F: PrimeField> Op<F> {
                     slice.push_aux(index, *f);
                 }
                 // Fixme: prev_nonce, prev_count, count_inv
-                slice.push_aux(index, F::zero());
-                slice.push_aux(index, F::zero());
-                slice.push_aux(index, F::zero());
+                let nonce: usize = slice
+                    .nonce
+                    .as_canonical_biguint()
+                    .try_into()
+                    .expect("Nonce is larger than usize");
+                let prev_count = result
+                    .callers_nonces
+                    .get_index_of(&(func_ctx.func_idx, nonce, *call_ident))
+                    .expect("Cannot find caller nonce entry");
+                if prev_count == 0 {
+                    // we are the first require, fill in hardcoded provide values
+                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_nonce
+                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_count
+                    slice.push_aux(index, F::from_canonical_usize(1).inverse());
+                // count_inv
+                } else {
+                    // we are somewhere in the middle of the list, get the predecessor
+                    let (_, prev_nonce, _) =
+                        result.callers_nonces.get_index(prev_count - 1).unwrap();
+                    slice.push_aux(index, F::from_canonical_usize(*prev_nonce));
+                    slice.push_aux(index, F::from_canonical_usize(prev_count));
+                    slice.push_aux(index, F::from_canonical_usize(prev_count + 1).inverse());
+                }
             }
-            Op::PreImg(idx, inp, _ident) => {
-                let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
+            Op::PreImg(idx, out, call_ident) => {
+                let out = out.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let inv_map = queries.inv_func_queries[*idx]
                     .as_ref()
                     .expect("Function not invertible");
-                let result = inv_map.get(&args).expect("Cannot find preimage");
-                for f in result.iter() {
+                let inp = inv_map.get(&out).expect("Cannot find preimage");
+                for f in inp.iter() {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
                 // Fixme: prev_nonce, prev_count, count_inv
-                slice.push_aux(index, F::zero());
-                slice.push_aux(index, F::zero());
-                slice.push_aux(index, F::zero());
+                let query_map = &queries.func_queries()[*idx];
+                let query_result = query_map.get(inp).expect("Cannot find query result");
+                let nonce: usize = slice
+                    .nonce
+                    .as_canonical_biguint()
+                    .try_into()
+                    .expect("Nonce is larger than usize");
+                let prev_count = query_result
+                    .callers_nonces
+                    .get_index_of(&(func_ctx.func_idx, nonce, *call_ident))
+                    .expect("Cannot find caller nonce entry");
+                if prev_count == 0 {
+                    // we are the first require, fill in hardcoded provide values
+                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_nonce
+                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_count
+                    slice.push_aux(index, F::from_canonical_usize(1).inverse());
+                // count_inv
+                } else {
+                    // we are somewhere in the middle of the list, get the predecessor
+                    let (_, prev_nonce, _) = query_result
+                        .callers_nonces
+                        .get_index(prev_count - 1)
+                        .unwrap();
+                    slice.push_aux(index, F::from_canonical_usize(*prev_nonce));
+                    slice.push_aux(index, F::from_canonical_usize(prev_count));
+                    slice.push_aux(index, F::from_canonical_usize(prev_count + 1).inverse());
+                }
             }
             Op::Store(args) => {
                 let mem_idx = mem_index_from_len(args.len());

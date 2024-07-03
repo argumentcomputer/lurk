@@ -77,7 +77,7 @@ impl<F: PrimeField, H: Hasher<F>> Toplevel<F, H> {
         } = record.func_queries[index].get_mut(args).unwrap();
         *output = Some(out);
         *mult = 1;
-        callers_nonces.insert((0, 0, 0));
+        callers_nonces.insert((0, 0, 0)); // This corresponds to the builder.receive done in the Entrypoint chip
     }
 
     #[inline]

@@ -11,7 +11,7 @@ type LocalRowView<'a, F> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatri
 
 type Query<F> = Vec<F>;
 
-#[derive(Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 struct Record {
     prev_nonce: u32,
     prev_count: u32,
