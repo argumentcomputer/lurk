@@ -32,14 +32,21 @@ struct CallCtx<F, T> {
     call_inp: Vec<T>,
 }
 
-pub type ColumnSlice<'a, T> = ColumnLayout<&'a [T]>;
+pub type ColumnSlice<'a, T> = ColumnLayout<&'a T, &'a [T]>;
 impl<'a, T> ColumnSlice<'a, T> {
     pub fn from_slice(slice: &'a [T], layout_sizes: LayoutSizes) -> Self {
+        let (nonce, slice) = slice.split_at(1);
         let (input, slice) = slice.split_at(layout_sizes.input);
         let (aux, slice) = slice.split_at(layout_sizes.aux);
         let (sel, slice) = slice.split_at(layout_sizes.sel);
         assert!(slice.is_empty());
-        Self { input, aux, sel }
+        let nonce = &nonce[0];
+        Self {
+            nonce,
+            input,
+            aux,
+            sel,
+        }
     }
 
     pub fn next_input(&self, index: &mut ColumnIndex) -> &T {
@@ -103,8 +110,8 @@ impl<F: Field> Func<F> {
         let next = ColumnSlice::from_slice(&next_slice, layout_sizes);
         let index = &mut ColumnIndex::default();
 
-        let nonce = *local.next_aux(index);
-        let next_nonce = next.aux[0];
+        let nonce = *local.nonce;
+        let next_nonce = *next.nonce;
 
         // this prevents evil provers from starting ahead (maybe close to |F|)
         builder.when_first_row().assert_zero(nonce);
@@ -271,7 +278,6 @@ impl<F: Field> Op<F> {
                     out.push(o.into());
                 }
                 let inp = inp.iter().map(|i| map[*i].to_expr());
-                let nonce = local.aux[0];
                 let prev_nonce = *local.next_aux(index);
                 let prev_count = *local.next_aux(index);
                 let count_inv = *local.next_aux(index);
@@ -282,7 +288,7 @@ impl<F: Field> Op<F> {
                 };
                 builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
-                    nonce,
+                    *local.nonce,
                     record,
                     sel.clone(),
                 );
@@ -296,7 +302,6 @@ impl<F: Field> Op<F> {
                     inp.push(i.into());
                 }
                 let out = out.iter().map(|o| map[*o].to_expr());
-                let nonce = local.aux[0];
                 let prev_nonce = *local.next_aux(index);
                 let prev_count = *local.next_aux(index);
                 let count_inv = *local.next_aux(index);
@@ -307,7 +312,7 @@ impl<F: Field> Op<F> {
                 };
                 builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
-                    nonce,
+                    *local.nonce,
                     record,
                     sel.clone(),
                 );

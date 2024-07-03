@@ -15,16 +15,26 @@ use super::{
     List,
 };
 
-pub type ColumnIndex = ColumnLayout<usize>;
-pub type ColumnMutSlice<'a, T> = ColumnLayout<&'a mut [T]>;
+#[derive(Default)]
+pub struct NA;
+
+pub type ColumnIndex = ColumnLayout<NA, usize>;
+pub type ColumnMutSlice<'a, T> = ColumnLayout<&'a mut T, &'a mut [T]>;
 
 impl<'a, T> ColumnMutSlice<'a, T> {
     pub fn from_slice(slice: &'a mut [T], layout_sizes: LayoutSizes) -> Self {
+        let (nonce, slice) = slice.split_at_mut(1);
         let (input, slice) = slice.split_at_mut(layout_sizes.input);
         let (aux, slice) = slice.split_at_mut(layout_sizes.aux);
         let (sel, slice) = slice.split_at_mut(layout_sizes.sel);
         assert!(slice.is_empty());
-        Self { input, aux, sel }
+        let nonce = &mut nonce[0];
+        Self {
+            nonce,
+            input,
+            aux,
+            sel,
+        }
     }
 
     pub fn push_input(&mut self, index: &mut ColumnIndex, t: T) {
@@ -353,6 +363,7 @@ mod tests {
         let factorial = toplevel.get_by_name("factorial").unwrap();
         let out = factorial.compute_layout_sizes(&toplevel);
         let expected_layout_sizes = LayoutSizes {
+            nonce: 1,
             input: 1,
             aux: 4,
             sel: 2,
@@ -438,6 +449,7 @@ mod tests {
         let test_chip = FuncChip::from_name("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {
+            nonce: 1,
             input: 2,
             aux: 6,
             sel: 5,
@@ -500,6 +512,7 @@ mod tests {
         let test_chip = FuncChip::from_name("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {
+            nonce: 1,
             input: 2,
             aux: 1,
             sel: 4,

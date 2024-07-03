@@ -1402,15 +1402,11 @@ mod test {
 
             let lair_chips = build_lair_chip_vector(&lurk_main, full_input.into(), result.to_vec());
 
-            let lookup_queries = lair_chips
-                .iter()
-                .map(|chip| {
-                    let trace = chip.generate_trace(record, &mut Default::default());
-                    debug_constraints_collecting_queries(chip, &[], None, &trace)
-                })
-                .collect::<Vec<_>>();
-            // TODO: uncomment this!
-            // crate::air::debug::TraceQueries::verify_many(lookup_queries)
+            let lookup_queries = lair_chips.iter().map(|chip| {
+                let trace = chip.generate_trace(record, &mut Default::default());
+                debug_constraints_collecting_queries(chip, &[], None, &trace)
+            });
+            crate::air::debug::TraceQueries::verify_many(lookup_queries)
         };
 
         eval_aux("t", "t");
