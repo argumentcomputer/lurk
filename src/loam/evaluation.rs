@@ -519,68 +519,57 @@ ascent! {
     ////////////////////////////////////////
     // expr is Sym
     // Final
-    relation lookup(Ptr, Ptr, Ptr, Ptr); // (input_expr, input_env, var, env)
+    relation lookup0(Ptr, Ptr, Ptr); // (outer-env, var, env)
+    relation lookup(Ptr, Ptr, Ptr); // (var, outer-env, val)
 
-    // If expr is not a built-in sym, look it up.
-    ingress(env), lookup(expr, env, expr, env) <-- eval_input(expr, env), if expr.is_non_built_in();
+    // If expr is a sym but not a built-in, look it up.
+    ingress(env), lookup0(env, expr, env) <-- eval_input(expr, env), if expr.is_non_built_in(); // FIXME: this should just check for Sym tag; built-ins will have own tag.
 
-    // Unbound variable: If env is nil during lookup, var is unbound. Return an an error.
-    eval(input_expr, input_env, Ptr(Tag::Err.elt(), LE::zero())) <-- lookup(input_expr, input_env, _, env), if env.is_nil();
+    // Unbound variable: If env is nil during lookup0, var is unbound. Return an an error.
+    eval(var, outer_env, Ptr(Tag::Err.elt(), LE::zero())) <-- lookup0(outer_env, var, env), if env.is_nil();
 
     // If env is a cons, ingress the first binding.
-    ingress(binding) <-- lookup(input_expr, input_env, _, env), cons_rel(binding, tail, env);
+    ingress(binding) <-- lookup0(outer_env, _, env), cons_rel(binding, tail, env);
 
     // If var matches that bound in first binding, return the binding's value.
-    eval(input_expr, input_env, value) <--
-        lookup(input_expr, input_env, var, env),
+    eval(var, outer_env, value) <--
+        lookup0(outer_env, var, env),
         cons_rel(binding, tail, env),
         cons_rel(var, value, binding), if !value.is_thunk();
 
-    // If var does not match that bound in first binding, lookup var in next env.
-    ingress(next_env), lookup(input_expr, input_env, var, next_env) <--
-        lookup(input_expr, input_env, var, env),
+    // NOTE: to avoid negation, we may need a separate rule for every non-thunk tag in the rules above and below this comment.
+    // This can be simplified with a not_thunk relation, as long as the set of valid tags is enumerable.
+    // Then we can just have single rules matching against not_thunk: not_thunk(value).
+
+    lookup(var, outer_env, value) <--
+        lookup0(outer_env, var, env),
+        cons_rel(binding, tail, env),
+        cons_rel(var, value, binding);
+
+    eval(var, outer_env, value) <-- lookup(var, outer_env, value), if !value.is_thunk();
+
+    // If var does not match that bound in first binding, lookup0 var in next env.
+    ingress(next_env), lookup0(outer_env, var, next_env) <--
+        lookup0(outer_env, var, env),
         cons_rel(binding, next_env, env),
         cons_rel(bound_var, value, binding), if bound_var != var;
 
     ////////////////////
     // looked-up value is thunk
 
-    // relation lookup_thunk(Ptr, Ptr, Ptr, Ptr); // (input_expr, input_env, body, closed_env)
-
-    ingress(value) <--
-        lookup(input_expr, input_env, var, env),
-        cons_rel(binding, tail, env),
-        cons_rel(var, value, binding), if value.is_thunk();
-
-    // TODO: We may need to ingress a thunk if env was supplied externally.
-    cons(var, thunk) <--
-        lookup(input_expr, input_env, var, env),
-        cons_rel(binding, tail, env),
-        cons_rel(var, thunk, binding),
-        thunk_rel(body, closed_env, thunk);
-
-    // TODO: maybe add some 'continuation' signaling relations for clarity and to optimize first pass.
-
     cons(new_binding, closed_env) <--
-        lookup(input_expr, input_env, var, env),
-        cons_rel(binding, tail, env),
-        cons_rel(var, value, binding),
+        lookup(var, outer_env, value),
         thunk_rel(body, closed_env, thunk),
         cons_rel(var, thunk, new_binding);
 
     eval_input(body, extended_env) <--
-        lookup(input_expr, input_env, var, env),
-        cons_rel(binding, tail, env),
-        cons_rel(var, value, binding),
+        lookup(var, outer_env, value),
         thunk_rel(body, closed_env, thunk),
         cons_rel(var, thunk, new_binding),
         cons_rel(new_binding, closed_env, extended_env);
 
-    // When evaluating a looked-up thunk, add a binding for the var to the thunk before evaling body...
-    eval(input_expr, input_env, result) <--
-        lookup(input_expr, input_env, var, env),
-        cons_rel(binding, tail, env),
-        cons_rel(var, value, binding),
+    eval(var, outer_env, result) <--
+        lookup(var, outer_env, value),
         thunk_rel(body, closed_env, thunk),
         cons_rel(var, thunk, new_binding),
         cons_rel(new_binding, closed_env, extended_env),
@@ -605,7 +594,7 @@ ascent! {
     eval_input(a, env) <--
         eval_input(expr, env), cons_rel(op, rest, expr), if op.is_if(),
         cons_rel(cond, branches, rest), eval(cond, env, evaled_cond),
-        cons_rel(a, more, branches), if !evaled_cond.is_nil();
+        cons_rel(a, more, branches), if !evaled_cond.is_nil(); // FIXME: add not_nil relation to avoid negation.
 
     // Signal: Evaled condition is nil: ingress the remaining branch.
     ingress(more)  <--
