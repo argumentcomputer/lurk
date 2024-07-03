@@ -196,9 +196,7 @@ pub fn set_chip_vector_io<F: PrimeField, H: Hasher<F>>(
 mod tests {
     use crate::{
         func,
-        lair::{
-            execute::QueryRecord, func_chip::FuncChip, hasher::LurkHasher, toplevel::Toplevel, List,
-        },
+        lair::{execute::QueryRecord, func_chip::FuncChip, hasher::LurkHasher, toplevel::Toplevel},
     };
 
     use super::*;
@@ -228,9 +226,9 @@ mod tests {
         let test_chip = FuncChip::from_name("test", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
 
-        let inp: List<F> = [].into();
-        toplevel.execute(test_chip.func, &inp, &mut queries);
-        let out = queries.get_output(test_chip.func, &inp).to_vec();
+        let inp = &[];
+        toplevel.execute_by_name("test", inp, &mut queries);
+        let out = queries.get_output(test_chip.func, inp).to_vec();
 
         let config = BabyBearPoseidon2::new();
         let machine = StarkMachine::new(config, build_chip_vector(&test_chip, vec![], out), 0);

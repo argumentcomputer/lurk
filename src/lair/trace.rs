@@ -446,8 +446,8 @@ mod tests {
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         let queries = &mut QueryRecord::new(&toplevel);
 
-        let args = [F::from_canonical_u32(5)].into();
-        factorial_chip.execute(args, queries);
+        let args = &[F::from_canonical_u32(5)];
+        toplevel.execute_by_name("factorial", args, queries);
         let trace = factorial_chip.generate_trace_parallel(queries);
         let expected_trace = [
             // in order: n, mult, 1/n, fact(n-1), n*fact(n-1), and selectors
@@ -466,8 +466,8 @@ mod tests {
         .collect::<Vec<_>>();
         assert_eq!(trace.values, expected_trace);
 
-        let args = [F::from_canonical_u32(7)].into();
-        fib_chip.execute(args, queries);
+        let args = &[F::from_canonical_u32(7)];
+        toplevel.execute_by_name("fib", args, queries);
         let trace = fib_chip.generate_trace_parallel(queries);
 
         let expected_trace = [
@@ -524,9 +524,9 @@ mod tests {
         };
         assert_eq!(test_chip.layout_sizes, expected_layout_sizes);
 
-        let args = [F::from_canonical_u32(5), F::from_canonical_u32(2)].into();
+        let args = &[F::from_canonical_u32(5), F::from_canonical_u32(2)];
         let queries = &mut QueryRecord::new(&toplevel);
-        test_chip.execute(args, queries);
+        toplevel.execute_by_name("test", args, queries);
         let trace = test_chip.generate_trace_parallel(queries);
         let expected_trace = [
             // The big numbers in the trace are the inverted elements, the witnesses of
@@ -587,15 +587,16 @@ mod tests {
         };
         assert_eq!(test_chip.layout_sizes, expected_layout_sizes);
 
-        let zero = [F::from_canonical_u32(0), F::from_canonical_u32(0)].into();
-        let one = [F::from_canonical_u32(0), F::from_canonical_u32(1)].into();
-        let two = [F::from_canonical_u32(1), F::from_canonical_u32(0)].into();
-        let three = [F::from_canonical_u32(1), F::from_canonical_u32(1)].into();
+        let zero = &[F::from_canonical_u32(0), F::from_canonical_u32(0)];
+        let one = &[F::from_canonical_u32(0), F::from_canonical_u32(1)];
+        let two = &[F::from_canonical_u32(1), F::from_canonical_u32(0)];
+        let three = &[F::from_canonical_u32(1), F::from_canonical_u32(1)];
         let queries = &mut QueryRecord::new(&toplevel);
-        test_chip.execute(zero, queries);
-        test_chip.execute(one, queries);
-        test_chip.execute(two, queries);
-        test_chip.execute(three, queries);
+        let test_func = toplevel.get_by_name("test").unwrap();
+        toplevel.execute(test_func, zero, queries);
+        toplevel.execute(test_func, one, queries);
+        toplevel.execute(test_func, two, queries);
+        toplevel.execute(test_func, three, queries);
         let trace = test_chip.generate_trace_parallel(queries);
 
         let expected_trace = [

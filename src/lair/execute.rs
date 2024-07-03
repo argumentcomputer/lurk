@@ -7,7 +7,6 @@ use std::slice::Iter;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
-    func_chip::FuncChip,
     hasher::Hasher,
     toplevel::Toplevel,
     List,
@@ -354,10 +353,10 @@ impl<F: PrimeField> QueryRecord<F> {
         index: usize,
         input: List<F>,
         output: List<F>,
-        caller_nonce: usize,
+        _caller_nonce: usize,
     ) {
         if let Some(queries) = &mut self.inv_func_queries[index] {
-            queries.insert(output.clone(), input.clone());
+            queries.insert(output, input);
         }
         // fixme
         todo!()
@@ -368,22 +367,22 @@ impl<F: PrimeField> QueryRecord<F> {
         &mut self,
         toplevel: &Toplevel<F, H>,
         func_idx: usize,
-        args: List<F>,
+        args: &[F],
         caller_index: usize,
         caller_nonce: usize,
         call_ident: usize,
     ) -> List<F> {
-        if let Some(out) = self.query(func_idx, &args, caller_index, caller_nonce, call_ident) {
+        if let Some(out) = self.query(func_idx, args, caller_index, caller_nonce, call_ident) {
             out.clone()
         } else {
             let func = toplevel.get_by_index(func_idx).unwrap();
             let (nonce, _) =
-                self.func_queries[func_idx].insert_full(args.clone(), QueryResult::default());
-            let out = func.execute(&args, toplevel, self, nonce);
+                self.func_queries[func_idx].insert_full(args.into(), QueryResult::default());
+            let out = func.execute(args, toplevel, self, nonce);
             let QueryResult {
                 output,
                 callers_nonces,
-            } = self.func_queries[func_idx].get_mut(&args).unwrap();
+            } = self.func_queries[func_idx].get_mut(args).unwrap();
             assert_eq!(*output, None);
             *output = Some(out.clone());
             callers_nonces.insert((caller_index, caller_nonce, call_ident));
@@ -417,16 +416,45 @@ impl<F: PrimeField> QueryRecord<F> {
     }
 }
 
-impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
-    // fixme deprecate this function
-    pub fn execute(&self, args: List<F>, queries: &mut QueryRecord<F>) {
-        todo!()
+impl<F: PrimeField, H: Hasher<F>> Toplevel<F, H> {
+    pub fn execute(&self, func: &Func<F>, args: &[F], record: &mut QueryRecord<F>) {
+        let index = func.index;
+        let (nonce, _) =
+            record.func_queries[index].insert_full(args.into(), QueryResult::default());
+        let out = func.execute(args, self, record, nonce);
+        let QueryResult {
+            output,
+            callers_nonces,
+        } = record.func_queries[index].get_mut(args).unwrap();
+        *output = Some(out);
+        callers_nonces.insert((0, 0, 0)); // This corresponds to the builder.receive done in the Entrypoint chip
     }
 
-    pub fn execute_iter(&self, args: List<F>, queries: &mut QueryRecord<F>) {
-        if !queries.func_queries[self.func.index].contains_key(&args) {
-            self.func.execute_iter(&args, self.toplevel, queries);
+    #[inline]
+    pub fn execute_iter_by_name(
+        &self,
+        name: &'static str,
+        args: &[F],
+        record: &mut QueryRecord<F>,
+    ) {
+        let func = self
+            .get_by_name(name)
+            .expect("Entrypoint function not found");
+        self.execute_iter(func, args, record)
+    }
+
+    pub fn execute_iter(&self, func: &Func<F>, args: &[F], record: &mut QueryRecord<F>) {
+        if !record.func_queries[func.index].contains_key(args) {
+            func.execute_iter(args, self, record);
         }
+    }
+
+    #[inline]
+    pub fn execute_by_name(&self, name: &'static str, args: &[F], record: &mut QueryRecord<F>) {
+        let func = self
+            .get_by_name(name)
+            .expect("Entrypoint function not found");
+        self.execute(func, args, record)
     }
 }
 
@@ -681,11 +709,11 @@ impl<F: PrimeField> Op<F> {
                 map.push(b);
             }
             Op::Call(idx, inp, call_ident) => {
-                let args = inp.iter().map(|a| map[*a]).collect();
+                let args = inp.iter().map(|a| map[*a]).collect::<List<_>>();
                 let out = queries.record_event_and_return(
                     toplevel,
                     *idx,
-                    args,
+                    &args,
                     func_index,
                     nonce,
                     *call_ident,
@@ -914,8 +942,7 @@ mod tests {
             .map(field_from_u32)
             .collect::<List<_>>();
         let record = &mut QueryRecord::new(&toplevel);
-        let out =
-            record.record_event_and_return(&toplevel, polynomial.index, args.clone(), 0, 0, 0);
+        let out = record.record_event_and_return(&toplevel, polynomial.index, &args, 0, 0, 0);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], F::from_canonical_u32(58061));
         let inp = inverse.execute(&out, &toplevel, record, 0);
@@ -987,38 +1014,39 @@ mod tests {
         );
 
         let toplevel = Toplevel::<F, LurkHasher>::new(&[half_e, double_e]);
-        let half = FuncChip::from_name("half", &toplevel);
-        let double = FuncChip::from_name("double", &toplevel);
+        let half = toplevel.get_by_name("half").unwrap();
+        let half_chip = FuncChip::from_name("half", &toplevel);
+        let double_chip = FuncChip::from_name("double", &toplevel);
 
         let queries = &mut QueryRecord::new(&toplevel);
         let f = F::from_canonical_u32;
         queries.inject_inv_queries("double", &toplevel, [(&[f(1)], &[f(2)])]);
-        let args = [f(2)];
+        let args = &[f(2)];
 
-        half.execute_iter(args.into(), queries);
-        let res1 = queries.get_output(half.func, &args).to_vec();
+        toplevel.execute_iter(half, args, queries);
+        let res1 = queries.get_output(half, args).to_vec();
         let traces1 = (
-            half.generate_trace_sequential(queries),
-            double.generate_trace_sequential(queries),
+            half_chip.generate_trace_sequential(queries),
+            double_chip.generate_trace_sequential(queries),
         );
 
         // even after `clean`, the preimg of `double(1)` can still be recovered
         queries.clean();
-        half.execute_iter(args.into(), queries);
-        let res2 = queries.get_output(half.func, &args).to_vec();
+        toplevel.execute_iter(half, args, queries);
+        let res2 = queries.get_output(half, args).to_vec();
         let traces2 = (
-            half.generate_trace_sequential(queries),
-            double.generate_trace_sequential(queries),
+            half_chip.generate_trace_sequential(queries),
+            double_chip.generate_trace_sequential(queries),
         );
         assert_eq!(res1, res2);
         assert_eq!(traces1, traces2);
 
         queries.clean();
-        half.execute(args.into(), queries);
-        let res3 = queries.get_output(half.func, &args);
+        toplevel.execute(half, args, queries);
+        let res3 = queries.get_output(half, args);
         let traces3 = (
-            half.generate_trace_sequential(queries),
-            double.generate_trace_sequential(queries),
+            half_chip.generate_trace_sequential(queries),
+            double_chip.generate_trace_sequential(queries),
         );
         assert_eq!(res2, res3);
         assert_eq!(traces2, traces3);

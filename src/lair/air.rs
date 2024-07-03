@@ -574,9 +574,9 @@ mod tests {
     fn lair_long_constraint_test() {
         let toplevel = demo_toplevel::<_, LurkHasher>();
         let fib_chip = FuncChip::from_name("fib", &toplevel);
-        let args = [field_from_u32(20000)].into();
+        let args = &[field_from_u32(20000)];
         let queries = &mut QueryRecord::new(&toplevel);
-        fib_chip.execute_iter(args, queries);
+        toplevel.execute_iter_by_name("fib", args, queries);
         let fib_trace = fib_chip.generate_trace_parallel(queries);
 
         let _ = debug_constraints_collecting_queries(&fib_chip, &[], None, &fib_trace);
@@ -599,14 +599,14 @@ mod tests {
         let not_chip = FuncChip::from_name("not", &toplevel);
 
         let queries = &mut QueryRecord::new(&toplevel);
-        let args = [field_from_u32(4)].into();
-        not_chip.execute_iter(args, queries);
-        let args = [field_from_u32(8)].into();
-        not_chip.execute_iter(args, queries);
-        let args = [field_from_u32(0)].into();
-        not_chip.execute_iter(args, queries);
-        let args = [field_from_u32(1)].into();
-        not_chip.execute_iter(args, queries);
+        let args = &[field_from_u32(4)];
+        toplevel.execute_iter_by_name("not", args, queries);
+        let args = &[field_from_u32(8)];
+        toplevel.execute_iter_by_name("not", args, queries);
+        let args = &[field_from_u32(0)];
+        toplevel.execute_iter_by_name("not", args, queries);
+        let args = &[field_from_u32(1)];
+        toplevel.execute_iter_by_name("not", args, queries);
 
         let not_width = not_chip.width();
         let not_trace = RowMajorMatrix::new(
@@ -622,14 +622,14 @@ mod tests {
             not_width,
         );
 
-        let args = [field_from_u32(4), field_from_u32(2)].into();
-        eq_chip.execute_iter(args, queries);
-        let args = [field_from_u32(4), field_from_u32(4)].into();
-        eq_chip.execute_iter(args, queries);
-        let args = [field_from_u32(0), field_from_u32(3)].into();
-        eq_chip.execute_iter(args, queries);
-        let args = [field_from_u32(0), field_from_u32(0)].into();
-        eq_chip.execute_iter(args, queries);
+        let args = &[field_from_u32(4), field_from_u32(2)];
+        toplevel.execute_iter_by_name("eq", args, queries);
+        let args = &[field_from_u32(4), field_from_u32(4)];
+        toplevel.execute_iter_by_name("eq", args, queries);
+        let args = &[field_from_u32(0), field_from_u32(3)];
+        toplevel.execute_iter_by_name("eq", args, queries);
+        let args = &[field_from_u32(0), field_from_u32(0)];
+        toplevel.execute_iter_by_name("eq", args, queries);
 
         let eq_width = eq_chip.width();
         let eq_trace = RowMajorMatrix::new(
@@ -665,14 +665,14 @@ mod tests {
 
         let queries = &mut QueryRecord::new(&toplevel);
         let f = field_from_u32;
-        let args = [f(0), f(0), f(0), f(0)].into();
-        if_many_chip.execute_iter(args, queries);
-        let args = [f(1), f(3), f(8), f(2)].into();
-        if_many_chip.execute_iter(args, queries);
-        let args = [f(0), f(0), f(4), f(1)].into();
-        if_many_chip.execute_iter(args, queries);
-        let args = [f(0), f(0), f(0), f(9)].into();
-        if_many_chip.execute_iter(args, queries);
+        let args = &[f(0), f(0), f(0), f(0)];
+        toplevel.execute_iter_by_name("if_many", args, queries);
+        let args = &[f(1), f(3), f(8), f(2)];
+        toplevel.execute_iter_by_name("if_many", args, queries);
+        let args = &[f(0), f(0), f(4), f(1)];
+        toplevel.execute_iter_by_name("if_many", args, queries);
+        let args = &[f(0), f(0), f(0), f(9)];
+        toplevel.execute_iter_by_name("if_many", args, queries);
 
         let if_many_trace = if_many_chip.generate_trace_parallel(queries);
 
@@ -725,16 +725,16 @@ mod tests {
 
         let queries = &mut QueryRecord::new(&toplevel);
         let f = field_from_u32;
-        let args = [f(0), f(0)].into();
-        match_many_chip.execute_iter(args, queries);
-        let args = [f(0), f(1)].into();
-        match_many_chip.execute_iter(args, queries);
-        let args = [f(1), f(0)].into();
-        match_many_chip.execute_iter(args, queries);
-        let args = [f(1), f(1)].into();
-        match_many_chip.execute_iter(args, queries);
-        let args = [f(0), f(8)].into();
-        match_many_chip.execute_iter(args, queries);
+        let args = &[f(0), f(0)];
+        toplevel.execute_iter_by_name("match_many", args, queries);
+        let args = &[f(0), f(1)];
+        toplevel.execute_iter_by_name("match_many", args, queries);
+        let args = &[f(1), f(0)];
+        toplevel.execute_iter_by_name("match_many", args, queries);
+        let args = &[f(1), f(1)];
+        toplevel.execute_iter_by_name("match_many", args, queries);
+        let args = &[f(0), f(8)];
+        toplevel.execute_iter_by_name("match_many", args, queries);
 
         let match_many_trace = match_many_chip.generate_trace_parallel(queries);
 

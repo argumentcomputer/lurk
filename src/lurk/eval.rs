@@ -1491,8 +1491,8 @@ mod test {
     fn test_ingress_egress() {
         let toplevel = &build_lurk_toplevel();
 
-        let ingress_chip = FuncChip::from_name("ingress", toplevel);
-        let egress_chip = FuncChip::from_name("egress", toplevel);
+        let ingress = toplevel.get_by_name("ingress").unwrap();
+        let egress = toplevel.get_by_name("egress").unwrap();
         let hash_32_8_chip = FuncChip::from_name("hash_32_8", toplevel);
 
         let state = State::init_lurk_state().rccell();
@@ -1511,13 +1511,12 @@ mod test {
             ingress_args[0] = tag;
             ingress_args[8..].copy_from_slice(&digest);
 
-            let ingress_args: List<_> = ingress_args.into();
-            ingress_chip.execute_iter(ingress_args.clone(), queries);
-            let ingress_out_ptr = queries.get_output(ingress_chip.func, &ingress_args)[0];
+            toplevel.execute_iter(ingress, &ingress_args, queries);
+            let ingress_out_ptr = queries.get_output(ingress, &ingress_args)[0];
 
-            let egress_args: List<_> = [tag, ingress_out_ptr].into();
-            egress_chip.execute_iter(egress_args.clone(), queries);
-            let egress_out = queries.get_output(egress_chip.func, &egress_args);
+            let egress_args = &[tag, ingress_out_ptr];
+            toplevel.execute_iter(egress, egress_args, queries);
+            let egress_out = queries.get_output(egress, egress_args);
 
             assert_eq!(
                 egress_out,
