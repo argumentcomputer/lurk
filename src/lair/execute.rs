@@ -70,10 +70,7 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
         map.insert("num_funcs".to_string(), self.func_queries.len());
         map.insert(
             "num_func_queries".to_string(),
-            self.func_queries
-                .iter()
-                .map(|im| im.iter().filter(|(_, r)| r.mult > 0).count())
-                .sum(),
+            self.func_queries.iter().map(|im| im.iter().count()).sum(),
         );
         map.insert(
             "sum_func_queries_mults".to_string(),
@@ -86,10 +83,7 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
         map.insert("num_mem_tables".to_string(), self.mem_queries.len());
         map.insert(
             "num_mem_queries".to_string(),
-            self.mem_queries
-                .iter()
-                .map(|im| im.iter().filter(|(_, mult)| mult > &&0).count())
-                .sum(),
+            self.mem_queries.iter().map(|im| im.iter().count()).sum(),
         );
         map.insert(
             "sum_mem_queries_mults".to_string(),
@@ -144,54 +138,27 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
     fn shard(self, config: &Self::Config) -> Vec<Self> {
         let Self {
             index: _,
-            func_queries,
+            mut func_queries,
             inv_func_queries: _,
-            mem_queries,
+            mut mem_queries,
         } = self;
 
         let num_funcs = func_queries.len();
         let num_mem_tables = mem_queries.len();
-
-        let mut filtered_func_queries = vec![FxIndexMap::default(); num_funcs];
-        let mut filtered_mem_queries = vec![FxIndexMap::default(); num_mem_tables];
-
-        for (func_idx, queries) in func_queries.into_iter().enumerate() {
-            for (args, r) in queries {
-                if r.mult > 0 {
-                    filtered_func_queries[func_idx].insert(args, r);
-                }
-            }
-        }
-
-        for (mem_idx, queries) in mem_queries.into_iter().enumerate() {
-            for (args, mult) in queries {
-                if mult > 0 {
-                    filtered_mem_queries[mem_idx].insert(args, mult);
-                }
-            }
-        }
 
         let max_shard_size = config.max_shard_size;
 
         if max_shard_size == 0 {
             return vec![Self {
                 index: 0,
-                func_queries: filtered_func_queries,
+                func_queries,
                 inv_func_queries: vec![],
-                mem_queries: filtered_mem_queries,
+                mem_queries,
             }];
         }
 
-        let max_num_func_queries = filtered_func_queries
-            .iter()
-            .map(IndexMap::len)
-            .max()
-            .unwrap_or(0);
-        let max_num_mem_queries = filtered_mem_queries
-            .iter()
-            .map(IndexMap::len)
-            .max()
-            .unwrap_or(0);
+        let max_num_func_queries = func_queries.iter().map(IndexMap::len).max().unwrap_or(0);
+        let max_num_mem_queries = mem_queries.iter().map(IndexMap::len).max().unwrap_or(0);
 
         let div_ceil = |numer, denom| (numer + denom - 1) / denom;
         let num_shards_needed_for_func_queries = div_ceil(max_num_func_queries, max_shard_size);
@@ -202,9 +169,9 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
         if num_shards_needed < 2 {
             vec![Self {
                 index: 0,
-                func_queries: filtered_func_queries,
+                func_queries,
                 inv_func_queries: vec![],
-                mem_queries: filtered_mem_queries,
+                mem_queries,
             }]
         } else {
             let empty_func_queries = vec![FxIndexMap::default(); num_funcs];
@@ -214,23 +181,23 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
                 .try_into()
                 .expect("Number of shards needed is too big");
             for index in 0..num_shards_needed_u32 {
-                let mut func_queries = empty_func_queries.clone();
+                let mut sharded_func_queries = empty_func_queries.clone();
                 for func_idx in 0..num_funcs {
-                    let queries = &mut filtered_func_queries[func_idx];
-                    func_queries[func_idx]
+                    let queries = &mut func_queries[func_idx];
+                    sharded_func_queries[func_idx]
                         .extend(queries.drain(0..max_shard_size.min(queries.len())));
                 }
-                let mut mem_queries = empty_mem_queries.clone();
+                let mut sharded_mem_queries = empty_mem_queries.clone();
                 for mem_idx in 0..num_mem_tables {
-                    let queries = &mut filtered_mem_queries[mem_idx];
-                    mem_queries[mem_idx]
+                    let queries = &mut mem_queries[mem_idx];
+                    sharded_mem_queries[mem_idx]
                         .extend(queries.drain(0..max_shard_size.min(queries.len())));
                 }
                 shards.push(QueryRecord {
                     index,
-                    func_queries,
+                    func_queries: sharded_func_queries,
                     inv_func_queries: vec![],
-                    mem_queries,
+                    mem_queries: sharded_mem_queries,
                 });
             }
             shards
