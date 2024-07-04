@@ -96,44 +96,8 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
         map
     }
 
-    fn append(&mut self, other: &mut Self) {
-        // draining func queries from `other` to `self`, starting from the end
-        let mut func_idx = self.func_queries.len() - 1;
-        while let Some(func_queries) = other.func_queries.pop() {
-            let self_func_queries = &mut self.func_queries[func_idx];
-            for (inp, other_res) in func_queries {
-                if other_res.callers_nonces.is_empty() {
-                    continue;
-                }
-                if let Some(self_res) = self_func_queries.get_mut(&inp) {
-                    assert_eq!(&self_res.output, &other_res.output);
-                    // TODO merge caller nonces somehow
-                    todo!()
-                } else {
-                    self_func_queries.insert(inp, other_res);
-                }
-            }
-            func_idx -= 1;
-        }
-
-        // do nothing to inv_func_queries: it's needed for auxiliary trace generation information, every shard has a full copy
-
-        // draining mem queries from `other` to `self`, starting from the end
-        let mut mem_idx = self.mem_queries.len() - 1;
-        while let Some(other_mem_map) = other.mem_queries.pop() {
-            let self_mem_map = &mut self.mem_queries[mem_idx];
-            for (args, other_mult) in other_mem_map {
-                if other_mult == 0 {
-                    continue;
-                }
-                if let Some(self_mult) = self_mem_map.get_mut(&args) {
-                    *self_mult += other_mult;
-                } else {
-                    self_mem_map.insert(args, other_mult);
-                }
-            }
-            mem_idx -= 1;
-        }
+    fn append(&mut self, _: &mut Self) {
+        // just a no-op because `generate_dependencies` is a no-op
     }
 
     fn shard(self, config: &Self::Config) -> Vec<Self> {
@@ -515,7 +479,11 @@ impl<F: PrimeField> Func<F> {
                             .unwrap();
                         assert_eq!(*output, None);
                         *output = Some(out.into());
-                        callers_nonces.insert((frame.caller_index, frame.caller_nonce, frame.call_ident));
+                        callers_nonces.insert((
+                            frame.caller_index,
+                            frame.caller_nonce,
+                            frame.call_ident,
+                        ));
                     } else {
                         map = out;
                         break;
@@ -940,9 +908,7 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], F::from_canonical_u32(58061));
         let inp = inverse.execute(&out, &toplevel, record, 0);
-        assert_eq!(inp.len(), 5);
-        let expect_inp = args;
-        assert_eq!(inp, expect_inp);
+        assert_eq!(inp, args);
     }
 
     #[test]
