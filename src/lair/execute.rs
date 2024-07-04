@@ -311,6 +311,13 @@ impl<F: PrimeField> QueryRecord<F> {
         inp
     }
 
+    // this function is similar to `inject_inv_queries`, but meant for internal use only
+    fn try_insert_inv_query_result(&mut self, index: usize, input: List<F>, output: &List<F>) {
+        if let Some(queries) = &mut self.inv_func_queries[index] {
+            queries.insert(output.clone(), input);
+        }
+    }
+
     fn record_event_and_return<H: Hasher<F>>(
         &mut self,
         toplevel: &Toplevel<F, H>,
@@ -334,6 +341,7 @@ impl<F: PrimeField> QueryRecord<F> {
             assert_eq!(*output, None);
             *output = Some(out.clone());
             callers_nonces.insert((caller_index, caller_nonce, call_ident));
+            self.try_insert_inv_query_result(func_idx, args.into(), &out);
             out
         }
     }
@@ -370,6 +378,7 @@ impl<F: PrimeField, H: Hasher<F>> Toplevel<F, H> {
         let (nonce, _) =
             record.func_queries[index].insert_full(args.into(), QueryResult::default());
         let out = func.execute(args, self, record, nonce);
+        record.try_insert_inv_query_result(index, args.into(), &out);
         let QueryResult {
             output,
             callers_nonces,
@@ -396,6 +405,7 @@ impl<F: PrimeField, H: Hasher<F>> Toplevel<F, H> {
         let (nonce, _) =
             record.func_queries[index].insert_full(args.into(), QueryResult::default());
         let out = func.execute_iter(args, self, record, nonce);
+        record.try_insert_inv_query_result(index, args.into(), &out);
         let QueryResult {
             output,
             callers_nonces,
@@ -471,6 +481,7 @@ impl<F: PrimeField> Func<F> {
                         func_index = frame.caller_index;
                         nonce = frame.caller_nonce;
                         map.extend(out.iter());
+                        queries.try_insert_inv_query_result(frame.index, frame.args.clone(), &out.clone().into());
                         let QueryResult {
                             output,
                             callers_nonces,
