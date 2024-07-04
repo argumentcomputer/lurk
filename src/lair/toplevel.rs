@@ -41,13 +41,16 @@ impl<F: Clone + Ord, H: Hasher<F>> Toplevel<F, H> {
 
 impl<F, H: Hasher<F>> Toplevel<F, H> {
     #[inline]
-    pub fn get_by_index(&self, i: usize) -> Option<&Func<F>> {
-        self.map.get_index(i).map(|(_, func)| func)
+    pub fn get_by_index(&self, i: usize) -> &Func<F> {
+        self.map
+            .get_index(i)
+            .map(|(_, func)| func)
+            .expect("Index out of bounds")
     }
 
     #[inline]
-    pub fn get_by_name(&self, name: &'static str) -> Option<&Func<F>> {
-        self.map.get(&Name(name))
+    pub fn get_by_name(&self, name: &'static str) -> &Func<F> {
+        self.map.get(&Name(name)).expect("Func not found")
     }
 
     #[inline]

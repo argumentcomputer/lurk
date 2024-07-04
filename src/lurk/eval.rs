@@ -1403,7 +1403,7 @@ mod test {
             full_input[8..16].copy_from_slice(&expr_digest);
 
             let full_input: List<_> = full_input.into();
-            toplevel.execute_iter(lurk_main.func, &full_input, record);
+            toplevel.execute(lurk_main.func, &full_input, record);
             let result = record.get_output(lurk_main.func, &full_input);
 
             assert_eq!(&result[0], &expected_tag.to_field());
@@ -1492,8 +1492,8 @@ mod test {
     fn test_ingress_egress() {
         let toplevel = &build_lurk_toplevel();
 
-        let ingress = toplevel.get_by_name("ingress").unwrap();
-        let egress = toplevel.get_by_name("egress").unwrap();
+        let ingress = toplevel.get_by_name("ingress");
+        let egress = toplevel.get_by_name("egress");
         let hash_32_8_chip = FuncChip::from_name("hash_32_8", toplevel);
 
         let state = State::init_lurk_state().rccell();
@@ -1512,11 +1512,11 @@ mod test {
             ingress_args[0] = tag;
             ingress_args[8..].copy_from_slice(&digest);
 
-            toplevel.execute_iter(ingress, &ingress_args, queries);
+            toplevel.execute(ingress, &ingress_args, queries);
             let ingress_out_ptr = queries.get_output(ingress, &ingress_args)[0];
 
             let egress_args = &[tag, ingress_out_ptr];
-            toplevel.execute_iter(egress, egress_args, queries);
+            toplevel.execute(egress, egress_args, queries);
             let egress_out = queries.get_output(egress, egress_args);
 
             assert_eq!(

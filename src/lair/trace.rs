@@ -426,7 +426,7 @@ mod tests {
     fn lair_layout_sizes_test() {
         let toplevel = demo_toplevel::<_, LurkHasher>();
 
-        let factorial = toplevel.get_by_name("factorial").unwrap();
+        let factorial = toplevel.get_by_name("factorial");
         let out = factorial.compute_layout_sizes(&toplevel);
         let expected_layout_sizes = LayoutSizes {
             nonce: 1,
@@ -592,7 +592,7 @@ mod tests {
         let two = &[F::from_canonical_u32(1), F::from_canonical_u32(0)];
         let three = &[F::from_canonical_u32(1), F::from_canonical_u32(1)];
         let queries = &mut QueryRecord::new(&toplevel);
-        let test_func = toplevel.get_by_name("test").unwrap();
+        let test_func = toplevel.get_by_name("test");
         toplevel.execute(test_func, zero, queries);
         toplevel.execute(test_func, one, queries);
         toplevel.execute(test_func, two, queries);

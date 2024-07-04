@@ -268,7 +268,7 @@ impl<F: Field> Op<F> {
                 map.push(x);
             }
             Op::Call(idx, inp, _) => {
-                let func = toplevel.get_by_index(*idx).unwrap();
+                let func = toplevel.get_by_index(*idx);
                 let mut out = Vec::with_capacity(func.output_size);
                 for _ in 0..func.output_size {
                     let o = *local.next_aux(index);
@@ -292,7 +292,7 @@ impl<F: Field> Op<F> {
                 );
             }
             Op::PreImg(idx, out, _) => {
-                let func = toplevel.get_by_index(*idx).unwrap();
+                let func = toplevel.get_by_index(*idx);
                 let mut inp = Vec::with_capacity(func.input_size);
                 for _ in 0..func.input_size {
                     let i = *local.next_aux(index);
@@ -587,7 +587,7 @@ mod tests {
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         let args = &[field_from_u32(20000)];
         let queries = &mut QueryRecord::new(&toplevel);
-        toplevel.execute_iter_by_name("fib", args, queries);
+        toplevel.execute_by_name("fib", args, queries);
         let fib_trace = fib_chip.generate_trace_parallel(queries);
 
         let _ = debug_constraints_collecting_queries(&fib_chip, &[], None, &fib_trace);
@@ -611,13 +611,13 @@ mod tests {
 
         let queries = &mut QueryRecord::new(&toplevel);
         let args = &[field_from_u32(4)];
-        toplevel.execute_iter_by_name("not", args, queries);
+        toplevel.execute_by_name("not", args, queries);
         let args = &[field_from_u32(8)];
-        toplevel.execute_iter_by_name("not", args, queries);
+        toplevel.execute_by_name("not", args, queries);
         let args = &[field_from_u32(0)];
-        toplevel.execute_iter_by_name("not", args, queries);
+        toplevel.execute_by_name("not", args, queries);
         let args = &[field_from_u32(1)];
-        toplevel.execute_iter_by_name("not", args, queries);
+        toplevel.execute_by_name("not", args, queries);
         let not_trace = not_chip.generate_trace_sequential(queries);
 
         let not_width = not_chip.width();
@@ -636,13 +636,13 @@ mod tests {
         assert_eq!(not_trace, expected_not_trace);
 
         let args = &[field_from_u32(4), field_from_u32(2)];
-        toplevel.execute_iter_by_name("eq", args, queries);
+        toplevel.execute_by_name("eq", args, queries);
         let args = &[field_from_u32(4), field_from_u32(4)];
-        toplevel.execute_iter_by_name("eq", args, queries);
+        toplevel.execute_by_name("eq", args, queries);
         let args = &[field_from_u32(0), field_from_u32(3)];
-        toplevel.execute_iter_by_name("eq", args, queries);
+        toplevel.execute_by_name("eq", args, queries);
         let args = &[field_from_u32(0), field_from_u32(0)];
-        toplevel.execute_iter_by_name("eq", args, queries);
+        toplevel.execute_by_name("eq", args, queries);
         let eq_trace = eq_chip.generate_trace_sequential(queries);
 
         let eq_width = eq_chip.width();
@@ -681,13 +681,13 @@ mod tests {
         let queries = &mut QueryRecord::new(&toplevel);
         let f = field_from_u32;
         let args = &[f(0), f(0), f(0), f(0)];
-        toplevel.execute_iter_by_name("if_many", args, queries);
+        toplevel.execute_by_name("if_many", args, queries);
         let args = &[f(1), f(3), f(8), f(2)];
-        toplevel.execute_iter_by_name("if_many", args, queries);
+        toplevel.execute_by_name("if_many", args, queries);
         let args = &[f(0), f(0), f(4), f(1)];
-        toplevel.execute_iter_by_name("if_many", args, queries);
+        toplevel.execute_by_name("if_many", args, queries);
         let args = &[f(0), f(0), f(0), f(9)];
-        toplevel.execute_iter_by_name("if_many", args, queries);
+        toplevel.execute_by_name("if_many", args, queries);
 
         let if_many_trace = if_many_chip.generate_trace_parallel(queries);
 
@@ -741,15 +741,15 @@ mod tests {
         let queries = &mut QueryRecord::new(&toplevel);
         let f = field_from_u32;
         let args = &[f(0), f(0)];
-        toplevel.execute_iter_by_name("match_many", args, queries);
+        toplevel.execute_by_name("match_many", args, queries);
         let args = &[f(0), f(1)];
-        toplevel.execute_iter_by_name("match_many", args, queries);
+        toplevel.execute_by_name("match_many", args, queries);
         let args = &[f(1), f(0)];
-        toplevel.execute_iter_by_name("match_many", args, queries);
+        toplevel.execute_by_name("match_many", args, queries);
         let args = &[f(1), f(1)];
-        toplevel.execute_iter_by_name("match_many", args, queries);
+        toplevel.execute_by_name("match_many", args, queries);
         let args = &[f(0), f(8)];
-        toplevel.execute_iter_by_name("match_many", args, queries);
+        toplevel.execute_by_name("match_many", args, queries);
 
         let match_many_trace = match_many_chip.generate_trace_parallel(queries);
 
