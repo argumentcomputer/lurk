@@ -481,7 +481,11 @@ impl<F: PrimeField> Func<F> {
                         func_index = frame.caller_index;
                         nonce = frame.caller_nonce;
                         map.extend(out.iter());
-                        queries.try_insert_inv_query_result(frame.index, frame.args.clone(), &out.clone().into());
+                        queries.try_insert_inv_query_result(
+                            frame.index,
+                            frame.args.clone(),
+                            &out.clone().into(),
+                        );
                         let QueryResult {
                             output,
                             callers_nonces,
