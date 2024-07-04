@@ -1402,29 +1402,38 @@ mod test {
             full_input[8..16].copy_from_slice(&expr_digest);
 
             let full_input: List<_> = full_input.into();
-            toplevel.execute(lurk_main.func, &full_input, record);
+            toplevel.execute_iter(lurk_main.func, &full_input, record);
             let result = record.get_output(lurk_main.func, &full_input);
 
             assert_eq!(&result[0], &expected_tag.to_field());
             assert_eq!(&result[8..], &expected_digest);
 
-            let lair_chips = build_lair_chip_vector(&lurk_main, full_input.clone().into(), result.to_vec());
+            let lair_chips =
+                build_lair_chip_vector(&lurk_main, full_input.clone().into(), result.to_vec());
 
-            let lookup_queries: Vec<_> = lair_chips.iter().map(|chip| {
-                let trace = chip.generate_trace(record, &mut Default::default());
-                debug_constraints_collecting_queries(chip, &[], None, &trace)
-            }).collect();
+            let lookup_queries: Vec<_> = lair_chips
+                .iter()
+                .map(|chip| {
+                    let trace = chip.generate_trace(record, &mut Default::default());
+                    debug_constraints_collecting_queries(chip, &[], None, &trace)
+                })
+                .collect();
             TraceQueries::verify_many(lookup_queries);
 
             let config = BabyBearPoseidon2::new();
-            let machine = StarkMachine::new(config, build_chip_vector(&lurk_main, full_input.into(), result.into()), 0);
+            let machine = StarkMachine::new(
+                config,
+                build_chip_vector(&lurk_main, full_input.into(), result.into()),
+                0,
+            );
 
             let (pk, vk) = machine.setup(&LairMachineProgram);
             let mut challenger_p = machine.config().challenger();
             let mut challenger_v = machine.config().challenger();
             machine.debug_constraints(&pk, record.clone(), &mut challenger_p.clone());
             let opts = SphinxCoreOpts::default();
-            let proof = machine.prove::<LocalProver<_, _>>(&pk, record.clone(), &mut challenger_p, opts);
+            let proof =
+                machine.prove::<LocalProver<_, _>>(&pk, record.clone(), &mut challenger_p, opts);
             machine
                 .verify(&vk, &proof, &mut challenger_v)
                 .expect("proof verifies");
