@@ -137,7 +137,6 @@ impl<F: Field> Func<F> {
         );
         let call_ctx = CallCtx { func_idx, call_inp };
 
-        let mult = *local.next_aux(index);
         let toplevel_sel = self.body.return_sel::<AB>(local);
         self.body.eval(
             builder,
@@ -149,7 +148,6 @@ impl<F: Field> Func<F> {
             call_ctx,
         );
         builder.assert_bool(toplevel_sel.clone());
-        builder.when_ne(toplevel_sel, F::one()).assert_zero(mult);
     }
 }
 
