@@ -272,6 +272,9 @@ impl<F> Op<F> {
                 *aux += aux_size;
                 degrees.extend(vec![1; aux_size]);
             }
+            Op::ExternCall(..) => {
+                todo!()
+            }
             Op::Debug(..) => (),
         }
     }

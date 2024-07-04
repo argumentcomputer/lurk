@@ -79,6 +79,7 @@ pub enum OpE<F> {
     Slice(VarList, VarList),
     /// `Hash([x, ...], [y, ...])` binds `x, ...` to the hash of `y, ...`
     Hash(VarList, VarList),
+    ExternCall(VarList, Name, VarList),
     /// `Debug(s)` emits debug message `s`
     Debug(&'static str),
 }

@@ -311,6 +311,9 @@ impl<F: Clone + Ord> BlockE<F> {
                     img.iter().for_each(|val| bind_new(val, ctx));
                     ops.push(Op::Hash(preimg));
                 }
+                OpE::ExternCall(..) => {
+                    todo!()
+                }
             }
         }
         let ops = ops.into();

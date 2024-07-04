@@ -483,6 +483,9 @@ impl<F: PrimeField32> Func<F> {
                     map.extend(args);
                     result.new_lookup(nonce, &mut requires);
                 }
+                ExecEntry::Op(Op::ExternCall(..)) => {
+                    todo!()
+                }
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
                 ExecEntry::Op(Op::Hash(preimg)) => {
                     let preimg: List<_> = preimg.iter().map(|a| map[*a]).collect();

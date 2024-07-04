@@ -379,6 +379,9 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(img_var.into()))
                 }
             }
+            Op::ExternCall(..) => {
+                todo!()
+            }
             Op::Debug(..) => (),
         }
     }

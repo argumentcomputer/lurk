@@ -349,6 +349,9 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, f);
                 }
             }
+            Op::ExternCall(..) => {
+                todo!()
+            }
             Op::Debug(..) => (),
         }
     }

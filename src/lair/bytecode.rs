@@ -35,6 +35,7 @@ pub enum Op<F> {
     Load(usize, usize),
     /// `Hash([x, ...])` extends the stack with the hash of `x, ...`
     Hash(List<usize>),
+    ExternCall(usize, List<usize>, usize),
     /// `Debug(s)` emits debug message `s`
     Debug(&'static str),
 }
