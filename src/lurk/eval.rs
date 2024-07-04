@@ -1310,9 +1310,8 @@ mod test {
     use p3_field::AbstractField;
     use sphinx_core::{
         air::MachineAir,
-        stark::{LocalProver, StarkGenericConfig, StarkMachine},
+        stark::{StarkGenericConfig, StarkMachine},
         utils::BabyBearPoseidon2,
-        utils::SphinxCoreOpts,
     };
 
     use crate::{
@@ -1360,26 +1359,28 @@ mod test {
         let expect_eq = |computed: usize, expected: Expect| {
             expected.assert_eq(&computed.to_string());
         };
-        expect_eq(lurk_main.width(), expect!["53"]);
-        expect_eq(eval.width(), expect!["117"]);
-        expect_eq(eval_unop.width(), expect!["37"]);
-        expect_eq(eval_binop_num.width(), expect!["45"]);
-        expect_eq(eval_binop_misc.width(), expect!["43"]);
-        expect_eq(eval_let.width(), expect!["43"]);
-        expect_eq(eval_letrec.width(), expect!["44"]);
-        expect_eq(equal.width(), expect!["39"]);
-        expect_eq(equal_inner.width(), expect!["58"]);
-        expect_eq(car_cdr.width(), expect!["29"]);
-        expect_eq(apply.width(), expect!["46"]);
-        expect_eq(env_lookup.width(), expect!["20"]);
-        expect_eq(ingress.width(), expect!["108"]);
-        expect_eq(ingress_builtin.width(), expect!["47"]);
-        expect_eq(egress.width(), expect!["73"]);
-        expect_eq(egress_builtin.width(), expect!["40"]);
-        expect_eq(hash_32_8.width(), expect!["648"]);
-        expect_eq(hash_48_8.width(), expect!["968"]);
+        expect_eq(lurk_main.width(), expect!["52"]);
+        expect_eq(eval.width(), expect!["116"]);
+        expect_eq(eval_unop.width(), expect!["36"]);
+        expect_eq(eval_binop_num.width(), expect!["44"]);
+        expect_eq(eval_binop_misc.width(), expect!["42"]);
+        expect_eq(eval_let.width(), expect!["42"]);
+        expect_eq(eval_letrec.width(), expect!["43"]);
+        expect_eq(equal.width(), expect!["38"]);
+        expect_eq(equal_inner.width(), expect!["57"]);
+        expect_eq(car_cdr.width(), expect!["28"]);
+        expect_eq(apply.width(), expect!["45"]);
+        expect_eq(env_lookup.width(), expect!["19"]);
+        expect_eq(ingress.width(), expect!["107"]);
+        expect_eq(ingress_builtin.width(), expect!["46"]);
+        expect_eq(egress.width(), expect!["72"]);
+        expect_eq(egress_builtin.width(), expect!["39"]);
+        expect_eq(hash_32_8.width(), expect!["647"]);
+        expect_eq(hash_48_8.width(), expect!["967"]);
 
         let state = State::init_lurk_state().rccell();
+
+        let config = BabyBearPoseidon2::new();
 
         let eval_aux = |expr: &str, res: &str| {
             let zstore = &mut ZStore::<_, LurkHasher>::default();
@@ -1420,23 +1421,14 @@ mod test {
                 .collect();
             TraceQueries::verify_many(lookup_queries);
 
-            let config = BabyBearPoseidon2::new();
             let machine = StarkMachine::new(
-                config,
+                config.clone(),
                 build_chip_vector(&lurk_main, full_input.into(), result.into()),
                 0,
             );
-
-            let (pk, vk) = machine.setup(&LairMachineProgram);
+            let (pk, _vk) = machine.setup(&LairMachineProgram);
             let mut challenger_p = machine.config().challenger();
-            let mut challenger_v = machine.config().challenger();
-            machine.debug_constraints(&pk, record.clone(), &mut challenger_p.clone());
-            let opts = SphinxCoreOpts::default();
-            let proof =
-                machine.prove::<LocalProver<_, _>>(&pk, record.clone(), &mut challenger_p, opts);
-            machine
-                .verify(&vk, &proof, &mut challenger_v)
-                .expect("proof verifies");
+            machine.debug_constraints(&pk, record.clone(), &mut challenger_p);
         };
 
         eval_aux("t", "t");

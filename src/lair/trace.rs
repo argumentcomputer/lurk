@@ -431,7 +431,7 @@ mod tests {
         let expected_layout_sizes = LayoutSizes {
             nonce: 1,
             input: 1,
-            aux: 4,
+            aux: 8,
             sel: 2,
         };
         assert_eq!(out, expected_layout_sizes);
@@ -448,16 +448,16 @@ mod tests {
         toplevel.execute_by_name("factorial", args, queries);
         let trace = factorial_chip.generate_trace_parallel(queries);
         let expected_trace = [
-            // in order: n, mult, 1/n, fact(n-1), n*fact(n-1), and selectors
-            0, 1, 0, 0, 0, 0, 1, //
-            1, 1, 1, 1, 1, 1, 0, //
-            2, 1, 1006632961, 1, 2, 1, 0, //
-            3, 1, 1342177281, 2, 6, 1, 0, //
-            4, 1, 1509949441, 6, 24, 1, 0, //
-            5, 1, 1610612737, 24, 120, 1, 0, //
+            // in order: nonce, n, 1/n, fact(n-1), prev_nonce, prev_count, count_inv, n*fact(n-1), last_nonce, last_count and selectors
+            0, 5, 1610612737, 24, 0, 0, 1, 120, 0, 1, 1, 0, //
+            1, 4, 1509949441, 6, 0, 0, 1, 24, 0, 1, 1, 0, //
+            2, 3, 1342177281, 2, 0, 0, 1, 6, 1, 1, 1, 0, //
+            3, 2, 1006632961, 1, 0, 0, 1, 2, 2, 1, 1, 0, //
+            4, 1, 1, 1, 0, 0, 1, 1, 3, 1, 1, 0, //
+            5, 0, 4, 1, 0, 0, 0, 0, 0, 0, 0, 1, //
             // dummy
-            0, 0, 0, 0, 0, 0, 0, //
-            0, 0, 0, 0, 0, 0, 0, //
+            6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+            7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
         ]
         .into_iter()
         .map(field_from_u32)
@@ -469,15 +469,15 @@ mod tests {
         let trace = fib_chip.generate_trace_parallel(queries);
 
         let expected_trace = [
-            // in order: n, mult, 1/n, 1/(n-1), fib(n-1), fib(n-2), and selectors
-            1, 2, 0, 0, 0, 0, 0, 1, 0, //
-            0, 1, 0, 0, 0, 0, 1, 0, 0, //
-            2, 2, 1006632961, 1, 1, 1, 0, 0, 1, //
-            3, 2, 1342177281, 1006632961, 2, 1, 0, 0, 1, //
-            4, 2, 1509949441, 1342177281, 3, 2, 0, 0, 1, //
-            5, 2, 1610612737, 1509949441, 5, 3, 0, 0, 1, //
-            6, 1, 1677721601, 1610612737, 8, 5, 0, 0, 1, //
-            7, 1, 862828252, 1677721601, 13, 8, 0, 0, 1, //
+            // in order: nonce, n, 1/n, 1/(n-1), fib(n-1), prev_nonce, prev_count, count_inv, fib(n-2), prev_nonce, prev_count, count_inv, last_nonce, last_count and selectors
+            0, 7, 862828252, 1677721601, 13, 0, 0, 1, 8, 1, 1, 1006632961, 0, 1, 0, 0, 1, //
+            1, 6, 1677721601, 1610612737, 8, 0, 0, 1, 5, 2, 1, 1006632961, 0, 1, 0, 0, 1, //
+            2, 5, 1610612737, 1509949441, 5, 0, 0, 1, 3, 3, 1, 1006632961, 0, 2, 0, 0, 1, //
+            3, 4, 1509949441, 1342177281, 3, 0, 0, 1, 2, 4, 1, 1006632961, 1, 2, 0, 0, 1, //
+            4, 3, 1342177281, 1006632961, 2, 0, 0, 1, 1, 5, 1, 1006632961, 2, 2, 0, 0, 1, //
+            5, 2, 1006632961, 1, 1, 0, 0, 1, 1, 0, 0, 1, 3, 2, 0, 0, 1, //
+            6, 1, 4, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, //
+            7, 0, 5, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, //
         ]
         .into_iter()
         .map(field_from_u32)
@@ -517,7 +517,7 @@ mod tests {
         let expected_layout_sizes = LayoutSizes {
             nonce: 1,
             input: 2,
-            aux: 6,
+            aux: 10,
             sel: 5,
         };
         assert_eq!(test_chip.layout_sizes, expected_layout_sizes);
@@ -531,11 +531,13 @@ mod tests {
             // the inequalities that appear on the default case. Note that the branch
             // that does not follow the default will reuse the slots for the inverted
             // elements to minimize the number of columns
-            3, 2, 1, 4, 16, 0, 0, 0, 0, 0, 0, 1, 0, //
-            4, 2, 1, 1509949441, 1342177281, 1006632961, 1, 16, 0, 0, 0, 0, 1, //
-            5, 2, 1, 1610612737, 1509949441, 1342177281, 1006632961, 16, 0, 0, 0, 0, 1, //
+            0, 5, 2, 1610612737, 1509949441, 1342177281, 1006632961, 16, 0, 0, 1, 0, 1, 0, 0, 0,
+            0, //
+            1, 1, 4, 2, 1509949441, 1342177281, 1006632961, 1, 16, 0, 0, 1, 0, 1, 0, 0, 0, 0,
+            1, //
+            2, 3, 2, 4, 16, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, //
             // dummy
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+            3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
         ]
         .into_iter()
         .map(field_from_u32)
@@ -580,7 +582,7 @@ mod tests {
         let expected_layout_sizes = LayoutSizes {
             nonce: 1,
             input: 2,
-            aux: 1,
+            aux: 2,
             sel: 4,
         };
         assert_eq!(test_chip.layout_sizes, expected_layout_sizes);
@@ -598,11 +600,11 @@ mod tests {
         let trace = test_chip.generate_trace_parallel(queries);
 
         let expected_trace = [
-            // two inputs, multiplicity, selectors
-            0, 0, 1, 1, 0, 0, 0, //
-            0, 1, 1, 0, 1, 0, 0, //
-            1, 0, 1, 0, 0, 1, 0, //
-            1, 1, 1, 0, 0, 0, 1, //
+            // nonce, two inputs, last_nonce, last_count, selectors
+            0, 0, 0, 0, 1, 1, 0, 0, 0, //
+            1, 0, 1, 0, 1, 0, 1, 0, 0, //
+            2, 1, 0, 0, 1, 0, 0, 1, 0, //
+            3, 1, 1, 0, 1, 0, 0, 0, 1, //
         ]
         .into_iter()
         .map(field_from_u32)

@@ -524,45 +524,58 @@ mod tests {
     #[test]
     fn lair_constraint_test() {
         let toplevel = demo_toplevel::<_, LurkHasher>();
+        let queries = &mut QueryRecord::new(&toplevel);
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
+        toplevel.execute_by_name("factorial", &[F::from_canonical_usize(5)], queries);
+        let factorial_trace = factorial_chip.generate_trace_sequential(queries);
         let factorial_width = factorial_chip.width();
-        let factorial_trace = RowMajorMatrix::new(
+        let expected_factorial_trace = RowMajorMatrix::new(
             [
-                // in order: n, mult, 1/n, fact(n-1), n*fact(n-1), and selectors
-                0, 1, 0, 0, 0, 0, 1, //
-                1, 1, 1, 1, 1, 1, 0, //
-                2, 1, 1006632961, 1, 2, 1, 0, //
-                3, 1, 1342177281, 2, 6, 1, 0, //
-                4, 1, 1509949441, 6, 24, 1, 0, //
-                5, 1, 1610612737, 24, 120, 1, 0, //
+                // in order: nonce, n, 1/n, fact(n-1), prev_nonce, prev_count, count_inv, n*fact(n-1), and selectors
+                0, 5, 1610612737, 24, 0, 0, 1, 120, 0, 1, 1, 0, //
+                1, 4, 1509949441, 6, 0, 0, 1, 24, 0, 1, 1, 0, //
+                2, 3, 1342177281, 2, 0, 0, 1, 6, 1, 1, 1, 0, //
+                3, 2, 1006632961, 1, 0, 0, 1, 2, 2, 1, 1, 0, //
+                4, 1, 1, 1, 0, 0, 1, 1, 3, 1, 1, 0, //
+                5, 0, 4, 1, 0, 0, 0, 0, 0, 0, 0, 1, //
                 // dummy
-                0, 0, 0, 0, 0, 0, 0, //
-                0, 0, 0, 0, 0, 0, 0, //
+                6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
             ]
             .into_iter()
             .map(F::from_canonical_u32)
             .collect::<Vec<_>>(),
             factorial_width,
         );
+        assert_eq!(factorial_trace, expected_factorial_trace);
+
         let fib_chip = FuncChip::from_name("fib", &toplevel);
+        toplevel.execute_by_name("fib", &[F::from_canonical_usize(7)], queries);
+        let fib_trace = fib_chip.generate_trace_sequential(queries);
         let fib_width = fib_chip.width();
-        let fib_trace = RowMajorMatrix::new(
+        let expected_fib_trace = RowMajorMatrix::new(
+            // in order: nonce, n, 1/n, 1/(n-1), fib(n-1), lookup nonces and counts, fib(n-2), lookup nonces and counts, and selectors
             [
-                // in order: n, mult, 1/n, 1/(n-1), fib(n-1), fib(n-2), and selectors
-                0, 1, 0, 0, 0, 0, 1, 0, 0, //
-                1, 2, 0, 0, 0, 0, 0, 1, 0, //
-                2, 2, 1006632961, 1, 1, 1, 0, 0, 1, //
-                3, 2, 1342177281, 1006632961, 2, 1, 0, 0, 1, //
-                4, 2, 1509949441, 1342177281, 3, 2, 0, 0, 1, //
-                5, 2, 1610612737, 1509949441, 5, 3, 0, 0, 1, //
-                6, 1, 1677721601, 1610612737, 8, 5, 0, 0, 1, //
-                7, 1, 862828252, 1677721601, 13, 8, 0, 0, 1, //
+                0, 7, 862828252, 1677721601, 13, 0, 0, 1, 8, 1, 1, 1006632961, 0, 1, 0, 0,
+                1, //
+                1, 6, 1677721601, 1610612737, 8, 0, 0, 1, 5, 2, 1, 1006632961, 0, 1, 0, 0,
+                1, //
+                2, 5, 1610612737, 1509949441, 5, 0, 0, 1, 3, 3, 1, 1006632961, 0, 2, 0, 0,
+                1, //
+                3, 4, 1509949441, 1342177281, 3, 0, 0, 1, 2, 4, 1, 1006632961, 1, 2, 0, 0,
+                1, //
+                4, 3, 1342177281, 1006632961, 2, 0, 0, 1, 1, 5, 1, 1006632961, 2, 2, 0, 0,
+                1, //
+                5, 2, 1006632961, 1, 1, 0, 0, 1, 1, 0, 0, 1, 3, 2, 0, 0, 1, //
+                6, 1, 4, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, //
+                7, 0, 5, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, //
             ]
             .into_iter()
             .map(F::from_canonical_u32)
             .collect::<Vec<_>>(),
             fib_width,
         );
+        assert_eq!(fib_trace, expected_fib_trace);
 
         let _ = debug_constraints_collecting_queries(&factorial_chip, &[], None, &factorial_trace);
         let _ = debug_constraints_collecting_queries(&fib_chip, &[], None, &fib_trace);
@@ -605,20 +618,22 @@ mod tests {
         toplevel.execute_iter_by_name("not", args, queries);
         let args = &[field_from_u32(1)];
         toplevel.execute_iter_by_name("not", args, queries);
+        let not_trace = not_chip.generate_trace_sequential(queries);
 
         let not_width = not_chip.width();
-        let not_trace = RowMajorMatrix::new(
+        let expected_not_trace = RowMajorMatrix::new(
             [
-                0, 1, 0, 1, 1, //
-                1, 1, 1, 0, 1, //
-                4, 1, 1509949441, 0, 1, //
-                8, 1, 1761607681, 0, 1, //
+                0, 4, 1509949441, 0, 0, 1, 1, //
+                1, 8, 1761607681, 0, 0, 1, 1, //
+                2, 0, 0, 1, 0, 1, 1, //
+                3, 1, 1, 0, 0, 1, 1, //
             ]
             .into_iter()
             .map(F::from_canonical_u32)
             .collect::<Vec<_>>(),
             not_width,
         );
+        assert_eq!(not_trace, expected_not_trace);
 
         let args = &[field_from_u32(4), field_from_u32(2)];
         toplevel.execute_iter_by_name("eq", args, queries);
@@ -628,20 +643,22 @@ mod tests {
         toplevel.execute_iter_by_name("eq", args, queries);
         let args = &[field_from_u32(0), field_from_u32(0)];
         toplevel.execute_iter_by_name("eq", args, queries);
+        let eq_trace = eq_chip.generate_trace_sequential(queries);
 
         let eq_width = eq_chip.width();
-        let eq_trace = RowMajorMatrix::new(
+        let expected_eq_trace = RowMajorMatrix::new(
             [
-                0, 0, 1, 0, 1, 1, //
-                0, 3, 1, 671088640, 0, 1, //
-                4, 2, 1, 1006632961, 0, 1, //
-                4, 4, 1, 0, 1, 1, //
+                0, 4, 2, 1006632961, 0, 0, 1, 1, //
+                1, 4, 4, 0, 1, 0, 1, 1, //
+                2, 0, 3, 671088640, 0, 0, 1, 1, //
+                3, 0, 0, 0, 1, 0, 1, 1, //
             ]
             .into_iter()
             .map(F::from_canonical_u32)
             .collect::<Vec<_>>(),
             eq_width,
         );
+        assert_eq!(eq_trace, expected_eq_trace);
 
         let _ = debug_constraints_collecting_queries(&not_chip, &[], None, &not_trace);
         let _ = debug_constraints_collecting_queries(&eq_chip, &[], None, &eq_trace);
@@ -677,11 +694,11 @@ mod tests {
         let if_many_width = if_many_chip.width();
         let expected_trace = RowMajorMatrix::new(
             [
-                // 4 inputs, mult, 4 coeffs, 2 selectors
-                0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, //
-                1, 3, 8, 2, 1, 1, 0, 0, 0, 1, 0, //
-                0, 0, 4, 1, 1, 0, 0, 1509949441, 0, 1, 0, //
-                0, 0, 0, 9, 1, 0, 0, 0, 447392427, 1, 0, //
+                // nonce, 4 inputs, 6 coeffs, 2 selectors
+                0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, //
+                1, 1, 3, 8, 2, 1, 0, 0, 0, 0, 1, 1, 0, //
+                2, 0, 0, 4, 1, 0, 0, 1509949441, 0, 0, 1, 1, 0, //
+                3, 0, 0, 0, 9, 0, 0, 0, 447392427, 0, 1, 1, 0, //
             ]
             .into_iter()
             .map(F::from_canonical_u32)
@@ -739,17 +756,17 @@ mod tests {
         let match_many_width = match_many_chip.width();
         let expected_trace = RowMajorMatrix::new(
             [
-                // 2 inputs, mult, 8 witness coefficients, 5 selectors
-                0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, //
-                0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, //
-                1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, //
-                1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, //
-                0, 8, 1, 0, 1761607681, 0, 862828252, 2013265920, 0, 2013265920, 0, 0, 0, 0, 0,
-                1, //
+                // nonce, 2 inputs, 10 witness coefficients, 5 selectors
+                0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, //
+                1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, //
+                2, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, //
+                3, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, //
+                4, 0, 8, 0, 1761607681, 0, 862828252, 2013265920, 0, 2013265920, 0, 0, 1, 0, 0, 0,
+                0, 1, //
                 // dummy queries
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
             ]
             .into_iter()
             .map(F::from_canonical_u32)

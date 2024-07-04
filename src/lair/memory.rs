@@ -190,15 +190,15 @@ mod tests {
         let toplevel = Toplevel::<F, LurkHasher>::new(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
         let queries = &mut QueryRecord::new(&toplevel);
-        toplevel.execute_by_name("factorial", &[], queries);
+        toplevel.execute_by_name("test", &[], queries);
         let func_trace = test_chip.generate_trace_sequential(queries);
 
         let expected_trace = [
-            // mult, ptr1, ptr2, one, two, three, selector
-            1, 1, 2, 1, 2, 3, 1, //
-            0, 0, 0, 0, 0, 0, 0, //
-            0, 0, 0, 0, 0, 0, 0, //
-            0, 0, 0, 0, 0, 0, 0, //
+            // nonce, ptr1, ptr2, one, two, three, last_nonce, last_count, selector
+            0, 1, 2, 1, 2, 3, 0, 1, 1, //
+            1, 0, 0, 0, 0, 0, 0, 0, 0, //
+            2, 0, 0, 0, 0, 0, 0, 0, 0, //
+            3, 0, 0, 0, 0, 0, 0, 0, 0, //
         ]
         .into_iter()
         .map(F::from_canonical_u32)
