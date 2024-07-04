@@ -1308,11 +1308,21 @@ mod test {
     use expect_test::{expect, Expect};
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
-    use rayon::iter::{IntoParallelIterator, ParallelIterator};
+    use sphinx_core::{
+        air::MachineAir,
+        stark::{StarkGenericConfig, StarkMachine},
+        utils::BabyBearPoseidon2,
+    };
 
     use crate::{
-        air::debug::debug_constraints_collecting_queries,
-        lair::{execute::QueryRecord, func_chip::FuncChip, hasher::LurkHasher, List},
+        air::debug::{debug_constraints_collecting_queries, TraceQueries},
+        lair::{
+            execute::QueryRecord,
+            func_chip::FuncChip,
+            hasher::LurkHasher,
+            lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
+            List,
+        },
         lurk::{
             state::State,
             zstore::{ZPtr, ZStore},
@@ -1349,45 +1359,28 @@ mod test {
         let expect_eq = |computed: usize, expected: Expect| {
             expected.assert_eq(&computed.to_string());
         };
-        expect_eq(lurk_main.width(), expect!["38"]);
-        expect_eq(eval.width(), expect!["108"]);
-        expect_eq(eval_unop.width(), expect!["31"]);
-        expect_eq(eval_binop_num.width(), expect!["36"]);
-        expect_eq(eval_binop_misc.width(), expect!["34"]);
-        expect_eq(eval_let.width(), expect!["34"]);
-        expect_eq(eval_letrec.width(), expect!["35"]);
-        expect_eq(equal.width(), expect!["27"]);
-        expect_eq(equal_inner.width(), expect!["51"]);
-        expect_eq(car_cdr.width(), expect!["23"]);
-        expect_eq(apply.width(), expect!["37"]);
-        expect_eq(env_lookup.width(), expect!["14"]);
-        expect_eq(ingress.width(), expect!["93"]);
-        expect_eq(ingress_builtin.width(), expect!["44"]);
-        expect_eq(egress.width(), expect!["58"]);
-        expect_eq(egress_builtin.width(), expect!["37"]);
-        expect_eq(hash_32_8.width(), expect!["645"]);
-        expect_eq(hash_48_8.width(), expect!["965"]);
-
-        let all_chips = [
-            &lurk_main,
-            &eval,
-            &eval_unop,
-            &eval_binop_num,
-            &eval_binop_misc,
-            &eval_let,
-            &eval_letrec,
-            &car_cdr,
-            &apply,
-            &env_lookup,
-            &ingress,
-            &ingress_builtin,
-            &egress,
-            &egress_builtin,
-            &hash_32_8,
-            &hash_48_8,
-        ];
+        expect_eq(lurk_main.width(), expect!["52"]);
+        expect_eq(eval.width(), expect!["116"]);
+        expect_eq(eval_unop.width(), expect!["36"]);
+        expect_eq(eval_binop_num.width(), expect!["44"]);
+        expect_eq(eval_binop_misc.width(), expect!["42"]);
+        expect_eq(eval_let.width(), expect!["42"]);
+        expect_eq(eval_letrec.width(), expect!["43"]);
+        expect_eq(equal.width(), expect!["38"]);
+        expect_eq(equal_inner.width(), expect!["57"]);
+        expect_eq(car_cdr.width(), expect!["28"]);
+        expect_eq(apply.width(), expect!["45"]);
+        expect_eq(env_lookup.width(), expect!["19"]);
+        expect_eq(ingress.width(), expect!["107"]);
+        expect_eq(ingress_builtin.width(), expect!["46"]);
+        expect_eq(egress.width(), expect!["72"]);
+        expect_eq(egress_builtin.width(), expect!["39"]);
+        expect_eq(hash_32_8.width(), expect!["647"]);
+        expect_eq(hash_48_8.width(), expect!["967"]);
 
         let state = State::init_lurk_state().rccell();
+
+        let config = BabyBearPoseidon2::new();
 
         let eval_aux = |expr: &str, res: &str| {
             let zstore = &mut ZStore::<_, LurkHasher>::default();
@@ -1397,8 +1390,8 @@ mod test {
                 digest: expr_digest,
             } = zstore.read_with_state(state.clone(), expr).unwrap();
 
-            let queries = &mut QueryRecord::new(toplevel);
-            queries.inject_inv_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
+            let record = &mut QueryRecord::new(toplevel);
+            record.inject_inv_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
 
             let ZPtr {
                 tag: expected_tag,
@@ -1410,16 +1403,32 @@ mod test {
             full_input[8..16].copy_from_slice(&expr_digest);
 
             let full_input: List<_> = full_input.into();
-            lurk_main.execute_iter(full_input.clone(), queries);
-            let result = queries.get_output(lurk_main.func, &full_input);
+            toplevel.execute_iter(lurk_main.func, &full_input, record);
+            let result = record.get_output(lurk_main.func, &full_input);
 
             assert_eq!(&result[0], &expected_tag.to_field());
             assert_eq!(&result[8..], &expected_digest);
 
-            all_chips.into_par_iter().for_each(|chip| {
-                let trace = chip.generate_trace_parallel(queries);
-                debug_constraints_collecting_queries(chip, &[], &trace);
-            });
+            let lair_chips =
+                build_lair_chip_vector(&lurk_main, full_input.clone().into(), result.to_vec());
+
+            let lookup_queries: Vec<_> = lair_chips
+                .iter()
+                .map(|chip| {
+                    let trace = chip.generate_trace(record, &mut Default::default());
+                    debug_constraints_collecting_queries(chip, &[], None, &trace)
+                })
+                .collect();
+            TraceQueries::verify_many(lookup_queries);
+
+            let machine = StarkMachine::new(
+                config.clone(),
+                build_chip_vector(&lurk_main, full_input.into(), result.into()),
+                0,
+            );
+            let (pk, _vk) = machine.setup(&LairMachineProgram);
+            let mut challenger_p = machine.config().challenger();
+            machine.debug_constraints(&pk, record.clone(), &mut challenger_p);
         };
 
         eval_aux("t", "t");
@@ -1483,8 +1492,8 @@ mod test {
     fn test_ingress_egress() {
         let toplevel = &build_lurk_toplevel();
 
-        let ingress_chip = FuncChip::from_name("ingress", toplevel);
-        let egress_chip = FuncChip::from_name("egress", toplevel);
+        let ingress = toplevel.get_by_name("ingress").unwrap();
+        let egress = toplevel.get_by_name("egress").unwrap();
         let hash_32_8_chip = FuncChip::from_name("hash_32_8", toplevel);
 
         let state = State::init_lurk_state().rccell();
@@ -1503,13 +1512,12 @@ mod test {
             ingress_args[0] = tag;
             ingress_args[8..].copy_from_slice(&digest);
 
-            let ingress_args: List<_> = ingress_args.into();
-            ingress_chip.execute_iter(ingress_args.clone(), queries);
-            let ingress_out_ptr = queries.get_output(ingress_chip.func, &ingress_args)[0];
+            toplevel.execute_iter(ingress, &ingress_args, queries);
+            let ingress_out_ptr = queries.get_output(ingress, &ingress_args)[0];
 
-            let egress_args: List<_> = [tag, ingress_out_ptr].into();
-            egress_chip.execute_iter(egress_args.clone(), queries);
-            let egress_out = queries.get_output(egress_chip.func, &egress_args);
+            let egress_args = &[tag, ingress_out_ptr];
+            toplevel.execute_iter(egress, egress_args, queries);
+            let egress_out = queries.get_output(egress, egress_args);
 
             assert_eq!(
                 egress_out,
@@ -1518,7 +1526,7 @@ mod test {
             );
 
             let hash_32_8_trace = hash_32_8_chip.generate_trace_parallel(queries);
-            debug_constraints_collecting_queries(&hash_32_8_chip, &[], &hash_32_8_trace);
+            debug_constraints_collecting_queries(&hash_32_8_chip, &[], None, &hash_32_8_trace);
         };
 
         assert_ingress_egress_correctness("~()");

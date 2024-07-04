@@ -15,16 +15,33 @@ use super::{
     List,
 };
 
-pub type ColumnIndex = ColumnLayout<usize>;
-pub type ColumnMutSlice<'a, T> = ColumnLayout<&'a mut [T]>;
+// TODO: Should we reuse the existing CallCtx instead and remove this? (probably yes if we can)
+#[derive(Clone)]
+struct FuncCtx<F> {
+    func_idx: usize,
+    call_inp: List<F>,
+}
+
+#[derive(Default)]
+pub struct NA;
+
+pub type ColumnIndex = ColumnLayout<NA, usize>;
+pub type ColumnMutSlice<'a, T> = ColumnLayout<&'a mut T, &'a mut [T]>;
 
 impl<'a, T> ColumnMutSlice<'a, T> {
     pub fn from_slice(slice: &'a mut [T], layout_sizes: LayoutSizes) -> Self {
+        let (nonce, slice) = slice.split_at_mut(1);
         let (input, slice) = slice.split_at_mut(layout_sizes.input);
         let (aux, slice) = slice.split_at_mut(layout_sizes.aux);
         let (sel, slice) = slice.split_at_mut(layout_sizes.sel);
         assert!(slice.is_empty());
-        Self { input, aux, sel }
+        let nonce = &mut nonce[0];
+        Self {
+            nonce,
+            input,
+            aux,
+            sel,
+        }
     }
 
     pub fn push_input(&mut self, index: &mut ColumnIndex, t: T) {
@@ -43,14 +60,18 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
     pub fn generate_trace_sequential(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let func_queries = &queries.func_queries()[self.func.index];
         let width = self.width();
-        let height = func_queries.len().next_power_of_two().max(4);
+        let non_dummy_height = func_queries.len();
+        let height = non_dummy_height.next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
-        for (i, (args, res)) in func_queries.iter().enumerate() {
+        // initializing nonces
+        rows.chunks_mut(width)
+            .enumerate()
+            .for_each(|(i, row)| row[0] = F::from_canonical_usize(i));
+        for (i, (args, _)) in func_queries.iter().enumerate() {
             let start = i * width;
             let index = &mut ColumnIndex::default();
             let row = &mut rows[start..start + width];
             let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-            slice.push_aux(index, F::from_canonical_u32(res.mult));
             self.func
                 .populate_row(args, index, slice, queries, &self.toplevel.hasher);
         }
@@ -61,17 +82,21 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
     pub fn generate_trace_parallel(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let func_queries = &queries.func_queries()[self.func.index];
         let width = self.width();
-        let height = func_queries.len().next_power_of_two().max(4);
+        let non_dummy_height = func_queries.len();
+        let height = non_dummy_height.next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
+        // initializing nonces
+        rows.chunks_mut(width)
+            .enumerate()
+            .for_each(|(i, row)| row[0] = F::from_canonical_usize(i));
         let non_dummies = &mut rows[0..func_queries.len() * width];
         non_dummies
             .par_chunks_mut(width)
             .enumerate()
             .for_each(|(i, row)| {
-                let (args, res) = func_queries.get_index(i).unwrap();
+                let (args, _) = func_queries.get_index(i).unwrap();
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-                slice.push_aux(index, F::from_canonical_u32(res.mult));
                 self.func
                     .populate_row(args, index, slice, queries, &self.toplevel.hasher);
             });
@@ -91,15 +116,22 @@ impl<F: PrimeField> Func<F> {
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
         // Variable to value map
         let map = &mut args.iter().map(|arg| (*arg, 1)).collect();
+        // Context of which function this is
+        let func_ctx = FuncCtx {
+            func_idx: self.index,
+            call_inp: args.into(),
+        };
         // One column per input
         args.iter().for_each(|arg| slice.push_input(index, *arg));
-        self.body.populate_row(map, index, slice, queries, hasher);
+        self.body
+            .populate_row(&func_ctx, map, index, slice, queries, hasher);
     }
 }
 
 impl<F: PrimeField> Block<F> {
     fn populate_row<H: Hasher<F>>(
         &self,
+        func_ctx: &FuncCtx<F>,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
@@ -108,14 +140,16 @@ impl<F: PrimeField> Block<F> {
     ) {
         self.ops
             .iter()
-            .for_each(|op| op.populate_row(map, index, slice, queries, hasher));
-        self.ctrl.populate_row(map, index, slice, queries, hasher);
+            .for_each(|op| op.populate_row(func_ctx, map, index, slice, queries, hasher));
+        self.ctrl
+            .populate_row(func_ctx, map, index, slice, queries, hasher);
     }
 }
 
 impl<F: PrimeField> Ctrl<F> {
     fn populate_row<H: Hasher<F>>(
         &self,
+        func_ctx: &FuncCtx<F>,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
@@ -125,48 +159,60 @@ impl<F: PrimeField> Ctrl<F> {
         match self {
             Ctrl::Return(ident, _) => {
                 slice.sel[*ident] = F::one();
+                // Fixme: last_nonce, last_count
+                let query_map = &queries.func_queries()[func_ctx.func_idx];
+                let result = query_map
+                    .get(&func_ctx.call_inp)
+                    .expect("Cannot find query result");
+                let last_count = result.callers_nonces.len();
+                let (_, last_nonce, _) = result
+                    .callers_nonces
+                    .last()
+                    .expect("Must have at least one caller");
+                slice.push_aux(index, F::from_canonical_usize(*last_nonce));
+                slice.push_aux(index, F::from_canonical_usize(last_count));
             }
             Ctrl::Match(t, cases) => {
                 let (t, _) = map[*t];
                 if let Some(branch) = cases.branches.get(&t) {
-                    branch.populate_row(map, index, slice, queries, hasher);
+                    branch.populate_row(func_ctx, map, index, slice, queries, hasher);
                 } else {
                     for (f, _) in cases.branches.iter() {
                         slice.push_aux(index, (t - *f).inverse());
                     }
                     let branch = cases.default.as_ref().expect("No match");
-                    branch.populate_row(map, index, slice, queries, hasher);
+                    branch.populate_row(func_ctx, map, index, slice, queries, hasher);
                 }
             }
             Ctrl::MatchMany(vars, cases) => {
                 let vals = vars.iter().map(|&var| map[var].0).collect();
                 if let Some(branch) = cases.branches.get(&vals) {
-                    branch.populate_row(map, index, slice, queries, hasher);
+                    branch.populate_row(func_ctx, map, index, slice, queries, hasher);
                 } else {
                     for (fs, _) in cases.branches.iter() {
                         let diffs = vals.iter().zip(fs.iter()).map(|(val, f)| *val - *f);
                         push_inequality_witness(index, slice, diffs);
                     }
                     let branch = cases.default.as_ref().expect("No match");
-                    branch.populate_row(map, index, slice, queries, hasher);
+                    branch.populate_row(func_ctx, map, index, slice, queries, hasher);
                 }
             }
             Ctrl::If(b, t, f) => {
                 let (b, _) = map[*b];
                 if b != F::zero() {
                     slice.push_aux(index, b.inverse());
-                    t.populate_row(map, index, slice, queries, hasher);
+                    t.populate_row(func_ctx, map, index, slice, queries, hasher);
                 } else {
-                    f.populate_row(map, index, slice, queries, hasher);
+                    f.populate_row(func_ctx, map, index, slice, queries, hasher);
                 }
             }
             Ctrl::IfMany(vars, t, f) => {
                 let vals = vars.iter().map(|&var| map[var].0);
                 if vals.clone().any(|b| b != F::zero()) {
                     push_inequality_witness(index, slice, vals);
-                    t.populate_row(map, index, slice, queries, hasher);
+                    t.populate_row(func_ctx, map, index, slice, queries, hasher);
                 } else {
-                    f.populate_row(map, index, slice, queries, hasher);
+                    f.populate_row(func_ctx, map, index, slice, queries, hasher);
                 }
             }
         }
@@ -193,6 +239,7 @@ fn push_inequality_witness<F: PrimeField, I: Iterator<Item = F>>(
 impl<F: PrimeField> Op<F> {
     fn populate_row<H: Hasher<F>>(
         &self,
+        func_ctx: &FuncCtx<F>,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
@@ -247,24 +294,76 @@ impl<F: PrimeField> Op<F> {
                     slice.push_aux(index, f);
                 }
             }
-            Op::Call(idx, inp) => {
+            Op::Call(idx, inp, call_ident) => {
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let query_map = &queries.func_queries()[*idx];
                 let result = query_map.get(&args).expect("Cannot find query result");
-                for f in result.output.iter() {
+                for f in result.expect_output().iter() {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
+                // Fixme: prev_nonce, prev_count, count_inv
+                let nonce: usize = slice
+                    .nonce
+                    .as_canonical_biguint()
+                    .try_into()
+                    .expect("Nonce is larger than usize");
+                let prev_count = result
+                    .callers_nonces
+                    .get_index_of(&(func_ctx.func_idx, nonce, *call_ident))
+                    .expect("Cannot find caller nonce entry");
+                if prev_count == 0 {
+                    // we are the first require, fill in hardcoded provide values
+                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_nonce
+                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_count
+                    slice.push_aux(index, F::from_canonical_usize(1).inverse());
+                // count_inv
+                } else {
+                    // we are somewhere in the middle of the list, get the predecessor
+                    let (_, prev_nonce, _) =
+                        result.callers_nonces.get_index(prev_count - 1).unwrap();
+                    slice.push_aux(index, F::from_canonical_usize(*prev_nonce));
+                    slice.push_aux(index, F::from_canonical_usize(prev_count));
+                    slice.push_aux(index, F::from_canonical_usize(prev_count + 1).inverse());
+                }
             }
-            Op::PreImg(idx, inp) => {
-                let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
+            Op::PreImg(idx, out, call_ident) => {
+                let out = out.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let inv_map = queries.inv_func_queries[*idx]
                     .as_ref()
                     .expect("Function not invertible");
-                let result = inv_map.get(&args).expect("Cannot find preimage");
-                for f in result.iter() {
+                let inp = inv_map.get(&out).expect("Cannot find preimage");
+                for f in inp.iter() {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
+                }
+                // Fixme: prev_nonce, prev_count, count_inv
+                let query_map = &queries.func_queries()[*idx];
+                let query_result = query_map.get(inp).expect("Cannot find query result");
+                let nonce: usize = slice
+                    .nonce
+                    .as_canonical_biguint()
+                    .try_into()
+                    .expect("Nonce is larger than usize");
+                let prev_count = query_result
+                    .callers_nonces
+                    .get_index_of(&(func_ctx.func_idx, nonce, *call_ident))
+                    .expect("Cannot find caller nonce entry");
+                if prev_count == 0 {
+                    // we are the first require, fill in hardcoded provide values
+                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_nonce
+                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_count
+                    slice.push_aux(index, F::from_canonical_usize(1).inverse());
+                // count_inv
+                } else {
+                    // we are somewhere in the middle of the list, get the predecessor
+                    let (_, prev_nonce, _) = query_result
+                        .callers_nonces
+                        .get_index(prev_count - 1)
+                        .unwrap();
+                    slice.push_aux(index, F::from_canonical_usize(*prev_nonce));
+                    slice.push_aux(index, F::from_canonical_usize(prev_count));
+                    slice.push_aux(index, F::from_canonical_usize(prev_count + 1).inverse());
                 }
             }
             Op::Store(args) => {
@@ -330,8 +429,9 @@ mod tests {
         let factorial = toplevel.get_by_name("factorial").unwrap();
         let out = factorial.compute_layout_sizes(&toplevel);
         let expected_layout_sizes = LayoutSizes {
+            nonce: 1,
             input: 1,
-            aux: 4,
+            aux: 8,
             sel: 2,
         };
         assert_eq!(out, expected_layout_sizes);
@@ -344,40 +444,40 @@ mod tests {
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         let queries = &mut QueryRecord::new(&toplevel);
 
-        let args = [F::from_canonical_u32(5)].into();
-        factorial_chip.execute(args, queries);
+        let args = &[F::from_canonical_u32(5)];
+        toplevel.execute_by_name("factorial", args, queries);
         let trace = factorial_chip.generate_trace_parallel(queries);
         let expected_trace = [
-            // in order: n, mult, 1/n, fact(n-1), n*fact(n-1), and selectors
-            0, 1, 0, 0, 0, 0, 1, //
-            1, 1, 1, 1, 1, 1, 0, //
-            2, 1, 1006632961, 1, 2, 1, 0, //
-            3, 1, 1342177281, 2, 6, 1, 0, //
-            4, 1, 1509949441, 6, 24, 1, 0, //
-            5, 1, 1610612737, 24, 120, 1, 0, //
+            // in order: nonce, n, 1/n, fact(n-1), prev_nonce, prev_count, count_inv, n*fact(n-1), last_nonce, last_count and selectors
+            0, 5, 1610612737, 24, 0, 0, 1, 120, 0, 1, 1, 0, //
+            1, 4, 1509949441, 6, 0, 0, 1, 24, 0, 1, 1, 0, //
+            2, 3, 1342177281, 2, 0, 0, 1, 6, 1, 1, 1, 0, //
+            3, 2, 1006632961, 1, 0, 0, 1, 2, 2, 1, 1, 0, //
+            4, 1, 1, 1, 0, 0, 1, 1, 3, 1, 1, 0, //
+            5, 0, 4, 1, 0, 0, 0, 0, 0, 0, 0, 1, //
             // dummy
-            0, 0, 0, 0, 0, 0, 0, //
-            0, 0, 0, 0, 0, 0, 0, //
+            6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+            7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
         ]
         .into_iter()
         .map(field_from_u32)
         .collect::<Vec<_>>();
         assert_eq!(trace.values, expected_trace);
 
-        let args = [F::from_canonical_u32(7)].into();
-        fib_chip.execute(args, queries);
+        let args = &[F::from_canonical_u32(7)];
+        toplevel.execute_by_name("fib", args, queries);
         let trace = fib_chip.generate_trace_parallel(queries);
 
         let expected_trace = [
-            // in order: n, mult, 1/n, 1/(n-1), fib(n-1), fib(n-2), and selectors
-            1, 2, 0, 0, 0, 0, 0, 1, 0, //
-            0, 1, 0, 0, 0, 0, 1, 0, 0, //
-            2, 2, 1006632961, 1, 1, 1, 0, 0, 1, //
-            3, 2, 1342177281, 1006632961, 2, 1, 0, 0, 1, //
-            4, 2, 1509949441, 1342177281, 3, 2, 0, 0, 1, //
-            5, 2, 1610612737, 1509949441, 5, 3, 0, 0, 1, //
-            6, 1, 1677721601, 1610612737, 8, 5, 0, 0, 1, //
-            7, 1, 862828252, 1677721601, 13, 8, 0, 0, 1, //
+            // in order: nonce, n, 1/n, 1/(n-1), fib(n-1), prev_nonce, prev_count, count_inv, fib(n-2), prev_nonce, prev_count, count_inv, last_nonce, last_count and selectors
+            0, 7, 862828252, 1677721601, 13, 0, 0, 1, 8, 1, 1, 1006632961, 0, 1, 0, 0, 1, //
+            1, 6, 1677721601, 1610612737, 8, 0, 0, 1, 5, 2, 1, 1006632961, 0, 1, 0, 0, 1, //
+            2, 5, 1610612737, 1509949441, 5, 0, 0, 1, 3, 3, 1, 1006632961, 0, 2, 0, 0, 1, //
+            3, 4, 1509949441, 1342177281, 3, 0, 0, 1, 2, 4, 1, 1006632961, 1, 2, 0, 0, 1, //
+            4, 3, 1342177281, 1006632961, 2, 0, 0, 1, 1, 5, 1, 1006632961, 2, 2, 0, 0, 1, //
+            5, 2, 1006632961, 1, 1, 0, 0, 1, 1, 0, 0, 1, 3, 2, 0, 0, 1, //
+            6, 1, 4, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, //
+            7, 0, 5, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, //
         ]
         .into_iter()
         .map(field_from_u32)
@@ -415,26 +515,29 @@ mod tests {
         let test_chip = FuncChip::from_name("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {
+            nonce: 1,
             input: 2,
-            aux: 6,
+            aux: 10,
             sel: 5,
         };
         assert_eq!(test_chip.layout_sizes, expected_layout_sizes);
 
-        let args = [F::from_canonical_u32(5), F::from_canonical_u32(2)].into();
+        let args = &[F::from_canonical_u32(5), F::from_canonical_u32(2)];
         let queries = &mut QueryRecord::new(&toplevel);
-        test_chip.execute(args, queries);
+        toplevel.execute_by_name("test", args, queries);
         let trace = test_chip.generate_trace_parallel(queries);
         let expected_trace = [
             // The big numbers in the trace are the inverted elements, the witnesses of
             // the inequalities that appear on the default case. Note that the branch
             // that does not follow the default will reuse the slots for the inverted
             // elements to minimize the number of columns
-            3, 2, 1, 4, 16, 0, 0, 0, 0, 0, 0, 1, 0, //
-            4, 2, 1, 1509949441, 1342177281, 1006632961, 1, 16, 0, 0, 0, 0, 1, //
-            5, 2, 1, 1610612737, 1509949441, 1342177281, 1006632961, 16, 0, 0, 0, 0, 1, //
+            0, 5, 2, 1610612737, 1509949441, 1342177281, 1006632961, 16, 0, 0, 1, 0, 1, 0, 0, 0,
+            0, //
+            1, 1, 4, 2, 1509949441, 1342177281, 1006632961, 1, 16, 0, 0, 1, 0, 1, 0, 0, 0, 0,
+            1, //
+            2, 3, 2, 4, 16, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, //
             // dummy
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+            3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
         ]
         .into_iter()
         .map(field_from_u32)
@@ -477,29 +580,31 @@ mod tests {
         let test_chip = FuncChip::from_name("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {
+            nonce: 1,
             input: 2,
-            aux: 1,
+            aux: 2,
             sel: 4,
         };
         assert_eq!(test_chip.layout_sizes, expected_layout_sizes);
 
-        let zero = [F::from_canonical_u32(0), F::from_canonical_u32(0)].into();
-        let one = [F::from_canonical_u32(0), F::from_canonical_u32(1)].into();
-        let two = [F::from_canonical_u32(1), F::from_canonical_u32(0)].into();
-        let three = [F::from_canonical_u32(1), F::from_canonical_u32(1)].into();
+        let zero = &[F::from_canonical_u32(0), F::from_canonical_u32(0)];
+        let one = &[F::from_canonical_u32(0), F::from_canonical_u32(1)];
+        let two = &[F::from_canonical_u32(1), F::from_canonical_u32(0)];
+        let three = &[F::from_canonical_u32(1), F::from_canonical_u32(1)];
         let queries = &mut QueryRecord::new(&toplevel);
-        test_chip.execute(zero, queries);
-        test_chip.execute(one, queries);
-        test_chip.execute(two, queries);
-        test_chip.execute(three, queries);
+        let test_func = toplevel.get_by_name("test").unwrap();
+        toplevel.execute(test_func, zero, queries);
+        toplevel.execute(test_func, one, queries);
+        toplevel.execute(test_func, two, queries);
+        toplevel.execute(test_func, three, queries);
         let trace = test_chip.generate_trace_parallel(queries);
 
         let expected_trace = [
-            // two inputs, multiplicity, selectors
-            0, 0, 1, 1, 0, 0, 0, //
-            0, 1, 1, 0, 1, 0, 0, //
-            1, 0, 1, 0, 0, 1, 0, //
-            1, 1, 1, 0, 0, 0, 1, //
+            // nonce, two inputs, last_nonce, last_count, selectors
+            0, 0, 0, 0, 1, 1, 0, 0, 0, //
+            1, 0, 1, 0, 1, 0, 1, 0, 0, //
+            2, 1, 0, 0, 1, 0, 0, 1, 0, //
+            3, 1, 1, 0, 1, 0, 0, 0, 1, //
         ]
         .into_iter()
         .map(field_from_u32)

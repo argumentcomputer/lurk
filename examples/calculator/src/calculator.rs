@@ -560,6 +560,6 @@ mod tests {
         let trace = Calculator::compute_trace(&frames, &store);
         let public_values = store.to_scalar_vector(&[entry, nil, nil, expected_stack]);
 
-        debug_constraints_collecting_queries(&Calculator::default(), &public_values, &trace);
+        debug_constraints_collecting_queries(&Calculator::default(), &public_values, None, &trace);
     }
 }

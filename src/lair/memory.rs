@@ -125,8 +125,6 @@ where
 
         // is_real is 1 for all valid entries, then 0 for padding rows until the last row.
         builder.assert_bool(is_real);
-        // is_real starts with one
-        builder.when_first_row().assert_one(is_real);
 
         // all but the last rows where is_real = 1
         let is_real_transition = is_real_next * builder.is_transition();
@@ -135,7 +133,7 @@ where
         builder.when(is_real_transition.clone()).assert_one(is_real);
 
         // First valid pointer is 1
-        builder.when_first_row().assert_one(ptr_local);
+        builder.when_first_row().when(is_real).assert_one(ptr_local);
 
         // Next pointer is either the same, or increased by 1
         let is_next_ptr_diff = ptr_next - ptr_local;
@@ -192,15 +190,15 @@ mod tests {
         let toplevel = Toplevel::<F, LurkHasher>::new(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
         let queries = &mut QueryRecord::new(&toplevel);
-        test_chip.execute([].into(), queries);
+        toplevel.execute_by_name("test", &[], queries);
         let func_trace = test_chip.generate_trace_sequential(queries);
 
         let expected_trace = [
-            // mult, ptr1, ptr2, one, two, three, selector
-            1, 1, 2, 1, 2, 3, 1, //
-            0, 0, 0, 0, 0, 0, 0, //
-            0, 0, 0, 0, 0, 0, 0, //
-            0, 0, 0, 0, 0, 0, 0, //
+            // nonce, ptr1, ptr2, one, two, three, last_nonce, last_count, selector
+            0, 1, 2, 1, 2, 3, 0, 1, 1, //
+            1, 0, 0, 0, 0, 0, 0, 0, 0, //
+            2, 0, 0, 0, 0, 0, 0, 0, 0, //
+            3, 0, 0, 0, 0, 0, 0, 0, 0, //
         ]
         .into_iter()
         .map(F::from_canonical_u32)
@@ -223,6 +221,6 @@ mod tests {
         .collect::<Vec<_>>();
         assert_eq!(mem_trace.values, expected_trace);
 
-        let _ = debug_constraints_collecting_queries(&mem_chip, &[], &mem_trace);
+        let _ = debug_constraints_collecting_queries(&mem_chip, &[], None, &mem_trace);
     }
 }

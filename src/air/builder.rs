@@ -1,4 +1,6 @@
+use itertools::chain;
 use p3_air::{AirBuilder, AirBuilderWithPublicValues};
+use p3_field::AbstractField;
 use sphinx_core::air::{AirInteraction, MessageBuilder};
 use sphinx_core::lookup::InteractionKind;
 
@@ -27,87 +29,128 @@ impl<T, I: Into<T>, II: IntoIterator<Item = I>> Relation<T> for II {
 
 pub trait LairBuilder: AirBuilder + LookupBuilder + AirBuilderWithPublicValues {}
 
-pub enum QueryType {
-    Receive,
-    Send,
-    Provide,
-    Require,
-}
-
 /// TODO: The `once` calls are not fully supported, and deferred to their multi-use counterparts.
 pub trait LookupBuilder: AirBuilder {
-    /// Generic query that to be added to the global lookup argument.
-    /// Note: is_real_bool must be a boolean.
-    fn query(
-        &mut self,
-        query_type: QueryType,
-        relation: impl Relation<Self::Expr>,
-        is_real_bool: impl Into<Self::Expr>,
-    );
+    // TODO comment
+    // Read a
+    fn receive(&mut self, relation: impl Relation<Self::Expr>, is_real_bool: impl Into<Self::Expr>);
 
-    /// Receive a query (once) that has been sent in another part of the program.
-    fn receive(
-        &mut self,
-        relation: impl Relation<Self::Expr>,
-        is_real_bool: impl Into<Self::Expr>,
-    ) {
-        self.query(QueryType::Receive, relation, is_real_bool);
-    }
-
-    /// Send a query (once) to another part of the program.
-    fn send(&mut self, relation: impl Relation<Self::Expr>, is_real_bool: impl Into<Self::Expr>) {
-        self.query(QueryType::Send, relation, is_real_bool);
-    }
+    fn send(&mut self, relation: impl Relation<Self::Expr>, is_real_bool: impl Into<Self::Expr>);
 
     /// Provide a query that can be required multiple times.
     fn provide(
         &mut self,
         relation: impl Relation<Self::Expr>,
+        record: ProvideRecord<impl Into<Self::Expr>>,
         is_real_bool: impl Into<Self::Expr>,
     ) {
-        self.query(QueryType::Provide, relation, is_real_bool);
+        let is_real = is_real_bool.into();
+
+        // Witness values corresponding to the nonce/row and final count used by the
+        // last require access.
+        let ProvideRecord {
+            last_nonce,
+            last_count,
+        } = record;
+
+        let values: Vec<_> = relation.values().into_iter().collect();
+
+        // Read the query written by the final require access.
+        self.receive(
+            chain([last_nonce.into(), last_count.into()], values.clone()),
+            is_real.clone(),
+        );
+        // Write it back with a counter initialized to 0, to be read by the first require access.
+        // The nonce can be zero since there is no security issue with providing a value multiple times.
+        self.send(
+            chain([Self::Expr::zero(), Self::Expr::zero()], values),
+            is_real.clone(),
+        );
     }
 
     /// Require a query that has been provided.
     fn require(
         &mut self,
         relation: impl Relation<Self::Expr>,
+        nonce: impl Into<Self::Expr>,
+        record: RequireRecord<impl Into<Self::Expr>>,
         is_real_bool: impl Into<Self::Expr>,
     ) {
-        self.query(QueryType::Require, relation, is_real_bool);
+        let is_real = is_real_bool.into();
+
+        // Witness values used when writing the query to the set in the previous access.
+
+        let prev_nonce = record.prev_nonce.into();
+        let prev_count = record.prev_count.into();
+        let count_inv = record.count_inv.into();
+
+        // The count to be written through this access.
+        let count = prev_count.clone() + Self::Expr::one();
+
+        // Ensure that we are not writing back a query with a count = 0.
+        self.when(is_real.clone())
+            .assert_one(count.clone() * count_inv);
+
+        let values: Vec<_> = relation.values().into_iter().collect();
+
+        // Read the query from the set with the provided nonce and count
+        self.receive(
+            chain([prev_nonce, prev_count], values.clone()),
+            is_real.clone(),
+        );
+        // Write it back with the updated count and current nonce/row value.
+        self.send(chain([nonce.into(), count], values), is_real.clone());
     }
 }
 
 impl<AB: AirBuilder + MessageBuilder<AirInteraction<AB::Expr>>> LookupBuilder for AB {
-    fn query(
+    fn receive(
         &mut self,
-        query_type: QueryType,
         relation: impl Relation<Self::Expr>,
         is_real_bool: impl Into<Self::Expr>,
     ) {
-        // We use the `InteractionKind::Program` for all interactions for now
-        let is_real = is_real_bool.into();
-        match query_type {
-            QueryType::Receive | QueryType::Require => {
-                <Self as MessageBuilder<AirInteraction<Self::Expr>>>::receive(
-                    self,
-                    AirInteraction::new(
-                        relation.values().into_iter().collect(),
-                        is_real,
-                        InteractionKind::Program,
-                    ),
-                );
-            }
-            QueryType::Send | QueryType::Provide => {
-                <Self as MessageBuilder<AirInteraction<Self::Expr>>>::send(
-                    self,
-                    AirInteraction::new(
-                        relation.values().into_iter().collect(),
-                        is_real,
-                        InteractionKind::Program,
-                    ),
-                );
-            }
-        }
+        <Self as MessageBuilder<AirInteraction<AB::Expr>>>::receive(
+            self,
+            AirInteraction {
+                values: relation.values().into_iter().collect(),
+                multiplicity: is_real_bool.into(),
+                kind: InteractionKind::Memory,
+            },
+        )
     }
+
+    fn send(&mut self, relation: impl Relation<Self::Expr>, is_real_bool: impl Into<Self::Expr>) {
+        <Self as MessageBuilder<AirInteraction<AB::Expr>>>::send(
+            self,
+            AirInteraction {
+                values: relation.values().into_iter().collect(),
+                multiplicity: is_real_bool.into(),
+                kind: InteractionKind::Memory,
+            },
+        )
+    }
+}
+
+/// A [RequireRecord] contains witness values
+#[derive(Copy, Clone, Default, Debug)]
+#[repr(C)]
+pub struct RequireRecord<E> {
+    /// The `nonce` is the row in the trace where the previous access occurred.
+    pub prev_nonce: E,
+    /// The `count`
+    /// May be zero when the previous access was `provide`, or for padding when `is_real = 0`.
+    pub prev_count: E,
+    /// Inverse of `count = prev_count + 1`, proving that `count` is non-zero.
+    /// May be zero when `is_real = 0`
+    pub count_inv: E,
+}
+
+#[derive(Copy, Clone, Default, Debug)]
+#[repr(C)]
+pub struct ProvideRecord<E> {
+    /// The `nonce` is the row in the trace where the last `require` access occurred.
+    pub last_nonce: E,
+    /// The `count` written by the final `require` access, also sometimes referred to as the
+    /// "multiplicity" of the query.
+    pub last_count: E,
 }

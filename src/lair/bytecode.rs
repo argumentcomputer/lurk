@@ -23,12 +23,14 @@ pub enum Op<F> {
     Not(usize),
     /// `Call(i, [a, b, ...])` extends the stack with the output of the function
     /// at index `i` in the toplevel when applied to the arguments at positions
-    /// `[a, b, ...]` in the stack
-    Call(usize, List<usize>),
+    /// `[a, b, ...]` in the stack. The last `usize` is an unique identifier within
+    /// a `Func`
+    Call(usize, List<usize>, usize),
     /// `PreImg(i, [a, b, ...])` extends the stack with the latest preimage
     /// (beware of non-injectivity) of the function of index `i` when called with
-    /// arguments at positions `[a, b, ...]` in the stack
-    PreImg(usize, List<usize>),
+    /// arguments at positions `[a, b, ...]` in the stack. The last `usize` is an
+    /// unique identifier within a `Func`
+    PreImg(usize, List<usize>, usize),
     /// `Store([y, ...])` pushes to the stack the pointer to `[y, ...]`
     Store(List<usize>),
     /// `Load(len, y)` extends the stack with the `len` values that is pointed by `y`
