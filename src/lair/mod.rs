@@ -19,7 +19,7 @@ pub mod relations;
 pub mod toplevel;
 pub mod trace;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Name(pub &'static str);
 
 impl std::fmt::Display for Name {
@@ -46,7 +46,7 @@ pub(crate) fn field_from_u32<F: p3_field::AbstractField>(i: u32) -> F {
 pub type List<T> = Box<[T]>;
 
 #[allow(dead_code)]
-pub(crate) fn demo_toplevel<F: Field + Ord, H: Chipset<F>>() -> Toplevel<F, H> {
+pub(crate) fn demo_toplevel<F: Field + Ord, H: Chipset<F> + Default>() -> Toplevel<F, H> {
     let factorial_e = func!(
     fn factorial(n): [1] {
         let one = 1;

@@ -5,6 +5,7 @@ use super::{bytecode::*, expr::*, hasher::Chipset, map::Map, List, Name};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Toplevel<F, H: Chipset<F>> {
     pub(crate) map: Map<Name, Func<F>>,
+    pub(crate) chip_map: Map<Name, H>,
     pub(crate) hasher: H,
 }
 
@@ -13,7 +14,7 @@ pub(crate) struct FuncInfo {
     output_size: usize,
 }
 
-impl<F: Clone + Ord, H: Chipset<F>> Toplevel<F, H> {
+impl<F: Clone + Ord, H: Chipset<F> + Default> Toplevel<F, H> {
     pub fn new(funcs: &[FuncE<F>]) -> Self {
         let ordered_funcs = Map::from_vec(funcs.iter().map(|func| (func.name, func)).collect());
         let info_vec = ordered_funcs
@@ -35,7 +36,13 @@ impl<F: Clone + Ord, H: Chipset<F>> Toplevel<F, H> {
                 .map(|(i, (name, func))| (*name, func.check_and_link(i, &info_map, &hasher)))
                 .collect(),
         );
-        Toplevel { map, hasher }
+        // Fixme
+        let chip_map = Default::default();
+        Toplevel {
+            map,
+            chip_map,
+            hasher,
+        }
     }
 }
 
