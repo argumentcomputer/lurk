@@ -15,7 +15,7 @@ impl<F: AbstractField> MulWitness<F> {
         let mut carry = 0u16;
         let mut result = Word::default();
         for k in 0..WORD_SIZE {
-            let product = (0..=k).fold(carry as u32, |acc, i| {
+            let product = (0..=k).fold(u32::from(carry), |acc, i| {
                 let j = k - i;
                 acc + u32::from(lhs[i]) * u32::from(rhs[j])
             });

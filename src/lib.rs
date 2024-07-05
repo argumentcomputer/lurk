@@ -4,6 +4,7 @@ pub mod lair;
 // TODO: unused
 // #[allow(dead_code)]
 // pub mod logup;
+#[allow(dead_code)]
 pub mod gadgets;
 pub mod lurk;
 pub mod poseidon;

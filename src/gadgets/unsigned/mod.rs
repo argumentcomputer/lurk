@@ -2,9 +2,9 @@ use p3_field::AbstractField;
 use std::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign};
 use std::{array, slice};
 
-mod add;
-mod is_zero;
-mod mul;
+pub mod add;
+pub mod is_zero;
+pub mod mul;
 
 pub const WORD_SIZE: usize = 8;
 

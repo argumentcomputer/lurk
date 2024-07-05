@@ -15,13 +15,13 @@ impl<F: AbstractField> AddWitness<F> {
         let mut result = Word::default();
         let mut carry_prev = 0u16;
         for (i, (in1, in2)) in zip(in1, in2).enumerate() {
-            let [out, carry] = ((in1 as u16) + (in2 as u16) + carry_prev).to_le_bytes();
+            let [out, carry] = (u16::from(in1) + u16::from(in2) + carry_prev).to_le_bytes();
             result[i] = out;
             debug_assert!(carry == 0 || carry == 1);
             if carry == 1 && i < WORD_SIZE - 1 {
                 self.carry[i] = F::one();
             }
-            carry_prev = carry as u16;
+            carry_prev = carry.into();
         }
         result
     }
