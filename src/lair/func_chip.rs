@@ -2,7 +2,7 @@ use p3_air::BaseAir;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
-    hasher::Hasher,
+    hasher::Chipset,
     toplevel::Toplevel,
 };
 
@@ -23,13 +23,13 @@ impl LayoutSizes {
     }
 }
 
-pub struct FuncChip<'a, F, H: Hasher<F>> {
+pub struct FuncChip<'a, F, H: Chipset<F>> {
     pub(crate) func: &'a Func<F>,
     pub(crate) toplevel: &'a Toplevel<F, H>,
     pub(crate) layout_sizes: LayoutSizes,
 }
 
-impl<'a, F, H: Hasher<F>> FuncChip<'a, F, H> {
+impl<'a, F, H: Chipset<F>> FuncChip<'a, F, H> {
     #[inline]
     pub fn from_name(name: &'static str, toplevel: &'a Toplevel<F, H>) -> Self {
         let func = toplevel.get_by_name(name);
@@ -78,7 +78,7 @@ impl<'a, F, H: Hasher<F>> FuncChip<'a, F, H> {
     }
 }
 
-impl<'a, F: Sync, H: Hasher<F>> BaseAir<F> for FuncChip<'a, F, H> {
+impl<'a, F: Sync, H: Chipset<F>> BaseAir<F> for FuncChip<'a, F, H> {
     fn width(&self) -> usize {
         self.width()
     }
@@ -87,7 +87,7 @@ impl<'a, F: Sync, H: Hasher<F>> BaseAir<F> for FuncChip<'a, F, H> {
 pub type Degree = u8;
 
 impl<F> Func<F> {
-    pub fn compute_layout_sizes<H: Hasher<F>>(&self, toplevel: &Toplevel<F, H>) -> LayoutSizes {
+    pub fn compute_layout_sizes<H: Chipset<F>>(&self, toplevel: &Toplevel<F, H>) -> LayoutSizes {
         let input = self.input_size;
         let mut aux = 0;
         let mut sel = 0;
@@ -104,7 +104,7 @@ impl<F> Func<F> {
 }
 
 impl<F> Block<F> {
-    fn compute_layout_sizes<H: Hasher<F>>(
+    fn compute_layout_sizes<H: Chipset<F>>(
         &self,
         degrees: &mut Vec<Degree>,
         toplevel: &Toplevel<F, H>,
@@ -119,7 +119,7 @@ impl<F> Block<F> {
 }
 
 impl<F> Ctrl<F> {
-    fn compute_layout_sizes<H: Hasher<F>>(
+    fn compute_layout_sizes<H: Chipset<F>>(
         &self,
         degrees: &mut Vec<Degree>,
         toplevel: &Toplevel<F, H>,
@@ -200,7 +200,7 @@ impl<F> Ctrl<F> {
 }
 
 impl<F> Op<F> {
-    fn compute_layout_sizes<H: Hasher<F>>(
+    fn compute_layout_sizes<H: Chipset<F>>(
         &self,
         degrees: &mut Vec<Degree>,
         toplevel: &Toplevel<F, H>,
@@ -266,7 +266,7 @@ impl<F> Op<F> {
             }
             Op::Hash(preimg) => {
                 let hasher = &toplevel.hasher;
-                let img_size = hasher.img_size();
+                let img_size = hasher.output_size();
                 let witness_size = hasher.witness_size(preimg.len());
                 let aux_size = img_size + witness_size;
                 *aux += aux_size;

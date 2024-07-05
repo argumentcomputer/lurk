@@ -1,4 +1,4 @@
-use hasher::Hasher;
+use hasher::Chipset;
 use p3_field::Field;
 
 use crate::func;
@@ -46,7 +46,7 @@ pub(crate) fn field_from_u32<F: p3_field::AbstractField>(i: u32) -> F {
 pub type List<T> = Box<[T]>;
 
 #[allow(dead_code)]
-pub(crate) fn demo_toplevel<F: Field + Ord, H: Hasher<F>>() -> Toplevel<F, H> {
+pub(crate) fn demo_toplevel<F: Field + Ord, H: Chipset<F>>() -> Toplevel<F, H> {
     let factorial_e = func!(
     fn factorial(n): [1] {
         let one = 1;

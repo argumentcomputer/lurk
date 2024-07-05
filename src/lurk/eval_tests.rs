@@ -12,7 +12,7 @@ use crate::{
     lair::{
         execute::{QueryRecord, Shard, ShardingConfig},
         func_chip::FuncChip,
-        hasher::{Hasher, LurkHasher},
+        hasher::{Chipset, LurkHasher},
         lair_chip::{
             build_chip_vector_from_lair_chips, build_lair_chip_vector, LairMachineProgram,
         },
@@ -245,7 +245,7 @@ test!(test_commit, "(commit 123)", |_| {
     let mut preimg = Vec::with_capacity(24);
     preimg.extend([F::zero(); 8]);
     preimg.extend(num(123).flatten());
-    ZPtr::comm(LurkHasher::default().hash(&preimg).try_into().unwrap())
+    ZPtr::comm(LurkHasher::default().execute(&preimg).try_into().unwrap())
 });
 test!(
     test_raw_commit,
@@ -254,7 +254,7 @@ test!(
         let mut preimg = Vec::with_capacity(24);
         preimg.extend([F::zero(); 8]);
         preimg.extend(num(123).flatten());
-        ZPtr::comm(LurkHasher::default().hash(&preimg).try_into().unwrap())
+        ZPtr::comm(LurkHasher::default().execute(&preimg).try_into().unwrap())
     }
 );
 test!(test_hide, "(hide (commit 321) 123)", |_| {
@@ -263,9 +263,9 @@ test!(test_hide, "(hide (commit 321) 123)", |_| {
     secret_preimg.extend(num(321).flatten());
     let hasher = LurkHasher::default();
     let mut preimg = Vec::with_capacity(24);
-    preimg.extend(hasher.hash(&secret_preimg));
+    preimg.extend(hasher.execute(&secret_preimg));
     preimg.extend(num(123).flatten());
-    ZPtr::comm(hasher.hash(&preimg).try_into().unwrap())
+    ZPtr::comm(hasher.execute(&preimg).try_into().unwrap())
 });
 test!(test_open_roundtrip, "(open (commit 123))", |_| num(123));
 test!(

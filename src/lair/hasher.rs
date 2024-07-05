@@ -10,20 +10,20 @@ use crate::poseidon::{
     wide::{air::eval_input, columns::Poseidon2Cols, trace::populate_witness},
 };
 
-pub trait Hasher<F>: Default + Sync {
-    fn img_size(&self) -> usize;
+pub trait Chipset<F>: Default + Sync {
+    fn output_size(&self) -> usize;
 
-    fn hash(&self, preimg: &[F]) -> Vec<F>;
+    fn execute(&self, input: &[F]) -> Vec<F>;
 
-    fn populate_witness(&self, preimg: &[F], witness: &mut [F]) -> Vec<F>;
+    fn populate_witness(&self, input: &[F], witness: &mut [F]) -> Vec<F>;
 
-    fn witness_size(&self, preimg_size: usize) -> usize;
+    fn witness_size(&self, input_size: usize) -> usize;
 
-    fn eval_preimg<AB: AirBuilder<F = F>>(
+    fn eval<AB: AirBuilder<F = F>>(
         &self,
         builder: &mut AB,
-        preimg: Vec<AB::Expr>,
-        img: &[AB::Var],
+        input: Vec<AB::Expr>,
+        output: &[AB::Var],
         witness: &[AB::Var],
         is_real: AB::Expr,
     );
@@ -73,16 +73,16 @@ macro_rules! sized {
     };
 }
 
-impl Hasher<BabyBear> for LurkHasher {
+impl Chipset<BabyBear> for LurkHasher {
     #[inline]
-    fn img_size(&self) -> usize {
+    fn output_size(&self) -> usize {
         8
     }
 
-    fn hash(&self, preimg: &[BabyBear]) -> Vec<BabyBear> {
+    fn execute(&self, preimg: &[BabyBear]) -> Vec<BabyBear> {
         macro_rules! hash_with {
             ($name:ident) => {
-                self.$name.permute(sized!(preimg))[..self.img_size()].into()
+                self.$name.permute(sized!(preimg))[..self.output_size()].into()
             };
         }
         match preimg.len() {
@@ -113,7 +113,7 @@ impl Hasher<BabyBear> for LurkHasher {
         }
     }
 
-    fn eval_preimg<AB: AirBuilder<F = BabyBear>>(
+    fn eval<AB: AirBuilder<F = BabyBear>>(
         &self,
         builder: &mut AB,
         preimg: Vec<AB::Expr>,

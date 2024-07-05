@@ -8,7 +8,7 @@ use crate::air::builder::{LookupBuilder, ProvideRecord, RequireRecord};
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
     func_chip::{ColumnLayout, FuncChip, LayoutSizes},
-    hasher::Hasher,
+    hasher::Chipset,
     relations::{CallRelation, MemoryRelation},
     toplevel::Toplevel,
     trace::ColumnIndex,
@@ -75,7 +75,7 @@ impl<'a, T> ColumnSlice<'a, T> {
     }
 }
 
-impl<'a, AB, H: Hasher<AB::F>> Air<AB> for FuncChip<'a, AB::F, H>
+impl<'a, AB, H: Chipset<AB::F>> Air<AB> for FuncChip<'a, AB::F, H>
 where
     AB: AirBuilder + LookupBuilder,
     <AB as AirBuilder>::Var: Debug,
@@ -101,7 +101,7 @@ impl<AB: AirBuilder> Val<AB> {
 }
 
 impl<F: Field> Func<F> {
-    fn eval<AB, H: Hasher<F>>(
+    fn eval<AB, H: Chipset<F>>(
         &self,
         builder: &mut AB,
         toplevel: &Toplevel<F, H>,
@@ -168,7 +168,7 @@ impl<F: Field> Block<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn eval<AB, H: Hasher<F>>(
+    fn eval<AB, H: Chipset<F>>(
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
@@ -191,7 +191,7 @@ impl<F: Field> Block<F> {
 
 impl<F: Field> Op<F> {
     #[allow(clippy::too_many_arguments)]
-    fn eval<AB, H: Hasher<F>>(
+    fn eval<AB, H: Chipset<F>>(
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
@@ -370,11 +370,11 @@ impl<F: Field> Op<F> {
             Op::Hash(preimg) => {
                 let preimg: Vec<_> = preimg.iter().map(|a| map[*a].to_expr()).collect();
                 let hasher = &toplevel.hasher;
-                let img_size = hasher.img_size();
+                let img_size = hasher.output_size();
                 let img_vars = local.next_n_aux(index, img_size);
                 let witness_size = hasher.witness_size(preimg.len());
                 let witness = local.next_n_aux(index, witness_size);
-                hasher.eval_preimg(builder, preimg, img_vars, witness, sel.clone());
+                hasher.eval(builder, preimg, img_vars, witness, sel.clone());
                 for &img_var in img_vars {
                     map.push(Val::Expr(img_var.into()))
                 }
@@ -388,7 +388,7 @@ impl<F: Field> Op<F> {
 }
 
 impl<F: Field> Ctrl<F> {
-    fn eval<AB, H: Hasher<F>>(
+    fn eval<AB, H: Chipset<F>>(
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,

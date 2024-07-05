@@ -9,7 +9,7 @@ use crate::air::builder::Record;
 
 use super::{
     bytecode::{Ctrl, Func, Op},
-    hasher::Hasher,
+    hasher::Chipset,
     toplevel::Toplevel,
     List,
 };
@@ -228,7 +228,7 @@ pub fn mem_index_from_len(len: usize) -> usize {
 
 impl<F: PrimeField32> QueryRecord<F> {
     #[inline]
-    pub fn new<H: Hasher<F>>(toplevel: &Toplevel<F, H>) -> Self {
+    pub fn new<H: Chipset<F>>(toplevel: &Toplevel<F, H>) -> Self {
         let mem_queries = vec![FxIndexMap::default(); NUM_MEM_TABLES];
         let func_queries = vec![FxIndexMap::default(); toplevel.size()];
         let inv_func_queries = toplevel
@@ -270,7 +270,7 @@ impl<F: PrimeField32> QueryRecord<F> {
         I: Clone + Into<List<F>> + 'a,
         O: Clone + Into<List<F>> + 'a,
         T: IntoIterator<Item = (&'a I, &'a O)>,
-        H: Hasher<F>,
+        H: Chipset<F>,
     >(
         &mut self,
         name: &'static str,
@@ -286,7 +286,7 @@ impl<F: PrimeField32> QueryRecord<F> {
         }
     }
 
-    pub fn get_inv_queries<H: Hasher<F>>(
+    pub fn get_inv_queries<H: Chipset<F>>(
         &self,
         name: &'static str,
         toplevel: &Toplevel<F, H>,
@@ -314,7 +314,7 @@ impl<F: PrimeField32> QueryRecord<F> {
     }
 }
 
-impl<F: PrimeField32, H: Hasher<F>> Toplevel<F, H> {
+impl<F: PrimeField32, H: Chipset<F>> Toplevel<F, H> {
     pub fn execute(&self, func: &Func<F>, args: &[F], record: &mut QueryRecord<F>) -> List<F> {
         let out = func.execute(args, self, record);
         let mut public_values = Vec::with_capacity(args.len() + out.len());
@@ -361,7 +361,7 @@ struct CallerState<F> {
 }
 
 impl<F: PrimeField32> Func<F> {
-    fn execute<H: Hasher<F>>(
+    fn execute<H: Chipset<F>>(
         &self,
         args: &[F],
         toplevel: &Toplevel<F, H>,
@@ -489,7 +489,7 @@ impl<F: PrimeField32> Func<F> {
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
                 ExecEntry::Op(Op::Hash(preimg)) => {
                     let preimg: List<_> = preimg.iter().map(|a| map[*a]).collect();
-                    map.extend(toplevel.hasher.hash(&preimg));
+                    map.extend(toplevel.hasher.execute(&preimg));
                 }
                 ExecEntry::Ctrl(Ctrl::Return(_, out)) => {
                     let out = out.iter().map(|v| map[*v]).collect::<Vec<_>>();

@@ -13,7 +13,7 @@ use super::{
     bytecode::{Block, Ctrl, Func, Op},
     execute::{QueryRecord, Shard},
     func_chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
-    hasher::Hasher,
+    hasher::Chipset,
     List,
 };
 
@@ -50,7 +50,7 @@ impl<'a, T> ColumnMutSlice<'a, T> {
     }
 }
 
-impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
+impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
     /// Per-row parallel trace generation
     pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
         let func_queries = &shard.record().func_queries()[self.func.index];
@@ -91,7 +91,7 @@ struct TraceCtx<'a, F: PrimeField32, H> {
 }
 
 impl<F: PrimeField32> Func<F> {
-    fn populate_row<H: Hasher<F>>(
+    fn populate_row<H: Chipset<F>>(
         &self,
         args: &[F],
         index: &mut ColumnIndex,
@@ -118,7 +118,7 @@ impl<F: PrimeField32> Func<F> {
 }
 
 impl<F: PrimeField32> Block<F> {
-    fn populate_row<H: Hasher<F>>(
+    fn populate_row<H: Chipset<F>>(
         &self,
         ctx: &mut TraceCtx<'_, F, H>,
         map: &mut Vec<(F, Degree)>,
@@ -133,7 +133,7 @@ impl<F: PrimeField32> Block<F> {
 }
 
 impl<F: PrimeField32> Ctrl<F> {
-    fn populate_row<H: Hasher<F>>(
+    fn populate_row<H: Chipset<F>>(
         &self,
         ctx: &mut TraceCtx<'_, F, H>,
         map: &mut Vec<(F, Degree)>,
@@ -218,7 +218,7 @@ fn push_inequality_witness<F: PrimeField, I: Iterator<Item = F>>(
 }
 
 impl<F: PrimeField32> Op<F> {
-    fn populate_row<H: Hasher<F>>(
+    fn populate_row<H: Chipset<F>>(
         &self,
         ctx: &mut TraceCtx<'_, F, H>,
         map: &mut Vec<(F, Degree)>,

@@ -13,7 +13,7 @@ use loam::{
     lair::{
         execute::{QueryRecord, Shard},
         func_chip::FuncChip,
-        hasher::{Hasher, LurkHasher},
+        hasher::{Chipset, LurkHasher},
         lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
         toplevel::Toplevel,
         List,
@@ -44,7 +44,7 @@ fn build_lurk_expr(arg: usize) -> String {
     )
 }
 
-fn setup<H: Hasher<BabyBear>>(
+fn setup<H: Chipset<BabyBear>>(
     arg: usize,
     toplevel: &Toplevel<BabyBear, H>,
 ) -> (

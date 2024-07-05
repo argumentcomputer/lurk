@@ -1,9 +1,9 @@
 use rustc_hash::FxHashMap;
 
-use super::{bytecode::*, expr::*, hasher::Hasher, map::Map, List, Name};
+use super::{bytecode::*, expr::*, hasher::Chipset, map::Map, List, Name};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Toplevel<F, H: Hasher<F>> {
+pub struct Toplevel<F, H: Chipset<F>> {
     pub(crate) map: Map<Name, Func<F>>,
     pub(crate) hasher: H,
 }
@@ -13,7 +13,7 @@ pub(crate) struct FuncInfo {
     output_size: usize,
 }
 
-impl<F: Clone + Ord, H: Hasher<F>> Toplevel<F, H> {
+impl<F: Clone + Ord, H: Chipset<F>> Toplevel<F, H> {
     pub fn new(funcs: &[FuncE<F>]) -> Self {
         let ordered_funcs = Map::from_vec(funcs.iter().map(|func| (func.name, func)).collect());
         let info_vec = ordered_funcs
@@ -39,7 +39,7 @@ impl<F: Clone + Ord, H: Hasher<F>> Toplevel<F, H> {
     }
 }
 
-impl<F, H: Hasher<F>> Toplevel<F, H> {
+impl<F, H: Chipset<F>> Toplevel<F, H> {
     #[inline]
     pub fn get_by_index(&self, i: usize) -> &Func<F> {
         self.map
@@ -123,7 +123,7 @@ impl<'a> CheckCtx<'a> {
 impl<F: Clone + Ord> FuncE<F> {
     /// Checks if a named `Func` is correct, and produces an index-based `Func`
     /// by replacing names with indices
-    fn check_and_link<H: Hasher<F>>(
+    fn check_and_link<H: Chipset<F>>(
         &self,
         func_index: usize,
         info_map: &Map<Name, FuncInfo>,
@@ -162,7 +162,7 @@ impl<F: Clone + Ord> FuncE<F> {
 }
 
 impl<F: Clone + Ord> BlockE<F> {
-    fn check_and_link<H: Hasher<F>>(&self, ctx: &mut CheckCtx<'_>, hasher: &H) -> Block<F> {
+    fn check_and_link<H: Chipset<F>>(&self, ctx: &mut CheckCtx<'_>, hasher: &H) -> Block<F> {
         let mut ops = Vec::new();
         for op in self.ops.iter() {
             match op {
@@ -303,7 +303,7 @@ impl<F: Clone + Ord> BlockE<F> {
                     }
                 }
                 OpE::Hash(img, preimg) => {
-                    assert_eq!(img.total_size(), hasher.img_size());
+                    assert_eq!(img.total_size(), hasher.output_size());
                     let preimg: List<_> = preimg
                         .iter()
                         .flat_map(|a| use_var(a, ctx).to_vec())
@@ -335,7 +335,7 @@ impl<F: Clone + Ord> BlockE<F> {
 }
 
 impl<F: Clone + Ord> CtrlE<F> {
-    fn check_and_link<H: Hasher<F>>(&self, ctx: &mut CheckCtx<'_>, hasher: &H) -> Ctrl<F> {
+    fn check_and_link<H: Chipset<F>>(&self, ctx: &mut CheckCtx<'_>, hasher: &H) -> Ctrl<F> {
         match &self {
             CtrlE::Return(return_vars) => {
                 let total_size = return_vars.total_size();

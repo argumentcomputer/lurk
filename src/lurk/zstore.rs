@@ -7,7 +7,7 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    lair::{hasher::Hasher, List},
+    lair::{hasher::Chipset, List},
     lurk::{
         parser::{
             syntax::{parse_maybe_meta, parse_space},
@@ -183,7 +183,7 @@ pub enum ZPtrType<F> {
 }
 
 #[derive(Default, Clone)]
-pub struct ZStore<F, H: Hasher<F>> {
+pub struct ZStore<F, H: Chipset<F>> {
     hasher: H,
     dag: FxHashMap<ZPtr<F>, ZPtrType<F>>,
     // comms: FxHashMap<[F; DIGEST_SIZE], ([F; DIGEST_SIZE], ZPtr<F>)>,
@@ -216,12 +216,12 @@ pub(crate) fn builtin_vec() -> &'static Vec<Symbol> {
     })
 }
 
-impl<F: Field, H: Hasher<F>> ZStore<F, H> {
+impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     fn hash2(&mut self, preimg: [F; TUPLE2_SIZE]) -> [F; DIGEST_SIZE] {
         if let Some(img) = self.tuple2_hashes.get(&preimg) {
             return *img;
         }
-        let img = self.hasher.hash(&preimg);
+        let img = self.hasher.execute(&preimg);
         let mut buffer = SizedBuffer::default();
         buffer.write_slice(&img);
         let digest = buffer.extract();
@@ -233,7 +233,7 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
         if let Some(limbs) = self.tuple3_hashes.get(&preimg) {
             return *limbs;
         }
-        let img = self.hasher.hash(&preimg);
+        let img = self.hasher.execute(&preimg);
         let mut buffer = SizedBuffer::default();
         buffer.write_slice(&img);
         let digest = buffer.extract();
@@ -778,7 +778,7 @@ mod test {
     use crate::{
         lair::{
             execute::QueryRecord,
-            hasher::{Hasher, LurkHasher},
+            hasher::{Chipset, LurkHasher},
         },
         lurk::{
             eval::build_lurk_toplevel,
@@ -867,7 +867,7 @@ mod test {
         let mut preimg = Vec::with_capacity(24);
         preimg.extend([BabyBear::zero(); 8]);
         preimg.extend(ZPtr::num(BabyBear::from_canonical_u32(123)).flatten());
-        let simple_comm = ZPtr::comm(LurkHasher::default().hash(&preimg).try_into().unwrap());
+        let simple_comm = ZPtr::comm(LurkHasher::default().execute(&preimg).try_into().unwrap());
         assert_eq!(
             zstore.fmt_with_state(state, &simple_comm),
             "#0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3"
