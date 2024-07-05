@@ -272,8 +272,13 @@ impl<F> Op<F> {
                 *aux += aux_size;
                 degrees.extend(vec![1; aux_size]);
             }
-            Op::ExternCall(..) => {
-                todo!()
+            Op::ExternCall(chip_idx, input) => {
+                let chip = toplevel.get_chip_by_index(*chip_idx);
+                let output_size = chip.output_size();
+                let witness_size = chip.witness_size(input.len());
+                let aux_size = output_size + witness_size;
+                *aux += aux_size;
+                degrees.extend(vec![1; aux_size]);
             }
             Op::Debug(..) => (),
         }

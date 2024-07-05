@@ -13,6 +13,8 @@ use crate::poseidon::{
 use super::{map::Map, Name};
 
 pub trait Chipset<F>: Sync {
+    fn input_size(&self) -> usize;
+
     fn output_size(&self) -> usize;
 
     fn execute(&self, input: &[F]) -> Vec<F>;
@@ -80,6 +82,15 @@ macro_rules! sized {
 }
 
 impl Chipset<BabyBear> for LurkChip {
+    #[inline]
+    fn input_size(&self) -> usize {
+        match self {
+            LurkChip::Hasher24_8(..) => 24,
+            LurkChip::Hasher32_8(..) => 32,
+            LurkChip::Hasher48_8(..) => 48,
+        }
+    }
+
     #[inline]
     fn output_size(&self) -> usize {
         8
@@ -190,6 +201,11 @@ impl Default for LurkHasher {
 }
 
 impl Chipset<BabyBear> for LurkHasher {
+    #[inline]
+    fn input_size(&self) -> usize {
+        unreachable!()
+    }
+
     #[inline]
     fn output_size(&self) -> usize {
         8

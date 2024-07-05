@@ -483,8 +483,10 @@ impl<F: PrimeField32> Func<F> {
                     map.extend(args);
                     result.new_lookup(nonce, &mut requires);
                 }
-                ExecEntry::Op(Op::ExternCall(..)) => {
-                    todo!()
+                ExecEntry::Op(Op::ExternCall(chip_idx, input)) => {
+                    let input: List<_> = input.iter().map(|a| map[*a]).collect();
+                    let chip = toplevel.get_chip_by_index(*chip_idx);
+                    map.extend(chip.execute(&input));
                 }
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
                 ExecEntry::Op(Op::Hash(preimg)) => {

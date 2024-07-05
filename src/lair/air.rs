@@ -379,8 +379,17 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(img_var.into()))
                 }
             }
-            Op::ExternCall(..) => {
-                todo!()
+            Op::ExternCall(chip_idx, input) => {
+                let input: Vec<_> = input.iter().map(|a| map[*a].to_expr()).collect();
+                let chip = toplevel.get_chip_by_index(*chip_idx);
+                let output_size = chip.output_size();
+                let output_vars = local.next_n_aux(index, output_size);
+                let witness_size = chip.witness_size(input.len());
+                let witness = local.next_n_aux(index, witness_size);
+                chip.eval(builder, input, output_vars, witness, sel.clone());
+                for &img_var in output_vars {
+                    map.push(Val::Expr(img_var.into()))
+                }
             }
             Op::Debug(..) => (),
         }

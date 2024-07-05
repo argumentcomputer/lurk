@@ -14,6 +14,7 @@ use super::{
     execute::{QueryRecord, Shard},
     func_chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
     hasher::Chipset,
+    toplevel::Toplevel,
     List,
 };
 
@@ -73,18 +74,17 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 let requires = result.requires.iter();
                 let queries = shard.record();
-                let hasher = &self.toplevel.hasher;
                 self.func
-                    .populate_row(args, index, slice, queries, requires, hasher);
+                    .populate_row(args, index, slice, queries, requires, self.toplevel);
             });
         RowMajorMatrix::new(rows, width)
     }
 }
 
 #[derive(Clone)]
-struct TraceCtx<'a, F: PrimeField32, H> {
+struct TraceCtx<'a, F: PrimeField32, H: Chipset<F>> {
     queries: &'a QueryRecord<F>,
-    hasher: &'a H,
+    toplevel: &'a Toplevel<F, H>,
     func_idx: usize,
     call_inp: List<F>,
     requires: Iter<'a, Record>,
@@ -98,7 +98,7 @@ impl<F: PrimeField32> Func<F> {
         slice: &mut ColumnMutSlice<'_, F>,
         queries: &QueryRecord<F>,
         requires: Iter<'_, Record>,
-        hasher: &H,
+        toplevel: &Toplevel<F, H>,
     ) {
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
         // Variable to value map
@@ -108,8 +108,8 @@ impl<F: PrimeField32> Func<F> {
             func_idx: self.index,
             call_inp: args.into(),
             queries,
-            hasher,
             requires,
+            toplevel,
         };
         // One column per input
         args.iter().for_each(|arg| slice.push_input(index, *arg));
@@ -338,9 +338,9 @@ impl<F: PrimeField32> Op<F> {
             }
             Op::Hash(preimg) => {
                 let preimg = preimg.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let witness_size = ctx.hasher.witness_size(preimg.len());
+                let witness_size = ctx.toplevel.hasher.witness_size(preimg.len());
                 let mut witness = vec![F::zero(); witness_size];
-                let img = ctx.hasher.populate_witness(&preimg, &mut witness);
+                let img = ctx.toplevel.hasher.populate_witness(&preimg, &mut witness);
                 for f in img {
                     map.push((f, 1));
                     slice.push_aux(index, f);
@@ -349,8 +349,19 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, f);
                 }
             }
-            Op::ExternCall(..) => {
-                todo!()
+            Op::ExternCall(chip_idx, input) => {
+                let chip = ctx.toplevel.get_chip_by_index(*chip_idx);
+                let input = input.iter().map(|a| map[*a].0).collect::<List<_>>();
+                let witness_size = chip.witness_size(input.len());
+                let mut witness = vec![F::zero(); witness_size];
+                let img = chip.populate_witness(&input, &mut witness);
+                for f in img {
+                    map.push((f, 1));
+                    slice.push_aux(index, f);
+                }
+                for f in witness {
+                    slice.push_aux(index, f);
+                }
             }
             Op::Debug(..) => (),
         }
