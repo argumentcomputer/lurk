@@ -70,3 +70,33 @@ pub fn eval_is_equal<AB: AirBuilder>(
     let diff = Word::from_fn(|i| in1[i].clone() - in2[i].clone());
     eval_is_zero(builder, diff, is_equal, witness, is_real);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gadgets::debug::GadgetAirBuilder;
+    use p3_baby_bear::BabyBear;
+    #[test]
+    fn test_is_zero() {
+        type F = BabyBear;
+
+        let inputs = [0u64, 1, 1 << 8, 1 << 16, 1 << 24, 1 << 63];
+
+        for input in inputs {
+            let word = Word(input.to_le_bytes());
+
+            let mut witness = IsZeroWitness::<F>::default();
+            let is_zero = witness.populate_is_zero(word);
+            assert_eq!(is_zero, input == 0);
+
+            let mut builder = GadgetAirBuilder::<F>::default();
+            eval_is_zero(
+                &mut builder,
+                word.into_field::<F>(),
+                F::from_bool(is_zero),
+                &witness,
+                F::one(),
+            );
+        }
+    }
+}
