@@ -37,13 +37,13 @@ pub struct FuncChip<'a, F, H: Hasher<F>> {
 impl<'a, F, H: Hasher<F>> FuncChip<'a, F, H> {
     #[inline]
     pub fn from_name(name: &'static str, toplevel: &'a Toplevel<F, H>) -> Self {
-        let func = toplevel.get_by_name(name).expect("Func not found");
+        let func = toplevel.get_by_name(name);
         Self::from_func(func, toplevel)
     }
 
     #[inline]
     pub fn from_index(idx: usize, toplevel: &'a Toplevel<F, H>) -> Self {
-        let func = toplevel.get_by_index(idx).expect("Index out of bounds");
+        let func = toplevel.get_by_index(idx);
         Self::from_func(func, toplevel)
     }
 
@@ -248,14 +248,14 @@ impl<F> Op<F> {
                 }
             }
             Op::Call(f_idx, ..) => {
-                let func = toplevel.get_by_index(*f_idx).unwrap();
+                let func = toplevel.get_by_index(*f_idx);
                 let out_size = func.output_size;
                 // output of function, prev_nonce, prev_count, count_inv
                 *aux += out_size + 3;
                 degrees.extend(vec![1; out_size]);
             }
             Op::PreImg(f_idx, ..) => {
-                let func = toplevel.get_by_index(*f_idx).unwrap();
+                let func = toplevel.get_by_index(*f_idx);
                 let inp_size = func.input_size;
                 // input of function, prev_nonce, prev_count, count_inv
                 *aux += inp_size + 3;

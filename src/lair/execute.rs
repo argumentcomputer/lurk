@@ -1,12 +1,11 @@
 use hashbrown::HashMap;
 use indexmap::{IndexMap, IndexSet};
 use p3_field::{AbstractField, Field, PrimeField};
-use rustc_hash::FxBuildHasher;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use sphinx_core::stark::{Indexed, MachineRecord};
-use std::slice::Iter;
 
 use super::{
-    bytecode::{Block, Ctrl, Func, Op},
+    bytecode::{Ctrl, Func, Op},
     hasher::Hasher,
     toplevel::Toplevel,
     List,
@@ -28,7 +27,7 @@ impl<F> QueryResult<F> {
 
 type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 type QueryMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
-type InvQueryMap<F> = FxIndexMap<List<F>, List<F>>;
+type InvQueryMap<F> = FxHashMap<List<F>, List<F>>;
 pub(crate) type MemMap<F> = FxIndexMap<List<F>, u32>;
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
@@ -200,7 +199,7 @@ impl<F: PrimeField> QueryRecord<F> {
             .iter()
             .map(|(_, func)| {
                 if func.invertible {
-                    Some(FxIndexMap::default())
+                    Some(FxHashMap::default())
                 } else {
                     None
                 }
@@ -241,7 +240,7 @@ impl<F: PrimeField> QueryRecord<F> {
         toplevel: &Toplevel<F, H>,
         new_queries_data: T,
     ) {
-        let func = toplevel.get_by_name(name).expect("Unknown Func");
+        let func = toplevel.get_by_name(name);
         let inv_func_queries = self.inv_func_queries[func.index]
             .as_mut()
             .expect("Inverse query map not found");
@@ -261,7 +260,7 @@ impl<F: PrimeField> QueryRecord<F> {
         });
     }
 
-    pub fn query(
+    fn query(
         &mut self,
         index: usize,
         input: &[F],
@@ -311,42 +310,7 @@ impl<F: PrimeField> QueryRecord<F> {
         inp
     }
 
-    // this function is similar to `inject_inv_queries`, but meant for internal use only
-    fn try_insert_inv_query_result(&mut self, index: usize, input: List<F>, output: &List<F>) {
-        if let Some(queries) = &mut self.inv_func_queries[index] {
-            queries.insert(output.clone(), input);
-        }
-    }
-
-    fn record_event_and_return<H: Hasher<F>>(
-        &mut self,
-        toplevel: &Toplevel<F, H>,
-        func_idx: usize,
-        args: &[F],
-        caller_index: usize,
-        caller_nonce: usize,
-        call_ident: usize,
-    ) -> List<F> {
-        if let Some(out) = self.query(func_idx, args, caller_index, caller_nonce, call_ident) {
-            out.clone()
-        } else {
-            let func = toplevel.get_by_index(func_idx).unwrap();
-            let (nonce, _) =
-                self.func_queries[func_idx].insert_full(args.into(), QueryResult::default());
-            let out = func.execute(args, toplevel, self, nonce);
-            let QueryResult {
-                output,
-                callers_nonces,
-            } = self.func_queries[func_idx].get_mut(args).unwrap();
-            assert_eq!(*output, None);
-            *output = Some(out.clone());
-            callers_nonces.insert((caller_index, caller_nonce, call_ident));
-            self.try_insert_inv_query_result(func_idx, args.into(), &out);
-            out
-        }
-    }
-
-    pub fn store(&mut self, args: List<F>) -> F {
+    fn store(&mut self, args: List<F>) -> F {
         let mem_idx = mem_index_from_len(args.len());
         let mem_map = &mut self.mem_queries[mem_idx];
         let mem_map_idx = if let Some((i, _, mult)) = mem_map.get_full_mut(&args) {
@@ -358,7 +322,7 @@ impl<F: PrimeField> QueryRecord<F> {
         F::from_canonical_usize(mem_map_idx + 1)
     }
 
-    pub fn load(&mut self, len: usize, ptr: F) -> &[F] {
+    fn load(&mut self, len: usize, ptr: F) -> &[F] {
         let ptr_f: usize = ptr
             .as_canonical_biguint()
             .try_into()
@@ -373,434 +337,182 @@ impl<F: PrimeField> QueryRecord<F> {
 }
 
 impl<F: PrimeField, H: Hasher<F>> Toplevel<F, H> {
-    pub fn execute(&self, func: &Func<F>, args: &[F], record: &mut QueryRecord<F>) {
+    pub fn execute(&self, func: &Func<F>, args: &[F], record: &mut QueryRecord<F>) -> List<F> {
         let index = func.index;
         let (nonce, _) =
             record.func_queries[index].insert_full(args.into(), QueryResult::default());
         let out = func.execute(args, self, record, nonce);
-        record.try_insert_inv_query_result(index, args.into(), &out);
-        let QueryResult {
-            output,
-            callers_nonces,
-        } = record.func_queries[index].get_mut(args).unwrap();
-        *output = Some(out);
-        callers_nonces.insert((0, 0, 0)); // This corresponds to the builder.receive done in the Entrypoint chip
+        if let Some(inv_map) = &mut record.inv_func_queries[index] {
+            inv_map.insert(out.clone(), args.into());
+        }
+        let query_result = record.func_queries[index].get_index_mut(nonce).unwrap().1;
+        // the following entry corresponds to the builder.receive done in LairChip::Entrypoint
+        query_result.callers_nonces.insert((0, 0, 0));
+        out
     }
 
     #[inline]
-    pub fn execute_iter_by_name(
+    pub fn execute_by_name(
         &self,
         name: &'static str,
         args: &[F],
         record: &mut QueryRecord<F>,
-    ) {
-        let func = self
-            .get_by_name(name)
-            .expect("Entrypoint function not found");
-        self.execute_iter(func, args, record)
-    }
-
-    pub fn execute_iter(&self, func: &Func<F>, args: &[F], record: &mut QueryRecord<F>) {
-        let index = func.index;
-        let (nonce, _) =
-            record.func_queries[index].insert_full(args.into(), QueryResult::default());
-        let out = func.execute_iter(args, self, record, nonce);
-        record.try_insert_inv_query_result(index, args.into(), &out);
-        let QueryResult {
-            output,
-            callers_nonces,
-        } = record.func_queries[index].get_mut(args).unwrap();
-        *output = Some(out);
-        callers_nonces.insert((0, 0, 0));
-    }
-
-    #[inline]
-    pub fn execute_by_name(&self, name: &'static str, args: &[F], record: &mut QueryRecord<F>) {
-        let func = self
-            .get_by_name(name)
-            .expect("Entrypoint function not found");
+    ) -> List<F> {
+        let func = self.get_by_name(name);
         self.execute(func, args, record)
     }
 }
 
-type VarMap<F> = Vec<F>;
-struct Frame<'a, F> {
-    index: usize,
-    args: List<F>,
-    ops: Iter<'a, Op<F>>,
-    ctrl: &'a Ctrl<F>,
-    map: VarMap<F>,
-    caller_index: usize,
-    caller_nonce: usize,
-    call_ident: usize,
+enum ExecEntry<'a, F> {
+    Op(&'a Op<F>),
+    Ctrl(&'a Ctrl<F>),
 }
-type Stack<'a, F> = Vec<Frame<'a, F>>;
-enum Continuation<F> {
-    Return(Vec<F>),
-    Apply(usize, usize, Vec<F>),
+
+struct CallerState<F> {
+    func_idx: usize,
+    nonce: usize,
+    call_ident: usize,
+    map: Vec<F>,
 }
 
 impl<F: PrimeField> Func<F> {
-    pub(crate) fn execute<H: Hasher<F>>(
+    fn execute<H: Hasher<F>>(
         &self,
         args: &[F],
         toplevel: &Toplevel<F, H>,
-        queries: &mut QueryRecord<F>,
-        nonce: usize,
-    ) -> List<F> {
-        assert_eq!(self.input_size(), args.len(), "Argument mismatch");
-        let frame = &mut args.into();
-        let func_index = self.index;
-        self.body()
-            .execute(frame, toplevel, queries, func_index, nonce)
-    }
-
-    pub fn execute_iter<H: Hasher<F>>(
-        &self,
-        args: &[F],
-        toplevel: &Toplevel<F, H>,
-        queries: &mut QueryRecord<F>,
+        record: &mut QueryRecord<F>,
         mut nonce: usize,
     ) -> List<F> {
-        assert_eq!(self.input_size(), args.len(), "Argument mismatch");
+        assert!(
+            record.func_queries[self.index].get_index(nonce).is_some(),
+            "Query map entry not preallocated"
+        );
+        let mut exec_entries_stack = vec![];
+        let mut callers_states_stack = vec![];
+        macro_rules! push_block_exec_entries {
+            ($block:expr) => {
+                exec_entries_stack.push(ExecEntry::Ctrl(&$block.ctrl));
+                exec_entries_stack.extend($block.ops.iter().rev().map(ExecEntry::Op));
+            };
+        }
+        push_block_exec_entries!(&self.body);
         let mut map = args.to_vec();
-        let mut ops = self.body.ops.iter();
-        let mut ctrl = &self.body.ctrl;
-        let mut stack = vec![];
-        let mut func_index = self.index;
-        loop {
-            let cont = Op::execute_step(
-                ops, ctrl, map, &mut stack, toplevel, queries, func_index, nonce,
-            );
-            match cont {
-                Continuation::Return(out) => {
-                    if let Some(frame) = stack.pop() {
-                        ctrl = frame.ctrl;
-                        ops = frame.ops;
-                        map = frame.map;
-                        func_index = frame.caller_index;
-                        nonce = frame.caller_nonce;
-                        map.extend(out.iter());
-                        queries.try_insert_inv_query_result(
-                            frame.index,
-                            frame.args.clone(),
-                            &out.clone().into(),
-                        );
-                        let QueryResult {
-                            output,
-                            callers_nonces,
-                        } = queries.func_queries[frame.index]
-                            .get_mut(&frame.args)
-                            .unwrap();
-                        assert_eq!(*output, None);
-                        *output = Some(out.into());
-                        callers_nonces.insert((
-                            frame.caller_index,
-                            frame.caller_nonce,
-                            frame.call_ident,
-                        ));
+        let mut func_idx = self.index;
+        while let Some(exec_entry) = exec_entries_stack.pop() {
+            match exec_entry {
+                ExecEntry::Op(Op::Call(index, inp, ident)) => {
+                    // `map_buffer` will become the map for the called function
+                    let mut map_buffer = inp.iter().map(|v| map[*v]).collect::<Vec<_>>();
+                    if let Some(out) = record.query(*index, &map_buffer, func_idx, nonce, *ident) {
+                        map.extend(out.iter())
                     } else {
-                        map = out;
-                        break;
+                        // insert dummy entry
+                        let (callee_nonce, _) = record.func_queries[*index]
+                            .insert_full(map_buffer.clone().into(), QueryResult::default());
+                        // swap so we can save the old map in `map_buffer` and move on
+                        // with `map` already set
+                        std::mem::swap(&mut map_buffer, &mut map);
+                        // save the current caller state
+                        callers_states_stack.push(CallerState {
+                            func_idx,
+                            nonce,
+                            call_ident: *ident,
+                            map: map_buffer,
+                        });
+                        // prepare outer variables to go into the new func scope
+                        func_idx = *index;
+                        nonce = callee_nonce;
+                        push_block_exec_entries!(&toplevel.get_by_index(func_idx).body);
                     }
                 }
-                Continuation::Apply(idx, callee_nonce, args) => {
-                    let func = toplevel.get_by_index(idx).unwrap();
-                    map = args;
-                    ctrl = &func.body.ctrl;
-                    ops = func.body.ops.iter();
-                    func_index = idx;
-                    nonce = callee_nonce;
+                ExecEntry::Op(Op::PreImg(index, out, ident)) => {
+                    let out = out.iter().map(|v| map[*v]).collect::<List<_>>();
+                    let inp = record.query_preimage(*index, &out, func_idx, nonce, *ident);
+                    map.extend(inp.iter());
+                }
+                ExecEntry::Op(Op::Const(c)) => map.push(*c),
+                ExecEntry::Op(Op::Add(a, b)) => map.push(map[*a] + map[*b]),
+                ExecEntry::Op(Op::Sub(a, b)) => map.push(map[*a] - map[*b]),
+                ExecEntry::Op(Op::Mul(a, b)) => map.push(map[*a] * map[*b]),
+                ExecEntry::Op(Op::Inv(a)) => map.push(map[*a].inverse()),
+                ExecEntry::Op(Op::Not(a)) => map.push(if map[*a].is_zero() {
+                    F::one()
+                } else {
+                    F::zero()
+                }),
+                ExecEntry::Op(Op::Store(args)) => {
+                    let args = args.iter().map(|a| map[*a]).collect();
+                    let ptr = record.store(args);
+                    map.push(ptr);
+                }
+                ExecEntry::Op(Op::Load(len, ptr)) => {
+                    let ptr = map[*ptr];
+                    let args = record.load(*len, ptr);
+                    map.extend(args);
+                }
+                ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
+                ExecEntry::Op(Op::Hash(preimg)) => {
+                    let preimg: List<_> = preimg.iter().map(|a| map[*a]).collect();
+                    map.extend(toplevel.hasher.hash(&preimg));
+                }
+                ExecEntry::Ctrl(Ctrl::Return(_, out)) => {
+                    let out = out.iter().map(|v| map[*v]).collect::<Vec<_>>();
+                    let (inp, query_result) =
+                        record.func_queries[func_idx].get_index_mut(nonce).unwrap();
+                    assert!(query_result.output.is_none());
+                    let out_list: List<_> = out.clone().into();
+                    if let Some(inv_map) = &mut record.inv_func_queries[func_idx] {
+                        inv_map.insert(out_list.clone(), inp.clone());
+                    }
+                    query_result.output = Some(out_list);
+                    if let Some(CallerState {
+                        func_idx: caller_func_idx,
+                        nonce: caller_nonce,
+                        map: caller_map,
+                        call_ident,
+                    }) = callers_states_stack.pop()
+                    {
+                        // recover the state of the caller
+                        func_idx = caller_func_idx;
+                        nonce = caller_nonce;
+                        map = caller_map;
+                        // insert caller nonce data
+                        query_result
+                            .callers_nonces
+                            .insert((func_idx, nonce, call_ident));
+                        // extend the map with the call output
+                        map.extend(out);
+                    } else {
+                        // no outer caller... about to exit
+                        map = out;
+                    }
+                }
+                ExecEntry::Ctrl(Ctrl::If(b, t, f)) => {
+                    if map[*b].is_zero() {
+                        push_block_exec_entries!(f);
+                    } else {
+                        push_block_exec_entries!(t);
+                    }
+                }
+                ExecEntry::Ctrl(Ctrl::IfMany(bs, t, f)) => {
+                    if bs.iter().any(|b| !map[*b].is_zero()) {
+                        push_block_exec_entries!(t);
+                    } else {
+                        push_block_exec_entries!(f);
+                    }
+                }
+                ExecEntry::Ctrl(Ctrl::Match(v, cases)) => {
+                    let block = cases.match_case(&map[*v]).expect("No match");
+                    push_block_exec_entries!(block);
+                }
+                ExecEntry::Ctrl(Ctrl::MatchMany(vs, cases)) => {
+                    let vs = vs.iter().map(|v| map[*v]).collect();
+                    let block = cases.match_case(&vs).expect("No match");
+                    push_block_exec_entries!(block);
                 }
             }
         }
         map.into()
-    }
-}
-
-impl<F: PrimeField> Block<F> {
-    fn execute<H: Hasher<F>>(
-        &self,
-        map: &mut VarMap<F>,
-        toplevel: &Toplevel<F, H>,
-        queries: &mut QueryRecord<F>,
-        func_index: usize,
-        nonce: usize,
-    ) -> List<F> {
-        self.ops
-            .iter()
-            .for_each(|op| op.execute(map, toplevel, queries, func_index, nonce));
-        self.ctrl.execute(map, toplevel, queries, func_index, nonce)
-    }
-
-    fn execute_step<'a, H: Hasher<F>>(
-        &'a self,
-        map: VarMap<F>,
-        stack: &mut Stack<'a, F>,
-        toplevel: &Toplevel<F, H>,
-        queries: &mut QueryRecord<F>,
-        func_index: usize,
-        nonce: usize,
-    ) -> Continuation<F> {
-        let ops = self.ops.iter();
-        let ctrl = &self.ctrl;
-        Op::execute_step(ops, ctrl, map, stack, toplevel, queries, func_index, nonce)
-    }
-}
-
-impl<F: PrimeField> Ctrl<F> {
-    fn execute<H: Hasher<F>>(
-        &self,
-        map: &mut VarMap<F>,
-        toplevel: &Toplevel<F, H>,
-        queries: &mut QueryRecord<F>,
-        func_index: usize,
-        nonce: usize,
-    ) -> List<F> {
-        match self {
-            Ctrl::Return(_, vars) => vars.iter().map(|var| map[*var]).collect(),
-            Ctrl::If(b, t, f) => {
-                let b = map.get(*b).unwrap();
-                if b.is_zero() {
-                    f.execute(map, toplevel, queries, func_index, nonce)
-                } else {
-                    t.execute(map, toplevel, queries, func_index, nonce)
-                }
-            }
-            Ctrl::IfMany(vars, t, f) => {
-                if vars.iter().any(|&var| {
-                    let b = map[var];
-                    b != F::zero()
-                }) {
-                    t.execute(map, toplevel, queries, func_index, nonce)
-                } else {
-                    f.execute(map, toplevel, queries, func_index, nonce)
-                }
-            }
-            Ctrl::Match(v, cases) => {
-                let v = map.get(*v).unwrap();
-                cases
-                    .match_case(v)
-                    .expect("No match")
-                    .execute(map, toplevel, queries, func_index, nonce)
-            }
-            Ctrl::MatchMany(v, cases) => {
-                let v = v.iter().map(|&v| map[v]).collect();
-                cases
-                    .match_case(&v)
-                    .expect("No match")
-                    .execute(map, toplevel, queries, func_index, nonce)
-            }
-        }
-    }
-
-    fn execute_step<'a, H: Hasher<F>>(
-        &'a self,
-        map: VarMap<F>,
-        stack: &mut Stack<'a, F>,
-        toplevel: &Toplevel<F, H>,
-        queries: &mut QueryRecord<F>,
-        func_index: usize,
-        nonce: usize,
-    ) -> Continuation<F> {
-        match self {
-            Ctrl::Return(_, vars) => {
-                let out = vars.iter().map(|var| map[*var]).collect();
-                Continuation::Return(out)
-            }
-            Ctrl::If(b, t, f) => {
-                let b = map.get(*b).unwrap();
-                if b.is_zero() {
-                    f.execute_step(map, stack, toplevel, queries, func_index, nonce)
-                } else {
-                    t.execute_step(map, stack, toplevel, queries, func_index, nonce)
-                }
-            }
-            Ctrl::IfMany(vars, t, f) => {
-                if vars.iter().any(|&var| {
-                    let b = map[var];
-                    b != F::zero()
-                }) {
-                    t.execute_step(map, stack, toplevel, queries, func_index, nonce)
-                } else {
-                    f.execute_step(map, stack, toplevel, queries, func_index, nonce)
-                }
-            }
-            Ctrl::Match(v, cases) => {
-                let v = map.get(*v).unwrap();
-                cases
-                    .match_case(v)
-                    .expect("No match")
-                    .execute_step(map, stack, toplevel, queries, func_index, nonce)
-            }
-            Ctrl::MatchMany(v, cases) => {
-                let v = v.iter().map(|&v| map[v]).collect();
-                cases
-                    .match_case(&v)
-                    .expect("No match")
-                    .execute_step(map, stack, toplevel, queries, func_index, nonce)
-            }
-        }
-    }
-}
-
-impl<F: PrimeField> Op<F> {
-    fn execute<H: Hasher<F>>(
-        &self,
-        map: &mut VarMap<F>,
-        toplevel: &Toplevel<F, H>,
-        queries: &mut QueryRecord<F>,
-        func_index: usize,
-        nonce: usize,
-    ) {
-        match self {
-            Op::Const(c) => {
-                map.push(*c);
-            }
-            Op::Add(a, b) => {
-                let a = map[*a];
-                let b = map[*b];
-                map.push(a + b);
-            }
-            Op::Sub(a, b) => {
-                let a = map[*a];
-                let b = map[*b];
-                map.push(a - b);
-            }
-            Op::Mul(a, b) => {
-                let a = map[*a];
-                let b = map[*b];
-                map.push(a * b);
-            }
-            Op::Inv(a) => {
-                let a = map.get(*a).unwrap();
-                map.push(a.inverse());
-            }
-            Op::Not(a) => {
-                let a = map.get(*a).unwrap();
-                let b = if a.is_zero() { F::one() } else { F::zero() };
-                map.push(b);
-            }
-            Op::Call(idx, inp, call_ident) => {
-                let args = inp.iter().map(|a| map[*a]).collect::<List<_>>();
-                let out = queries.record_event_and_return(
-                    toplevel,
-                    *idx,
-                    &args,
-                    func_index,
-                    nonce,
-                    *call_ident,
-                );
-                map.extend(out.iter());
-            }
-            Op::PreImg(idx, out, call_ident) => {
-                let out = out.iter().map(|a| map[*a]).collect::<List<_>>();
-                let inp = queries.query_preimage(*idx, &out, func_index, nonce, *call_ident);
-                map.extend(inp.iter());
-            }
-            Op::Store(inp) => {
-                let args = inp.iter().map(|a| map[*a]).collect();
-                let ptr = queries.store(args);
-                map.push(ptr);
-            }
-            Op::Load(len, ptr) => {
-                let ptr = map.get(*ptr).unwrap();
-                let args = queries.load(*len, *ptr);
-                map.extend(args);
-            }
-            Op::Hash(inp) => {
-                let args: List<_> = inp.iter().map(|a| map[*a]).collect();
-                let hasher = &toplevel.hasher;
-                map.extend(hasher.hash(&args).iter());
-            }
-            Op::Debug(s) => println!("{}", s),
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn execute_step<'a, H: Hasher<F>>(
-        mut ops: Iter<'a, Self>,
-        ctrl: &'a Ctrl<F>,
-        mut map: VarMap<F>,
-        stack: &mut Stack<'a, F>,
-        toplevel: &Toplevel<F, H>,
-        queries: &mut QueryRecord<F>,
-        func_index: usize,
-        nonce: usize,
-    ) -> Continuation<F> {
-        while let Some(op) = ops.next() {
-            match op {
-                Op::Const(c) => {
-                    map.push(*c);
-                }
-                Op::Add(a, b) => {
-                    let a = map[*a];
-                    let b = map[*b];
-                    map.push(a + b);
-                }
-                Op::Sub(a, b) => {
-                    let a = map[*a];
-                    let b = map[*b];
-                    map.push(a - b);
-                }
-                Op::Mul(a, b) => {
-                    let a = map[*a];
-                    let b = map[*b];
-                    map.push(a * b);
-                }
-                Op::Inv(a) => {
-                    let a = map.get(*a).unwrap();
-                    map.push(a.inverse());
-                }
-                Op::Not(a) => {
-                    let a = map.get(*a).unwrap();
-                    let b = if a.is_zero() { F::one() } else { F::zero() };
-                    map.push(b);
-                }
-                Op::Store(inp) => {
-                    let args = inp.iter().map(|a| map[*a]).collect();
-                    let ptr = queries.store(args);
-                    map.push(ptr);
-                }
-                Op::Load(len, ptr) => {
-                    let ptr = map.get(*ptr).unwrap();
-                    let args = queries.load(*len, *ptr);
-                    map.extend(args);
-                }
-                Op::Debug(s) => println!("{}", s),
-                Op::PreImg(idx, inp, ident) => {
-                    let args = inp.iter().map(|a| map[*a]).collect::<List<_>>();
-                    let out = queries.query_preimage(*idx, &args, func_index, nonce, *ident);
-                    map.extend(out.iter());
-                }
-                Op::Call(index, inp, ident) => {
-                    let args = inp.iter().map(|a| map[*a]).collect::<Vec<_>>();
-                    if let Some(out) = queries.query(*index, &args, func_index, nonce, *ident) {
-                        map.extend(out.iter())
-                    } else {
-                        let (callee_nonce, _) = queries.func_queries[*index]
-                            .insert_full(args.clone().into(), QueryResult::default());
-                        stack.push(Frame {
-                            index: *index,
-                            args: args.clone().into(),
-                            ops,
-                            ctrl,
-                            map,
-                            caller_index: func_index,
-                            caller_nonce: nonce,
-                            call_ident: *ident,
-                        });
-                        return Continuation::Apply(*index, callee_nonce, args);
-                    }
-                }
-                Op::Hash(inp) => {
-                    let args: List<_> = inp.iter().map(|a| map[*a]).collect();
-                    let hasher = &toplevel.hasher;
-                    map.extend(hasher.hash(&args).iter());
-                }
-            }
-        }
-        ctrl.execute_step(map, stack, toplevel, queries, func_index, nonce)
     }
 }
 
@@ -821,36 +533,32 @@ mod tests {
     fn lair_execute_test() {
         let toplevel = demo_toplevel::<_, LurkHasher>();
 
-        let factorial = toplevel.get_by_name("factorial").unwrap();
+        let factorial = toplevel.get_by_name("factorial");
         let args = &[F::from_canonical_u32(5)];
         let record = &mut QueryRecord::new(&toplevel);
-        let out = factorial.execute(args, &toplevel, record, 0);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0], F::from_canonical_u32(120));
+        let out = toplevel.execute(factorial, args, record);
+        assert_eq!(out.as_ref(), [F::from_canonical_u32(120)]);
 
-        let even = toplevel.get_by_name("even").unwrap();
+        let even = toplevel.get_by_name("even");
         let args = &[F::from_canonical_u32(7)];
-        let out = even.execute(args, &toplevel, record, 0);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0], F::from_canonical_u32(0));
+        let out = toplevel.execute(even, args, record);
+        assert_eq!(out.as_ref(), [F::from_canonical_u32(0)]);
 
-        let odd = toplevel.get_by_name("odd").unwrap();
+        let odd = toplevel.get_by_name("odd");
         let args = &[F::from_canonical_u32(4)];
-        let out = odd.execute(args, &toplevel, record, 0);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0], F::from_canonical_u32(0));
+        let out = toplevel.execute(odd, args, record);
+        assert_eq!(out.as_ref(), [F::from_canonical_u32(0)]);
     }
 
     #[test]
     fn lair_execute_iter_test() {
         let toplevel = demo_toplevel::<_, LurkHasher>();
 
-        let fib = toplevel.get_by_name("fib").unwrap();
+        let fib = toplevel.get_by_name("fib");
         let args = &[F::from_canonical_u32(100000)];
         let record = &mut QueryRecord::new(&toplevel);
-        let out = fib.execute_iter(args, &toplevel, record, 0);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0], F::from_canonical_u32(309996207));
+        let out = toplevel.execute(fib, args, record);
+        assert_eq!(out.as_ref(), [F::from_canonical_u32(309996207)]);
     }
 
     #[test]
@@ -862,12 +570,11 @@ mod tests {
             }
         );
         let toplevel = Toplevel::<_, LurkHasher>::new(&[test_e]);
-        let test = toplevel.get_by_name("test").unwrap();
+        let test = toplevel.get_by_name("test");
         let args = &[F::from_canonical_u32(20), F::from_canonical_u32(4)];
         let record = &mut QueryRecord::new(&toplevel);
-        let out = test.execute(args, &toplevel, record, 0);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0], F::from_canonical_u32(5));
+        let out = toplevel.execute(test, args, record);
+        assert_eq!(out.as_ref(), [F::from_canonical_u32(5)]);
     }
 
     #[test]
@@ -881,12 +588,11 @@ mod tests {
             }
         );
         let toplevel = Toplevel::<_, LurkHasher>::new(&[test_e]);
-        let test = toplevel.get_by_name("test").unwrap();
+        let test = toplevel.get_by_name("test");
         let args = &[F::from_canonical_u32(10)];
         let record = &mut QueryRecord::new(&toplevel);
-        let out = test.execute(args, &toplevel, record, 0);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0], F::from_canonical_u32(80));
+        let out = toplevel.execute(test, args, record);
+        assert_eq!(out.as_ref(), [F::from_canonical_u32(80)]);
     }
 
     #[test]
@@ -912,17 +618,16 @@ mod tests {
             }
         );
         let toplevel = Toplevel::<F, LurkHasher>::new(&[polynomial_e, inverse_e]);
-        let polynomial = toplevel.get_by_name("polynomial").unwrap();
-        let inverse = toplevel.get_by_name("inverse").unwrap();
+        let polynomial = toplevel.get_by_name("polynomial");
+        let inverse = toplevel.get_by_name("inverse");
         let args = [1, 3, 5, 7, 20]
             .into_iter()
             .map(field_from_u32)
             .collect::<List<_>>();
         let record = &mut QueryRecord::new(&toplevel);
-        let out = record.record_event_and_return(&toplevel, polynomial.index, &args, 0, 0, 0);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0], F::from_canonical_u32(58061));
-        let inp = inverse.execute(&out, &toplevel, record, 0);
+        let out = toplevel.execute(polynomial, &args, record);
+        assert_eq!(out.as_ref(), [F::from_canonical_u32(58061)]);
+        let inp = toplevel.execute(inverse, &out, record);
         assert_eq!(inp, args);
     }
 
@@ -954,23 +659,19 @@ mod tests {
             }
         );
         let toplevel = Toplevel::<_, LurkHasher>::new(&[test1_e, test2_e, test3_e]);
-        let test = toplevel.get_by_name("test1").unwrap();
+        let test = toplevel.get_by_name("test1");
         let f = F::from_canonical_u32;
         let args = &[f(1), f(2), f(3), f(4), f(5), f(6), f(7)];
         let record = &mut QueryRecord::new(&toplevel);
-        let out = test.execute(args, &toplevel, record, 0);
-        let expected_len = 3;
-        assert_eq!(out.len(), expected_len);
-        assert_eq!(out[0..expected_len], [f(5), f(7), f(9)]);
+        let out = toplevel.execute(test, args, record);
+        assert_eq!(out.as_ref(), [f(5), f(7), f(9)]);
 
-        let test = toplevel.get_by_name("test3").unwrap();
+        let test = toplevel.get_by_name("test3");
         let f = F::from_canonical_u32;
         let args = &[f(4), f(9), f(21), f(10)];
         let record = &mut QueryRecord::new(&toplevel);
-        let out = test.execute(args, &toplevel, record, 0);
-        let expected_len = 4;
-        assert_eq!(out.len(), expected_len);
-        assert_eq!(out[0..expected_len], [f(1), f(2), f(3), f(4)]);
+        let out = toplevel.execute(test, args, record);
+        assert_eq!(out.as_ref(), [f(1), f(2), f(3), f(4)]);
     }
 
     #[test]
@@ -989,7 +690,7 @@ mod tests {
         );
 
         let toplevel = Toplevel::<F, LurkHasher>::new(&[half_e, double_e]);
-        let half = toplevel.get_by_name("half").unwrap();
+        let half = toplevel.get_by_name("half");
         let half_chip = FuncChip::from_name("half", &toplevel);
         let double_chip = FuncChip::from_name("double", &toplevel);
 
@@ -998,7 +699,7 @@ mod tests {
         queries.inject_inv_queries("double", &toplevel, [(&[f(1)], &[f(2)])]);
         let args = &[f(2)];
 
-        toplevel.execute_iter(half, args, queries);
+        toplevel.execute(half, args, queries);
         let res1 = queries.get_output(half, args).to_vec();
         let traces1 = (
             half_chip.generate_trace_sequential(queries),
@@ -1007,7 +708,7 @@ mod tests {
 
         // even after `clean`, the preimg of `double(1)` can still be recovered
         queries.clean();
-        toplevel.execute_iter(half, args, queries);
+        toplevel.execute(half, args, queries);
         let res2 = queries.get_output(half, args).to_vec();
         let traces2 = (
             half_chip.generate_trace_sequential(queries),

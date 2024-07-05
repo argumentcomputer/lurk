@@ -72,7 +72,7 @@ fn evaluation(c: &mut Criterion) {
         b.iter_batched(
             || (args.clone(), queries.clone()),
             |(args, mut queries)| {
-                toplevel.execute_iter(lurk_main.func(), &args, &mut queries);
+                toplevel.execute(lurk_main.func(), &args, &mut queries);
             },
             BatchSize::SmallInput,
         )
@@ -85,7 +85,7 @@ fn trace_generation(c: &mut Criterion) {
         let toplevel = build_lurk_toplevel();
         let (args, lurk_main, mut queries) = setup(arg, &toplevel);
 
-        toplevel.execute_iter(lurk_main.func(), &args, &mut queries);
+        toplevel.execute(lurk_main.func(), &args, &mut queries);
 
         let func_chips = FuncChip::from_toplevel(&toplevel);
 
