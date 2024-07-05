@@ -26,8 +26,8 @@ struct RangeMainCols<T> {
     record: ProvideRecord<T>,
 }
 
-const NUM_RANGE_PREPROCESSED_COLS: usize = std::mem::size_of::<RangePreprocessedCols<u8>>();
-const NUM_RANGE_MAIN_COLS: usize = std::mem::size_of::<RangeMainCols<u8>>();
+const NUM_RANGE_PREPROCESSED_COLS: usize = size_of::<RangePreprocessedCols<u8>>();
+const NUM_RANGE_MAIN_COLS: usize = size_of::<RangeMainCols<u8>>();
 
 struct RangeChip;
 
@@ -61,7 +61,7 @@ struct Cols<T> {
     record: RequireRecord<T>,
 }
 
-const NUM_CHIP_COLS: usize = std::mem::size_of::<Cols<u8>>();
+const NUM_CHIP_COLS: usize = size_of::<Cols<u8>>();
 
 struct Chip;
 

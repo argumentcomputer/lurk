@@ -11,11 +11,18 @@ use super::{
     List,
 };
 
+type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
+type FxIndexSet<K> = IndexSet<K, FxBuildHasher>;
+
+type QueryMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
+type InvQueryMap<F> = FxHashMap<List<F>, List<F>>;
+pub(crate) type MemMap<F> = FxIndexMap<List<F>, u32>;
+
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct QueryResult<F> {
     pub(crate) output: Option<List<F>>,
     /// (func_idx, caller_nonce, call_ident)
-    pub(crate) callers_nonces: IndexSet<(usize, usize, usize)>,
+    pub(crate) callers_nonces: FxIndexSet<(usize, usize, usize)>,
 }
 
 impl<F> QueryResult<F> {
@@ -24,11 +31,6 @@ impl<F> QueryResult<F> {
         self.output.as_ref().expect("Result not computed").as_ref()
     }
 }
-
-type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
-type QueryMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
-type InvQueryMap<F> = FxHashMap<List<F>, List<F>>;
-pub(crate) type MemMap<F> = FxIndexMap<List<F>, u32>;
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
 pub struct QueryRecord<F: Field> {
@@ -299,7 +301,7 @@ impl<F: PrimeField> QueryRecord<F> {
                 .callers_nonces
                 .insert((caller_index, caller_nonce, call_ident));
         } else {
-            let mut callers_nonces = IndexSet::new();
+            let mut callers_nonces = IndexSet::default();
             callers_nonces.insert((caller_index, caller_nonce, call_ident));
             let result = QueryResult {
                 output: Some(out.into()),

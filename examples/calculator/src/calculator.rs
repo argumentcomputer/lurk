@@ -2,7 +2,6 @@ use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues, BaseAir};
 use p3_field::{AbstractField, Field};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use std::mem::size_of;
 
 use loam::store_core::pointers::GPtr;
 

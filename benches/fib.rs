@@ -2,6 +2,11 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use p3_baby_bear::BabyBear;
 use p3_field::AbstractField;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use sphinx_core::{
+    air::MachineAir,
+    stark::{LocalProver, StarkGenericConfig, StarkMachine},
+    utils::{BabyBearPoseidon2, SphinxCoreOpts},
+};
 use std::time::Duration;
 
 use loam::{
@@ -9,6 +14,7 @@ use loam::{
         execute::QueryRecord,
         func_chip::FuncChip,
         hasher::{Hasher, LurkHasher},
+        lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
         toplevel::Toplevel,
         List,
     },
@@ -50,8 +56,8 @@ fn setup<H: Hasher<BabyBear>>(
     let zstore = &mut ZStore::<_, LurkHasher>::default();
     let ZPtr { tag, digest } = zstore.read(&code).unwrap();
 
-    let mut queries = QueryRecord::new(toplevel);
-    queries.inject_inv_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
+    let mut record = QueryRecord::new(toplevel);
+    record.inject_inv_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
 
     let mut full_input = [BabyBear::zero(); 24];
     full_input[0] = tag.to_field();
@@ -60,17 +66,16 @@ fn setup<H: Hasher<BabyBear>>(
     let args: List<_> = full_input.into();
     let lurk_main = FuncChip::from_name("lurk_main", toplevel);
 
-    (args, lurk_main, queries)
+    (args, lurk_main, record)
 }
 
 fn evaluation(c: &mut Criterion) {
     let arg = get_fib_arg();
     c.bench_function(&format!("evaluation-{arg}"), |b| {
         let toplevel = build_lurk_toplevel();
-        let (args, lurk_main, queries) = setup(arg, &toplevel);
-
+        let (args, lurk_main, record) = setup(arg, &toplevel);
         b.iter_batched(
-            || (args.clone(), queries.clone()),
+            || (args.clone(), record.clone()),
             |(args, mut queries)| {
                 toplevel.execute(lurk_main.func(), &args, &mut queries);
             },
@@ -83,26 +88,52 @@ fn trace_generation(c: &mut Criterion) {
     let arg = get_fib_arg();
     c.bench_function(&format!("trace-generation-{arg}"), |b| {
         let toplevel = build_lurk_toplevel();
-        let (args, lurk_main, mut queries) = setup(arg, &toplevel);
-
-        toplevel.execute(lurk_main.func(), &args, &mut queries);
-
-        let func_chips = FuncChip::from_toplevel(&toplevel);
-
+        let (args, lurk_main, mut record) = setup(arg, &toplevel);
+        let out = toplevel.execute(lurk_main.func(), &args, &mut record);
+        let lair_chips = build_lair_chip_vector(&lurk_main, args.into(), out.into());
         b.iter(|| {
-            func_chips.par_iter().for_each(|func_chip| {
-                func_chip.generate_trace_parallel(&queries);
+            lair_chips.par_iter().for_each(|func_chip| {
+                func_chip.generate_trace(&record, &mut Default::default());
             })
         })
     });
 }
 
+fn e2e(c: &mut Criterion) {
+    let arg = get_fib_arg();
+    c.bench_function(&format!("e2e-{arg}"), |b| {
+        let toplevel = build_lurk_toplevel();
+        let (args, lurk_main, record) = setup(arg, &toplevel);
+
+        b.iter_batched(
+            || (record.clone(), args.clone()),
+            |(mut record, args)| {
+                let out = toplevel.execute(lurk_main.func(), &args, &mut record);
+                let config = BabyBearPoseidon2::new();
+                let machine = StarkMachine::new(
+                    config,
+                    build_chip_vector(&lurk_main, args.into(), out.into()),
+                    0,
+                );
+                let (pk, _) = machine.setup(&LairMachineProgram);
+                let mut challenger_p = machine.config().challenger();
+                let opts = SphinxCoreOpts::default();
+                machine.prove::<LocalProver<_, _>>(&pk, record, &mut challenger_p, opts);
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
 criterion_group! {
     name = fib_benches;
-    config = Criterion::default().measurement_time(Duration::from_secs(9));
+    config = Criterion::default()
+                .measurement_time(Duration::from_secs(15))
+                .sample_size(10);
     targets =
         evaluation,
         trace_generation,
+        e2e,
 }
 
 // `cargo criterion --bench fib -- <ARG>` to benchmark fib of <ARG>
