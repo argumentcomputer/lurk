@@ -1,16 +1,29 @@
 use crate::gadgets::unsigned::{Word, WORD_SIZE};
 use p3_air::AirBuilder;
-use p3_field::{AbstractField, PrimeField32};
-use std::array;
+use p3_field::AbstractField;
+use sphinx_derive::AlignedBorrow;
 use std::iter::zip;
 
+#[derive(Clone, Debug, Default, AlignedBorrow)]
+#[repr(C)]
 pub struct AddWitness<T> {
     carry: [T; WORD_SIZE - 1],
 }
 
-impl<F: PrimeField32> AddWitness<F> {
+impl<F: AbstractField> AddWitness<F> {
     pub fn populate(&mut self, in1: Word<u8>, in2: Word<u8>) -> Word<u8> {
-        Word::default()
+        let mut result = Word::default();
+        let mut carry_prev = 0u16;
+        for (i, (in1, in2)) in zip(in1, in2).enumerate() {
+            let [out, carry] = ((in1 as u16) + (in2 as u16) + carry_prev).to_le_bytes();
+            result[i] = out;
+            debug_assert!(carry == 0 || carry == 1);
+            if carry == 1 && i < WORD_SIZE - 1 {
+                self.carry[i] = F::one();
+            }
+            carry_prev = carry as u16;
+        }
+        result
     }
 }
 
@@ -25,33 +38,24 @@ pub fn eval_add<AB: AirBuilder>(
     let in2 = in2.into();
     let out = out.into();
     let is_real = is_real.into();
-    let carry = witness.carry;
-
-    let base = AB::F::from_canonical_u16(256);
 
     let builder = &mut builder.when(is_real.clone());
 
-    let overflow: [AB::Expr; WORD_SIZE] = array::from_fn(|i| {
-        // For each limb, assert that difference between the carried result and the non-carried
-        // result is either zero or the base.
-        let overflow = if i == 0 {
-            in1[i].clone() + in2[i].clone() - out[i].clone()
+    let base = AB::F::from_canonical_u16(256);
+    let mut carry_prev = AB::Expr::zero();
+    for i in 0..WORD_SIZE {
+        let sum = in1[i].clone() + in2[i].clone() + carry_prev.clone();
+
+        if i < WORD_SIZE - 1 {
+            let carry = witness.carry[i];
+            builder.assert_bool(carry);
+
+            builder.assert_eq(sum, out[i].clone() + carry.into() * base);
+
+            carry_prev = carry.into();
         } else {
-            in1[i].clone() + in2[i].clone() - out[i].clone() + carry[i - 1]
-        };
-        // If overflow is non-zero, then it must be equal to 256
-        builder
-            .when(overflow.clone())
-            .assert_eq(overflow.clone(), base);
-        overflow
-    });
-
-    for (overflow, carry) in zip(overflow, carry) {
-        // carry is either 0 or 1
-        builder.assert_bool(carry);
-
-        // overflow = 256 <=> carry = 1
-        builder.when(overflow.clone()).assert_one(carry);
-        builder.when(carry).assert_eq(overflow, base);
+            let diff = sum - out[i].clone();
+            builder.when(diff.clone()).assert_eq(diff, base);
+        }
     }
 }

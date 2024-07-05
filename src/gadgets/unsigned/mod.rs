@@ -8,6 +8,7 @@ mod mul;
 pub const WORD_SIZE: usize = 8;
 
 #[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
 pub struct Word<T>([T; WORD_SIZE]);
 
 impl Add for Word<u8> {
@@ -68,6 +69,11 @@ impl<T> Word<T> {
     {
         self.map(Into::into)
     }
+
+    #[inline]
+    pub fn as_slice(&self) -> &[T] {
+        self.0.as_slice()
+    }
 }
 
 impl<T> IntoIterator for Word<T> {
@@ -109,5 +115,11 @@ where
     #[inline]
     fn index_mut(&mut self, index: I) -> &mut Self::Output {
         self.0.index_mut(index)
+    }
+}
+
+impl<T> AsRef<[T]> for Word<T> {
+    fn as_ref(&self) -> &[T] {
+        self.0.as_slice()
     }
 }

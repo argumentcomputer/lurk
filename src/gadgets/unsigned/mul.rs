@@ -1,8 +1,11 @@
 use crate::gadgets::unsigned::{Word, WORD_SIZE};
 use p3_air::AirBuilder;
 use p3_field::AbstractField;
+use sphinx_derive::AlignedBorrow;
 use std::iter::zip;
 
+#[derive(Clone, Debug, Default, AlignedBorrow)]
+#[repr(C)]
 pub struct MulWitness<T> {
     carry: [T; WORD_SIZE],
 }
