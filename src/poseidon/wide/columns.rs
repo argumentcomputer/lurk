@@ -1,5 +1,4 @@
 use crate::poseidon::config::PoseidonConfig;
-use std::mem::size_of;
 
 use hybrid_array::{typenum::*, Array, ArraySize};
 use sphinx_derive::AlignedBorrow;

@@ -9,7 +9,6 @@ mod test {
     use std::borrow::{Borrow, BorrowMut};
     use std::iter::zip;
     use std::marker::PhantomData;
-    use std::mem::size_of;
 
     use crate::poseidon::wide::columns::Poseidon2Cols;
     use crate::{air::debug::debug_constraints_collecting_queries, poseidon::config::*};

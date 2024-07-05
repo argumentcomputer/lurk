@@ -9,7 +9,6 @@ use rand::{Rng, SeedableRng};
 use sphinx_derive::AlignedBorrow;
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::BTreeMap;
-use std::mem::size_of;
 
 const QUERY_WIDTH: usize = 8;
 type Query<F> = [F; QUERY_WIDTH];
