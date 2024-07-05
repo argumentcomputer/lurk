@@ -59,3 +59,42 @@ pub fn eval_add<AB: AirBuilder>(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gadgets::debug::GadgetAirBuilder;
+    use p3_baby_bear::BabyBear;
+    #[test]
+    fn test_add() {
+        type F = BabyBear;
+
+        let inputs = [
+            (0u64, 0u64),
+            (0u64, u64::MAX),
+            (u64::MAX, 0u64),
+            (1u64, u64::MAX),
+            (u64::MAX, 1u64),
+        ];
+
+        for (lhs, rhs) in inputs {
+            let out = lhs.wrapping_add(rhs);
+            let lhs = Word(lhs.to_le_bytes());
+            let rhs = Word(rhs.to_le_bytes());
+            let out_expected = Word(out.to_le_bytes());
+
+            let mut witness = AddWitness::<F>::default();
+            let out = witness.populate(lhs, rhs);
+            assert_eq!(out, out_expected);
+
+            let mut builder = GadgetAirBuilder::<F>::default();
+            eval_add(
+                &mut builder,
+                (lhs.into_field::<F>(), rhs.into_field::<F>()),
+                out.into_field::<F>(),
+                &witness,
+                F::one(),
+            );
+        }
+    }
+}

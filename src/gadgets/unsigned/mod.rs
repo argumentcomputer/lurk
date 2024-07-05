@@ -1,3 +1,4 @@
+use p3_field::AbstractField;
 use std::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign};
 use std::{array, slice};
 
@@ -7,7 +8,7 @@ mod mul;
 
 pub const WORD_SIZE: usize = 8;
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
 pub struct Word<T>([T; WORD_SIZE]);
 
@@ -73,6 +74,13 @@ impl<T> Word<T> {
     #[inline]
     pub fn as_slice(&self) -> &[T] {
         self.0.as_slice()
+    }
+}
+
+impl Word<u8> {
+    #[inline]
+    pub fn into_field<F: AbstractField>(self) -> Word<F> {
+        self.map(F::from_canonical_u8)
     }
 }
 
