@@ -47,7 +47,7 @@ pub(crate) struct GFrame<Ptr, Bool, Slot> {
 
 type VarFrame<T> = GFrame<GPtr<T, T>, T, ([T; 4], T)>;
 
-const NUM_COLS: usize = size_of::<VarFrame<u8>>();
+const NUM_COLS: usize = core::mem::size_of::<VarFrame<u8>>();
 
 impl<T> VarFrame<T> {
     /// Unsafely reads `&[T]` as `&VarFrame<T>` because:

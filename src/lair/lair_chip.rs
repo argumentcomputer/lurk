@@ -1,5 +1,5 @@
 use p3_air::{Air, AirBuilder, BaseAir};
-use p3_field::{AbstractField, Field, PrimeField};
+use p3_field::{AbstractField, Field, PrimeField, PrimeField32};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use sphinx_core::{
     air::{EventLens, MachineAir, MachineProgram, WithEvents},
@@ -61,7 +61,7 @@ impl<F: AbstractField> MachineProgram<F> for LairMachineProgram {
     }
 }
 
-impl<'a, F: PrimeField, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
+impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
     type Record = QueryRecord<F>;
     type Program = LairMachineProgram;
 
@@ -164,7 +164,7 @@ pub fn build_lair_chip_vector<'a, F: PrimeField, H: Hasher<F>>(
     chip_vector
 }
 
-pub fn build_chip_vector<'a, F: PrimeField, H: Hasher<F>>(
+pub fn build_chip_vector<'a, F: PrimeField32, H: Hasher<F>>(
     entry_func_chip: &FuncChip<'a, F, H>,
     inp: Vec<F>,
     out: Vec<F>,
@@ -175,7 +175,7 @@ pub fn build_chip_vector<'a, F: PrimeField, H: Hasher<F>>(
         .collect()
 }
 
-pub fn set_chip_vector_io<F: PrimeField, H: Hasher<F>>(
+pub fn set_chip_vector_io<F: PrimeField32, H: Hasher<F>>(
     chip_vector: &mut [Chip<F, LairChip<'_, F, H>>],
     new_inp: Vec<F>,
     new_out: Vec<F>,

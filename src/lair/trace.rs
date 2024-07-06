@@ -1,4 +1,4 @@
-use p3_field::PrimeField;
+use p3_field::{PrimeField, PrimeField32};
 use p3_matrix::dense::RowMajorMatrix;
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
@@ -53,9 +53,14 @@ impl<'a, T> ColumnMutSlice<'a, T> {
         self.aux[index.aux] = t;
         index.aux += 1;
     }
+
+    pub fn push_provide(&mut self, index: &mut ColumnIndex, t: T) {
+        self.aux[index.aux] = t;
+        index.aux += 1;
+    }
 }
 
-impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
+impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
     /// Generates the trace containing only queries with non-zero multiplicities
     pub fn generate_trace_sequential(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
         let func_queries = &queries.func_queries()[self.func.index];
@@ -104,7 +109,7 @@ impl<'a, F: PrimeField, H: Hasher<F>> FuncChip<'a, F, H> {
     }
 }
 
-impl<F: PrimeField> Func<F> {
+impl<F: PrimeField32> Func<F> {
     pub fn populate_row<H: Hasher<F>>(
         &self,
         args: &[F],
@@ -128,7 +133,7 @@ impl<F: PrimeField> Func<F> {
     }
 }
 
-impl<F: PrimeField> Block<F> {
+impl<F: PrimeField32> Block<F> {
     fn populate_row<H: Hasher<F>>(
         &self,
         func_ctx: &FuncCtx<F>,
@@ -146,7 +151,7 @@ impl<F: PrimeField> Block<F> {
     }
 }
 
-impl<F: PrimeField> Ctrl<F> {
+impl<F: PrimeField32> Ctrl<F> {
     fn populate_row<H: Hasher<F>>(
         &self,
         func_ctx: &FuncCtx<F>,
@@ -236,7 +241,7 @@ fn push_inequality_witness<F: PrimeField, I: Iterator<Item = F>>(
     assert!(found);
 }
 
-impl<F: PrimeField> Op<F> {
+impl<F: PrimeField32> Op<F> {
     fn populate_row<H: Hasher<F>>(
         &self,
         func_ctx: &FuncCtx<F>,
@@ -303,11 +308,7 @@ impl<F: PrimeField> Op<F> {
                     slice.push_aux(index, *f);
                 }
                 // Fixme: prev_nonce, prev_count, count_inv
-                let nonce: usize = slice
-                    .nonce
-                    .as_canonical_biguint()
-                    .try_into()
-                    .expect("Nonce is larger than usize");
+                let nonce = slice.nonce.as_canonical_u32() as usize;
                 let prev_count = result
                     .callers_nonces
                     .get_index_of(&(func_ctx.func_idx, nonce, *call_ident))
@@ -340,11 +341,7 @@ impl<F: PrimeField> Op<F> {
                 // Fixme: prev_nonce, prev_count, count_inv
                 let query_map = &queries.func_queries()[*idx];
                 let query_result = query_map.get(inp).expect("Cannot find query result");
-                let nonce: usize = slice
-                    .nonce
-                    .as_canonical_biguint()
-                    .try_into()
-                    .expect("Nonce is larger than usize");
+                let nonce = slice.nonce.as_canonical_u32() as usize;
                 let prev_count = query_result
                     .callers_nonces
                     .get_index_of(&(func_ctx.func_idx, nonce, *call_ident))
@@ -380,7 +377,7 @@ impl<F: PrimeField> Op<F> {
             Op::Load(len, ptr) => {
                 let mem_idx = mem_index_from_len(*len);
                 let query_map = &queries.mem_queries[mem_idx];
-                let ptr: usize = map[*ptr].0.as_canonical_biguint().try_into().unwrap();
+                let ptr = map[*ptr].0.as_canonical_u32() as usize;
                 let (args, _) = query_map
                     .get_index(ptr - 1)
                     .expect("Cannot find query result");

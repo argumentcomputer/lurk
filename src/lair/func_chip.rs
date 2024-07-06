@@ -1,5 +1,5 @@
 use p3_air::BaseAir;
-use p3_field::{Field, PrimeField};
+use p3_field::{Field, PrimeField32};
 use p3_matrix::dense::RowMajorMatrix;
 use sphinx_core::air::{EventLens, MachineAir, WithEvents};
 
@@ -292,7 +292,7 @@ impl<'a, F: Field, H: Hasher<F>> EventLens<FuncChip<'a, F, H>> for QueryRecord<F
     }
 }
 
-impl<'a, F: PrimeField, H: Hasher<F>> MachineAir<F> for FuncChip<'a, F, H> {
+impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for FuncChip<'a, F, H> {
     type Record = QueryRecord<F>;
     type Program = LairMachineProgram;
 

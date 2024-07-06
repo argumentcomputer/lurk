@@ -319,7 +319,22 @@ impl<F: Field> Op<F> {
                 let ptr = *local.next_aux(index);
                 map.push(Val::Expr(ptr.into()));
                 let values = values.iter().map(|&idx| map[idx].to_expr());
-                builder.receive(MemoryRelation(ptr, values), sel.clone());
+
+                let prev_nonce = *local.next_aux(index);
+                let prev_count = *local.next_aux(index);
+                let count_inv = *local.next_aux(index);
+                let record = RequireRecord {
+                    prev_nonce,
+                    prev_count,
+                    count_inv,
+                };
+
+                builder.require(
+                    MemoryRelation(ptr, values),
+                    *local.nonce,
+                    record,
+                    sel.clone(),
+                );
             }
             Op::Load(len, ptr) => {
                 let ptr = map[*ptr].to_expr();
@@ -331,7 +346,22 @@ impl<F: Field> Op<F> {
                         o
                     })
                     .collect::<Vec<_>>();
-                builder.receive(MemoryRelation(ptr, values), sel.clone());
+
+                let prev_nonce = *local.next_aux(index);
+                let prev_count = *local.next_aux(index);
+                let count_inv = *local.next_aux(index);
+                let record = RequireRecord {
+                    prev_nonce,
+                    prev_count,
+                    count_inv,
+                };
+
+                builder.require(
+                    MemoryRelation(ptr, values),
+                    *local.nonce,
+                    record,
+                    sel.clone(),
+                );
             }
             Op::Hash(preimg) => {
                 let preimg: Vec<_> = preimg.iter().map(|a| map[*a].to_expr()).collect();

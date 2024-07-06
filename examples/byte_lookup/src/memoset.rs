@@ -8,7 +8,6 @@ use rand::distributions::{Distribution, Standard, Uniform};
 use rand::{Rng, SeedableRng};
 use sphinx_derive::AlignedBorrow;
 use std::borrow::{Borrow, BorrowMut};
-use std::collections::BTreeMap;
 
 const QUERY_WIDTH: usize = 8;
 type Query<F> = [F; QUERY_WIDTH];
@@ -23,7 +22,7 @@ struct DemoCols<T: Copy> {
     record: Record<T>,
 }
 
-const NUM_DEMO_COLS: usize = size_of::<DemoCols<u8>>();
+const NUM_DEMO_COLS: usize = core::mem::size_of::<DemoCols<u8>>();
 
 #[derive(AlignedBorrow, Clone, Copy)]
 #[repr(C)]

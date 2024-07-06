@@ -1,6 +1,6 @@
 use hashbrown::HashMap;
 use indexmap::{IndexMap, IndexSet};
-use p3_field::{AbstractField, Field, PrimeField};
+use p3_field::{AbstractField, Field, PrimeField32};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use sphinx_core::stark::{Indexed, MachineRecord};
 
@@ -191,7 +191,7 @@ pub fn mem_index_from_len(len: usize) -> usize {
         .unwrap_or_else(|| panic!("There are no mem tables of size {len}"))
 }
 
-impl<F: PrimeField> QueryRecord<F> {
+impl<F: PrimeField32> QueryRecord<F> {
     #[inline]
     pub fn new<H: Hasher<F>>(toplevel: &Toplevel<F, H>) -> Self {
         let mem_queries = vec![FxIndexMap::default(); NUM_MEM_TABLES];
@@ -325,10 +325,7 @@ impl<F: PrimeField> QueryRecord<F> {
     }
 
     fn load(&mut self, len: usize, ptr: F) -> &[F] {
-        let ptr_f: usize = ptr
-            .as_canonical_biguint()
-            .try_into()
-            .expect("Field element is too big for a pointer");
+        let ptr_f = ptr.as_canonical_u32() as usize;
         let mem_idx = mem_index_from_len(len);
         let (args, mult) = self.mem_queries[mem_idx]
             .get_index_mut(ptr_f - 1)
@@ -338,7 +335,7 @@ impl<F: PrimeField> QueryRecord<F> {
     }
 }
 
-impl<F: PrimeField, H: Hasher<F>> Toplevel<F, H> {
+impl<F: PrimeField32, H: Hasher<F>> Toplevel<F, H> {
     pub fn execute(&self, func: &Func<F>, args: &[F], record: &mut QueryRecord<F>) -> List<F> {
         let index = func.index;
         let (nonce, _) =
@@ -377,7 +374,7 @@ struct CallerState<F> {
     map: Vec<F>,
 }
 
-impl<F: PrimeField> Func<F> {
+impl<F: PrimeField32> Func<F> {
     fn execute<H: Hasher<F>>(
         &self,
         args: &[F],
