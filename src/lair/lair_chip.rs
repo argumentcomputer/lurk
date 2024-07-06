@@ -218,9 +218,7 @@ pub fn build_chip_vector<'a, F: PrimeField32, H: Chipset<F>>(
 
 #[cfg(test)]
 mod tests {
-    use crate::lair::{
-        demo_toplevel, execute::QueryRecord, func_chip::FuncChip, hasher::LurkHasher,
-    };
+    use crate::lair::{demo_toplevel, execute::QueryRecord, func_chip::FuncChip};
 
     use super::*;
 
@@ -235,8 +233,7 @@ mod tests {
     fn test_prove_and_verify() {
         sphinx_core::utils::setup_logger();
         type F = BabyBear;
-        type H = LurkHasher;
-        let toplevel = demo_toplevel::<F, H>();
+        let toplevel = demo_toplevel::<F>();
         let chip = FuncChip::from_name("factorial", &toplevel);
         let mut record = QueryRecord::new(&toplevel);
 

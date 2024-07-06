@@ -364,7 +364,7 @@ mod tests {
             demo_toplevel,
             execute::{QueryRecord, Shard, ShardingConfig},
             field_from_u32,
-            hasher::LurkHasher,
+            hasher::Nochip,
             lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
             toplevel::Toplevel,
             trace::LayoutSizes,
@@ -383,7 +383,7 @@ mod tests {
 
     #[test]
     fn lair_layout_sizes_test() {
-        let toplevel = demo_toplevel::<_, LurkHasher>();
+        let toplevel = demo_toplevel::<F>();
 
         let factorial = toplevel.get_by_name("factorial");
         let out = factorial.compute_layout_sizes(&toplevel);
@@ -398,7 +398,7 @@ mod tests {
 
     #[test]
     fn lair_trace_test() {
-        let toplevel = demo_toplevel::<_, LurkHasher>();
+        let toplevel = demo_toplevel::<F>();
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
@@ -473,7 +473,7 @@ mod tests {
             let res = call(test, pred, m);
             return res
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new_no_extern(&[func_e]);
+        let toplevel = Toplevel::<F, Nochip>::new_no_extern(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {
@@ -537,7 +537,7 @@ mod tests {
                 }
             }
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new_no_extern(&[func_e]);
+        let toplevel = Toplevel::<F, Nochip>::new_no_extern(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {
@@ -576,7 +576,7 @@ mod tests {
     #[ignore]
     #[test]
     fn lair_shard_test() {
-        type H = LurkHasher;
+        type H = Nochip;
         let func_ack = func!(
         fn ackermann(m, n): [1] {
             let one = 1;

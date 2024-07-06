@@ -1,9 +1,8 @@
-use hasher::Chipset;
 use p3_field::Field;
 
 use crate::func;
 
-use self::toplevel::Toplevel;
+use self::{hasher::Nochip, toplevel::Toplevel};
 
 pub mod air;
 pub mod bytecode;
@@ -46,7 +45,7 @@ pub(crate) fn field_from_u32<F: p3_field::AbstractField>(i: u32) -> F {
 pub type List<T> = Box<[T]>;
 
 #[allow(dead_code)]
-pub(crate) fn demo_toplevel<F: Field + Ord, H: Chipset<F> + Default>() -> Toplevel<F, H> {
+pub(crate) fn demo_toplevel<F: Field + Ord>() -> Toplevel<F, Nochip> {
     let factorial_e = func!(
     fn factorial(n): [1] {
         let one = 1;

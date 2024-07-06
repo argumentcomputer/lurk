@@ -33,6 +33,40 @@ pub trait Chipset<F>: Sync {
     );
 }
 
+pub struct Nochip();
+impl<F> Chipset<F> for Nochip {
+    fn input_size(&self) -> usize {
+        unimplemented!()
+    }
+
+    fn output_size(&self) -> usize {
+        unimplemented!()
+    }
+
+    fn execute(&self, _: &[F]) -> Vec<F> {
+        unimplemented!()
+    }
+
+    fn populate_witness(&self, _: &[F], _: &mut [F]) -> Vec<F> {
+        unimplemented!()
+    }
+
+    fn witness_size(&self, _: usize) -> usize {
+        unimplemented!()
+    }
+
+    fn eval<AB: AirBuilder<F = F>>(
+        &self,
+        _: &mut AB,
+        _: Vec<AB::Expr>,
+        _: &[AB::Var],
+        _: &[AB::Var],
+        _: AB::Expr,
+    ) {
+        unimplemented!()
+    }
+}
+
 pub enum LurkChip {
     Hasher24_8(
         Poseidon2<

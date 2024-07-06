@@ -547,7 +547,7 @@ mod tests {
     use crate::{
         air::debug::debug_constraints_collecting_queries,
         func,
-        lair::{execute::Shard, hasher::LurkHasher},
+        lair::{execute::Shard, hasher::Nochip},
     };
     use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
@@ -561,7 +561,7 @@ mod tests {
 
     #[test]
     fn lair_constraint_test() {
-        let toplevel = demo_toplevel::<_, LurkHasher>();
+        let toplevel = demo_toplevel::<_>();
 
         let mut record = QueryRecord::new(&toplevel);
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
@@ -578,7 +578,7 @@ mod tests {
 
     #[test]
     fn lair_long_constraint_test() {
-        let toplevel = demo_toplevel::<_, LurkHasher>();
+        let toplevel = demo_toplevel::<F>();
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         let args = &[field_from_u32(20000)];
         let mut queries = QueryRecord::new(&toplevel);
@@ -600,7 +600,7 @@ mod tests {
             let x = eq(a, b);
             return x
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new_no_extern(&[eq_func, not_func]);
+        let toplevel = Toplevel::<F, Nochip>::new_no_extern(&[eq_func, not_func]);
         let eq_chip = FuncChip::from_name("eq", &toplevel);
         let not_chip = FuncChip::from_name("not", &toplevel);
 
@@ -671,7 +671,7 @@ mod tests {
             let zero = 0;
             return zero
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new_no_extern(&[if_many_func]);
+        let toplevel = Toplevel::<F, Nochip>::new_no_extern(&[if_many_func]);
         let if_many_chip = FuncChip::from_name("if_many", &toplevel);
 
         let mut queries = QueryRecord::new(&toplevel);
@@ -731,7 +731,7 @@ mod tests {
             let fail = [0, 0];
             return fail
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new_no_extern(&[match_many_func]);
+        let toplevel = Toplevel::<F, Nochip>::new_no_extern(&[match_many_func]);
         let match_many_chip = FuncChip::from_name("match_many", &toplevel);
 
         let mut queries = QueryRecord::new(&toplevel);
