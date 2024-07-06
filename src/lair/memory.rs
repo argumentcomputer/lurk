@@ -139,7 +139,7 @@ mod tests {
             let (_x, y, _z) = load(ptr1);
             return (ptr2, y)
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new(&[func_e]);
+        let toplevel = Toplevel::<F, LurkHasher>::new_no_extern(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         toplevel.execute_by_name("test", &[], &mut queries);

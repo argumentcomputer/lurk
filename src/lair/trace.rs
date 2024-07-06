@@ -486,7 +486,7 @@ mod tests {
             let res = call(test, pred, m);
             return res
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new(&[func_e]);
+        let toplevel = Toplevel::<F, LurkHasher>::new_no_extern(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {
@@ -550,7 +550,7 @@ mod tests {
                 }
             }
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new(&[func_e]);
+        let toplevel = Toplevel::<F, LurkHasher>::new_no_extern(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {
@@ -611,7 +611,7 @@ mod tests {
             let ret = call(ackermann, m_minus_one, inner);
             return ret
         });
-        let toplevel = Toplevel::<F, H>::new(&[func_ack]);
+        let toplevel = Toplevel::<F, H>::new_no_extern(&[func_ack]);
         let ack_chip = FuncChip::from_name("ackermann", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
 

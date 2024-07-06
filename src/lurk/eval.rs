@@ -9,11 +9,12 @@ use crate::{
     func,
     lair::{
         expr::{BlockE, CasesE, CtrlE, FuncE, OpE, Var},
-        hasher::LurkHasher,
+        hasher::{lurk_chip_map, LurkChip, LurkHasher},
         map::Map,
         toplevel::Toplevel,
         List, Name,
     },
+    poseidon::config::{BabyBearConfig24, PoseidonConfig},
 };
 
 use super::{
@@ -66,12 +67,12 @@ impl<'a, F> BuiltinMemo<'a, F> {
 /// Creates a `Toplevel` with the functions used for Lurk evaluation, also returning
 /// a `ZStore` with the Lurk builtins already interned.
 #[inline]
-pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkHasher>, ZStore<BabyBear, LurkHasher>) {
+pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, LurkHasher>) {
     let state = State::init_lurk_state().rccell();
     let mut zstore = ZStore::default();
     let builtins = BuiltinMemo::new(&state, &mut zstore);
     let nil = zstore.read_with_state(state, "nil").unwrap().digest.into();
-    let toplevel = Toplevel::new(&[
+    let funcs = &[
         lurk_main(),
         eval(&builtins),
         eval_comm_unop(&builtins),
@@ -93,7 +94,10 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkHasher>, ZStore<BabyBear
         hash_24_8(),
         hash_32_8(),
         hash_48_8(),
-    ]);
+    ];
+    let lurk_chip_map = lurk_chip_map();
+    let hasher = LurkChip::Hasher24_8(BabyBearConfig24::hasher());
+    let toplevel = Toplevel::new(funcs, lurk_chip_map, hasher);
     (toplevel, zstore)
 }
 
@@ -396,7 +400,7 @@ pub fn hash_24_8<F>() -> FuncE<F> {
 pub fn hash_32_8<F>() -> FuncE<F> {
     func!(
         invertible fn hash_32_8(preimg: [32]): [8] {
-            let img: [8] = hash(preimg);
+            let img: [8] = extern_call(hash_32_8, preimg);
             return img
         }
     )
@@ -405,7 +409,7 @@ pub fn hash_32_8<F>() -> FuncE<F> {
 pub fn hash_48_8<F>() -> FuncE<F> {
     func!(
         invertible fn hash_48_8(preimg: [48]): [8] {
-            let (img: [8]) = hash(preimg);
+            let img: [8] = extern_call(hash_48_8, preimg);
             return img
         }
     )

@@ -104,5 +104,5 @@ pub(crate) fn demo_toplevel<F: Field + Ord, H: Chipset<F> + Default>() -> Toplev
         return res
     });
 
-    Toplevel::new(&[factorial_e, fib_e, even_e, odd_e])
+    Toplevel::new_no_extern(&[factorial_e, fib_e, even_e, odd_e])
 }

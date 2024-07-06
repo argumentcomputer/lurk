@@ -14,12 +14,8 @@ pub(crate) struct FuncInfo {
     output_size: usize,
 }
 
-impl<F: Clone + Ord, H: Chipset<F> + Default> Toplevel<F, H> {
-    pub fn new(funcs: &[FuncE<F>]) -> Self {
-        // Fixme
-        let chip_map = Default::default();
-        let hasher = H::default();
-
+impl<F: Clone + Ord, H: Chipset<F>> Toplevel<F, H> {
+    pub fn new(funcs: &[FuncE<F>], chip_map: Map<Name, H>, hasher: H) -> Self {
         let ordered_funcs = Map::from_vec(funcs.iter().map(|func| (func.name, func)).collect());
         let info_vec = ordered_funcs
             .iter()
@@ -46,6 +42,14 @@ impl<F: Clone + Ord, H: Chipset<F> + Default> Toplevel<F, H> {
             chip_map,
             hasher,
         }
+    }
+}
+
+impl<F: Clone + Ord, H: Chipset<F> + Default> Toplevel<F, H> {
+    pub fn new_no_extern(funcs: &[FuncE<F>]) -> Self {
+        let chip_map = Default::default();
+        let hasher = H::default();
+        Toplevel::new(funcs, chip_map, hasher)
     }
 }
 
@@ -336,7 +340,7 @@ impl<F: Clone + Ord> BlockE<F> {
                     let name_idx = ctx
                         .chip_map
                         .get_index_of(name)
-                        .unwrap_or_else(|| panic!("Unknown function {name}"));
+                        .unwrap_or_else(|| panic!("Unknown extern chip {name}"));
                     let (_, chip) = ctx.chip_map.get_index(name_idx).unwrap();
                     assert_eq!(inp.total_size(), chip.input_size());
                     assert_eq!(out.total_size(), chip.output_size());

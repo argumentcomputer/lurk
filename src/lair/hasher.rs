@@ -64,13 +64,13 @@ pub enum LurkChip {
 }
 
 pub fn lurk_chip_map() -> Map<Name, LurkChip> {
-    let hasher_24_8 = LurkChip::Hasher24_8(BabyBearConfig24::hasher());
-    let hasher_32_8 = LurkChip::Hasher32_8(BabyBearConfig32::hasher());
-    let hasher_48_8 = LurkChip::Hasher48_8(BabyBearConfig48::hasher());
+    let hash_24_8 = LurkChip::Hasher24_8(BabyBearConfig24::hasher());
+    let hash_32_8 = LurkChip::Hasher32_8(BabyBearConfig32::hasher());
+    let hash_48_8 = LurkChip::Hasher48_8(BabyBearConfig48::hasher());
     let vec = vec![
-        (Name("hasher_24_8"), hasher_24_8),
-        (Name("hasher_32_8"), hasher_32_8),
-        (Name("hasher_48_8"), hasher_48_8),
+        (Name("hash_24_8"), hash_24_8),
+        (Name("hash_32_8"), hash_32_8),
+        (Name("hash_48_8"), hash_48_8),
     ];
     Map::from_vec(vec)
 }

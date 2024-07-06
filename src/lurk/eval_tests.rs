@@ -12,7 +12,7 @@ use crate::{
     lair::{
         execute::{QueryRecord, Shard, ShardingConfig},
         func_chip::FuncChip,
-        hasher::{Chipset, LurkHasher},
+        hasher::{Chipset, LurkChip, LurkHasher},
         lair_chip::{
             build_chip_vector_from_lair_chips, build_lair_chip_vector, LairMachineProgram,
         },
@@ -30,13 +30,13 @@ use super::{
 
 #[allow(clippy::type_complexity)]
 static TEST_SETUP_DATA: OnceCell<(
-    Toplevel<F, LurkHasher>,
+    Toplevel<F, LurkChip>,
     ZStore<F, LurkHasher>,
     BabyBearPoseidon2,
 )> = OnceCell::new();
 
 fn test_setup_data() -> &'static (
-    Toplevel<F, LurkHasher>,
+    Toplevel<F, LurkChip>,
     ZStore<F, LurkHasher>,
     BabyBearPoseidon2,
 ) {
@@ -49,7 +49,7 @@ fn test_setup_data() -> &'static (
 
 fn run_test(
     zptr: &ZPtr<F>,
-    toplevel: &Toplevel<F, LurkHasher>,
+    toplevel: &Toplevel<F, LurkChip>,
     zstore: &mut ZStore<F, LurkHasher>,
     expected_cloj: fn(&mut ZStore<F, LurkHasher>) -> ZPtr<F>,
     config: BabyBearPoseidon2,
