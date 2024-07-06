@@ -181,20 +181,6 @@ macro_rules! block {
         let $tgt = $crate::var!($tgt $(, $size)?);
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let $tgt:ident $(: [$size:expr])? = hash($($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
-        let out = [$crate::var!($tgt $(, $size)?)].into();
-        let inp = [$($arg),*].into();
-        $ops.push($crate::lair::expr::OpE::Hash(out, inp));
-        let $tgt = $crate::var!($tgt $(, $size)?);
-        $crate::block!({ $($tail)* }, $ops)
-    }};
-    ({ let ($($tgt:ident $(: [$size:expr])?),*) = hash($($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
-        let out = [$($crate::var!($tgt $(, $size)?)),*].into();
-        let inp = [$($arg),*].into();
-        $ops.push($crate::lair::expr::OpE::Hash(out, inp));
-        $(let $tgt = $crate::var!($tgt $(, $size)?);)*
-        $crate::block!({ $($tail)* }, $ops)
-    }};
     ({ debug!($s:literal); $($tail:tt)+ }, $ops:expr) => {{
         $ops.push($crate::lair::expr::OpE::Debug($s));
         $crate::block!({ $($tail)* }, $ops)

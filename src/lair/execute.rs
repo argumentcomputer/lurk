@@ -489,10 +489,6 @@ impl<F: PrimeField32> Func<F> {
                     map.extend(chip.execute(&input));
                 }
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
-                ExecEntry::Op(Op::Hash(preimg)) => {
-                    let preimg: List<_> = preimg.iter().map(|a| map[*a]).collect();
-                    map.extend(toplevel.hasher.execute(&preimg));
-                }
                 ExecEntry::Ctrl(Ctrl::Return(_, out)) => {
                     let out = out.iter().map(|v| map[*v]).collect::<Vec<_>>();
                     let (inp, result) = record.func_queries[func_index]

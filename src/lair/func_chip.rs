@@ -264,14 +264,6 @@ impl<F> Op<F> {
                 *aux += *ptr_size + 3;
                 degrees.extend(vec![1; *ptr_size]);
             }
-            Op::Hash(preimg) => {
-                let hasher = &toplevel.hasher;
-                let img_size = hasher.output_size();
-                let witness_size = hasher.witness_size(preimg.len());
-                let aux_size = img_size + witness_size;
-                *aux += aux_size;
-                degrees.extend(vec![1; aux_size]);
-            }
             Op::ExternCall(chip_idx, input) => {
                 let chip = toplevel.get_chip_by_index(*chip_idx);
                 let output_size = chip.output_size();

@@ -14,7 +14,6 @@ use crate::{
         toplevel::Toplevel,
         List, Name,
     },
-    poseidon::config::{BabyBearConfig24, PoseidonConfig},
 };
 
 use super::{
@@ -96,8 +95,7 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, 
         hash_48_8(),
     ];
     let lurk_chip_map = lurk_chip_map();
-    let hasher = LurkChip::Hasher24_8(BabyBearConfig24::hasher());
-    let toplevel = Toplevel::new(funcs, lurk_chip_map, hasher);
+    let toplevel = Toplevel::new(funcs, lurk_chip_map);
     (toplevel, zstore)
 }
 
@@ -391,7 +389,7 @@ fn egress_builtin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Func
 pub fn hash_24_8<F>() -> FuncE<F> {
     func!(
         invertible fn hash_24_8(preimg: [24]): [8] {
-            let img: [8] = hash(preimg);
+            let img: [8] = extern_call(hash_24_8, preimg);
             return img
         }
     )

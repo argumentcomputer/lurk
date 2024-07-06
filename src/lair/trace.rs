@@ -336,19 +336,6 @@ impl<F: PrimeField32> Op<F> {
                 slice.push_aux(index, require.prev_count);
                 slice.push_aux(index, require.count_inv);
             }
-            Op::Hash(preimg) => {
-                let preimg = preimg.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let witness_size = ctx.toplevel.hasher.witness_size(preimg.len());
-                let mut witness = vec![F::zero(); witness_size];
-                let img = ctx.toplevel.hasher.populate_witness(&preimg, &mut witness);
-                for f in img {
-                    map.push((f, 1));
-                    slice.push_aux(index, f);
-                }
-                for f in witness {
-                    slice.push_aux(index, f);
-                }
-            }
             Op::ExternCall(chip_idx, input) => {
                 let chip = ctx.toplevel.get_chip_by_index(*chip_idx);
                 let input = input.iter().map(|a| map[*a].0).collect::<List<_>>();

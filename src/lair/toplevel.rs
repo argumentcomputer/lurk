@@ -6,7 +6,6 @@ use super::{bytecode::*, expr::*, hasher::Chipset, map::Map, List, Name};
 pub struct Toplevel<F, H: Chipset<F>> {
     pub(crate) map: Map<Name, Func<F>>,
     pub(crate) chip_map: Map<Name, H>,
-    pub(crate) hasher: H,
 }
 
 pub(crate) struct FuncInfo {
@@ -15,7 +14,7 @@ pub(crate) struct FuncInfo {
 }
 
 impl<F: Clone + Ord, H: Chipset<F>> Toplevel<F, H> {
-    pub fn new(funcs: &[FuncE<F>], chip_map: Map<Name, H>, hasher: H) -> Self {
+    pub fn new(funcs: &[FuncE<F>], chip_map: Map<Name, H>) -> Self {
         let ordered_funcs = Map::from_vec(funcs.iter().map(|func| (func.name, func)).collect());
         let info_vec = ordered_funcs
             .iter()
@@ -32,24 +31,15 @@ impl<F: Clone + Ord, H: Chipset<F>> Toplevel<F, H> {
             ordered_funcs
                 .iter()
                 .enumerate()
-                .map(|(i, (name, func))| {
-                    (*name, func.check_and_link(i, &info_map, &hasher, &chip_map))
-                })
+                .map(|(i, (name, func))| (*name, func.check_and_link(i, &info_map, &chip_map)))
                 .collect(),
         );
-        Toplevel {
-            map,
-            chip_map,
-            hasher,
-        }
+        Toplevel { map, chip_map }
     }
-}
 
-impl<F: Clone + Ord, H: Chipset<F> + Default> Toplevel<F, H> {
     pub fn new_no_extern(funcs: &[FuncE<F>]) -> Self {
-        let chip_map = Default::default();
-        let hasher = H::default();
-        Toplevel::new(funcs, chip_map, hasher)
+        let chip_map = Map::from_vec(vec![]);
+        Toplevel::new(funcs, chip_map)
     }
 }
 
@@ -150,7 +140,6 @@ impl<F: Clone + Ord> FuncE<F> {
         &self,
         func_index: usize,
         info_map: &Map<Name, FuncInfo>,
-        hasher: &H,
         chip_map: &Map<Name, H>,
     ) -> Func<F> {
         let ctx = &mut CheckCtx {
@@ -167,7 +156,7 @@ impl<F: Clone + Ord> FuncE<F> {
         self.input_params.iter().for_each(|var| {
             bind_new(var, ctx);
         });
-        let body = self.body.check_and_link(ctx, hasher);
+        let body = self.body.check_and_link(ctx);
         for ((var, _), used) in ctx.used_map.iter() {
             let ch = var.name.chars().next().expect("Empty var name");
             assert!(
@@ -187,7 +176,7 @@ impl<F: Clone + Ord> FuncE<F> {
 }
 
 impl<F: Clone + Ord> BlockE<F> {
-    fn check_and_link<H: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, H>, hasher: &H) -> Block<F> {
+    fn check_and_link<H: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, H>) -> Block<F> {
         let mut ops = Vec::new();
         for op in self.ops.iter() {
             match op {
@@ -327,15 +316,6 @@ impl<F: Clone + Ord> BlockE<F> {
                         i += pat.size;
                     }
                 }
-                OpE::Hash(img, preimg) => {
-                    assert_eq!(img.total_size(), hasher.output_size());
-                    let preimg: List<_> = preimg
-                        .iter()
-                        .flat_map(|a| use_var(a, ctx).to_vec())
-                        .collect();
-                    img.iter().for_each(|val| bind_new(val, ctx));
-                    ops.push(Op::Hash(preimg));
-                }
                 OpE::ExternCall(out, name, inp) => {
                     let name_idx = ctx
                         .chip_map
@@ -352,7 +332,7 @@ impl<F: Clone + Ord> BlockE<F> {
         }
         let ops = ops.into();
         let saved_return_idents = std::mem::take(&mut ctx.return_idents);
-        let ctrl = self.ctrl.check_and_link(ctx, hasher);
+        let ctrl = self.ctrl.check_and_link(ctx);
         let block_return_idents = std::mem::take(&mut ctx.return_idents);
         assert!(
             !block_return_idents.is_empty(),
@@ -369,7 +349,7 @@ impl<F: Clone + Ord> BlockE<F> {
 }
 
 impl<F: Clone + Ord> CtrlE<F> {
-    fn check_and_link<H: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, H>, hasher: &H) -> Ctrl<F> {
+    fn check_and_link<H: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, H>) -> Ctrl<F> {
         match &self {
             CtrlE::Return(return_vars) => {
                 let total_size = return_vars.total_size();
@@ -394,14 +374,14 @@ impl<F: Clone + Ord> CtrlE<F> {
                 for (f, block) in cases.branches.iter() {
                     ctx.block_ident += 1;
                     let state = ctx.save_bind_state();
-                    let block = block.check_and_link(ctx, hasher);
+                    let block = block.check_and_link(ctx);
                     ctx.restore_bind_state(state);
                     vec.push((f.clone(), block))
                 }
                 let branches = Map::from_vec(vec);
                 let default = cases.default.as_ref().map(|def| {
                     ctx.block_ident += 1;
-                    def.check_and_link(ctx, hasher).into()
+                    def.check_and_link(ctx).into()
                 });
                 let cases = Cases { branches, default };
                 Ctrl::Match(t, cases)
@@ -414,14 +394,14 @@ impl<F: Clone + Ord> CtrlE<F> {
                     assert_eq!(fs.len(), size, "Pattern must have size {size}");
                     ctx.block_ident += 1;
                     let state = ctx.save_bind_state();
-                    let block = block.check_and_link(ctx, hasher);
+                    let block = block.check_and_link(ctx);
                     ctx.restore_bind_state(state);
                     vec.push((fs.clone(), block))
                 }
                 let branches = Map::from_vec(vec);
                 let default = cases.default.as_ref().map(|def| {
                     ctx.block_ident += 1;
-                    def.check_and_link(ctx, hasher).into()
+                    def.check_and_link(ctx).into()
                 });
                 let cases = Cases { branches, default };
                 Ctrl::MatchMany(vars, cases)
@@ -431,11 +411,11 @@ impl<F: Clone + Ord> CtrlE<F> {
 
                 ctx.block_ident += 1;
                 let state = ctx.save_bind_state();
-                let true_block = true_block.check_and_link(ctx, hasher);
+                let true_block = true_block.check_and_link(ctx);
                 ctx.restore_bind_state(state);
 
                 ctx.block_ident += 1;
-                let false_block = false_block.check_and_link(ctx, hasher);
+                let false_block = false_block.check_and_link(ctx);
 
                 if b.size != 1 {
                     Ctrl::IfMany(vars, true_block.into(), false_block.into())
