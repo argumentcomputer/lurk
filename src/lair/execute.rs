@@ -118,74 +118,40 @@ impl<'a, F: Field> MachineRecord for Shard<'a, F> {
         // just a no-op because `generate_dependencies` is a no-op
     }
 
-    fn shard(self, _config: &Self::Config) -> Vec<Self> {
-        // let Self {
-        //     index: _,
-        //     mut func_queries,
-        //     inv_func_queries,
-        //     mut mem_queries,
-        // } = self;
-
-        // let num_funcs = func_queries.len();
-        // let num_mem_tables = mem_queries.len();
-
-        // let max_shard_size = config.max_shard_size;
-
-        // if max_shard_size == 0 {
-        //     return vec![Self {
-        //         index: 0,
-        //         func_queries,
-        //         inv_func_queries,
-        //         mem_queries,
-        //     }];
-        // }
-
-        // let max_num_func_queries = func_queries.iter().map(IndexMap::len).max().unwrap_or(0);
-        // let max_num_mem_queries = mem_queries.iter().map(IndexMap::len).max().unwrap_or(0);
-
-        // let div_ceil = |numer, denom| (numer + denom - 1) / denom;
-        // let num_shards_needed_for_func_queries = div_ceil(max_num_func_queries, max_shard_size);
-        // let num_shards_needed_for_mem_queries = div_ceil(max_num_mem_queries, max_shard_size);
-        // let num_shards_needed =
-        //     num_shards_needed_for_func_queries.max(num_shards_needed_for_mem_queries);
-
-        // if num_shards_needed < 2 {
-        //     vec![Self {
-        //         index: 0,
-        //         func_queries,
-        //         inv_func_queries,
-        //         mem_queries,
-        //     }]
-        // } else {
-        //     let empty_func_queries = vec![FxIndexMap::default(); num_funcs];
-        //     let empty_mem_queries = vec![FxIndexMap::default(); num_mem_tables];
-        //     let mut shards = Vec::with_capacity(num_shards_needed);
-        //     let num_shards_needed_u32: u32 = num_shards_needed
-        //         .try_into()
-        //         .expect("Number of shards needed is too big");
-        //     for index in 0..num_shards_needed_u32 {
-        //         let mut sharded_func_queries = empty_func_queries.clone();
-        //         for func_idx in 0..num_funcs {
-        //             let queries = &mut func_queries[func_idx];
-        //             sharded_func_queries[func_idx]
-        //                 .extend(queries.drain(0..max_shard_size.min(queries.len())));
-        //         }
-        //         let mut sharded_mem_queries = empty_mem_queries.clone();
-        //         for mem_idx in 0..num_mem_tables {
-        //             let queries = &mut mem_queries[mem_idx];
-        //             sharded_mem_queries[mem_idx]
-        //                 .extend(queries.drain(0..max_shard_size.min(queries.len())));
-        //         }
-        //         shards.push(QueryRecord {
-        //             index,
-        //             func_queries: sharded_func_queries,
-        //             inv_func_queries: inv_func_queries.clone(), // We can use the same inverse map for all shards
-        //             mem_queries: sharded_mem_queries,
-        //         });
-        //     }
-        //     shards
-        // }
-        todo!()
+    fn shard(self, config: &Self::Config) -> Vec<Self> {
+        let events = self.events.unwrap();
+        assert_eq!(events.shard_config, *config, "Incompatible configuration");
+        let shard_size = config.max_shard_size;
+        let max_num_rows: usize = events
+            .func_queries
+            .iter()
+            .map(|q| q.len())
+            .fold(0, |acc, len| acc.max(len));
+        let remainder = max_num_rows % shard_size;
+        let num_shards = max_num_rows / shard_size + if remainder > 0 { 1 } else { 0 };
+        let mut shards = vec![];
+        for shard_index in 0..num_shards {
+            let func_range = events
+                .func_queries
+                .iter()
+                .map(|queries| {
+                    let len = queries.len();
+                    let start = len.min(shard_index * shard_size);
+                    let end = len.min((shard_index + 1) * shard_size);
+                    start..end
+                })
+                .collect();
+            let index = u32::try_from(shard_index).unwrap();
+            shards.push(Shard {
+                index,
+                func_range,
+                mem_range: vec![0..0; self.mem_range.len()],
+                events: Some(events),
+            });
+        }
+        // TODO shard memory
+        shards[0].mem_range = self.mem_range;
+        shards
     }
 
     fn public_values<F2: AbstractField>(&self) -> Vec<F2> {
