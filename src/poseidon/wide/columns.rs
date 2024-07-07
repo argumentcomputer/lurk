@@ -34,6 +34,6 @@ where
     Sub1<C::R_P>: ArraySize,
 {
     pub const fn num_cols() -> usize {
-        core::mem::size_of::<Poseidon2Cols<u8, C, WIDTH>>()
+        size_of::<Poseidon2Cols<u8, C, WIDTH>>()
     }
 }

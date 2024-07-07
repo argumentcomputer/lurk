@@ -22,7 +22,7 @@ struct DemoCols<T: Copy> {
     record: Record<T>,
 }
 
-const NUM_DEMO_COLS: usize = core::mem::size_of::<DemoCols<u8>>();
+const NUM_DEMO_COLS: usize = size_of::<DemoCols<u8>>();
 
 #[derive(AlignedBorrow, Clone, Copy)]
 #[repr(C)]

@@ -40,7 +40,7 @@ mod test {
         Sub1<C::R_P>: ArraySize,
     {
         fn width(&self) -> usize {
-            core::mem::size_of::<Cols<u8, C, WIDTH>>()
+            size_of::<Cols<u8, C, WIDTH>>()
         }
     }
 
