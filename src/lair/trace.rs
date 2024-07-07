@@ -4,7 +4,6 @@ use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
     slice::ParallelSliceMut,
 };
-use sphinx_core::stark::Indexed;
 
 use crate::lair::execute::mem_index_from_len;
 
@@ -303,7 +302,9 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, *f);
                 }
                 let nonce = slice.nonce.as_canonical_u32() as usize;
-                let shard = queries.index() as usize;
+                // TODO
+                // let shard = queries.index() as usize;
+                let shard = 0;
                 let prev_count = result
                     .callers_nonces
                     .get_index_of(&(func_ctx.func_idx, shard, nonce, *call_ident))
@@ -336,7 +337,9 @@ impl<F: PrimeField32> Op<F> {
                 let query_map = &queries.func_queries()[*idx];
                 let query_result = query_map.get(inp).expect("Cannot find query result");
                 let nonce = slice.nonce.as_canonical_u32() as usize;
-                let shard = queries.index() as usize;
+                // TODO
+                // let shard = queries.index() as usize;
+                let shard = 0;
                 let prev_count = query_result
                     .callers_nonces
                     .get_index_of(&(func_ctx.func_idx, shard, nonce, *call_ident))

@@ -1317,7 +1317,7 @@ mod test {
     use crate::{
         air::debug::{debug_constraints_collecting_queries, TraceQueries},
         lair::{
-            execute::QueryRecord,
+            execute::{QueryRecord, Shard},
             func_chip::FuncChip,
             hasher::LurkHasher,
             lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
@@ -1412,10 +1412,11 @@ mod test {
             let lair_chips =
                 build_lair_chip_vector(&lurk_main, full_input.clone().into(), result.to_vec());
 
+            let shard = Shard::new(record);
             let lookup_queries: Vec<_> = lair_chips
                 .iter()
                 .map(|chip| {
-                    let trace = chip.generate_trace(record, &mut Default::default());
+                    let trace = chip.generate_trace(&shard, &mut Default::default());
                     debug_constraints_collecting_queries(chip, &[], None, &trace)
                 })
                 .collect();
@@ -1428,7 +1429,7 @@ mod test {
             );
             let (pk, _vk) = machine.setup(&LairMachineProgram);
             let mut challenger_p = machine.config().challenger();
-            machine.debug_constraints(&pk, record.clone(), &mut challenger_p);
+            machine.debug_constraints(&pk, shard, &mut challenger_p);
         };
 
         eval_aux("t", "t");

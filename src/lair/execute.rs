@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use hashbrown::HashMap;
 use indexmap::{IndexMap, IndexSet};
 use p3_field::{AbstractField, Field, PrimeField32};
@@ -34,43 +36,43 @@ impl<F> QueryResult<F> {
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
 pub struct QueryRecord<F: Field> {
-    index: u32,
     pub(crate) func_queries: Vec<QueryMap<F>>,
     pub(crate) inv_func_queries: Vec<Option<InvQueryMap<F>>>,
     pub(crate) mem_queries: Vec<MemMap<F>>,
     pub(crate) shard_config: ShardingConfig,
 }
 
-impl<F: Field> Indexed for QueryRecord<F> {
+#[derive(Default, Clone, Debug, Eq, PartialEq)]
+pub struct Shard<'a, F: Field> {
+    index: u32,
+    func_range: Vec<Range<usize>>,
+    mem_range: Vec<Range<usize>>,
+    // The option is for Default
+    pub(crate) events: Option<&'a QueryRecord<F>>,
+}
+
+impl<'a, F: Field> Shard<'a, F> {
+    pub fn new(events: &'a QueryRecord<F>) -> Self {
+        let index = 0;
+        let func_range = events.func_queries.iter().map(|q| 0..q.len()).collect();
+        let mem_range = events.mem_queries.iter().map(|q| 0..q.len()).collect();
+        let events = Some(events);
+        Shard {
+            index,
+            func_range,
+            mem_range,
+            events,
+        }
+    }
+}
+
+impl<'a, F: Field> Indexed for Shard<'a, F> {
     fn index(&self) -> u32 {
         self.index
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ShardingConfig {
-    max_shard_size: usize,
-}
-
-impl ShardingConfig {
-    #[inline]
-    fn index_to_shard_nonce(&self, query_index: usize) -> (usize, usize) {
-        let size = self.max_shard_size;
-        let shard = query_index / size;
-        let nonce = query_index % size;
-        (shard, nonce)
-    }
-}
-
-impl Default for ShardingConfig {
-    fn default() -> Self {
-        Self {
-            max_shard_size: 1 << 20,
-        }
-    }
-}
-
-impl<F: Field> MachineRecord for QueryRecord<F> {
+impl<'a, F: Field> MachineRecord for Shard<'a, F> {
     type Config = ShardingConfig;
 
     fn set_index(&mut self, index: u32) {
@@ -80,28 +82,31 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
     fn stats(&self) -> HashMap<String, usize> {
         // TODO: use `IndexMap` instead so the original insertion order is kept
         let mut map = HashMap::default();
+        let events = self.events.unwrap();
 
-        map.insert("num_funcs".to_string(), self.func_queries.len());
+        map.insert("num_funcs".to_string(), events.func_queries.len());
         map.insert(
             "num_func_queries".to_string(),
-            self.func_queries.iter().map(|im| im.iter().count()).sum(),
+            events.func_queries.iter().map(|im| im.iter().count()).sum(),
         );
         map.insert(
             "sum_func_queries_mults".to_string(),
-            self.func_queries
+            events
+                .func_queries
                 .iter()
                 .map(|im| im.values().map(|r| r.callers_nonces.len()).sum::<usize>())
                 .sum(),
         );
 
-        map.insert("num_mem_tables".to_string(), self.mem_queries.len());
+        map.insert("num_mem_tables".to_string(), events.mem_queries.len());
         map.insert(
             "num_mem_queries".to_string(),
-            self.mem_queries.iter().map(|im| im.iter().count()).sum(),
+            events.mem_queries.iter().map(|im| im.iter().count()).sum(),
         );
         map.insert(
             "sum_mem_queries_mults".to_string(),
-            self.mem_queries
+            events
+                .mem_queries
                 .iter()
                 .map(|im| im.values().map(|set| set.len()).sum::<usize>())
                 .sum(),
@@ -188,6 +193,29 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ShardingConfig {
+    max_shard_size: usize,
+}
+
+impl ShardingConfig {
+    #[inline]
+    fn index_to_shard_nonce(&self, query_index: usize) -> (usize, usize) {
+        let size = self.max_shard_size;
+        let shard = query_index / size;
+        let nonce = query_index % size;
+        (shard, nonce)
+    }
+}
+
+impl Default for ShardingConfig {
+    fn default() -> Self {
+        Self {
+            max_shard_size: 1 << 20,
+        }
+    }
+}
+
 const NUM_MEM_TABLES: usize = 5;
 pub(crate) const MEM_TABLE_SIZES: [usize; NUM_MEM_TABLES] = [3, 4, 5, 6, 8];
 
@@ -229,7 +257,6 @@ impl<F: PrimeField32> QueryRecord<F> {
             })
             .collect();
         Self {
-            index: 0,
             func_queries,
             inv_func_queries,
             mem_queries,

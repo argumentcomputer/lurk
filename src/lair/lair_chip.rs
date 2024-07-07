@@ -9,7 +9,7 @@ use sphinx_core::{
 use crate::air::builder::{LookupBuilder, RequireRecord};
 
 use super::{
-    execute::{QueryRecord, MEM_TABLE_SIZES},
+    execute::{mem_index_from_len, QueryRecord, Shard, MEM_TABLE_SIZES},
     func_chip::FuncChip,
     hasher::Hasher,
     memory::MemChip,
@@ -37,9 +37,9 @@ impl<'a, 'b, F: Field, H: Hasher<F>> WithEvents<'a> for LairChip<'b, F, H> {
     type Events = &'a QueryRecord<F>;
 }
 
-impl<'a, F: Field, H: Hasher<F>> EventLens<LairChip<'a, F, H>> for QueryRecord<F> {
+impl<'a, F: Field, H: Hasher<F>> EventLens<LairChip<'a, F, H>> for Shard<'a, F> {
     fn events(&self) -> <LairChip<'a, F, H> as WithEvents<'_>>::Events {
-        self
+        self.events.expect("Empty shard")
     }
 }
 
@@ -62,13 +62,13 @@ impl<F: AbstractField> MachineProgram<F> for LairMachineProgram {
 }
 
 impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
-    type Record = QueryRecord<F>;
+    type Record = Shard<'a, F>;
     type Program = LairMachineProgram;
 
     fn name(&self) -> String {
         match self {
-            Self::Func(func_chip) => format!("Func[{}]", func_chip.name()),
-            Self::Mem(mem_chip) => format!("Mem[{}]", mem_chip.name()),
+            Self::Func(func_chip) => format!("Func[{}]", func_chip.func.name),
+            Self::Mem(mem_chip) => format!("{}-wide", mem_chip.len),
             // the following is required by sphinx
             // TODO: engineer our way out of such upstream check
             Self::Entrypoint { .. } => "CPU".to_string(),
@@ -78,11 +78,11 @@ impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
     fn generate_trace<EL: EventLens<Self>>(
         &self,
         input: &EL,
-        output: &mut Self::Record,
+        _: &mut Self::Record,
     ) -> RowMajorMatrix<F> {
         match self {
-            Self::Func(func_chip) => func_chip.generate_trace(input.events(), output),
-            Self::Mem(mem_chip) => mem_chip.generate_trace(input.events(), output),
+            Self::Func(func_chip) => func_chip.generate_trace_parallel(input.events()),
+            Self::Mem(mem_chip) => mem_chip.generate_trace_parallel(&input.events().mem_queries),
             Self::Entrypoint { .. } => RowMajorMatrix::new(vec![F::zero(); 1], 1),
         }
     }
@@ -91,8 +91,16 @@ impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
 
     fn included(&self, queries: &Self::Record) -> bool {
         match self {
-            Self::Func(func_chip) => func_chip.included(queries),
-            Self::Mem(mem_chip) => mem_chip.included(queries),
+            Self::Func(func_chip) => {
+                let events = queries.events.unwrap();
+                !events.func_queries[func_chip.func.index].is_empty()
+            }
+            Self::Mem(mem_chip) => {
+                let events = queries.events.unwrap();
+                events.mem_queries[mem_index_from_len(mem_chip.len)]
+                    .values()
+                    .any(|set| !set.is_empty())
+            }
             Self::Entrypoint { .. } => true,
         }
     }
@@ -236,9 +244,10 @@ mod tests {
         let (pk, vk) = machine.setup(&LairMachineProgram);
         let mut challenger_p = machine.config().challenger();
         let mut challenger_v = machine.config().challenger();
-        machine.debug_constraints(&pk, queries.clone(), &mut challenger_p.clone());
+        let shard = Shard::new(&queries);
+        machine.debug_constraints(&pk, shard.clone(), &mut challenger_p.clone());
         let opts = SphinxCoreOpts::default();
-        let proof = machine.prove::<LocalProver<_, _>>(&pk, queries, &mut challenger_p, opts);
+        let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
         machine
             .verify(&vk, &proof, &mut challenger_v)
             .expect("proof verifies");

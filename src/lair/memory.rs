@@ -2,20 +2,19 @@ use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{AbstractField, Field};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use p3_maybe_rayon::prelude::*;
-use sphinx_core::air::{EventLens, MachineAir, WithEvents};
+use rayon::iter::{IndexedParallelIterator, ParallelIterator};
 use std::marker::PhantomData;
 
 use crate::air::builder::{LookupBuilder, ProvideRecord};
 
 use super::{
-    execute::{mem_index_from_len, MemMap, QueryRecord},
-    lair_chip::LairMachineProgram,
+    execute::{mem_index_from_len, MemMap},
     relations::MemoryRelation,
 };
 
 #[derive(Default)]
 pub struct MemChip<F> {
-    len: usize,
+    pub(crate) len: usize,
     _p: PhantomData<F>,
 }
 
@@ -61,45 +60,6 @@ impl<F> MemChip<F> {
                 row[4..].copy_from_slice(args)
             });
         trace
-    }
-}
-
-impl<F: Field> EventLens<MemChip<F>> for QueryRecord<F> {
-    fn events(&self) -> <MemChip<F> as WithEvents<'_>>::Events {
-        self.mem_queries.as_slice()
-    }
-}
-
-impl<'a, F: Field> WithEvents<'a> for MemChip<F> {
-    type Events = &'a [MemMap<F>];
-}
-
-impl<F: Field> MachineAir<F> for MemChip<F> {
-    type Record = QueryRecord<F>;
-    type Program = LairMachineProgram;
-
-    #[inline]
-    fn name(&self) -> String {
-        format!("{}-wide", self.len)
-    }
-
-    #[inline]
-    fn generate_trace<EL: EventLens<Self>>(
-        &self,
-        input: &EL,
-        _: &mut Self::Record,
-    ) -> RowMajorMatrix<F> {
-        self.generate_trace_parallel(input.events())
-    }
-
-    #[inline]
-    fn generate_dependencies<EL: EventLens<Self>>(&self, _: &EL, _: &mut Self::Record) {}
-
-    #[inline]
-    fn included(&self, queries: &Self::Record) -> bool {
-        queries.mem_queries[mem_index_from_len(self.len)]
-            .values()
-            .any(|set| !set.is_empty())
     }
 }
 
@@ -153,6 +113,7 @@ impl<F: Sync> BaseAir<F> for MemChip<F> {
 #[cfg(test)]
 mod tests {
     use crate::air::debug::debug_constraints_collecting_queries;
+    use crate::lair::execute::QueryRecord;
     use crate::{
         func,
         lair::{func_chip::FuncChip, hasher::LurkHasher, toplevel::Toplevel},
