@@ -4,6 +4,7 @@ use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
     slice::ParallelSliceMut,
 };
+use sphinx_core::stark::Indexed;
 
 use crate::lair::execute::mem_index_from_len;
 
@@ -164,7 +165,7 @@ impl<F: PrimeField32> Ctrl<F> {
                     .get(&func_ctx.call_inp)
                     .expect("Cannot find query result");
                 let last_count = result.callers_nonces.len();
-                let (_, last_nonce, _) = result
+                let (_, _, last_nonce, _) = result
                     .callers_nonces
                     .last()
                     .expect("Must have at least one caller");
@@ -302,9 +303,10 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, *f);
                 }
                 let nonce = slice.nonce.as_canonical_u32() as usize;
+                let shard = queries.index() as usize;
                 let prev_count = result
                     .callers_nonces
-                    .get_index_of(&(func_ctx.func_idx, nonce, *call_ident))
+                    .get_index_of(&(func_ctx.func_idx, shard, nonce, *call_ident))
                     .expect("Cannot find caller nonce entry");
                 if prev_count == 0 {
                     // we are the first require, fill in hardcoded provide values
@@ -314,7 +316,7 @@ impl<F: PrimeField32> Op<F> {
                 // count_inv
                 } else {
                     // we are somewhere in the middle of the list, get the predecessor
-                    let (_, prev_nonce, _) =
+                    let (_, _, prev_nonce, _) =
                         result.callers_nonces.get_index(prev_count - 1).unwrap();
                     slice.push_aux(index, F::from_canonical_usize(*prev_nonce));
                     slice.push_aux(index, F::from_canonical_usize(prev_count));
@@ -334,9 +336,10 @@ impl<F: PrimeField32> Op<F> {
                 let query_map = &queries.func_queries()[*idx];
                 let query_result = query_map.get(inp).expect("Cannot find query result");
                 let nonce = slice.nonce.as_canonical_u32() as usize;
+                let shard = queries.index() as usize;
                 let prev_count = query_result
                     .callers_nonces
-                    .get_index_of(&(func_ctx.func_idx, nonce, *call_ident))
+                    .get_index_of(&(func_ctx.func_idx, shard, nonce, *call_ident))
                     .expect("Cannot find caller nonce entry");
                 if prev_count == 0 {
                     // we are the first require, fill in hardcoded provide values
@@ -346,7 +349,7 @@ impl<F: PrimeField32> Op<F> {
                 // count_inv
                 } else {
                     // we are somewhere in the middle of the list, get the predecessor
-                    let (_, prev_nonce, _) = query_result
+                    let (_, _, prev_nonce, _) = query_result
                         .callers_nonces
                         .get_index(prev_count - 1)
                         .unwrap();
@@ -384,7 +387,6 @@ impl<F: PrimeField32> Op<F> {
                 }
             }
             Op::Load(len, ptr, load_ident) => {
-                // Fixme
                 let mem_idx = mem_index_from_len(*len);
                 let query_map = &queries.mem_queries[mem_idx];
                 let ptr = map[*ptr].0.as_canonical_u32() as usize;
