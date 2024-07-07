@@ -1412,11 +1412,11 @@ mod test {
             let lair_chips =
                 build_lair_chip_vector(&lurk_main, full_input.clone().into(), result.to_vec());
 
+            let shard = Shard::new(record);
             let lookup_queries: Vec<_> = lair_chips
                 .iter()
                 .map(|chip| {
-                    let mut shard = Shard::new(record);
-                    let trace = chip.generate_trace(&Shard::default(), &mut shard);
+                    let trace = chip.generate_trace(&shard, &mut Shard::default());
                     debug_constraints_collecting_queries(chip, &[], None, &trace)
                 })
                 .collect();
@@ -1429,7 +1429,6 @@ mod test {
             );
             let (pk, _vk) = machine.setup(&LairMachineProgram);
             let mut challenger_p = machine.config().challenger();
-            let shard = Shard::new(record);
             machine.debug_constraints(&pk, shard, &mut challenger_p);
         };
 

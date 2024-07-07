@@ -9,7 +9,7 @@ use sphinx_core::{
 use crate::air::builder::{LookupBuilder, RequireRecord};
 
 use super::{
-    execute::{mem_index_from_len, QueryRecord, Shard, MEM_TABLE_SIZES},
+    execute::{mem_index_from_len, Shard, MEM_TABLE_SIZES},
     func_chip::FuncChip,
     hasher::Hasher,
     memory::MemChip,
@@ -34,12 +34,12 @@ impl<'a, F, H: Hasher<F>> LairChip<'a, F, H> {
 }
 
 impl<'a, 'b, F: Field, H: Hasher<F>> WithEvents<'a> for LairChip<'b, F, H> {
-    type Events = &'a QueryRecord<F>;
+    type Events = &'a Shard<'a, F>;
 }
 
 impl<'a, F: Field, H: Hasher<F>> EventLens<LairChip<'a, F, H>> for Shard<'a, F> {
     fn events(&self) -> <LairChip<'a, F, H> as WithEvents<'_>>::Events {
-        self.events.expect("Empty shard")
+        self
     }
 }
 
@@ -77,12 +77,12 @@ impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
 
     fn generate_trace<EL: EventLens<Self>>(
         &self,
-        _: &EL,
-        shard: &mut Self::Record,
+        shard: &EL,
+        _: &mut Self::Record,
     ) -> RowMajorMatrix<F> {
         match self {
-            Self::Func(func_chip) => func_chip.generate_trace_parallel(shard),
-            Self::Mem(mem_chip) => mem_chip.generate_trace(shard),
+            Self::Func(func_chip) => func_chip.generate_trace_parallel(shard.events()),
+            Self::Mem(mem_chip) => mem_chip.generate_trace(shard.events()),
             Self::Entrypoint { .. } => RowMajorMatrix::new(vec![F::zero(); 1], 1),
         }
     }
