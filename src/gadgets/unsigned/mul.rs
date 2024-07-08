@@ -1,3 +1,4 @@
+use crate::gadgets::bytes::ByteRecord;
 use crate::gadgets::unsigned::{Word, WORD_SIZE};
 use p3_air::AirBuilder;
 use p3_field::AbstractField;
@@ -7,11 +8,16 @@ use std::iter::zip;
 #[derive(Clone, Debug, Default, AlignedBorrow)]
 #[repr(C)]
 pub struct MulWitness<T> {
-    carry: [T; WORD_SIZE],
+    carry: [T; WORD_SIZE + 2],
 }
 
 impl<F: AbstractField> MulWitness<F> {
-    pub fn populate(&mut self, lhs: Word<u8>, rhs: Word<u8>) -> Word<u8> {
+    pub fn populate(
+        &mut self,
+        lhs: Word<u8>,
+        rhs: Word<u8>,
+        byte_record: &mut impl ByteRecord,
+    ) -> Word<u8> {
         let mut carry = 0u16;
         let mut result = Word::default();
         for k in 0..WORD_SIZE {
@@ -24,11 +30,12 @@ impl<F: AbstractField> MulWitness<F> {
             debug_assert_eq!(null, 0);
 
             carry = u16::from_le_bytes([carry_lo, carry_hi]);
-            // TODO: Range check carry[i] is u16
+            byte_record.range_check_u16(carry);
             self.carry[k] = F::from_canonical_u16(carry);
 
             result[k] = limb
         }
+        result.range_check(byte_record);
 
         result
     }
@@ -67,6 +74,7 @@ pub fn eval_mul<AB: AirBuilder>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gadgets::bytes::NonceByteRecord;
     use crate::gadgets::debug::GadgetAirBuilder;
     use p3_baby_bear::BabyBear;
 
@@ -89,14 +97,17 @@ mod tests {
             (u64::MAX, 1u64),
         ];
 
-        for (lhs, rhs) in inputs {
+        let mut record = NonceByteRecord::default();
+
+        for (i, (lhs, rhs)) in inputs.into_iter().enumerate() {
+            let nonce = i as u32;
             let out = lhs.wrapping_mul(rhs);
             let lhs = Word(lhs.to_le_bytes());
             let rhs = Word(rhs.to_le_bytes());
             let out_expected = Word(out.to_le_bytes());
 
             let mut witness = MulWitness::<F>::default();
-            let out = witness.populate(lhs, rhs);
+            let out = witness.populate(lhs, rhs, &mut record.with_nonce(nonce));
             assert_eq!(out, out_expected, "lhs: {:?}, rhs: {:?}", lhs, rhs);
 
             let mut builder = GadgetAirBuilder::<F>::default();

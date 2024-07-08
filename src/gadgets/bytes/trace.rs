@@ -90,36 +90,36 @@ impl<F: Field> BaseAir<F> for BytesChip<F> {
 //     type Events =ByteRecord<F>;
 // }
 
-impl<F: Field> MachineAir<F> for BytesChip<F> {
-    type Record = QueryRecord<F>;
-    type Program = LairMachineProgram;
-
-    fn name(&self) -> String {
-        "Bytes".to_string()
-    }
-
-    fn generate_trace<EL: EventLens<Self>>(
-        &self,
-        input: &EL,
-        _output: &mut Self::Record,
-    ) -> RowMajorMatrix<F> {
-        todo!()
-    }
-
-    fn generate_dependencies<EL: EventLens<Self>>(&self, _input: &EL, _output: &mut Self::Record) {}
-
-    fn included(&self, _shard: &Self::Record) -> bool {
-        true
-    }
-
-    fn preprocessed_width(&self) -> usize {
-        PREPROCESSED_BYTES_NUM_COLS
-    }
-
-    fn generate_preprocessed_trace(&self, _program: &Self::Program) -> Option<RowMajorMatrix<F>> {
-        self.preprocessed_trace()
-    }
-}
+// impl<F: Field> MachineAir<F> for BytesChip<F> {
+//     type Record = QueryRecord<F>;
+//     type Program = LairMachineProgram;
+//
+//     fn name(&self) -> String {
+//         "Bytes".to_string()
+//     }
+//
+//     fn generate_trace<EL: EventLens<Self>>(
+//         &self,
+//         input: &EL,
+//         _output: &mut Self::Record,
+//     ) -> RowMajorMatrix<F> {
+//         todo!()
+//     }
+//
+//     fn generate_dependencies<EL: EventLens<Self>>(&self, _input: &EL, _output: &mut Self::Record) {}
+//
+//     fn included(&self, _shard: &Self::Record) -> bool {
+//         true
+//     }
+//
+//     fn preprocessed_width(&self) -> usize {
+//         PREPROCESSED_BYTES_NUM_COLS
+//     }
+//
+//     fn generate_preprocessed_trace(&self, _program: &Self::Program) -> Option<RowMajorMatrix<F>> {
+//         self.preprocessed_trace()
+//     }
+// }
 
 pub enum ByteRelation<T> {
     RangeU8Pair { i1: T, i2: T },

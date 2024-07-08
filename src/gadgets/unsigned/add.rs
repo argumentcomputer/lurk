@@ -1,3 +1,4 @@
+use crate::gadgets::bytes::ByteRecord;
 use crate::gadgets::unsigned::{Word, WORD_SIZE};
 use p3_air::AirBuilder;
 use p3_field::AbstractField;
@@ -11,7 +12,12 @@ pub struct AddWitness<T> {
 }
 
 impl<F: AbstractField> AddWitness<F> {
-    pub fn populate(&mut self, in1: Word<u8>, in2: Word<u8>) -> Word<u8> {
+    pub fn populate(
+        &mut self,
+        in1: Word<u8>,
+        in2: Word<u8>,
+        record: &mut impl ByteRecord,
+    ) -> Word<u8> {
         let mut result = Word::default();
         let mut carry_prev = 0u16;
         for (i, (in1, in2)) in zip(in1, in2).enumerate() {
@@ -23,6 +29,7 @@ impl<F: AbstractField> AddWitness<F> {
             }
             carry_prev = carry.into();
         }
+        result.range_check(record);
         result
     }
 }
@@ -63,8 +70,10 @@ pub fn eval_add<AB: AirBuilder>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gadgets::bytes::NonceByteRecord;
     use crate::gadgets::debug::GadgetAirBuilder;
     use p3_baby_bear::BabyBear;
+
     #[test]
     fn test_add() {
         type F = BabyBear;
@@ -76,15 +85,17 @@ mod tests {
             (1u64, u64::MAX),
             (u64::MAX, 1u64),
         ];
+        let mut record = NonceByteRecord::default();
 
-        for (lhs, rhs) in inputs {
+        for (i, (lhs, rhs)) in inputs.into_iter().enumerate() {
+            let nonce = i as u32;
             let out = lhs.wrapping_add(rhs);
             let lhs = Word(lhs.to_le_bytes());
             let rhs = Word(rhs.to_le_bytes());
             let out_expected = Word(out.to_le_bytes());
 
             let mut witness = AddWitness::<F>::default();
-            let out = witness.populate(lhs, rhs);
+            let out = witness.populate(lhs, rhs, &mut record.with_nonce(nonce));
             assert_eq!(out, out_expected);
 
             let mut builder = GadgetAirBuilder::<F>::default();

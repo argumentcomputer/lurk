@@ -55,18 +55,7 @@ impl ByteInput {
     }
 }
 
-pub struct ContextByteRecord<C> {
-    range_u8: BTreeMap<ByteInput, C>,
-    range_u16: BTreeMap<ByteInput, C>,
-    less_then: BTreeMap<ByteInput, C>,
-    and: BTreeMap<ByteInput, C>,
-    xor: BTreeMap<ByteInput, C>,
-    or: BTreeMap<ByteInput, C>,
-    msb: BTreeMap<ByteInput, C>,
-}
-
 pub trait ByteRecord {
-    type Context;
     fn range_check_u8(&mut self, i: u8) {
         self.range_check_u8_pair(i, 0);
     }
@@ -87,22 +76,82 @@ pub trait ByteRecord {
     fn msb(&mut self, i: u8) -> bool;
 }
 
-pub struct ByteRecordWithContext<'a, CI, C> {
-    context_item: CI,
-    record: &'a mut ContextByteRecord<C>,
-}
-
+#[derive(Copy, Clone, Debug, Default)]
 pub struct ByteInputRecord {
-    prev_nonce: u32,
-    prev_count: u32,
+    nonce: u32,
 }
 
-pub struct ByteInputRowRecord {
-    range_u8_pair: ByteInputRecord,
-    range_u16: ByteInputRecord,
-    less_than: ByteInputRecord,
-    and: ByteInputRecord,
-    xor: ByteInputRecord,
-    or: ByteInputRecord,
-    msb: ByteInputRecord,
+#[derive(Debug, Default)]
+pub struct NonceByteRecord {
+    range_u8: BTreeMap<ByteInput, Vec<ByteInputRecord>>,
+    range_u16: BTreeMap<ByteInput, Vec<ByteInputRecord>>,
+    less_then: BTreeMap<ByteInput, Vec<ByteInputRecord>>,
+    and: BTreeMap<ByteInput, Vec<ByteInputRecord>>,
+    xor: BTreeMap<ByteInput, Vec<ByteInputRecord>>,
+    or: BTreeMap<ByteInput, Vec<ByteInputRecord>>,
+    msb: BTreeMap<ByteInput, Vec<ByteInputRecord>>,
+}
+
+impl NonceByteRecord {
+    pub fn with_nonce(&mut self, nonce: u32) -> ByteRecordWithContext {
+        ByteRecordWithContext {
+            nonce,
+            record: self,
+        }
+    }
+}
+
+pub struct ByteRecordWithContext<'a> {
+    nonce: u32,
+    record: &'a mut NonceByteRecord,
+}
+
+impl<'a> ByteRecord for ByteRecordWithContext<'a> {
+    fn range_check_u8_pair(&mut self, i1: u8, i2: u8) {
+        let input = ByteInput::new(i1, i2);
+        let records = self.record.range_u8.entry(input).or_default();
+        records.push(ByteInputRecord { nonce: self.nonce });
+    }
+
+    fn range_check_u16(&mut self, i: u16) {
+        let [i1, i2] = i.to_le_bytes();
+        let input = ByteInput::new(i1, i2);
+        let records = self.record.range_u16.entry(input).or_default();
+        records.push(ByteInputRecord { nonce: self.nonce });
+    }
+
+    fn less_than(&mut self, i1: u8, i2: u8) -> bool {
+        let input = ByteInput::new(i1, i2);
+        let records = self.record.less_then.entry(input).or_default();
+        records.push(ByteInputRecord { nonce: self.nonce });
+        input.less_than()
+    }
+
+    fn and(&mut self, i1: u8, i2: u8) -> u8 {
+        let input = ByteInput::new(i1, i2);
+        let records = self.record.and.entry(input).or_default();
+        records.push(ByteInputRecord { nonce: self.nonce });
+        input.and()
+    }
+
+    fn xor(&mut self, i1: u8, i2: u8) -> u8 {
+        let input = ByteInput::new(i1, i2);
+        let records = self.record.xor.entry(input).or_default();
+        records.push(ByteInputRecord { nonce: self.nonce });
+        input.xor()
+    }
+
+    fn or(&mut self, i1: u8, i2: u8) -> u8 {
+        let input = ByteInput::new(i1, i2);
+        let records = self.record.or.entry(input).or_default();
+        records.push(ByteInputRecord { nonce: self.nonce });
+        input.or()
+    }
+
+    fn msb(&mut self, i: u8) -> bool {
+        let input = ByteInput::new(i, 0);
+        let records = self.record.msb.entry(input).or_default();
+        records.push(ByteInputRecord { nonce: self.nonce });
+        input.msb()
+    }
 }
