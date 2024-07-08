@@ -285,13 +285,15 @@ impl<F: Clone + Ord> BlockE<F> {
                 OpE::Store(ptr, vals) => {
                     assert_eq!(ptr.size, 1);
                     let vals = vals.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
-                    ops.push(Op::Store(vals));
+                    ops.push(Op::Store(vals, ctx.call_ident));
+                    ctx.call_ident += 1;
                     bind_new(ptr, ctx);
                 }
                 OpE::Load(vals, ptr) => {
                     assert_eq!(ptr.size, 1);
                     let ptr = use_var(ptr, ctx)[0];
-                    ops.push(Op::Load(vals.total_size(), ptr));
+                    ops.push(Op::Load(vals.total_size(), ptr, ctx.call_ident));
+                    ctx.call_ident += 1;
                     vals.iter().for_each(|val| bind_new(val, ctx));
                 }
                 OpE::Debug(s) => ops.push(Op::Debug(s)),

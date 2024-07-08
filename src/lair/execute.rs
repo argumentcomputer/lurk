@@ -1,6 +1,6 @@
 use hashbrown::HashMap;
 use indexmap::{IndexMap, IndexSet};
-use p3_field::{AbstractField, Field, PrimeField};
+use p3_field::{AbstractField, Field, PrimeField32};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use sphinx_core::stark::{Indexed, MachineRecord};
 
@@ -16,7 +16,7 @@ type FxIndexSet<K> = IndexSet<K, FxBuildHasher>;
 
 type QueryMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
 type InvQueryMap<F> = FxHashMap<List<F>, List<F>>;
-pub(crate) type MemMap<F> = FxIndexMap<List<F>, u32>;
+pub(crate) type MemMap<F> = FxIndexMap<List<F>, FxIndexSet<(usize, usize, usize)>>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct QueryResult<F> {
@@ -91,7 +91,7 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
             "sum_mem_queries_mults".to_string(),
             self.mem_queries
                 .iter()
-                .map(|im| im.values().map(|mult| *mult as usize).sum::<usize>())
+                .map(|im| im.values().map(|set| set.len()).sum::<usize>())
                 .sum(),
         );
         map
@@ -191,7 +191,7 @@ pub fn mem_index_from_len(len: usize) -> usize {
         .unwrap_or_else(|| panic!("There are no mem tables of size {len}"))
 }
 
-impl<F: PrimeField> QueryRecord<F> {
+impl<F: PrimeField32> QueryRecord<F> {
     #[inline]
     pub fn new<H: Hasher<F>>(toplevel: &Toplevel<F, H>) -> Self {
         let mem_queries = vec![FxIndexMap::default(); NUM_MEM_TABLES];
@@ -312,33 +312,45 @@ impl<F: PrimeField> QueryRecord<F> {
         inp
     }
 
-    fn store(&mut self, args: List<F>) -> F {
+    fn store(
+        &mut self,
+        args: List<F>,
+        caller_index: usize,
+        caller_nonce: usize,
+        store_ident: usize,
+    ) -> F {
         let mem_idx = mem_index_from_len(args.len());
         let mem_map = &mut self.mem_queries[mem_idx];
-        let mem_map_idx = if let Some((i, _, mult)) = mem_map.get_full_mut(&args) {
-            *mult += 1;
+        let mem_map_idx = if let Some((i, _, callers_nonces)) = mem_map.get_full_mut(&args) {
+            callers_nonces.insert((caller_index, caller_nonce, store_ident));
             i
         } else {
-            mem_map.insert_full(args, 1).0
+            let mut callers_nonces = IndexSet::default();
+            callers_nonces.insert((caller_index, caller_nonce, store_ident));
+            mem_map.insert_full(args, callers_nonces).0
         };
         F::from_canonical_usize(mem_map_idx + 1)
     }
 
-    fn load(&mut self, len: usize, ptr: F) -> &[F] {
-        let ptr_f: usize = ptr
-            .as_canonical_biguint()
-            .try_into()
-            .expect("Field element is too big for a pointer");
+    fn load(
+        &mut self,
+        len: usize,
+        ptr: F,
+        caller_index: usize,
+        caller_nonce: usize,
+        load_ident: usize,
+    ) -> &[F] {
+        let ptr_f = ptr.as_canonical_u32() as usize;
         let mem_idx = mem_index_from_len(len);
-        let (args, mult) = self.mem_queries[mem_idx]
+        let (args, callers_nonces) = self.mem_queries[mem_idx]
             .get_index_mut(ptr_f - 1)
             .expect("Unbound pointer");
-        *mult += 1;
+        callers_nonces.insert((caller_index, caller_nonce, load_ident));
         args
     }
 }
 
-impl<F: PrimeField, H: Hasher<F>> Toplevel<F, H> {
+impl<F: PrimeField32, H: Hasher<F>> Toplevel<F, H> {
     pub fn execute(&self, func: &Func<F>, args: &[F], record: &mut QueryRecord<F>) -> List<F> {
         let index = func.index;
         let (nonce, _) =
@@ -377,7 +389,7 @@ struct CallerState<F> {
     map: Vec<F>,
 }
 
-impl<F: PrimeField> Func<F> {
+impl<F: PrimeField32> Func<F> {
     fn execute<H: Hasher<F>>(
         &self,
         args: &[F],
@@ -442,14 +454,14 @@ impl<F: PrimeField> Func<F> {
                 } else {
                     F::zero()
                 }),
-                ExecEntry::Op(Op::Store(args)) => {
+                ExecEntry::Op(Op::Store(args, ident)) => {
                     let args = args.iter().map(|a| map[*a]).collect();
-                    let ptr = record.store(args);
+                    let ptr = record.store(args, func_idx, nonce, *ident);
                     map.push(ptr);
                 }
-                ExecEntry::Op(Op::Load(len, ptr)) => {
+                ExecEntry::Op(Op::Load(len, ptr, ident)) => {
                     let ptr = map[*ptr];
-                    let args = record.load(*len, ptr);
+                    let args = record.load(*len, ptr, func_idx, nonce, *ident);
                     map.extend(args);
                 }
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),

@@ -1,15 +1,11 @@
-use itertools::{repeat_n, Itertools};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{AbstractField, Field};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
-use rayon::{
-    iter::{IndexedParallelIterator, ParallelIterator},
-    slice::ParallelSliceMut,
-};
+use p3_maybe_rayon::prelude::*;
 use sphinx_core::air::{EventLens, MachineAir, WithEvents};
-use std::{iter::zip, marker::PhantomData};
+use std::marker::PhantomData;
 
-use crate::air::builder::LookupBuilder;
+use crate::air::builder::{LookupBuilder, ProvideRecord};
 
 use super::{
     execute::{mem_index_from_len, MemMap, QueryRecord},
@@ -40,35 +36,31 @@ impl<F> MemChip<F> {
         let mem = &queries[mem_idx];
         let width = self.width();
 
-        let height = mem
-            .values()
-            .map(|&m| m as usize)
-            .sum::<usize>()
-            .next_power_of_two()
-            .max(4);
-        let mut rows = vec![F::zero(); height * width];
+        let height = mem.len().next_power_of_two().max(4); // TODO: Remove?
 
-        let values = mem
-            .iter()
+        let mut trace = RowMajorMatrix::new(vec![F::zero(); height * width], width);
+
+        trace
+            .par_rows_mut()
+            .zip(mem.par_iter())
             .enumerate()
-            .flat_map(|(i, (args, &mult))| {
-                // We skip the address 0 as to leave room for null pointers
-                let ptr = F::from_canonical_usize(i + 1);
-                repeat_n((ptr, args), mult as usize)
-            })
-            .collect_vec();
+            .for_each(|(i, (row, (args, callers_nonces)))| {
+                let (_, last_nonce, _) = callers_nonces
+                    .last()
+                    .expect("Must have at least one caller");
+                let last_count = callers_nonces.len();
 
-        rows.par_chunks_mut(width)
-            .zip(values)
-            .for_each(|(row, (ptr, values))| {
                 // is_real
                 row[0] = F::one();
-                // ptr
-                row[1] = ptr;
-                // values
-                row[2..].copy_from_slice(values);
+                // ptr: We skip the address 0 as to leave room for null pointers
+                row[1] = F::from_canonical_usize(i + 1);
+                // last_nonce
+                row[2] = F::from_canonical_usize(*last_nonce);
+                // last_count
+                row[3] = F::from_canonical_usize(last_count);
+                row[4..].copy_from_slice(args)
             });
-        RowMajorMatrix::new(rows, width)
+        trace
     }
 }
 
@@ -101,14 +93,14 @@ impl<F: Field> MachineAir<F> for MemChip<F> {
     }
 
     #[inline]
+    fn generate_dependencies<EL: EventLens<Self>>(&self, _: &EL, _: &mut Self::Record) {}
+
+    #[inline]
     fn included(&self, queries: &Self::Record) -> bool {
         queries.mem_queries[mem_index_from_len(self.len)]
             .values()
-            .any(|mult| mult > &0)
+            .any(|set| !set.is_empty())
     }
-
-    #[inline]
-    fn generate_dependencies<EL: EventLens<Self>>(&self, _: &EL, _: &mut Self::Record) {}
 }
 
 impl<AB> Air<AB> for MemChip<AB::F>
@@ -120,8 +112,9 @@ where
         let local: &[AB::Var] = &main.row_slice(0);
         let next: &[AB::Var] = &main.row_slice(1);
 
-        let (is_real, ptr_local, values_local) = (local[0], local[1], &local[2..]);
-        let (is_real_next, ptr_next, values_next) = (next[0], next[1], &next[2..]);
+        let (is_real, ptr_local, last_nonce, last_count, values) =
+            (local[0], local[1], local[2], local[3], &local[4..]);
+        let (is_real_next, ptr_next) = (next[0], next[1]);
 
         // is_real is 1 for all valid entries, then 0 for padding rows until the last row.
         builder.assert_bool(is_real);
@@ -134,33 +127,26 @@ where
 
         // First valid pointer is 1
         builder.when_first_row().when(is_real).assert_one(ptr_local);
-
-        // Next pointer is either the same, or increased by 1
-        let is_next_ptr_diff = ptr_next - ptr_local;
+        // Pointer increases by one
         builder
             .when(is_real_transition.clone())
-            .assert_bool(is_next_ptr_diff.clone());
+            .assert_eq(ptr_local + AB::Expr::one(), ptr_next);
 
-        let is_next_prt_same = AB::Expr::one() - is_next_ptr_diff;
-
-        for (&val_local, &val_next) in zip(values_local, values_next) {
-            builder
-                .when(is_real_transition.clone())
-                .when(is_next_prt_same.clone())
-                .assert_eq(val_local, val_next);
-        }
-
-        builder.send(
-            MemoryRelation(ptr_local, values_local.iter().copied()),
+        builder.provide(
+            MemoryRelation(ptr_local, values.iter().copied()),
+            ProvideRecord {
+                last_nonce,
+                last_count,
+            },
             is_real,
         );
     }
 }
 
 impl<F: Sync> BaseAir<F> for MemChip<F> {
-    /// is_real, Pointer, and arguments
+    /// is_real, Pointer, last_nonce, last_count, and arguments
     fn width(&self) -> usize {
-        2 + self.len
+        4 + self.len
     }
 }
 
@@ -193,12 +179,12 @@ mod tests {
         toplevel.execute_by_name("test", &[], queries);
         let func_trace = test_chip.generate_trace_sequential(queries);
 
+        #[rustfmt::skip]
         let expected_trace = [
-            // nonce, ptr1, ptr2, one, two, three, last_nonce, last_count, selector
-            0, 1, 2, 1, 2, 3, 0, 1, 1, //
-            1, 0, 0, 0, 0, 0, 0, 0, 0, //
-            2, 0, 0, 0, 0, 0, 0, 0, 0, //
-            3, 0, 0, 0, 0, 0, 0, 0, 0, //
+            0, 1, 0, 0, 1, 2, 0, 0, 1, 1, 2, 3, 0, 1, 1006632961, 0, 1, 1,
+            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,          0, 0, 0, 0,
+            2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,          0, 0, 0, 0,
+            3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,          0, 0, 0, 0,
         ]
         .into_iter()
         .map(F::from_canonical_u32)
@@ -209,12 +195,12 @@ mod tests {
         let mem_chip = MemChip::new(mem_len);
         let mem_trace = mem_chip.generate_trace_parallel(&queries.mem_queries);
 
+        #[rustfmt::skip]
         let expected_trace = [
-            // is_real, index, memory values
-            1, 1, 1, 2, 3, // 1
-            1, 1, 1, 2, 3, // 1
-            1, 2, 1, 1, 1, // 2
-            0, 0, 0, 0, 0, // dummy
+            1, 1, 0, 2, 1, 2, 3,
+            1, 2, 0, 1, 1, 1, 1,
+            0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0,
         ]
         .into_iter()
         .map(F::from_canonical_u32)

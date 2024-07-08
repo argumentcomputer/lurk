@@ -1,5 +1,5 @@
 use p3_air::BaseAir;
-use p3_field::{Field, PrimeField};
+use p3_field::{Field, PrimeField32};
 use p3_matrix::dense::RowMajorMatrix;
 use sphinx_core::air::{EventLens, MachineAir, WithEvents};
 
@@ -262,11 +262,11 @@ impl<F> Op<F> {
                 degrees.extend(vec![1; inp_size]);
             }
             Op::Store(..) => {
-                *aux += 1;
+                *aux += 4;
                 degrees.push(1);
             }
             Op::Load(ptr_size, ..) => {
-                *aux += *ptr_size;
+                *aux += *ptr_size + 3;
                 degrees.extend(vec![1; *ptr_size]);
             }
             Op::Hash(preimg) => {
@@ -292,7 +292,7 @@ impl<'a, F: Field, H: Hasher<F>> EventLens<FuncChip<'a, F, H>> for QueryRecord<F
     }
 }
 
-impl<'a, F: PrimeField, H: Hasher<F>> MachineAir<F> for FuncChip<'a, F, H> {
+impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for FuncChip<'a, F, H> {
     type Record = QueryRecord<F>;
     type Program = LairMachineProgram;
 

@@ -315,13 +315,28 @@ impl<F: Field> Op<F> {
                     sel.clone(),
                 );
             }
-            Op::Store(values) => {
+            Op::Store(values, _) => {
                 let ptr = *local.next_aux(index);
                 map.push(Val::Expr(ptr.into()));
                 let values = values.iter().map(|&idx| map[idx].to_expr());
-                builder.receive(MemoryRelation(ptr, values), sel.clone());
+
+                let prev_nonce = *local.next_aux(index);
+                let prev_count = *local.next_aux(index);
+                let count_inv = *local.next_aux(index);
+                let record = RequireRecord {
+                    prev_nonce,
+                    prev_count,
+                    count_inv,
+                };
+
+                builder.require(
+                    MemoryRelation(ptr, values),
+                    *local.nonce,
+                    record,
+                    sel.clone(),
+                );
             }
-            Op::Load(len, ptr) => {
+            Op::Load(len, ptr, _) => {
                 let ptr = map[*ptr].to_expr();
                 // This must be collected to ensure the side effects take place
                 let values = (0..*len)
@@ -331,7 +346,22 @@ impl<F: Field> Op<F> {
                         o
                     })
                     .collect::<Vec<_>>();
-                builder.receive(MemoryRelation(ptr, values), sel.clone());
+
+                let prev_nonce = *local.next_aux(index);
+                let prev_count = *local.next_aux(index);
+                let count_inv = *local.next_aux(index);
+                let record = RequireRecord {
+                    prev_nonce,
+                    prev_count,
+                    count_inv,
+                };
+
+                builder.require(
+                    MemoryRelation(ptr, values),
+                    *local.nonce,
+                    record,
+                    sel.clone(),
+                );
             }
             Op::Hash(preimg) => {
                 let preimg: Vec<_> = preimg.iter().map(|a| map[*a].to_expr()).collect();
