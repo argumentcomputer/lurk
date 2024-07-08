@@ -93,8 +93,8 @@ fn trace_generation(c: &mut Criterion) {
         let lair_chips = build_lair_chip_vector(&lurk_main, args.into(), out.into());
         b.iter(|| {
             lair_chips.par_iter().for_each(|func_chip| {
-                let shard = Shard::new(&record);
-                func_chip.generate_trace(&shard, &mut Default::default());
+                let mut shard = Shard::new(&record);
+                func_chip.generate_trace(&Shard::default(), &mut shard);
             })
         })
     });

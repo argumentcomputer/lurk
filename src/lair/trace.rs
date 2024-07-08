@@ -9,7 +9,7 @@ use crate::lair::execute::mem_index_from_len;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
-    execute::QueryRecord,
+    execute::{QueryRecord, Shard},
     func_chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
     hasher::Hasher,
     List,
@@ -57,10 +57,12 @@ impl<'a, T> ColumnMutSlice<'a, T> {
 
 impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
     /// Generates the trace containing only queries with non-zero multiplicities
-    pub fn generate_trace_sequential(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
-        let func_queries = &queries.func_queries()[self.func.index];
+    pub fn generate_trace_sequential(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
+        let events = shard.events.unwrap();
+        let func_queries = &events.func_queries()[self.func.index];
         let width = self.width();
-        let non_dummy_height = func_queries.len();
+        let range = &shard.func_range[self.func.index];
+        let non_dummy_height = range.len();
         let height = non_dummy_height.next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
         // initializing nonces
@@ -68,39 +70,51 @@ impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
             .enumerate()
             .for_each(|(i, row)| row[0] = F::from_canonical_usize(i));
         for (i, (args, _)) in func_queries.iter().enumerate() {
-            let start = i * width;
+            let start = i * width + range.start;
             let index = &mut ColumnIndex::default();
             let row = &mut rows[start..start + width];
             let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
             self.func
-                .populate_row(args, index, slice, queries, &self.toplevel.hasher);
+                .populate_row(args, index, slice, events, &self.toplevel.hasher);
         }
         RowMajorMatrix::new(rows, width)
     }
 
+    pub fn generate_trace_sequential_no_shard(&self, events: &QueryRecord<F>) -> RowMajorMatrix<F> {
+        let shard = Shard::new(events);
+        self.generate_trace_parallel(&shard)
+    }
+
     /// Per-row parallel version of `generate_trace_sequential`
-    pub fn generate_trace_parallel(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F> {
-        let func_queries = &queries.func_queries()[self.func.index];
+    pub fn generate_trace_parallel(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
+        let events = shard.events.unwrap();
+        let func_queries = &events.func_queries()[self.func.index];
+        let range = &shard.func_range[self.func.index];
         let width = self.width();
-        let non_dummy_height = func_queries.len();
+        let non_dummy_height = range.len();
         let height = non_dummy_height.next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
         // initializing nonces
         rows.chunks_mut(width)
             .enumerate()
             .for_each(|(i, row)| row[0] = F::from_canonical_usize(i));
-        let non_dummies = &mut rows[0..func_queries.len() * width];
+        let non_dummies = &mut rows[0..non_dummy_height * width];
         non_dummies
             .par_chunks_mut(width)
             .enumerate()
             .for_each(|(i, row)| {
-                let (args, _) = func_queries.get_index(i).unwrap();
+                let (args, _) = func_queries.get_index(range.start + i).unwrap();
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 self.func
-                    .populate_row(args, index, slice, queries, &self.toplevel.hasher);
+                    .populate_row(args, index, slice, events, &self.toplevel.hasher);
             });
         RowMajorMatrix::new(rows, width)
+    }
+
+    pub fn generate_trace_parallel_no_shard(&self, events: &QueryRecord<F>) -> RowMajorMatrix<F> {
+        let shard = Shard::new(events);
+        self.generate_trace_parallel(&shard)
     }
 }
 
@@ -476,7 +490,7 @@ mod tests {
 
         let args = &[F::from_canonical_u32(5)];
         toplevel.execute_by_name("factorial", args, queries);
-        let trace = factorial_chip.generate_trace_parallel(queries);
+        let trace = factorial_chip.generate_trace_parallel_no_shard(queries);
         let expected_trace = [
             // in order: nonce, n, 1/n, fact(n-1), prev_nonce, prev_count, count_inv, n*fact(n-1), last_nonce, last_count and selectors
             0, 5, 1610612737, 24, 0, 0, 1, 120, 0, 1, 1, 0, //
@@ -496,7 +510,7 @@ mod tests {
 
         let args = &[F::from_canonical_u32(7)];
         toplevel.execute_by_name("fib", args, queries);
-        let trace = fib_chip.generate_trace_parallel(queries);
+        let trace = fib_chip.generate_trace_parallel_no_shard(queries);
 
         let expected_trace = [
             // in order: nonce, n, 1/n, 1/(n-1), fib(n-1), prev_nonce, prev_count, count_inv, fib(n-2), prev_nonce, prev_count, count_inv, last_nonce, last_count and selectors
@@ -555,7 +569,7 @@ mod tests {
         let args = &[F::from_canonical_u32(5), F::from_canonical_u32(2)];
         let queries = &mut QueryRecord::new(&toplevel);
         toplevel.execute_by_name("test", args, queries);
-        let trace = test_chip.generate_trace_parallel(queries);
+        let trace = test_chip.generate_trace_parallel_no_shard(queries);
         let expected_trace = [
             // The big numbers in the trace are the inverted elements, the witnesses of
             // the inequalities that appear on the default case. Note that the branch
@@ -627,7 +641,7 @@ mod tests {
         toplevel.execute(test_func, one, queries);
         toplevel.execute(test_func, two, queries);
         toplevel.execute(test_func, three, queries);
-        let trace = test_chip.generate_trace_parallel(queries);
+        let trace = test_chip.generate_trace_parallel_no_shard(queries);
 
         let expected_trace = [
             // nonce, two inputs, last_nonce, last_count, selectors

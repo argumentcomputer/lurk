@@ -1412,11 +1412,11 @@ mod test {
             let lair_chips =
                 build_lair_chip_vector(&lurk_main, full_input.clone().into(), result.to_vec());
 
-            let shard = Shard::new(record);
             let lookup_queries: Vec<_> = lair_chips
                 .iter()
                 .map(|chip| {
-                    let trace = chip.generate_trace(&shard, &mut Default::default());
+                    let mut shard = Shard::new(record);
+                    let trace = chip.generate_trace(&Shard::default(), &mut shard);
                     debug_constraints_collecting_queries(chip, &[], None, &trace)
                 })
                 .collect();
@@ -1429,6 +1429,7 @@ mod test {
             );
             let (pk, _vk) = machine.setup(&LairMachineProgram);
             let mut challenger_p = machine.config().challenger();
+            let shard = Shard::new(record);
             machine.debug_constraints(&pk, shard, &mut challenger_p);
         };
 
@@ -1526,7 +1527,7 @@ mod test {
                 "ingress -> egress doesn't roundtrip"
             );
 
-            let hash_32_8_trace = hash_32_8_chip.generate_trace_parallel(queries);
+            let hash_32_8_trace = hash_32_8_chip.generate_trace_parallel_no_shard(queries);
             debug_constraints_collecting_queries(&hash_32_8_chip, &[], None, &hash_32_8_trace);
         };
 

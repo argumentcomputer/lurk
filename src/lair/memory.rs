@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use crate::air::builder::{LookupBuilder, ProvideRecord};
 
 use super::{
-    execute::{mem_index_from_len, MemMap},
+    execute::{mem_index_from_len, QueryRecord, Shard},
     relations::MemoryRelation,
 };
 
@@ -27,12 +27,14 @@ impl<F> MemChip<F> {
         }
     }
 
-    pub fn generate_trace_parallel(&self, queries: &[MemMap<F>]) -> RowMajorMatrix<F>
+    pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F>
     where
         F: Field,
     {
+        // TODO Shard memory
+        let events = &shard.events.unwrap().mem_queries;
         let mem_idx = mem_index_from_len(self.len);
-        let mem = &queries[mem_idx];
+        let mem = &events[mem_idx];
         let width = self.width();
 
         let height = mem.len().next_power_of_two().max(4); // TODO: Remove?
@@ -60,6 +62,14 @@ impl<F> MemChip<F> {
                 row[4..].copy_from_slice(args)
             });
         trace
+    }
+
+    pub fn generate_trace_no_shard(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F>
+    where
+        F: Field,
+    {
+        let shard = Shard::new(queries);
+        self.generate_trace(&shard)
     }
 }
 
@@ -138,7 +148,7 @@ mod tests {
         let test_chip = FuncChip::from_name("test", &toplevel);
         let queries = &mut QueryRecord::new(&toplevel);
         toplevel.execute_by_name("test", &[], queries);
-        let func_trace = test_chip.generate_trace_sequential(queries);
+        let func_trace = test_chip.generate_trace_sequential_no_shard(queries);
 
         #[rustfmt::skip]
         let expected_trace = [
@@ -154,7 +164,7 @@ mod tests {
 
         let mem_len = 3;
         let mem_chip = MemChip::new(mem_len);
-        let mem_trace = mem_chip.generate_trace_parallel(&queries.mem_queries);
+        let mem_trace = mem_chip.generate_trace_no_shard(queries);
 
         #[rustfmt::skip]
         let expected_trace = [

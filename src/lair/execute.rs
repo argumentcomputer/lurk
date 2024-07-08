@@ -44,9 +44,9 @@ pub struct QueryRecord<F: Field> {
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
 pub struct Shard<'a, F: Field> {
-    index: u32,
-    func_range: Vec<Range<usize>>,
-    mem_range: Vec<Range<usize>>,
+    pub(crate) index: u32,
+    pub(crate) func_range: Vec<Range<usize>>,
+    pub(crate) mem_range: Vec<Range<usize>>,
     // The option is for Default
     pub(crate) events: Option<&'a QueryRecord<F>>,
 }
@@ -789,8 +789,8 @@ mod tests {
         toplevel.execute(half, args, queries);
         let res1 = queries.get_output(half, args).to_vec();
         let traces1 = (
-            half_chip.generate_trace_sequential(queries),
-            double_chip.generate_trace_sequential(queries),
+            half_chip.generate_trace_sequential_no_shard(queries),
+            double_chip.generate_trace_sequential_no_shard(queries),
         );
 
         // even after `clean`, the preimg of `double(1)` can still be recovered
@@ -798,8 +798,8 @@ mod tests {
         toplevel.execute(half, args, queries);
         let res2 = queries.get_output(half, args).to_vec();
         let traces2 = (
-            half_chip.generate_trace_sequential(queries),
-            double_chip.generate_trace_sequential(queries),
+            half_chip.generate_trace_sequential_no_shard(queries),
+            double_chip.generate_trace_sequential_no_shard(queries),
         );
         assert_eq!(res1, res2);
         assert_eq!(traces1, traces2);
@@ -808,8 +808,8 @@ mod tests {
         toplevel.execute(half, args, queries);
         let res3 = queries.get_output(half, args);
         let traces3 = (
-            half_chip.generate_trace_sequential(queries),
-            double_chip.generate_trace_sequential(queries),
+            half_chip.generate_trace_sequential_no_shard(queries),
+            double_chip.generate_trace_sequential_no_shard(queries),
         );
         assert_eq!(res2, res3);
         assert_eq!(traces2, traces3);

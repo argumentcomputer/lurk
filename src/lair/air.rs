@@ -557,7 +557,7 @@ mod tests {
         let queries = &mut QueryRecord::new(&toplevel);
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
         toplevel.execute_by_name("factorial", &[F::from_canonical_usize(5)], queries);
-        let factorial_trace = factorial_chip.generate_trace_sequential(queries);
+        let factorial_trace = factorial_chip.generate_trace_sequential_no_shard(queries);
         let factorial_width = factorial_chip.width();
         let expected_factorial_trace = RowMajorMatrix::new(
             [
@@ -581,7 +581,7 @@ mod tests {
 
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         toplevel.execute_by_name("fib", &[F::from_canonical_usize(7)], queries);
-        let fib_trace = fib_chip.generate_trace_sequential(queries);
+        let fib_trace = fib_chip.generate_trace_sequential_no_shard(queries);
         let fib_width = fib_chip.width();
         let expected_fib_trace = RowMajorMatrix::new(
             // in order: nonce, n, 1/n, 1/(n-1), fib(n-1), lookup nonces and counts, fib(n-2), lookup nonces and counts, and selectors
@@ -618,7 +618,7 @@ mod tests {
         let args = &[field_from_u32(20000)];
         let queries = &mut QueryRecord::new(&toplevel);
         toplevel.execute_by_name("fib", args, queries);
-        let fib_trace = fib_chip.generate_trace_parallel(queries);
+        let fib_trace = fib_chip.generate_trace_parallel_no_shard(queries);
 
         let _ = debug_constraints_collecting_queries(&fib_chip, &[], None, &fib_trace);
     }
@@ -648,7 +648,7 @@ mod tests {
         toplevel.execute_by_name("not", args, queries);
         let args = &[field_from_u32(1)];
         toplevel.execute_by_name("not", args, queries);
-        let not_trace = not_chip.generate_trace_sequential(queries);
+        let not_trace = not_chip.generate_trace_sequential_no_shard(queries);
 
         let not_width = not_chip.width();
         let expected_not_trace = RowMajorMatrix::new(
@@ -673,7 +673,7 @@ mod tests {
         toplevel.execute_by_name("eq", args, queries);
         let args = &[field_from_u32(0), field_from_u32(0)];
         toplevel.execute_by_name("eq", args, queries);
-        let eq_trace = eq_chip.generate_trace_sequential(queries);
+        let eq_trace = eq_chip.generate_trace_sequential_no_shard(queries);
 
         let eq_width = eq_chip.width();
         let expected_eq_trace = RowMajorMatrix::new(
@@ -719,7 +719,7 @@ mod tests {
         let args = &[f(0), f(0), f(0), f(9)];
         toplevel.execute_by_name("if_many", args, queries);
 
-        let if_many_trace = if_many_chip.generate_trace_parallel(queries);
+        let if_many_trace = if_many_chip.generate_trace_parallel_no_shard(queries);
 
         let if_many_width = if_many_chip.width();
         let expected_trace = RowMajorMatrix::new(
@@ -781,7 +781,7 @@ mod tests {
         let args = &[f(0), f(8)];
         toplevel.execute_by_name("match_many", args, queries);
 
-        let match_many_trace = match_many_chip.generate_trace_parallel(queries);
+        let match_many_trace = match_many_chip.generate_trace_parallel_no_shard(queries);
 
         let match_many_width = match_many_chip.width();
         let expected_trace = RowMajorMatrix::new(
