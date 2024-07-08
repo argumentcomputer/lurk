@@ -34,9 +34,9 @@ impl<F: PrimeField32> MemChip<F> {
         let width = self.width();
 
         let height = mem.len().next_power_of_two().max(4); // TODO: Remove?
-        // let range = shard.get_mem_range(mem_index_from_len(self.len));
-        // let non_dummy_height = range.len();
-        // let height = non_dummy_height.next_power_of_two().max(4); // TODO: Remove?
+                                                           // let range = shard.get_mem_range(mem_index_from_len(self.len));
+                                                           // let non_dummy_height = range.len();
+                                                           // let height = non_dummy_height.next_power_of_two().max(4); // TODO: Remove?
 
         let mut trace = RowMajorMatrix::new(vec![F::zero(); height * width], width);
 
@@ -47,7 +47,7 @@ impl<F: PrimeField32> MemChip<F> {
             // .skip(range.start)
             // .take(non_dummy_height)
             .for_each(|(i, (row, (args, mem_result)))| {
-                let (last_count, last_nonce) = mem_result.get_provide_hints();
+                let (last_count, last_nonce) = mem_result.get_provide_hints(shard.shard_config);
 
                 // is_real
                 row[0] = F::one();

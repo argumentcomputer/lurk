@@ -178,7 +178,7 @@ impl<F: PrimeField32> Ctrl<F> {
                 let result = query_map
                     .get(&func_ctx.call_inp)
                     .expect("Cannot find query result");
-                let (last_count, last_nonce) = result.get_provide_hints();
+                let (last_count, last_nonce) = result.get_provide_hints(shard.shard_config);
                 slice.push_aux(index, last_nonce);
                 slice.push_aux(index, last_count);
             }
@@ -305,7 +305,7 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, f);
                 }
             }
-            Op::Call(idx, inp, call_ident) => {
+            Op::Call(idx, inp, op_id) => {
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let query_map = &queries.func_queries()[*idx];
                 let result = query_map.get(&args).expect("Cannot find query result");
@@ -313,17 +313,24 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let (prev_nonce, prev_count, count_inv) = result.get_require_hints(&LookupId {
-                    func_idx: func_ctx.func_idx,
-                    shard: shard.index as usize,
-                    caller_nonce: slice.nonce.as_canonical_u32() as usize,
-                    op_id: *call_ident,
-                });
+                let shard_index = shard.index as usize;
+                let nonce = slice.nonce.as_canonical_u32() as usize;
+                let query_index = shard
+                    .shard_config
+                    .index_from_shard_nonce(shard_index, nonce);
+                let (prev_nonce, prev_count, count_inv) = result.get_require_hints(
+                    &LookupId {
+                        func_index: func_ctx.func_idx,
+                        query_index,
+                        op_id: *op_id,
+                    },
+                    shard.shard_config,
+                );
                 slice.push_aux(index, prev_nonce);
                 slice.push_aux(index, prev_count);
                 slice.push_aux(index, count_inv);
             }
-            Op::PreImg(idx, out, call_ident) => {
+            Op::PreImg(idx, out, op_id) => {
                 let out = out.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let inv_map = queries.inv_func_queries[*idx]
                     .as_ref()
@@ -335,17 +342,24 @@ impl<F: PrimeField32> Op<F> {
                 }
                 let query_map = &queries.func_queries()[*idx];
                 let query_result = query_map.get(inp).expect("Cannot find query result");
-                let (prev_nonce, prev_count, count_inv) = query_result.get_require_hints(&LookupId {
-                    func_idx: func_ctx.func_idx,
-                    shard: shard.index as usize,
-                    caller_nonce: slice.nonce.as_canonical_u32() as usize,
-                    op_id: *call_ident,
-                });
+                let shard_index = shard.index as usize;
+                let nonce = slice.nonce.as_canonical_u32() as usize;
+                let query_index = shard
+                    .shard_config
+                    .index_from_shard_nonce(shard_index, nonce);
+                let (prev_nonce, prev_count, count_inv) = query_result.get_require_hints(
+                    &LookupId {
+                        func_index: func_ctx.func_idx,
+                        query_index,
+                        op_id: *op_id,
+                    },
+                    shard.shard_config,
+                );
                 slice.push_aux(index, prev_nonce);
                 slice.push_aux(index, prev_count);
                 slice.push_aux(index, count_inv);
             }
-            Op::Store(args, store_ident) => {
+            Op::Store(args, op_id) => {
                 let mem_idx = mem_index_from_len(args.len());
                 let query_map = &queries.mem_queries[mem_idx];
                 let args = args.iter().map(|a| map[*a].0).collect::<List<_>>();
@@ -354,17 +368,24 @@ impl<F: PrimeField32> Op<F> {
                 let f = F::from_canonical_usize(i + 1);
                 map.push((f, 1));
                 slice.push_aux(index, f);
-                let (prev_nonce, prev_count, count_inv) = mem_result.get_require_hints(&LookupId {
-                    func_idx: func_ctx.func_idx,
-                    shard: shard.index as usize,
-                    caller_nonce: slice.nonce.as_canonical_u32() as usize,
-                    op_id: *store_ident,
-                });
+                let shard_index = shard.index as usize;
+                let nonce = slice.nonce.as_canonical_u32() as usize;
+                let query_index = shard
+                    .shard_config
+                    .index_from_shard_nonce(shard_index, nonce);
+                let (prev_nonce, prev_count, count_inv) = mem_result.get_require_hints(
+                    &LookupId {
+                        func_index: func_ctx.func_idx,
+                        query_index,
+                        op_id: *op_id,
+                    },
+                    shard.shard_config,
+                );
                 slice.push_aux(index, prev_nonce);
                 slice.push_aux(index, prev_count);
                 slice.push_aux(index, count_inv);
             }
-            Op::Load(len, ptr, load_ident) => {
+            Op::Load(len, ptr, op_id) => {
                 let mem_idx = mem_index_from_len(*len);
                 let query_map = &queries.mem_queries[mem_idx];
                 let ptr = map[*ptr].0.as_canonical_u32() as usize;
@@ -375,12 +396,19 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let (prev_nonce, prev_count, count_inv) = mem_result.get_require_hints(&LookupId {
-                    func_idx: func_ctx.func_idx,
-                    shard: shard.index as usize,
-                    caller_nonce: slice.nonce.as_canonical_u32() as usize,
-                    op_id: *load_ident,
-                });
+                let shard_index = shard.index as usize;
+                let nonce = slice.nonce.as_canonical_u32() as usize;
+                let query_index = shard
+                    .shard_config
+                    .index_from_shard_nonce(shard_index, nonce);
+                let (prev_nonce, prev_count, count_inv) = mem_result.get_require_hints(
+                    &LookupId {
+                        func_index: func_ctx.func_idx,
+                        query_index,
+                        op_id: *op_id,
+                    },
+                    shard.shard_config,
+                );
                 slice.push_aux(index, prev_nonce);
                 slice.push_aux(index, prev_count);
                 slice.push_aux(index, count_inv);
@@ -408,8 +436,12 @@ mod tests {
     use crate::{
         func,
         lair::{
-            demo_toplevel, execute::{QueryRecord, Shard, ShardingConfig}, field_from_u32, hasher::LurkHasher,
-            toplevel::Toplevel, trace::LayoutSizes,
+            demo_toplevel,
+            execute::{QueryRecord, Shard, ShardingConfig},
+            field_from_u32,
+            hasher::LurkHasher,
+            toplevel::Toplevel,
+            trace::LayoutSizes,
         },
     };
 
@@ -613,15 +645,13 @@ mod tests {
         let toplevel = demo_toplevel::<_, LurkHasher>();
 
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
-        let full_queries = &mut QueryRecord::new_with_shard_config(&toplevel, ShardingConfig { max_shard_size: 32 });
-        let shard_queries = &mut QueryRecord::new_with_shard_config(&toplevel, ShardingConfig { max_shard_size: 4 });
+        let queries = &mut QueryRecord::new(&toplevel);
 
         let args = &[F::from_canonical_u32(6)];
-        toplevel.execute_by_name("factorial", args, full_queries);
-        let full_trace = factorial_chip.generate_trace_parallel_no_shard(full_queries);
+        toplevel.execute_by_name("factorial", args, queries);
+        let full_trace = factorial_chip.generate_trace_parallel_no_shard(queries);
 
-        toplevel.execute_by_name("factorial", args, shard_queries);
-        let shard = Shard::new(shard_queries.clone());
+        let shard = Shard::new(queries.clone());
         use sphinx_core::stark::MachineRecord;
         let shards = shard.shard(&ShardingConfig { max_shard_size: 4 });
 

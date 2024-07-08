@@ -247,15 +247,15 @@ mod tests {
             let x = call(test2, x);
             return (two, x)
         });
-            // let ptr1 = store(one, two, three);
-            // let ptr2 = store(one, one, one);
-            // let _ptr3 = store(two, two, three);
-            // let _ptr4 = store(one, one, three);
-            // let _ptr5 = store(one, three, three);
-            // let _ptr6 = store(one, two, one);
-            // let _ptr7 = store(three, two, three);
-            // let _ptr8 = store(one, three, two);
-            // let (_x, _y, _z) = load(ptr1);
+        // let ptr1 = store(one, two, three);
+        // let ptr2 = store(one, one, one);
+        // let _ptr3 = store(two, two, three);
+        // let _ptr4 = store(one, one, three);
+        // let _ptr5 = store(one, three, three);
+        // let _ptr6 = store(one, two, one);
+        // let _ptr7 = store(three, two, three);
+        // let _ptr8 = store(one, three, two);
+        // let (_x, _y, _z) = load(ptr1);
         let toplevel = Toplevel::<F, H>::new(&[func_e, func_f]);
         let test_chip = FuncChip::from_name("test", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
@@ -272,7 +272,9 @@ mod tests {
         let mut challenger_v = machine.config().challenger();
         let shard = Shard::new(queries);
         use sphinx_core::stark::MachineRecord;
-        let shards = shard.clone().shard(&crate::lair::execute::ShardingConfig { max_shard_size: 4 });
+        let shards = shard
+            .clone()
+            .shard(&crate::lair::execute::ShardingConfig { max_shard_size: 4 });
         // panic!("num_shards: {}", shards.len());
 
         machine.debug_constraints(&pk, shard.clone(), &mut challenger_p.clone());
