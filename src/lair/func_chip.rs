@@ -262,11 +262,11 @@ impl<F> Op<F> {
                 degrees.extend(vec![1; inp_size]);
             }
             Op::Store(..) => {
-                *aux += 1;
+                *aux += 4;
                 degrees.push(1);
             }
             Op::Load(ptr_size, ..) => {
-                *aux += *ptr_size;
+                *aux += *ptr_size + 3;
                 degrees.extend(vec![1; *ptr_size]);
             }
             Op::Hash(preimg) => {

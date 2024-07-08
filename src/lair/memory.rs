@@ -44,18 +44,20 @@ impl<F> MemChip<F> {
             .par_rows_mut()
             .zip(mem.par_iter())
             .enumerate()
-            .for_each(|(i, (row, (args, &_mult)))| {
-                let last_nonce = F::zero();
-                let last_count = F::zero();
+            .for_each(|(i, (row, (args, callers_nonces)))| {
+                let (_, last_nonce, _) = callers_nonces
+                    .last()
+                    .expect("Must have at least one caller");
+                let last_count = callers_nonces.len();
 
                 // is_real
                 row[0] = F::one();
                 // ptr: We skip the address 0 as to leave room for null pointers
                 row[1] = F::from_canonical_usize(i + 1);
                 // last_nonce
-                row[2] = last_nonce;
+                row[2] = F::from_canonical_usize(*last_nonce);
                 // last_count
-                row[3] = last_count;
+                row[3] = F::from_canonical_usize(last_count);
                 row[4..].copy_from_slice(args)
             });
         trace
@@ -97,7 +99,7 @@ impl<F: Field> MachineAir<F> for MemChip<F> {
     fn included(&self, queries: &Self::Record) -> bool {
         queries.mem_queries[mem_index_from_len(self.len)]
             .values()
-            .any(|mult| mult > &0)
+            .any(|set| !set.is_empty())
     }
 }
 
@@ -177,12 +179,12 @@ mod tests {
         toplevel.execute_by_name("test", &[], queries);
         let func_trace = test_chip.generate_trace_sequential(queries);
 
+        #[rustfmt::skip]
         let expected_trace = [
-            // nonce, ptr1, ptr2, one, two, three, last_nonce, last_count, selector
-            0, 1, 2, 1, 2, 3, 0, 1, 1, //
-            1, 0, 0, 0, 0, 0, 0, 0, 0, //
-            2, 0, 0, 0, 0, 0, 0, 0, 0, //
-            3, 0, 0, 0, 0, 0, 0, 0, 0, //
+            0, 1, 0, 0, 1, 2, 0, 0, 1, 1, 2, 3, 0, 1, 1006632961, 0, 1, 1,
+            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,          0, 0, 0, 0,
+            2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,          0, 0, 0, 0,
+            3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,          0, 0, 0, 0,
         ]
         .into_iter()
         .map(F::from_canonical_u32)
@@ -193,12 +195,12 @@ mod tests {
         let mem_chip = MemChip::new(mem_len);
         let mem_trace = mem_chip.generate_trace_parallel(&queries.mem_queries);
 
+        #[rustfmt::skip]
         let expected_trace = [
-            // is_real, index, memory values
-            1, 1, 1, 2, 3, // 1
-            1, 1, 1, 2, 3, // 1
-            1, 2, 1, 1, 1, // 2
-            0, 0, 0, 0, 0, // dummy
+            1, 1, 0, 2, 1, 2, 3,
+            1, 2, 0, 1, 1, 1, 1,
+            0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0,
         ]
         .into_iter()
         .map(F::from_canonical_u32)

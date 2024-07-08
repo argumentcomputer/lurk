@@ -53,11 +53,6 @@ impl<'a, T> ColumnMutSlice<'a, T> {
         self.aux[index.aux] = t;
         index.aux += 1;
     }
-
-    pub fn push_provide(&mut self, index: &mut ColumnIndex, t: T) {
-        self.aux[index.aux] = t;
-        index.aux += 1;
-    }
 }
 
 impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
@@ -164,7 +159,6 @@ impl<F: PrimeField32> Ctrl<F> {
         match self {
             Ctrl::Return(ident, _) => {
                 slice.sel[*ident] = F::one();
-                // Fixme: last_nonce, last_count
                 let query_map = &queries.func_queries()[func_ctx.func_idx];
                 let result = query_map
                     .get(&func_ctx.call_inp)
@@ -307,7 +301,6 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                // Fixme: prev_nonce, prev_count, count_inv
                 let nonce = slice.nonce.as_canonical_u32() as usize;
                 let prev_count = result
                     .callers_nonces
@@ -338,7 +331,6 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                // Fixme: prev_nonce, prev_count, count_inv
                 let query_map = &queries.func_queries()[*idx];
                 let query_result = query_map.get(inp).expect("Cannot find query result");
                 let nonce = slice.nonce.as_canonical_u32() as usize;
@@ -363,27 +355,63 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, F::from_canonical_usize(prev_count + 1).inverse());
                 }
             }
-            Op::Store(args) => {
+            Op::Store(args, store_ident) => {
                 let mem_idx = mem_index_from_len(args.len());
                 let query_map = &queries.mem_queries[mem_idx];
                 let args = args.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let i = query_map
-                    .get_index_of(&args)
-                    .expect("Cannot find query result");
+                let (i, _, callers_nonces) =
+                    query_map.get_full(&args).expect("Cannot find query result");
                 let f = F::from_canonical_usize(i + 1);
                 map.push((f, 1));
                 slice.push_aux(index, f);
+                // Require stuff
+                let nonce = slice.nonce.as_canonical_u32() as usize;
+                let prev_count = callers_nonces
+                    .get_index_of(&(func_ctx.func_idx, nonce, *store_ident))
+                    .expect("Cannot find caller nonce entry");
+                if prev_count == 0 {
+                    // we are the first require, fill in hardcoded provide values
+                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_nonce
+                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_count
+                    slice.push_aux(index, F::from_canonical_usize(1).inverse());
+                // count_inv
+                } else {
+                    // we are somewhere in the middle of the list, get the predecessor
+                    let (_, prev_nonce, _) = callers_nonces.get_index(prev_count - 1).unwrap();
+                    slice.push_aux(index, F::from_canonical_usize(*prev_nonce));
+                    slice.push_aux(index, F::from_canonical_usize(prev_count));
+                    slice.push_aux(index, F::from_canonical_usize(prev_count + 1).inverse());
+                }
             }
-            Op::Load(len, ptr) => {
+            Op::Load(len, ptr, load_ident) => {
+                // Fixme
                 let mem_idx = mem_index_from_len(*len);
                 let query_map = &queries.mem_queries[mem_idx];
                 let ptr = map[*ptr].0.as_canonical_u32() as usize;
-                let (args, _) = query_map
+                let (args, callers_nonces) = query_map
                     .get_index(ptr - 1)
                     .expect("Cannot find query result");
                 for f in args.iter() {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
+                }
+                // Require stuff
+                let nonce = slice.nonce.as_canonical_u32() as usize;
+                let prev_count = callers_nonces
+                    .get_index_of(&(func_ctx.func_idx, nonce, *load_ident))
+                    .expect("Cannot find caller nonce entry");
+                if prev_count == 0 {
+                    // we are the first require, fill in hardcoded provide values
+                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_nonce
+                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_count
+                    slice.push_aux(index, F::from_canonical_usize(1).inverse());
+                // count_inv
+                } else {
+                    // we are somewhere in the middle of the list, get the predecessor
+                    let (_, prev_nonce, _) = callers_nonces.get_index(prev_count - 1).unwrap();
+                    slice.push_aux(index, F::from_canonical_usize(*prev_nonce));
+                    slice.push_aux(index, F::from_canonical_usize(prev_count));
+                    slice.push_aux(index, F::from_canonical_usize(prev_count + 1).inverse());
                 }
             }
             Op::Hash(preimg) => {

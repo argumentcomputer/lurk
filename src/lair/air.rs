@@ -315,7 +315,7 @@ impl<F: Field> Op<F> {
                     sel.clone(),
                 );
             }
-            Op::Store(values) => {
+            Op::Store(values, _) => {
                 let ptr = *local.next_aux(index);
                 map.push(Val::Expr(ptr.into()));
                 let values = values.iter().map(|&idx| map[idx].to_expr());
@@ -336,7 +336,7 @@ impl<F: Field> Op<F> {
                     sel.clone(),
                 );
             }
-            Op::Load(len, ptr) => {
+            Op::Load(len, ptr, _) => {
                 let ptr = map[*ptr].to_expr();
                 // This must be collected to ensure the side effects take place
                 let values = (0..*len)
