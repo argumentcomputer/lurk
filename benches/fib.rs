@@ -93,7 +93,7 @@ fn trace_generation(c: &mut Criterion) {
         let lair_chips = build_lair_chip_vector(&lurk_main, args.into(), out.into());
         b.iter(|| {
             lair_chips.par_iter().for_each(|func_chip| {
-                let mut shard = Shard::new(&record);
+                let mut shard = Shard::new(record.clone()); // TODO(wwared): remove .clone()
                 func_chip.generate_trace(&Shard::default(), &mut shard);
             })
         })
@@ -119,7 +119,7 @@ fn e2e(c: &mut Criterion) {
                 let (pk, _) = machine.setup(&LairMachineProgram);
                 let mut challenger_p = machine.config().challenger();
                 let opts = SphinxCoreOpts::default();
-                let shard = Shard::new(&record);
+                let shard = Shard::new(record.clone()); // TODO(wwared): remove .clone()
                 machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
             },
             BatchSize::SmallInput,

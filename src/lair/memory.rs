@@ -1,5 +1,5 @@
 use p3_air::{Air, AirBuilder, BaseAir};
-use p3_field::{AbstractField, Field};
+use p3_field::{AbstractField, Field, PrimeField32};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use p3_maybe_rayon::prelude::*;
 use rayon::iter::{IndexedParallelIterator, ParallelIterator};
@@ -18,7 +18,7 @@ pub struct MemChip<F> {
     _p: PhantomData<F>,
 }
 
-impl<F> MemChip<F> {
+impl<F: PrimeField32> MemChip<F> {
     #[inline]
     pub fn new(len: usize) -> Self {
         Self {
@@ -27,17 +27,16 @@ impl<F> MemChip<F> {
         }
     }
 
-    pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F>
-    where
-        F: Field,
-    {
-        // TODO Shard memory
-        let events = &shard.events.unwrap().mem_queries;
+    pub fn generate_trace(&self, shard: &Shard<F>) -> RowMajorMatrix<F> {
+        let events = &shard.events.mem_queries;
         let mem_idx = mem_index_from_len(self.len);
         let mem = &events[mem_idx];
         let width = self.width();
 
         let height = mem.len().next_power_of_two().max(4); // TODO: Remove?
+        // let range = shard.get_mem_range(mem_index_from_len(self.len));
+        // let non_dummy_height = range.len();
+        // let height = non_dummy_height.next_power_of_two().max(4); // TODO: Remove?
 
         let mut trace = RowMajorMatrix::new(vec![F::zero(); height * width], width);
 
@@ -45,20 +44,21 @@ impl<F> MemChip<F> {
             .par_rows_mut()
             .zip(mem.par_iter())
             .enumerate()
-            .for_each(|(i, (row, (args, callers_nonces)))| {
-                let (_, last_nonce, _) = callers_nonces
-                    .last()
-                    .expect("Must have at least one caller");
-                let last_count = callers_nonces.len();
+            // .skip(range.start)
+            // .take(non_dummy_height)
+            .for_each(|(i, (row, (args, mem_result)))| {
+                let (last_count, last_nonce) = mem_result.get_provide_hints();
 
                 // is_real
                 row[0] = F::one();
                 // ptr: We skip the address 0 as to leave room for null pointers
                 row[1] = F::from_canonical_usize(i + 1);
+                // TODO: the ptr can be "duplicated" when sharding is involved: how do we deal with this?
+
                 // last_nonce
-                row[2] = F::from_canonical_usize(*last_nonce);
+                row[2] = last_nonce;
                 // last_count
-                row[3] = F::from_canonical_usize(last_count);
+                row[3] = last_count;
                 row[4..].copy_from_slice(args)
             });
         trace
@@ -68,7 +68,7 @@ impl<F> MemChip<F> {
     where
         F: Field,
     {
-        let shard = Shard::new(queries);
+        let shard = Shard::new(queries.clone());
         self.generate_trace(&shard)
     }
 }

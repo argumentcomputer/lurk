@@ -9,7 +9,7 @@ use crate::lair::execute::mem_index_from_len;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
-    execute::{QueryRecord, Shard},
+    execute::{LookupId, QueryRecord, Shard},
     func_chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
     hasher::Hasher,
     List,
@@ -57,11 +57,10 @@ impl<'a, T> ColumnMutSlice<'a, T> {
 
 impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
     /// Generates the trace containing only queries with non-zero multiplicities
-    pub fn generate_trace_sequential(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
-        let events = shard.events.unwrap();
-        let func_queries = &events.func_queries()[self.func.index];
+    pub fn generate_trace_sequential(&self, shard: &Shard<F>) -> RowMajorMatrix<F> {
+        let func_queries = &shard.events.func_queries()[self.func.index];
         let width = self.width();
-        let range = &shard.func_range[self.func.index];
+        let range = shard.get_func_range(self.func.index);
         let non_dummy_height = range.len();
         let height = non_dummy_height.next_power_of_two().max(4);
         let mut rows = vec![F::zero(); height * width];
@@ -75,21 +74,21 @@ impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
             let row = &mut rows[start..start + width];
             let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
             self.func
-                .populate_row(args, index, slice, events, &self.toplevel.hasher);
+                .populate_row(args, index, slice, shard, &self.toplevel.hasher);
         }
         RowMajorMatrix::new(rows, width)
     }
 
+    // TODO(wwared): remove all _no_shard functions
     pub fn generate_trace_sequential_no_shard(&self, events: &QueryRecord<F>) -> RowMajorMatrix<F> {
-        let shard = Shard::new(events);
+        let shard = Shard::new(events.clone());
         self.generate_trace_parallel(&shard)
     }
 
     /// Per-row parallel version of `generate_trace_sequential`
-    pub fn generate_trace_parallel(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
-        let events = shard.events.unwrap();
-        let func_queries = &events.func_queries()[self.func.index];
-        let range = &shard.func_range[self.func.index];
+    pub fn generate_trace_parallel(&self, shard: &Shard<F>) -> RowMajorMatrix<F> {
+        let func_queries = &shard.events.func_queries()[self.func.index];
+        let range = shard.get_func_range(self.func.index);
         let width = self.width();
         let non_dummy_height = range.len();
         let height = non_dummy_height.next_power_of_two().max(4);
@@ -107,13 +106,14 @@ impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 self.func
-                    .populate_row(args, index, slice, events, &self.toplevel.hasher);
+                    .populate_row(args, index, slice, shard, &self.toplevel.hasher);
             });
         RowMajorMatrix::new(rows, width)
     }
 
+    // TODO(wwared): remove
     pub fn generate_trace_parallel_no_shard(&self, events: &QueryRecord<F>) -> RowMajorMatrix<F> {
-        let shard = Shard::new(events);
+        let shard = Shard::new(events.clone());
         self.generate_trace_parallel(&shard)
     }
 }
@@ -124,7 +124,7 @@ impl<F: PrimeField32> Func<F> {
         args: &[F],
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
-        queries: &QueryRecord<F>,
+        shard: &Shard<F>,
         hasher: &H,
     ) {
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
@@ -138,7 +138,7 @@ impl<F: PrimeField32> Func<F> {
         // One column per input
         args.iter().for_each(|arg| slice.push_input(index, *arg));
         self.body
-            .populate_row(&func_ctx, map, index, slice, queries, hasher);
+            .populate_row(&func_ctx, map, index, slice, shard, hasher);
     }
 }
 
@@ -149,14 +149,14 @@ impl<F: PrimeField32> Block<F> {
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
-        queries: &QueryRecord<F>,
+        shard: &Shard<F>,
         hasher: &H,
     ) {
         self.ops
             .iter()
-            .for_each(|op| op.populate_row(func_ctx, map, index, slice, queries, hasher));
+            .for_each(|op| op.populate_row(func_ctx, map, index, slice, shard, hasher));
         self.ctrl
-            .populate_row(func_ctx, map, index, slice, queries, hasher);
+            .populate_row(func_ctx, map, index, slice, shard, hasher);
     }
 }
 
@@ -167,9 +167,10 @@ impl<F: PrimeField32> Ctrl<F> {
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
-        queries: &QueryRecord<F>,
+        shard: &Shard<F>,
         hasher: &H,
     ) {
+        let queries = &shard.events;
         match self {
             Ctrl::Return(ident, _) => {
                 slice.sel[*ident] = F::one();
@@ -177,55 +178,51 @@ impl<F: PrimeField32> Ctrl<F> {
                 let result = query_map
                     .get(&func_ctx.call_inp)
                     .expect("Cannot find query result");
-                let last_count = result.callers_nonces.len();
-                let (_, _, last_nonce, _) = result
-                    .callers_nonces
-                    .last()
-                    .expect("Must have at least one caller");
-                slice.push_aux(index, F::from_canonical_usize(*last_nonce));
-                slice.push_aux(index, F::from_canonical_usize(last_count));
+                let (last_count, last_nonce) = result.get_provide_hints();
+                slice.push_aux(index, last_nonce);
+                slice.push_aux(index, last_count);
             }
             Ctrl::Match(t, cases) => {
                 let (t, _) = map[*t];
                 if let Some(branch) = cases.branches.get(&t) {
-                    branch.populate_row(func_ctx, map, index, slice, queries, hasher);
+                    branch.populate_row(func_ctx, map, index, slice, shard, hasher);
                 } else {
                     for (f, _) in cases.branches.iter() {
                         slice.push_aux(index, (t - *f).inverse());
                     }
                     let branch = cases.default.as_ref().expect("No match");
-                    branch.populate_row(func_ctx, map, index, slice, queries, hasher);
+                    branch.populate_row(func_ctx, map, index, slice, shard, hasher);
                 }
             }
             Ctrl::MatchMany(vars, cases) => {
                 let vals = vars.iter().map(|&var| map[var].0).collect();
                 if let Some(branch) = cases.branches.get(&vals) {
-                    branch.populate_row(func_ctx, map, index, slice, queries, hasher);
+                    branch.populate_row(func_ctx, map, index, slice, shard, hasher);
                 } else {
                     for (fs, _) in cases.branches.iter() {
                         let diffs = vals.iter().zip(fs.iter()).map(|(val, f)| *val - *f);
                         push_inequality_witness(index, slice, diffs);
                     }
                     let branch = cases.default.as_ref().expect("No match");
-                    branch.populate_row(func_ctx, map, index, slice, queries, hasher);
+                    branch.populate_row(func_ctx, map, index, slice, shard, hasher);
                 }
             }
             Ctrl::If(b, t, f) => {
                 let (b, _) = map[*b];
                 if b != F::zero() {
                     slice.push_aux(index, b.inverse());
-                    t.populate_row(func_ctx, map, index, slice, queries, hasher);
+                    t.populate_row(func_ctx, map, index, slice, shard, hasher);
                 } else {
-                    f.populate_row(func_ctx, map, index, slice, queries, hasher);
+                    f.populate_row(func_ctx, map, index, slice, shard, hasher);
                 }
             }
             Ctrl::IfMany(vars, t, f) => {
                 let vals = vars.iter().map(|&var| map[var].0);
                 if vals.clone().any(|b| b != F::zero()) {
                     push_inequality_witness(index, slice, vals);
-                    t.populate_row(func_ctx, map, index, slice, queries, hasher);
+                    t.populate_row(func_ctx, map, index, slice, shard, hasher);
                 } else {
-                    f.populate_row(func_ctx, map, index, slice, queries, hasher);
+                    f.populate_row(func_ctx, map, index, slice, shard, hasher);
                 }
             }
         }
@@ -256,9 +253,10 @@ impl<F: PrimeField32> Op<F> {
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
-        queries: &QueryRecord<F>,
+        shard: &Shard<F>,
         hasher: &H,
     ) {
+        let queries = &shard.events;
         match self {
             Op::Const(f) => map.push((*f, 0)),
             Op::Add(a, b) => {
@@ -315,28 +313,15 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let nonce = slice.nonce.as_canonical_u32() as usize;
-                // TODO
-                // let shard = queries.index() as usize;
-                let shard = 0;
-                let prev_count = result
-                    .callers_nonces
-                    .get_index_of(&(func_ctx.func_idx, shard, nonce, *call_ident))
-                    .expect("Cannot find caller nonce entry");
-                if prev_count == 0 {
-                    // we are the first require, fill in hardcoded provide values
-                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_nonce
-                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_count
-                    slice.push_aux(index, F::from_canonical_usize(1).inverse());
-                // count_inv
-                } else {
-                    // we are somewhere in the middle of the list, get the predecessor
-                    let (_, _, prev_nonce, _) =
-                        result.callers_nonces.get_index(prev_count - 1).unwrap();
-                    slice.push_aux(index, F::from_canonical_usize(*prev_nonce));
-                    slice.push_aux(index, F::from_canonical_usize(prev_count));
-                    slice.push_aux(index, F::from_canonical_usize(prev_count + 1).inverse());
-                }
+                let (prev_nonce, prev_count, count_inv) = result.get_require_hints(&LookupId {
+                    func_idx: func_ctx.func_idx,
+                    shard: shard.index as usize,
+                    caller_nonce: slice.nonce.as_canonical_u32() as usize,
+                    op_id: *call_ident,
+                });
+                slice.push_aux(index, prev_nonce);
+                slice.push_aux(index, prev_count);
+                slice.push_aux(index, count_inv);
             }
             Op::PreImg(idx, out, call_ident) => {
                 let out = out.iter().map(|a| map[*a].0).collect::<List<_>>();
@@ -350,88 +335,55 @@ impl<F: PrimeField32> Op<F> {
                 }
                 let query_map = &queries.func_queries()[*idx];
                 let query_result = query_map.get(inp).expect("Cannot find query result");
-                let nonce = slice.nonce.as_canonical_u32() as usize;
-                // TODO
-                // let shard = queries.index() as usize;
-                let shard = 0;
-                let prev_count = query_result
-                    .callers_nonces
-                    .get_index_of(&(func_ctx.func_idx, shard, nonce, *call_ident))
-                    .expect("Cannot find caller nonce entry");
-                if prev_count == 0 {
-                    // we are the first require, fill in hardcoded provide values
-                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_nonce
-                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_count
-                    slice.push_aux(index, F::from_canonical_usize(1).inverse());
-                // count_inv
-                } else {
-                    // we are somewhere in the middle of the list, get the predecessor
-                    let (_, _, prev_nonce, _) = query_result
-                        .callers_nonces
-                        .get_index(prev_count - 1)
-                        .unwrap();
-                    slice.push_aux(index, F::from_canonical_usize(*prev_nonce));
-                    slice.push_aux(index, F::from_canonical_usize(prev_count));
-                    slice.push_aux(index, F::from_canonical_usize(prev_count + 1).inverse());
-                }
+                let (prev_nonce, prev_count, count_inv) = query_result.get_require_hints(&LookupId {
+                    func_idx: func_ctx.func_idx,
+                    shard: shard.index as usize,
+                    caller_nonce: slice.nonce.as_canonical_u32() as usize,
+                    op_id: *call_ident,
+                });
+                slice.push_aux(index, prev_nonce);
+                slice.push_aux(index, prev_count);
+                slice.push_aux(index, count_inv);
             }
             Op::Store(args, store_ident) => {
                 let mem_idx = mem_index_from_len(args.len());
                 let query_map = &queries.mem_queries[mem_idx];
                 let args = args.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let (i, _, callers_nonces) =
+                let (i, _, mem_result) =
                     query_map.get_full(&args).expect("Cannot find query result");
                 let f = F::from_canonical_usize(i + 1);
                 map.push((f, 1));
                 slice.push_aux(index, f);
-                // Require stuff
-                let nonce = slice.nonce.as_canonical_u32() as usize;
-                let prev_count = callers_nonces
-                    .get_index_of(&(func_ctx.func_idx, nonce, *store_ident))
-                    .expect("Cannot find caller nonce entry");
-                if prev_count == 0 {
-                    // we are the first require, fill in hardcoded provide values
-                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_nonce
-                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_count
-                    slice.push_aux(index, F::from_canonical_usize(1).inverse());
-                // count_inv
-                } else {
-                    // we are somewhere in the middle of the list, get the predecessor
-                    let (_, prev_nonce, _) = callers_nonces.get_index(prev_count - 1).unwrap();
-                    slice.push_aux(index, F::from_canonical_usize(*prev_nonce));
-                    slice.push_aux(index, F::from_canonical_usize(prev_count));
-                    slice.push_aux(index, F::from_canonical_usize(prev_count + 1).inverse());
-                }
+                let (prev_nonce, prev_count, count_inv) = mem_result.get_require_hints(&LookupId {
+                    func_idx: func_ctx.func_idx,
+                    shard: shard.index as usize,
+                    caller_nonce: slice.nonce.as_canonical_u32() as usize,
+                    op_id: *store_ident,
+                });
+                slice.push_aux(index, prev_nonce);
+                slice.push_aux(index, prev_count);
+                slice.push_aux(index, count_inv);
             }
             Op::Load(len, ptr, load_ident) => {
                 let mem_idx = mem_index_from_len(*len);
                 let query_map = &queries.mem_queries[mem_idx];
                 let ptr = map[*ptr].0.as_canonical_u32() as usize;
-                let (args, callers_nonces) = query_map
+                let (args, mem_result) = query_map
                     .get_index(ptr - 1)
                     .expect("Cannot find query result");
                 for f in args.iter() {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                // Require stuff
-                let nonce = slice.nonce.as_canonical_u32() as usize;
-                let prev_count = callers_nonces
-                    .get_index_of(&(func_ctx.func_idx, nonce, *load_ident))
-                    .expect("Cannot find caller nonce entry");
-                if prev_count == 0 {
-                    // we are the first require, fill in hardcoded provide values
-                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_nonce
-                    slice.push_aux(index, F::from_canonical_usize(0)); // prev_count
-                    slice.push_aux(index, F::from_canonical_usize(1).inverse());
-                // count_inv
-                } else {
-                    // we are somewhere in the middle of the list, get the predecessor
-                    let (_, prev_nonce, _) = callers_nonces.get_index(prev_count - 1).unwrap();
-                    slice.push_aux(index, F::from_canonical_usize(*prev_nonce));
-                    slice.push_aux(index, F::from_canonical_usize(prev_count));
-                    slice.push_aux(index, F::from_canonical_usize(prev_count + 1).inverse());
-                }
+                let (prev_nonce, prev_count, count_inv) = mem_result.get_require_hints(&LookupId {
+                    func_idx: func_ctx.func_idx,
+                    shard: shard.index as usize,
+                    caller_nonce: slice.nonce.as_canonical_u32() as usize,
+                    op_id: *load_ident,
+                });
+                slice.push_aux(index, prev_nonce);
+                slice.push_aux(index, prev_count);
+                slice.push_aux(index, count_inv);
             }
             Op::Hash(preimg) => {
                 let preimg = preimg.iter().map(|a| map[*a].0).collect::<List<_>>();
@@ -456,7 +408,7 @@ mod tests {
     use crate::{
         func,
         lair::{
-            demo_toplevel, execute::QueryRecord, field_from_u32, hasher::LurkHasher,
+            demo_toplevel, execute::{QueryRecord, Shard, ShardingConfig}, field_from_u32, hasher::LurkHasher,
             toplevel::Toplevel, trace::LayoutSizes,
         },
     };
@@ -654,5 +606,31 @@ mod tests {
         .map(field_from_u32)
         .collect::<Vec<_>>();
         assert_eq!(trace.values, expected_trace);
+    }
+
+    #[test]
+    fn lair_shard_test() {
+        let toplevel = demo_toplevel::<_, LurkHasher>();
+
+        let factorial_chip = FuncChip::from_name("factorial", &toplevel);
+        let full_queries = &mut QueryRecord::new_with_shard_config(&toplevel, ShardingConfig { max_shard_size: 32 });
+        let shard_queries = &mut QueryRecord::new_with_shard_config(&toplevel, ShardingConfig { max_shard_size: 4 });
+
+        let args = &[F::from_canonical_u32(6)];
+        toplevel.execute_by_name("factorial", args, full_queries);
+        let full_trace = factorial_chip.generate_trace_parallel_no_shard(full_queries);
+
+        toplevel.execute_by_name("factorial", args, shard_queries);
+        let shard = Shard::new(shard_queries.clone());
+        use sphinx_core::stark::MachineRecord;
+        let shards = shard.shard(&ShardingConfig { max_shard_size: 4 });
+
+        println!("{:?}", full_trace);
+        println!("---");
+        for s in shards.iter() {
+            let trace = factorial_chip.generate_trace_parallel(s);
+            println!("{}: {:?}", s.index, trace);
+        }
+        panic!();
     }
 }

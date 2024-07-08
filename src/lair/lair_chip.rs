@@ -33,11 +33,11 @@ impl<'a, F, H: Hasher<F>> LairChip<'a, F, H> {
     }
 }
 
-impl<'a, 'b, F: Field, H: Hasher<F>> WithEvents<'a> for LairChip<'b, F, H> {
-    type Events = &'a Shard<'a, F>;
+impl<'a, F: Field, H: Hasher<F>> WithEvents<'a> for LairChip<'_, F, H> {
+    type Events = &'a Shard<F>;
 }
 
-impl<'a, F: Field, H: Hasher<F>> EventLens<LairChip<'a, F, H>> for Shard<'a, F> {
+impl<'a, F: Field, H: Hasher<F>> EventLens<LairChip<'a, F, H>> for Shard<F> {
     fn events(&self) -> <LairChip<'a, F, H> as WithEvents<'_>>::Events {
         self
     }
@@ -62,7 +62,7 @@ impl<F: AbstractField> MachineProgram<F> for LairMachineProgram {
 }
 
 impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
-    type Record = Shard<'a, F>;
+    type Record = Shard<F>;
     type Program = LairMachineProgram;
 
     fn name(&self) -> String {
@@ -92,16 +92,15 @@ impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
     fn included(&self, queries: &Self::Record) -> bool {
         match self {
             Self::Func(func_chip) => {
-                let events = queries.events.unwrap();
-                !events.func_queries[func_chip.func.index].is_empty()
+                let range = queries.get_func_range(func_chip.func.index);
+                !range.is_empty()
             }
             Self::Mem(mem_chip) => {
-                let events = queries.events.unwrap();
-                events.mem_queries[mem_index_from_len(mem_chip.len)]
-                    .values()
-                    .any(|set| !set.is_empty())
+                queries.index == 0
+                // let range = queries.get_mem_range(mem_index_from_len(mem_chip.len));
+                // !range.is_empty()
             }
-            Self::Entrypoint { .. } => true,
+            Self::Entrypoint { .. } => queries.index == 0,
         }
     }
 
@@ -148,7 +147,7 @@ where
     }
 }
 
-pub fn build_lair_chip_vector<'a, F: PrimeField, H: Hasher<F>>(
+pub fn build_lair_chip_vector<'a, F: PrimeField32, H: Hasher<F>>(
     entry_func_chip: &FuncChip<'a, F, H>,
     inp: Vec<F>,
     out: Vec<F>,
@@ -218,19 +217,46 @@ mod tests {
 
     #[test]
     fn test_prove_and_verify() {
+        sphinx_core::utils::setup_logger();
+
         type F = BabyBear;
         type H = LurkHasher;
+        let func_f = func!(
+            fn test2(n): [1] {
+                let x = add(n, n);
+                return x
+            }
+        );
         let func_e = func!(
         fn test(): [2] {
             let one = 1;
             let two = 2;
-            let three = 3;
-            let ptr1 = store(one, two, three);
-            let ptr2 = store(one, one, one);
-            let (_x, y, _z) = load(ptr1);
-            return (ptr2, y)
+            let _three = 3;
+            let x = call(test2, one);
+            let x = call(test2, x);
+            let x = call(test2, x);
+            let x = call(test2, x);
+            let x = call(test2, x);
+            let x = call(test2, x);
+            let x = call(test2, x);
+            let x = call(test2, x);
+            let x = call(test2, x);
+            let x = call(test2, x);
+            let x = call(test2, x);
+            let x = call(test2, x);
+            let x = call(test2, x);
+            return (two, x)
         });
-        let toplevel = Toplevel::<F, H>::new(&[func_e]);
+            // let ptr1 = store(one, two, three);
+            // let ptr2 = store(one, one, one);
+            // let _ptr3 = store(two, two, three);
+            // let _ptr4 = store(one, one, three);
+            // let _ptr5 = store(one, three, three);
+            // let _ptr6 = store(one, two, one);
+            // let _ptr7 = store(three, two, three);
+            // let _ptr8 = store(one, three, two);
+            // let (_x, _y, _z) = load(ptr1);
+        let toplevel = Toplevel::<F, H>::new(&[func_e, func_f]);
         let test_chip = FuncChip::from_name("test", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
 
@@ -244,7 +270,11 @@ mod tests {
         let (pk, vk) = machine.setup(&LairMachineProgram);
         let mut challenger_p = machine.config().challenger();
         let mut challenger_v = machine.config().challenger();
-        let shard = Shard::new(&queries);
+        let shard = Shard::new(queries);
+        use sphinx_core::stark::MachineRecord;
+        let shards = shard.clone().shard(&crate::lair::execute::ShardingConfig { max_shard_size: 4 });
+        // panic!("num_shards: {}", shards.len());
+
         machine.debug_constraints(&pk, shard.clone(), &mut challenger_p.clone());
         let opts = SphinxCoreOpts::default();
         let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
