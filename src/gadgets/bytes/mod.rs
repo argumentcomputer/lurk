@@ -1,3 +1,5 @@
+mod trace;
+
 use std::collections::BTreeMap;
 
 #[derive(Copy, Clone, Debug, Default, Ord, PartialOrd, Eq, PartialEq)]
@@ -53,16 +55,6 @@ impl ByteInput {
     }
 }
 
-pub enum Op {
-    RangeU8 = 0,
-    RangeU16 = 1,
-    LessThan = 2,
-    And = 3,
-    Xor = 4,
-    Or = 5,
-    Msb = 6,
-}
-
 pub struct ContextByteRecord<C> {
     range_u8: BTreeMap<ByteInput, C>,
     range_u16: BTreeMap<ByteInput, C>,
@@ -75,7 +67,9 @@ pub struct ContextByteRecord<C> {
 
 pub trait ByteRecord {
     type Context;
-    fn range_check_u8(&mut self, i: u8);
+    fn range_check_u8(&mut self, i: u8) {
+        self.range_check_u8_pair(i, 0);
+    }
     fn range_check_u8_pair(&mut self, i1: u8, i2: u8);
     fn range_check_u8_iter(&mut self, iter: impl IntoIterator<Item = u8>) {
         let mut iter = iter.into_iter();
@@ -96,4 +90,19 @@ pub trait ByteRecord {
 pub struct ByteRecordWithContext<'a, CI, C> {
     context_item: CI,
     record: &'a mut ContextByteRecord<C>,
+}
+
+pub struct ByteInputRecord {
+    prev_nonce: u32,
+    prev_count: u32,
+}
+
+pub struct ByteInputRowRecord {
+    range_u8_pair: ByteInputRecord,
+    range_u16: ByteInputRecord,
+    less_than: ByteInputRecord,
+    and: ByteInputRecord,
+    xor: ByteInputRecord,
+    or: ByteInputRecord,
+    msb: ByteInputRecord,
 }

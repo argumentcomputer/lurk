@@ -99,4 +99,29 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_is_equal() {
+        type F = BabyBear;
+
+        let inputs = [(0u64, 0u64), (4, 5), (1, 0), (0, 1)];
+
+        for (lhs, rhs) in inputs {
+            let word_l = Word(lhs.to_le_bytes());
+            let word_r = Word(rhs.to_le_bytes());
+
+            let mut witness = IsZeroWitness::<F>::default();
+            let is_equal = witness.populate_is_equal(word_l, word_r);
+            assert_eq!(is_equal, lhs == rhs);
+
+            let mut builder = GadgetAirBuilder::<F>::default();
+            eval_is_equal(
+                &mut builder,
+                (word_l.into_field::<F>(), word_r.into_field::<F>()),
+                F::from_bool(is_equal),
+                &witness,
+                F::one(),
+            );
+        }
+    }
 }
