@@ -398,16 +398,15 @@ impl<F: PrimeField32> Op<F> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use crate::{
+        air::debug::{debug_constraints_collecting_queries, TraceQueries},
         func,
         lair::{
             demo_toplevel,
             execute::{QueryRecord, Shard, ShardingConfig},
             field_from_u32,
             hasher::LurkHasher,
-            lair_chip::{build_chip_vector, LairMachineProgram},
+            lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
             toplevel::Toplevel,
             trace::LayoutSizes,
         },
@@ -416,8 +415,9 @@ mod tests {
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
     use sphinx_core::{
-        stark::{LocalProver, StarkGenericConfig, StarkMachine},
-        utils::{BabyBearPoseidon2, SphinxCoreOpts},
+        air::MachineAir,
+        stark::{MachineRecord, StarkMachine},
+        utils::BabyBearPoseidon2,
     };
 
     use super::FuncChip;
@@ -611,5 +611,71 @@ mod tests {
         .map(field_from_u32)
         .collect::<Vec<_>>();
         assert_eq!(trace.values, expected_trace);
+    }
+
+    #[test]
+    fn lair_shard_test() {
+        type H = LurkHasher;
+        let func_ack = func!(
+        fn ackermann(m, n): [1] {
+            let one = 1;
+            match m {
+                0 => {
+                    let ret = add(n, one);
+                    return ret
+                }
+            };
+            let m_minus_one = sub(m, one);
+            match n {
+                0 => {
+                    let ret = call(ackermann, m_minus_one, one);
+                    return ret
+                }
+            };
+            let n_minus_one = sub(n, one);
+            let inner = call(ackermann, m, n_minus_one);
+            let ret = call(ackermann, m_minus_one, inner);
+            return ret
+        });
+        let toplevel = Toplevel::<F, H>::new(&[func_ack]);
+        let ack_chip = FuncChip::from_name("ackermann", &toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
+
+        let f = F::from_canonical_usize;
+        // These inputs should perform enough recursive calls (5242889) to generate 2 shards with the default shard size of 1 << 22
+        let inp = &[f(3), f(18)];
+        toplevel.execute_by_name("ackermann", inp, &mut queries);
+        let out = queries.get_output(ack_chip.func, inp).to_vec();
+        // For constant m = 3, A(3, n) = 2^(n + 3) - 3
+        assert_eq!(out[0], f(2097149));
+
+        let lair_chips = build_lair_chip_vector(&ack_chip, inp.into(), out.clone());
+
+        let config = BabyBearPoseidon2::new();
+        let machine = StarkMachine::new(config, build_chip_vector(&ack_chip, inp.into(), out), 0);
+
+        let (pk, _vk) = machine.setup(&LairMachineProgram);
+        let shard = Shard::new(queries.into());
+        let shards = shard.clone().shard(&ShardingConfig::default());
+        assert!(shards.len() > 1, "lair_shard_test must have more than one shard");
+
+        let mut lookup_queries = Vec::new();
+        for shard in shards.iter() {
+            let queries: Vec<_> = lair_chips
+                .iter()
+                .map(|chip| {
+                    if chip.included(shard) {
+                        let trace = chip.generate_trace(shard, &mut Shard::default());
+                        debug_constraints_collecting_queries(chip, &[], None, &trace)
+                    } else {
+                        Default::default()
+                    }
+                })
+                .collect();
+            lookup_queries.extend(queries.into_iter());
+        }
+        TraceQueries::verify_many(lookup_queries);
+
+        machine.debug_constraints(&pk, shard.clone());
     }
 }

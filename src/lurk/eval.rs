@@ -1428,19 +1428,19 @@ mod test {
                 .shard(&ShardingConfig { max_shard_size: 4 });
             // Verify lookup queries with aggressive sharding
             let mut lookup_queries = Vec::new();
-            for s in shards.iter() {
-                let q: Vec<_> = lair_chips
+            for shard in shards.iter() {
+                let queries: Vec<_> = lair_chips
                     .iter()
                     .map(|chip| {
-                        if chip.included(s) {
-                            let trace = chip.generate_trace(s, &mut Shard::default());
+                        if chip.included(shard) {
+                            let trace = chip.generate_trace(shard, &mut Shard::default());
                             debug_constraints_collecting_queries(chip, &[], None, &trace)
                         } else {
                             Default::default()
                         }
                     })
                     .collect();
-                lookup_queries.extend(q.into_iter());
+                lookup_queries.extend(queries.into_iter());
             }
             TraceQueries::verify_many(lookup_queries);
 
