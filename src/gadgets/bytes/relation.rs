@@ -3,9 +3,10 @@ use crate::gadgets::bytes::ByteInput;
 use itertools::chain;
 use p3_field::{AbstractField, PrimeField32};
 
+/// Domain separation tag used to differentiate the provide/require relation for bytes
 const BYTE_TAG: u8 = 3;
 
-/// A byte relation which can be required by Air constraints
+/// A byte relation which can be required by Air constraints.
 #[derive(Copy, Clone, Debug)]
 pub enum ByteRelation<T> {
     RangeU8Pair { i1: T, i2: T },
@@ -75,6 +76,7 @@ impl<T> ByteRelation<T> {
         }
     }
 
+    /// Domain separation tag for differentiating different byte operations.
     pub fn tag(&self) -> u8 {
         match self {
             Self::RangeU8Pair { .. } => 1,
@@ -87,6 +89,7 @@ impl<T> ByteRelation<T> {
         }
     }
 
+    /// Panics if the relation is not valid.
     pub fn check(&self)
     where
         T: PrimeField32,
@@ -129,6 +132,7 @@ impl<T> ByteRelation<T> {
     }
 }
 
+/// Implement Relation for the lookup argument
 impl<F: AbstractField> Relation<F> for ByteRelation<F> {
     fn values(self) -> impl IntoIterator<Item = F> {
         let relation_tag = F::from_canonical_u8(BYTE_TAG);

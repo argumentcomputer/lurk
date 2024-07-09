@@ -24,8 +24,7 @@ struct BytesChip<F> {
 #[derive(Clone, Debug, Default, AlignedBorrow)]
 #[repr(C)]
 pub struct PreprocessedBytesCols<T> {
-    input1: T,
-    input2: T,
+    input: (T, T),
     less_than: T,
     and: T,
     xor: T,
@@ -56,12 +55,10 @@ impl<F: Field> BaseAir<F> for BytesChip<F> {
 
         trace.par_rows_mut().enumerate().for_each(|(i, row)| {
             let index = i as u16;
-            let [input1, input2] = index.to_le_bytes();
             let row: &mut PreprocessedBytesCols<F> = row.borrow_mut();
-            row.input1 = F::from_canonical_u8(input1);
-            row.input2 = F::from_canonical_u8(input2);
 
-            let input = ByteInput::new(input1, input2);
+            let input = ByteInput::from_u16(index);
+            row.input = input.as_field_u8_pair();
 
             row.less_than = F::from_bool(input.less_than());
             row.and = F::from_canonical_u8(input.and());
@@ -107,8 +104,7 @@ impl<F: PrimeField32> MachineAir<F> for BytesChip<F> {
 
         trace.par_rows_mut().enumerate().for_each(|(index, row)| {
             let index = index as u16;
-            let [i1, i2] = index.to_le_bytes();
-            let input = ByteInput::new(i1, i2);
+            let input = ByteInput::from_u16(index);
             let row: &mut MainBytesCols<F> = row.borrow_mut();
 
             if let Some(row_records) = all_records.get(input) {
@@ -143,22 +139,25 @@ impl<AB: LookupBuilder + PairBuilder> Air<AB> for BytesChip<AB::F> {
         let prep = prep.row_slice(0);
         let prep: &PreprocessedBytesCols<AB::Var> = (*prep).borrow();
 
-        let main = builder.preprocessed();
+        let main = builder.main();
         let main = main.row_slice(0);
         let main: &MainBytesCols<AB::Var> = (*main).borrow();
 
+        let input_u16 = prep.input.0 + prep.input.1 * AB::F::from_canonical_u16(1 << 8);
+
         let relations = [
-            ByteRelation::range_u8_pair(prep.input1, prep.input2),
-            ByteRelation::range_u16(prep.input1 + prep.input2 * AB::F::from_canonical_u16(1 << 8)),
-            ByteRelation::less_than(prep.input1, prep.input2, prep.less_than),
-            ByteRelation::and(prep.input1, prep.input2, prep.and),
-            ByteRelation::xor(prep.input1, prep.input2, prep.xor),
-            ByteRelation::xor(prep.input1, prep.input2, prep.or),
-            ByteRelation::msb(prep.input1, prep.msb),
+            ByteRelation::range_u8_pair(prep.input.0, prep.input.1),
+            ByteRelation::range_u16(input_u16),
+            ByteRelation::less_than(prep.input.0, prep.input.1, prep.less_than),
+            ByteRelation::and(prep.input.0, prep.input.1, prep.and),
+            ByteRelation::xor(prep.input.0, prep.input.1, prep.xor),
+            ByteRelation::or(prep.input.0, prep.input.1, prep.or),
+            ByteRelation::msb(prep.input.0, prep.msb),
         ];
 
+        let is_real = AB::F::one();
         for (relation, provide) in zip(relations, main.provides) {
-            builder.provide(relation, provide, AB::F::one());
+            builder.provide(relation, provide, is_real);
         }
     }
 }

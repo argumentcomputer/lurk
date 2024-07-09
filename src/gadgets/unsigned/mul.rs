@@ -35,7 +35,7 @@ impl<F: AbstractField> MulWitness<F> {
 
             result[k] = limb
         }
-        result.range_check(byte_record);
+        byte_record.range_check_u8_iter(result);
 
         result
     }

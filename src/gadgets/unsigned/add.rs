@@ -29,7 +29,7 @@ impl<F: AbstractField> AddWitness<F> {
             }
             carry_prev = carry.into();
         }
-        result.range_check(record);
+        record.range_check_u8_iter(result);
         result
     }
 

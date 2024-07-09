@@ -5,6 +5,15 @@ use itertools::zip_eq;
 use p3_field::{AbstractField, PrimeField32};
 
 /// A struct meant to implement ByteAirRecord.
+///
+/// # Detail
+/// When evaluating the Air constraints, we simply log all the requested byte relations
+/// in this struct.
+///
+/// Note that in the context of Sphinx, this structure will only be used when initializing the
+/// prover, since the constraints will first be evaluated by the `SymbolicAirBuilder` to gather
+/// all the lookup interactions. During proving and specifically quotient evaluation,
+/// the Air constraints should run using `ByteAirRecord` where all operations are no-ops.
 #[derive(Clone, Debug, Default)]
 pub struct BytesAirRecordWithContext<F> {
     // [(Relation, IsReal)]
@@ -14,7 +23,7 @@ pub struct BytesAirRecordWithContext<F> {
 impl<F: AbstractField> BytesAirRecordWithContext<F> {
     /// Once the row has been evaluated, and all byte relations recorded into this struct,
     /// the chip must provide an iterator of mutable references to the `RequireRecord`s that
-    ///
+    /// will be sent to the lookup argument.
     pub fn require_all<AB: LookupBuilder<Expr = F>, R: Into<AB::Expr>>(
         self,
         builder: &mut AB,

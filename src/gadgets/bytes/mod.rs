@@ -13,12 +13,29 @@ pub struct ByteInput(u16);
 
 impl ByteInput {
     #[inline]
-    pub fn new(i1: u8, i2: u8) -> Self {
+    pub fn from_u8(i: u8) -> Self {
+        Self::from_u8_pair(i, 0)
+    }
+    #[inline]
+    pub fn from_u8_pair(i1: u8, i2: u8) -> Self {
         Self(u16::from_le_bytes([i1, i2]))
+    }
+    #[inline]
+    pub fn from_u16(i: u16) -> Self {
+        Self(i)
     }
 
     #[inline]
+    pub fn as_field_u16<F: AbstractField>(&self) -> F {
+        F::from_canonical_u16(self.0)
+    }
 
+    #[inline]
+    pub fn as_field_u8_pair<F: AbstractField>(&self) -> (F, F) {
+        self.0.to_le_bytes().map(F::from_canonical_u8).into()
+    }
+
+    #[inline]
     pub fn range_u8_pair(&self) -> (u8, u8) {
         let [i1, i2] = self.0.to_le_bytes();
         (i1, i2)

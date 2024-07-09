@@ -1,4 +1,3 @@
-use crate::gadgets::bytes::ByteRecord;
 use p3_field::AbstractField;
 use std::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign};
 use std::{array, slice};
@@ -83,13 +82,6 @@ impl Word<u8> {
     #[inline]
     pub fn into_field<F: AbstractField>(self) -> Word<F> {
         self.map(F::from_canonical_u8)
-    }
-
-    pub fn range_check(&self, record: &mut impl ByteRecord) {
-        debug_assert!(WORD_SIZE % 2 == 0);
-        for i in 0..WORD_SIZE / 2 {
-            record.range_check_u8_pair(self.0[2 * i], self.0[2 * i + 1])
-        }
     }
 }
 
