@@ -1,7 +1,15 @@
 [package]
 name = "loam"
 version = "0.1.0"
+edition.workspace = true
+repository.workspace = true
+
+[workspace.package]
+authors = ["Lurk Lab Engineering <engineering@lurk-lab.com>"]
 edition = "2021"
+repository = "https://github.com/lurk-lab/loam"
+license = "MIT"
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -46,6 +54,10 @@ lazy_static = "1.4.0"
 hashbrown = "0.14.5"
 rand_chacha = "0.3.1"
 
+#
+ascent = "0.6.0"
+loam-macros = { version = "0.1.0", path = "loam-macros" }
+
 [dependencies]
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
@@ -84,6 +96,9 @@ sphinx-core = { workspace = true }
 sphinx-derive = { workspace = true }
 hashbrown = { workspace = true }
 
+ascent = { workspace = true }
+loam-macros = { workspace = true }
+
 [dev-dependencies]
 criterion = { workspace = true }
 
@@ -96,7 +111,7 @@ name = "lurk"
 harness = false
 
 [workspace]
-members = ["examples/calculator", "examples/byte_lookup"]
+members = ["loam-macros", "examples/calculator", "examples/byte_lookup"]
 
 [profile.dev-ci]
 inherits = "dev"
