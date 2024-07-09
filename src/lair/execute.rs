@@ -244,7 +244,6 @@ impl Default for ShardingConfig {
     fn default() -> Self {
         Self {
             max_shard_size: 1 << 22,
-            // max_shard_size: 4,
         }
     }
 }
