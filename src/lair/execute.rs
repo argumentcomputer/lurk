@@ -95,6 +95,7 @@ pub struct Shard<F: Field> {
 }
 
 impl<F: Field> Shard<F> {
+    // NOTE: Make sure to call `.shard()` on a `Shard` created by `new` when generating the traces, otherwise you will only get the first shard's trace.
     pub fn new(events: Arc<QueryRecord<F>>) -> Self {
         let index = 0;
         let shard_config = ShardingConfig::default();
@@ -189,6 +190,7 @@ impl<F: Field> MachineRecord for Shard<F> {
             .map(|q| q.len())
             .max()
             .unwrap_or_default();
+        // TODO: This snippet or equivalent is needed for memory sharding
         // let max_num_mem_rows: usize = events
         //     .mem_queries
         //     .iter()

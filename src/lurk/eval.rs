@@ -1333,7 +1333,6 @@ mod test {
 
     #[test]
     fn eval_test() {
-        sphinx_core::utils::setup_logger();
         let toplevel = &build_lurk_toplevel();
 
         // Chips
@@ -1413,10 +1412,21 @@ mod test {
             let lair_chips =
                 build_lair_chip_vector(&lurk_main, full_input.clone().into(), result.clone());
 
-            let shard = Shard::new(record.into());
-            use MachineRecord;
-            let shards = shard.clone().shard(&ShardingConfig { max_shard_size: 4 });
-            println!("num_shards: {}", shards.len());
+            let full_shard = Shard::new(record.into());
+            // Verify lookup queries without sharding
+            let lookup_queries: Vec<_> = lair_chips
+                .iter()
+                .map(|chip| {
+                    let trace = chip.generate_trace(&full_shard, &mut Default::default());
+                    debug_constraints_collecting_queries(chip, &[], None, &trace)
+                })
+                .collect();
+            TraceQueries::verify_many(lookup_queries);
+
+            let shards = full_shard
+                .clone()
+                .shard(&ShardingConfig { max_shard_size: 4 });
+            // Verify lookup queries with aggressive sharding
             let mut lookup_queries = Vec::new();
             for s in shards.iter() {
                 let q: Vec<_> = lair_chips
@@ -1440,7 +1450,7 @@ mod test {
                 0,
             );
             let (pk, _vk) = machine.setup(&LairMachineProgram);
-            machine.debug_constraints(&pk, shard);
+            machine.debug_constraints(&pk, full_shard);
         };
 
         eval_aux("t", "t");

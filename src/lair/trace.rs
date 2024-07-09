@@ -407,6 +407,7 @@ mod tests {
             execute::{QueryRecord, Shard, ShardingConfig},
             field_from_u32,
             hasher::LurkHasher,
+            lair_chip::{build_chip_vector, LairMachineProgram},
             toplevel::Toplevel,
             trace::LayoutSizes,
         },
@@ -414,6 +415,10 @@ mod tests {
 
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
+    use sphinx_core::{
+        stark::{LocalProver, StarkGenericConfig, StarkMachine},
+        utils::{BabyBearPoseidon2, SphinxCoreOpts},
+    };
 
     use super::FuncChip;
 
@@ -606,30 +611,5 @@ mod tests {
         .map(field_from_u32)
         .collect::<Vec<_>>();
         assert_eq!(trace.values, expected_trace);
-    }
-
-    #[test]
-    fn lair_shard_test() {
-        let toplevel = demo_toplevel::<_, LurkHasher>();
-
-        let factorial_chip = FuncChip::from_name("factorial", &toplevel);
-        let mut queries = QueryRecord::new(&toplevel);
-
-        let args = &[F::from_canonical_u32(6)];
-        toplevel.execute_by_name("factorial", args, &mut queries);
-        let events: Arc<_> = queries.into();
-        let full_trace = factorial_chip.generate_trace(&Shard::new(events.clone()));
-
-        let shard = Shard::new(events);
-        use sphinx_core::stark::MachineRecord;
-        let shards = shard.shard(&ShardingConfig { max_shard_size: 4 });
-
-        println!("{:?}", full_trace);
-        println!("---");
-        for s in shards.iter() {
-            let trace = factorial_chip.generate_trace(s);
-            println!("{}: {:?}", s.index, trace);
-        }
-        panic!();
     }
 }

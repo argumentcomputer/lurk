@@ -101,7 +101,6 @@ impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
     fn generate_dependencies<EL: EventLens<Self>>(&self, _: &EL, _: &mut Self::Record) {}
 
     fn included(&self, queries: &Self::Record) -> bool {
-        // TODO: it looks like this is not functioning as we expect; Entrypoint is still included in every shard?
         match self {
             Self::Func(func_chip) => {
                 let range = queries.get_func_range(func_chip.func.index);
@@ -109,6 +108,7 @@ impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
             }
             Self::Mem(_mem_chip) => {
                 queries.index == 0
+                // TODO: This snippet or equivalent is needed for memory sharding
                 // let range = queries.get_mem_range(mem_index_from_len(mem_chip.len));
                 // !range.is_empty()
             }
@@ -156,8 +156,6 @@ where
                     },
                     is_real,
                 );
-                // Dummy constraint of degree 3
-                // builder.assert_one(tmp.cube());
             }
             Self::Preprocessed => {
                 // Dummy constraint of degree 3
@@ -239,57 +237,25 @@ mod tests {
 
     #[test]
     fn test_prove_and_verify() {
-        sphinx_core::utils::setup_logger();
-
         type F = BabyBear;
         type H = LurkHasher;
-        let func_f = func!(
-            fn test2(n): [1] {
-                let x = add(n, n);
-                return x
-            }
-        );
         let func_e = func!(
-        fn test(): [1] {
+        fn test(): [2] {
             let one = 1;
-            // let _two = 2;
-            // let _three = 3;
-            let x = call(test2, one);
-            let x = call(test2, x);
-            let x = call(test2, x);
-            let x = call(test2, x);
-            let x = call(test2, x);
-            let x = call(test2, x);
-            let x = call(test2, x);
-            let x = call(test2, x);
-            let x = call(test2, x);
-            let x = call(test2, x);
-            let x = call(test2, x);
-            let x = call(test2, x);
-            let x = call(test2, x);
-            return x
+            let two = 2;
+            let three = 3;
+            let ptr1 = store(one, two, three);
+            let ptr2 = store(one, one, one);
+            let (_x, y, _z) = load(ptr1);
+            return (ptr2, y)
         });
-        // let ptr1 = store(one, two, three);
-        // let ptr2 = store(one, one, one);
-        // let _ptr3 = store(two, two, three);
-        // let _ptr4 = store(one, one, three);
-        // let _ptr5 = store(one, three, three);
-        // let _ptr6 = store(one, two, one);
-        // let _ptr7 = store(three, two, three);
-        // let _ptr8 = store(one, three, two);
-        // let (_x, _y, _z) = load(ptr1);
-        let toplevel = Toplevel::<F, H>::new(&[func_e, func_f]);
+        let toplevel = Toplevel::<F, H>::new(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
 
         let inp = &[];
         toplevel.execute_by_name("test", inp, &mut queries);
         let out = queries.get_output(test_chip.func, inp).to_vec();
-        // let entrypoint = LairChip::entrypoint(
-        //     toplevel.get_by_name("test").index,
-        //     inp.iter().map(|n| n.as_canonical_u32() as usize).collect(),
-        //     out.iter().map(|n| n.as_canonical_u32() as usize).collect(),
-        // );
 
         let config = BabyBearPoseidon2::new();
         let machine = StarkMachine::new(config, build_chip_vector(&test_chip, vec![], out), 0);
@@ -298,11 +264,6 @@ mod tests {
         let mut challenger_p = machine.config().challenger();
         let mut challenger_v = machine.config().challenger();
         let shard = Shard::new(queries.into());
-        use sphinx_core::stark::MachineRecord;
-        let shards = shard
-            .clone()
-            .shard(&crate::lair::execute::ShardingConfig { max_shard_size: 4 });
-        println!("num_shards: {}", shards.len());
 
         machine.debug_constraints(&pk, shard.clone());
         let opts = SphinxCoreOpts::default();

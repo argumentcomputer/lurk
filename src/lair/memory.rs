@@ -33,10 +33,12 @@ impl<F: PrimeField32> MemChip<F> {
         let mem = &events[mem_idx];
         let width = self.width();
 
-        let height = mem.len().next_power_of_two().max(4); // TODO: Remove?
-                                                           // let range = shard.get_mem_range(mem_index_from_len(self.len));
-                                                           // let non_dummy_height = range.len();
-                                                           // let height = non_dummy_height.next_power_of_two().max(4); // TODO: Remove?
+        let height = mem.len().next_power_of_two().max(4); // TODO: Remove? loam#118
+
+        // TODO: This snippet or equivalent is needed for memory sharding
+        // let range = shard.get_mem_range(mem_index_from_len(self.len));
+        // let non_dummy_height = range.len();
+        // let height = non_dummy_height.next_power_of_two().max(4);
 
         let mut trace = RowMajorMatrix::new(vec![F::zero(); height * width], width);
 
@@ -44,6 +46,7 @@ impl<F: PrimeField32> MemChip<F> {
             .par_rows_mut()
             .zip(mem.par_iter())
             .enumerate()
+            // TODO: This snippet or equivalent is needed for memory sharding
             // .skip(range.start)
             // .take(non_dummy_height)
             .for_each(|(i, (row, (args, mem_result)))| {
