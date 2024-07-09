@@ -613,6 +613,7 @@ mod tests {
         assert_eq!(trace.values, expected_trace);
     }
 
+    #[ignore]
     #[test]
     fn lair_shard_test() {
         type H = LurkHasher;

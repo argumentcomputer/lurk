@@ -95,7 +95,11 @@ pub struct Shard<F: Field> {
 }
 
 impl<F: Field> Shard<F> {
-    // NOTE: Make sure to call `.shard()` on a `Shard` created by `new` when generating the traces, otherwise you will only get the first shard's trace.
+    /// Creates a new initial shard from the given `QueryRecord`.
+    ///
+    /// # Note
+    ///
+    /// Make sure to call `.shard()` on a `Shard` created by `new` when generating the traces, otherwise you will only get the first shard's trace.
     pub fn new(events: Arc<QueryRecord<F>>) -> Self {
         let index = 0;
         let shard_config = ShardingConfig::default();

@@ -70,8 +70,8 @@ impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
         match self {
             Self::Func(func_chip) => format!("Func[{}]", func_chip.func.name),
             Self::Mem(mem_chip) => format!("{}-wide", mem_chip.len),
-            Self::Entrypoint { func_idx, inp, out } => {
-                format!("Entrypoint[{}, {:?}] -> {:?}", func_idx, inp, out)
+            Self::Entrypoint { func_idx, .. } => {
+                format!("Entrypoint[{}]", func_idx)
             }
             // the following is required by sphinx
             // TODO: engineer our way out of such upstream check
@@ -88,11 +88,7 @@ impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
             Self::Func(func_chip) => func_chip.generate_trace(shard.events()),
             Self::Mem(mem_chip) => mem_chip.generate_trace(shard.events()),
             Self::Entrypoint { .. } => {
-                if shard.index() == 0 {
-                    RowMajorMatrix::new(vec![F::one()], 1)
-                } else {
-                    RowMajorMatrix::new(vec![F::zero()], 1)
-                }
+                RowMajorMatrix::new(vec![F::from_bool(shard.index() == 0)], 1)
             }
             Self::Preprocessed => RowMajorMatrix::new(vec![F::zero(); 1], 1),
         }
@@ -175,19 +171,19 @@ pub fn build_lair_chip_vector<'a, F: PrimeField32, H: Hasher<F>>(
     let func = &entry_func_chip.func;
     assert_eq!(func.input_size, inp.len());
     assert_eq!(func.output_size, out.len());
-    let mut chip_vector = Vec::with_capacity(1 + toplevel.map.size() + MEM_TABLE_SIZES.len());
+    let mut chip_vector = Vec::with_capacity(2 + toplevel.map.size() + MEM_TABLE_SIZES.len());
     chip_vector.push(LairChip::entrypoint(
         F::from_canonical_usize(func.index),
         inp,
         out,
     ));
+    chip_vector.push(LairChip::Preprocessed);
     for func_chip in FuncChip::from_toplevel(toplevel) {
         chip_vector.push(LairChip::Func(func_chip));
     }
     for mem_len in MEM_TABLE_SIZES {
         chip_vector.push(LairChip::Mem(MemChip::new(mem_len)));
     }
-    chip_vector.push(LairChip::Preprocessed);
     chip_vector
 }
 
