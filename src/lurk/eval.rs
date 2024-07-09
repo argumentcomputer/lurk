@@ -1391,7 +1391,7 @@ mod test {
                 digest: expr_digest,
             } = zstore.read_with_state(state.clone(), expr).unwrap();
 
-            let record = &mut QueryRecord::new(toplevel);
+            let mut record = QueryRecord::new(toplevel);
             record.inject_inv_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
 
             let ZPtr {
@@ -1404,16 +1404,16 @@ mod test {
             full_input[8..16].copy_from_slice(&expr_digest);
 
             let full_input: List<_> = full_input.into();
-            toplevel.execute(lurk_main.func, &full_input, record);
-            let result = record.get_output(lurk_main.func, &full_input);
+            toplevel.execute(lurk_main.func, &full_input, &mut record);
+            let result = record.get_output(lurk_main.func, &full_input).to_vec();
 
             assert_eq!(&result[0], &expected_tag.to_field());
             assert_eq!(&result[8..], &expected_digest);
 
             let lair_chips =
-                build_lair_chip_vector(&lurk_main, full_input.clone().into(), result.to_vec());
+                build_lair_chip_vector(&lurk_main, full_input.clone().into(), result.clone());
 
-            let shard = Shard::new(record.clone());
+            let shard = Shard::new(record.into());
             use MachineRecord;
             let shards = shard.clone().shard(&ShardingConfig { max_shard_size: 4 });
             println!("num_shards: {}", shards.len());
@@ -1422,7 +1422,7 @@ mod test {
                 let q: Vec<_> = lair_chips
                     .iter()
                     .map(|chip| {
-                        if chip.included(&s) {
+                        if chip.included(s) {
                             let trace = chip.generate_trace(s, &mut Shard::default());
                             debug_constraints_collecting_queries(chip, &[], None, &trace)
                         } else {
@@ -1436,7 +1436,7 @@ mod test {
 
             let machine = StarkMachine::new(
                 config.clone(),
-                build_chip_vector(&lurk_main, full_input.into(), result.into()),
+                build_chip_vector(&lurk_main, full_input.into(), result),
                 0,
             );
             let (pk, _vk) = machine.setup(&LairMachineProgram);
@@ -1518,18 +1518,18 @@ mod test {
 
             let digest: List<_> = digest.into();
 
-            let queries = &mut QueryRecord::new(toplevel);
+            let mut queries = QueryRecord::new(toplevel);
             queries.inject_inv_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
 
             let mut ingress_args = [F::zero(); 16];
             ingress_args[0] = tag;
             ingress_args[8..].copy_from_slice(&digest);
 
-            toplevel.execute(ingress, &ingress_args, queries);
+            toplevel.execute(ingress, &ingress_args, &mut queries);
             let ingress_out_ptr = queries.get_output(ingress, &ingress_args)[0];
 
             let egress_args = &[tag, ingress_out_ptr];
-            toplevel.execute(egress, egress_args, queries);
+            toplevel.execute(egress, egress_args, &mut queries);
             let egress_out = queries.get_output(egress, egress_args);
 
             assert_eq!(
@@ -1538,7 +1538,8 @@ mod test {
                 "ingress -> egress doesn't roundtrip"
             );
 
-            let hash_32_8_trace = hash_32_8_chip.generate_trace_parallel_no_shard(queries);
+            let hash_32_8_trace =
+                hash_32_8_chip.generate_trace_parallel(&Shard::new(queries.into()));
             debug_constraints_collecting_queries(&hash_32_8_chip, &[], None, &hash_32_8_trace);
         };
 

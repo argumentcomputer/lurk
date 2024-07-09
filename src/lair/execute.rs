@@ -92,9 +92,8 @@ pub struct Shard<F: Field> {
 }
 
 impl<F: Field> Shard<F> {
-    pub fn new(events: QueryRecord<F>) -> Self {
+    pub fn new(events: Arc<QueryRecord<F>>) -> Self {
         let index = 0;
-        let events = Arc::new(events);
         let shard_config = ShardingConfig::default();
         Shard {
             index,
@@ -629,8 +628,13 @@ mod tests {
     use crate::{
         func,
         lair::{
-            demo_toplevel, execute::QueryRecord, field_from_u32, func_chip::FuncChip,
-            hasher::LurkHasher, toplevel::Toplevel, List,
+            demo_toplevel,
+            execute::{QueryRecord, Shard},
+            field_from_u32,
+            func_chip::FuncChip,
+            hasher::LurkHasher,
+            toplevel::Toplevel,
+            List,
         },
     };
 
@@ -802,35 +806,38 @@ mod tests {
         let half_chip = FuncChip::from_name("half", &toplevel);
         let double_chip = FuncChip::from_name("double", &toplevel);
 
-        let queries = &mut QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
         let f = F::from_canonical_u32;
         queries.inject_inv_queries("double", &toplevel, [(&[f(1)], &[f(2)])]);
         let args = &[f(2)];
 
-        toplevel.execute(half, args, queries);
+        toplevel.execute(half, args, &mut queries);
         let res1 = queries.get_output(half, args).to_vec();
+        let shard = Shard::new(queries.clone().into());
         let traces1 = (
-            half_chip.generate_trace_sequential_no_shard(queries),
-            double_chip.generate_trace_sequential_no_shard(queries),
+            half_chip.generate_trace_sequential(&shard),
+            double_chip.generate_trace_sequential(&shard),
         );
 
         // even after `clean`, the preimg of `double(1)` can still be recovered
         queries.clean();
-        toplevel.execute(half, args, queries);
+        toplevel.execute(half, args, &mut queries);
         let res2 = queries.get_output(half, args).to_vec();
+        let shard = Shard::new(queries.clone().into());
         let traces2 = (
-            half_chip.generate_trace_sequential_no_shard(queries),
-            double_chip.generate_trace_sequential_no_shard(queries),
+            half_chip.generate_trace_sequential(&shard),
+            double_chip.generate_trace_sequential(&shard),
         );
         assert_eq!(res1, res2);
         assert_eq!(traces1, traces2);
 
         queries.clean();
-        toplevel.execute(half, args, queries);
-        let res3 = queries.get_output(half, args);
+        toplevel.execute(half, args, &mut queries);
+        let res3 = queries.get_output(half, args).to_vec();
+        let shard = Shard::new(queries.into());
         let traces3 = (
-            half_chip.generate_trace_sequential_no_shard(queries),
-            double_chip.generate_trace_sequential_no_shard(queries),
+            half_chip.generate_trace_sequential(&shard),
+            double_chip.generate_trace_sequential(&shard),
         );
         assert_eq!(res2, res3);
         assert_eq!(traces2, traces3);

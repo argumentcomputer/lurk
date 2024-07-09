@@ -540,7 +540,11 @@ fn constrain_inequality_witness<AB: AirBuilder>(
 
 #[cfg(test)]
 mod tests {
-    use crate::{air::debug::debug_constraints_collecting_queries, func, lair::hasher::LurkHasher};
+    use crate::{
+        air::debug::debug_constraints_collecting_queries,
+        func,
+        lair::{execute::Shard, hasher::LurkHasher},
+    };
     use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
     use p3_matrix::dense::RowMajorMatrix;
@@ -554,10 +558,10 @@ mod tests {
     #[test]
     fn lair_constraint_test() {
         let toplevel = demo_toplevel::<_, LurkHasher>();
-        let queries = &mut QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
-        toplevel.execute_by_name("factorial", &[F::from_canonical_usize(5)], queries);
-        let factorial_trace = factorial_chip.generate_trace_sequential_no_shard(queries);
+        toplevel.execute_by_name("factorial", &[F::from_canonical_usize(5)], &mut queries);
+        let factorial_trace = factorial_chip.generate_trace_sequential(&Shard::new(queries.into()));
         let factorial_width = factorial_chip.width();
         let expected_factorial_trace = RowMajorMatrix::new(
             [
@@ -580,8 +584,9 @@ mod tests {
         assert_eq!(factorial_trace, expected_factorial_trace);
 
         let fib_chip = FuncChip::from_name("fib", &toplevel);
-        toplevel.execute_by_name("fib", &[F::from_canonical_usize(7)], queries);
-        let fib_trace = fib_chip.generate_trace_sequential_no_shard(queries);
+        let mut queries = QueryRecord::new(&toplevel);
+        toplevel.execute_by_name("fib", &[F::from_canonical_usize(7)], &mut queries);
+        let fib_trace = fib_chip.generate_trace_sequential(&Shard::new(queries.into()));
         let fib_width = fib_chip.width();
         let expected_fib_trace = RowMajorMatrix::new(
             // in order: nonce, n, 1/n, 1/(n-1), fib(n-1), lookup nonces and counts, fib(n-2), lookup nonces and counts, and selectors
@@ -616,9 +621,9 @@ mod tests {
         let toplevel = demo_toplevel::<_, LurkHasher>();
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         let args = &[field_from_u32(20000)];
-        let queries = &mut QueryRecord::new(&toplevel);
-        toplevel.execute_by_name("fib", args, queries);
-        let fib_trace = fib_chip.generate_trace_parallel_no_shard(queries);
+        let mut queries = QueryRecord::new(&toplevel);
+        toplevel.execute_by_name("fib", args, &mut queries);
+        let fib_trace = fib_chip.generate_trace_parallel(&Shard::new(queries.into()));
 
         let _ = debug_constraints_collecting_queries(&fib_chip, &[], None, &fib_trace);
     }
@@ -639,16 +644,16 @@ mod tests {
         let eq_chip = FuncChip::from_name("eq", &toplevel);
         let not_chip = FuncChip::from_name("not", &toplevel);
 
-        let queries = &mut QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
         let args = &[field_from_u32(4)];
-        toplevel.execute_by_name("not", args, queries);
+        toplevel.execute_by_name("not", args, &mut queries);
         let args = &[field_from_u32(8)];
-        toplevel.execute_by_name("not", args, queries);
+        toplevel.execute_by_name("not", args, &mut queries);
         let args = &[field_from_u32(0)];
-        toplevel.execute_by_name("not", args, queries);
+        toplevel.execute_by_name("not", args, &mut queries);
         let args = &[field_from_u32(1)];
-        toplevel.execute_by_name("not", args, queries);
-        let not_trace = not_chip.generate_trace_sequential_no_shard(queries);
+        toplevel.execute_by_name("not", args, &mut queries);
+        let not_trace = not_chip.generate_trace_sequential(&Shard::new(queries.into()));
 
         let not_width = not_chip.width();
         let expected_not_trace = RowMajorMatrix::new(
@@ -665,15 +670,16 @@ mod tests {
         );
         assert_eq!(not_trace, expected_not_trace);
 
+        let mut queries = QueryRecord::new(&toplevel);
         let args = &[field_from_u32(4), field_from_u32(2)];
-        toplevel.execute_by_name("eq", args, queries);
+        toplevel.execute_by_name("eq", args, &mut queries);
         let args = &[field_from_u32(4), field_from_u32(4)];
-        toplevel.execute_by_name("eq", args, queries);
+        toplevel.execute_by_name("eq", args, &mut queries);
         let args = &[field_from_u32(0), field_from_u32(3)];
-        toplevel.execute_by_name("eq", args, queries);
+        toplevel.execute_by_name("eq", args, &mut queries);
         let args = &[field_from_u32(0), field_from_u32(0)];
-        toplevel.execute_by_name("eq", args, queries);
-        let eq_trace = eq_chip.generate_trace_sequential_no_shard(queries);
+        toplevel.execute_by_name("eq", args, &mut queries);
+        let eq_trace = eq_chip.generate_trace_sequential(&Shard::new(queries.into()));
 
         let eq_width = eq_chip.width();
         let expected_eq_trace = RowMajorMatrix::new(
@@ -708,18 +714,18 @@ mod tests {
         let toplevel = Toplevel::<F, LurkHasher>::new(&[if_many_func]);
         let if_many_chip = FuncChip::from_name("if_many", &toplevel);
 
-        let queries = &mut QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
         let f = field_from_u32;
         let args = &[f(0), f(0), f(0), f(0)];
-        toplevel.execute_by_name("if_many", args, queries);
+        toplevel.execute_by_name("if_many", args, &mut queries);
         let args = &[f(1), f(3), f(8), f(2)];
-        toplevel.execute_by_name("if_many", args, queries);
+        toplevel.execute_by_name("if_many", args, &mut queries);
         let args = &[f(0), f(0), f(4), f(1)];
-        toplevel.execute_by_name("if_many", args, queries);
+        toplevel.execute_by_name("if_many", args, &mut queries);
         let args = &[f(0), f(0), f(0), f(9)];
-        toplevel.execute_by_name("if_many", args, queries);
+        toplevel.execute_by_name("if_many", args, &mut queries);
 
-        let if_many_trace = if_many_chip.generate_trace_parallel_no_shard(queries);
+        let if_many_trace = if_many_chip.generate_trace_parallel(&Shard::new(queries.into()));
 
         let if_many_width = if_many_chip.width();
         let expected_trace = RowMajorMatrix::new(
@@ -768,20 +774,20 @@ mod tests {
         let toplevel = Toplevel::<F, LurkHasher>::new(&[match_many_func]);
         let match_many_chip = FuncChip::from_name("match_many", &toplevel);
 
-        let queries = &mut QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
         let f = field_from_u32;
         let args = &[f(0), f(0)];
-        toplevel.execute_by_name("match_many", args, queries);
+        toplevel.execute_by_name("match_many", args, &mut queries);
         let args = &[f(0), f(1)];
-        toplevel.execute_by_name("match_many", args, queries);
+        toplevel.execute_by_name("match_many", args, &mut queries);
         let args = &[f(1), f(0)];
-        toplevel.execute_by_name("match_many", args, queries);
+        toplevel.execute_by_name("match_many", args, &mut queries);
         let args = &[f(1), f(1)];
-        toplevel.execute_by_name("match_many", args, queries);
+        toplevel.execute_by_name("match_many", args, &mut queries);
         let args = &[f(0), f(8)];
-        toplevel.execute_by_name("match_many", args, queries);
+        toplevel.execute_by_name("match_many", args, &mut queries);
 
-        let match_many_trace = match_many_chip.generate_trace_parallel_no_shard(queries);
+        let match_many_trace = match_many_chip.generate_trace_parallel(&Shard::new(queries.into()));
 
         let match_many_width = match_many_chip.width();
         let expected_trace = RowMajorMatrix::new(

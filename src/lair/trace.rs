@@ -9,7 +9,7 @@ use crate::lair::execute::mem_index_from_len;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
-    execute::{LookupId, QueryRecord, Shard},
+    execute::{LookupId, Shard},
     func_chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
     hasher::Hasher,
     List,
@@ -79,12 +79,6 @@ impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
         RowMajorMatrix::new(rows, width)
     }
 
-    // TODO(wwared): remove all _no_shard functions
-    pub fn generate_trace_sequential_no_shard(&self, events: &QueryRecord<F>) -> RowMajorMatrix<F> {
-        let shard = Shard::new(events.clone());
-        self.generate_trace_parallel(&shard)
-    }
-
     /// Per-row parallel version of `generate_trace_sequential`
     pub fn generate_trace_parallel(&self, shard: &Shard<F>) -> RowMajorMatrix<F> {
         let func_queries = &shard.events.func_queries()[self.func.index];
@@ -109,12 +103,6 @@ impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
                     .populate_row(args, index, slice, shard, &self.toplevel.hasher);
             });
         RowMajorMatrix::new(rows, width)
-    }
-
-    // TODO(wwared): remove
-    pub fn generate_trace_parallel_no_shard(&self, events: &QueryRecord<F>) -> RowMajorMatrix<F> {
-        let shard = Shard::new(events.clone());
-        self.generate_trace_parallel(&shard)
     }
 }
 
@@ -433,6 +421,8 @@ impl<F: PrimeField32> Op<F> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use crate::{
         func,
         lair::{
@@ -470,11 +460,11 @@ mod tests {
         let toplevel = demo_toplevel::<_, LurkHasher>();
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
         let fib_chip = FuncChip::from_name("fib", &toplevel);
-        let queries = &mut QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
 
         let args = &[F::from_canonical_u32(5)];
-        toplevel.execute_by_name("factorial", args, queries);
-        let trace = factorial_chip.generate_trace_parallel_no_shard(queries);
+        toplevel.execute_by_name("factorial", args, &mut queries);
+        let trace = factorial_chip.generate_trace_parallel(&Shard::new(queries.into()));
         let expected_trace = [
             // in order: nonce, n, 1/n, fact(n-1), prev_nonce, prev_count, count_inv, n*fact(n-1), last_nonce, last_count and selectors
             0, 5, 1610612737, 24, 0, 0, 1, 120, 0, 1, 1, 0, //
@@ -492,9 +482,10 @@ mod tests {
         .collect::<Vec<_>>();
         assert_eq!(trace.values, expected_trace);
 
+        let mut queries = QueryRecord::new(&toplevel);
         let args = &[F::from_canonical_u32(7)];
-        toplevel.execute_by_name("fib", args, queries);
-        let trace = fib_chip.generate_trace_parallel_no_shard(queries);
+        toplevel.execute_by_name("fib", args, &mut queries);
+        let trace = fib_chip.generate_trace_parallel(&Shard::new(queries.into()));
 
         let expected_trace = [
             // in order: nonce, n, 1/n, 1/(n-1), fib(n-1), prev_nonce, prev_count, count_inv, fib(n-2), prev_nonce, prev_count, count_inv, last_nonce, last_count and selectors
@@ -551,9 +542,9 @@ mod tests {
         assert_eq!(test_chip.layout_sizes, expected_layout_sizes);
 
         let args = &[F::from_canonical_u32(5), F::from_canonical_u32(2)];
-        let queries = &mut QueryRecord::new(&toplevel);
-        toplevel.execute_by_name("test", args, queries);
-        let trace = test_chip.generate_trace_parallel_no_shard(queries);
+        let mut queries = QueryRecord::new(&toplevel);
+        toplevel.execute_by_name("test", args, &mut queries);
+        let trace = test_chip.generate_trace_parallel(&Shard::new(queries.into()));
         let expected_trace = [
             // The big numbers in the trace are the inverted elements, the witnesses of
             // the inequalities that appear on the default case. Note that the branch
@@ -619,13 +610,13 @@ mod tests {
         let one = &[F::from_canonical_u32(0), F::from_canonical_u32(1)];
         let two = &[F::from_canonical_u32(1), F::from_canonical_u32(0)];
         let three = &[F::from_canonical_u32(1), F::from_canonical_u32(1)];
-        let queries = &mut QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
         let test_func = toplevel.get_by_name("test");
-        toplevel.execute(test_func, zero, queries);
-        toplevel.execute(test_func, one, queries);
-        toplevel.execute(test_func, two, queries);
-        toplevel.execute(test_func, three, queries);
-        let trace = test_chip.generate_trace_parallel_no_shard(queries);
+        toplevel.execute(test_func, zero, &mut queries);
+        toplevel.execute(test_func, one, &mut queries);
+        toplevel.execute(test_func, two, &mut queries);
+        toplevel.execute(test_func, three, &mut queries);
+        let trace = test_chip.generate_trace_parallel(&Shard::new(queries.into()));
 
         let expected_trace = [
             // nonce, two inputs, last_nonce, last_count, selectors
@@ -645,13 +636,14 @@ mod tests {
         let toplevel = demo_toplevel::<_, LurkHasher>();
 
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
-        let queries = &mut QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
 
         let args = &[F::from_canonical_u32(6)];
-        toplevel.execute_by_name("factorial", args, queries);
-        let full_trace = factorial_chip.generate_trace_parallel_no_shard(queries);
+        toplevel.execute_by_name("factorial", args, &mut queries);
+        let events: Arc<_> = queries.into();
+        let full_trace = factorial_chip.generate_trace_parallel(&Shard::new(events.clone()));
 
-        let shard = Shard::new(queries.clone());
+        let shard = Shard::new(events);
         use sphinx_core::stark::MachineRecord;
         let shards = shard.shard(&ShardingConfig { max_shard_size: 4 });
 

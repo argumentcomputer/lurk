@@ -1,5 +1,5 @@
 use p3_air::{Air, AirBuilder, BaseAir};
-use p3_field::{AbstractField, Field, PrimeField32};
+use p3_field::{AbstractField, PrimeField32};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use p3_maybe_rayon::prelude::*;
 use rayon::iter::{IndexedParallelIterator, ParallelIterator};
@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use crate::air::builder::{LookupBuilder, ProvideRecord};
 
 use super::{
-    execute::{mem_index_from_len, QueryRecord, Shard},
+    execute::{mem_index_from_len, Shard},
     relations::MemoryRelation,
 };
 
@@ -62,14 +62,6 @@ impl<F: PrimeField32> MemChip<F> {
                 row[4..].copy_from_slice(args)
             });
         trace
-    }
-
-    pub fn generate_trace_no_shard(&self, queries: &QueryRecord<F>) -> RowMajorMatrix<F>
-    where
-        F: Field,
-    {
-        let shard = Shard::new(queries.clone());
-        self.generate_trace(&shard)
     }
 }
 
@@ -146,9 +138,9 @@ mod tests {
         });
         let toplevel = Toplevel::<F, LurkHasher>::new(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
-        let queries = &mut QueryRecord::new(&toplevel);
-        toplevel.execute_by_name("test", &[], queries);
-        let func_trace = test_chip.generate_trace_sequential_no_shard(queries);
+        let mut queries = QueryRecord::new(&toplevel);
+        toplevel.execute_by_name("test", &[], &mut queries);
+        let func_trace = test_chip.generate_trace_sequential(&Shard::new(queries.clone().into()));
 
         #[rustfmt::skip]
         let expected_trace = [
@@ -164,7 +156,8 @@ mod tests {
 
         let mem_len = 3;
         let mem_chip = MemChip::new(mem_len);
-        let mem_trace = mem_chip.generate_trace_no_shard(queries);
+        let shard = Shard::new(queries.into());
+        let mem_trace = mem_chip.generate_trace(&shard);
 
         #[rustfmt::skip]
         let expected_trace = [

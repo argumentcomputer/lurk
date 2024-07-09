@@ -1,5 +1,5 @@
 use p3_air::{Air, AirBuilder, BaseAir};
-use p3_field::{AbstractField, Field, PrimeField, PrimeField32};
+use p3_field::{AbstractField, Field, PrimeField32};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use sphinx_core::{
     air::{EventLens, MachineAir, MachineProgram, WithEvents},
@@ -9,7 +9,7 @@ use sphinx_core::{
 use crate::air::builder::{LookupBuilder, RequireRecord};
 
 use super::{
-    execute::{mem_index_from_len, Shard, MEM_TABLE_SIZES},
+    execute::{Shard, MEM_TABLE_SIZES},
     func_chip::FuncChip,
     hasher::Hasher,
     memory::MemChip,
@@ -95,7 +95,7 @@ impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
                 let range = queries.get_func_range(func_chip.func.index);
                 !range.is_empty()
             }
-            Self::Mem(mem_chip) => {
+            Self::Mem(_mem_chip) => {
                 queries.index == 0
                 // let range = queries.get_mem_range(mem_index_from_len(mem_chip.len));
                 // !range.is_empty()
@@ -270,11 +270,11 @@ mod tests {
         let (pk, vk) = machine.setup(&LairMachineProgram);
         let mut challenger_p = machine.config().challenger();
         let mut challenger_v = machine.config().challenger();
-        let shard = Shard::new(queries);
-        use sphinx_core::stark::MachineRecord;
-        let shards = shard
-            .clone()
-            .shard(&crate::lair::execute::ShardingConfig { max_shard_size: 4 });
+        let shard = Shard::new(queries.into());
+        // use sphinx_core::stark::MachineRecord;
+        // let shards = shard
+        //     .clone()
+        //     .shard(&crate::lair::execute::ShardingConfig { max_shard_size: 4 });
         // panic!("num_shards: {}", shards.len());
 
         machine.debug_constraints(&pk, shard.clone(), &mut challenger_p.clone());

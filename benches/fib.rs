@@ -7,7 +7,7 @@ use sphinx_core::{
     stark::{LocalProver, StarkGenericConfig, StarkMachine},
     utils::{BabyBearPoseidon2, SphinxCoreOpts},
 };
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use loam::{
     lair::{
@@ -90,10 +90,11 @@ fn trace_generation(c: &mut Criterion) {
         let toplevel = build_lurk_toplevel();
         let (args, lurk_main, mut record) = setup(arg, &toplevel);
         let out = toplevel.execute(lurk_main.func(), &args, &mut record);
+        let events: Arc<_> = record.into();
         let lair_chips = build_lair_chip_vector(&lurk_main, args.into(), out.into());
         b.iter(|| {
             lair_chips.par_iter().for_each(|func_chip| {
-                let mut shard = Shard::new(record.clone()); // TODO(wwared): remove .clone()
+                let mut shard = Shard::new(events.clone());
                 func_chip.generate_trace(&Shard::default(), &mut shard);
             })
         })
@@ -119,7 +120,7 @@ fn e2e(c: &mut Criterion) {
                 let (pk, _) = machine.setup(&LairMachineProgram);
                 let mut challenger_p = machine.config().challenger();
                 let opts = SphinxCoreOpts::default();
-                let shard = Shard::new(record.clone()); // TODO(wwared): remove .clone()
+                let shard = Shard::new(record.into());
                 machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
             },
             BatchSize::SmallInput,
