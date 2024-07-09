@@ -33,6 +33,7 @@ struct CallCtx<F, T> {
 }
 
 pub type ColumnSlice<'a, T> = ColumnLayout<&'a T, &'a [T]>;
+
 impl<'a, T> ColumnSlice<'a, T> {
     pub fn from_slice(slice: &'a [T], layout_sizes: LayoutSizes) -> Self {
         let (nonce, slice) = slice.split_at(1);
@@ -49,14 +50,20 @@ impl<'a, T> ColumnSlice<'a, T> {
         }
     }
 
-    pub fn next_input(&self, index: &mut ColumnIndex) -> &T {
-        let t = &self.input[index.input];
+    pub fn next_input(&self, index: &mut ColumnIndex) -> T
+    where
+        T: Copy,
+    {
+        let t = self.input[index.input];
         index.input += 1;
         t
     }
 
-    pub fn next_aux(&self, index: &mut ColumnIndex) -> &T {
-        let t = &self.aux[index.aux];
+    pub fn next_aux(&self, index: &mut ColumnIndex) -> T
+    where
+        T: Copy,
+    {
+        let t = self.aux[index.aux];
         index.aux += 1;
         t
     }
@@ -113,7 +120,7 @@ impl<F: Field> Func<F> {
         let nonce = *local.nonce;
         let next_nonce = *next.nonce;
 
-        // this prevents evil provers from starting ahead (maybe close to |F|)
+        // nonce counting starts from zero
         builder.when_first_row().assert_zero(nonce);
 
         // nonces are unique, even for dummy rows
@@ -124,7 +131,7 @@ impl<F: Field> Func<F> {
         let map = &mut vec![];
         let mut call_inp = Vec::with_capacity(self.input_size);
         for _ in 0..self.input_size {
-            let i = *local.next_input(index);
+            let i = local.next_input(index);
             map.push(Val::Expr(i.into()));
             call_inp.push(i.into());
         }
@@ -229,7 +236,7 @@ impl<F: Field> Op<F> {
                 let c = if let (Val::Const(a), Val::Const(b)) = (a, b) {
                     Val::Const(*a * *b)
                 } else {
-                    let c = *local.next_aux(index);
+                    let c = local.next_aux(index);
                     builder
                         .when(sel.clone())
                         .assert_eq(a.to_expr() * b.to_expr(), c);
@@ -242,7 +249,7 @@ impl<F: Field> Op<F> {
                 let c = if let Val::Const(a) = a {
                     Val::Const(a.inverse())
                 } else {
-                    let c = *local.next_aux(index);
+                    let c = local.next_aux(index);
                     builder.when(sel.clone()).assert_one(a.to_expr() * c);
                     Val::Expr(c.into())
                 };
@@ -254,8 +261,8 @@ impl<F: Field> Op<F> {
                     let x = if a.is_zero() { F::one() } else { F::zero() };
                     Val::Const(x)
                 } else {
-                    let d = *local.next_aux(index);
-                    let x = *local.next_aux(index);
+                    let d = local.next_aux(index);
+                    let x = local.next_aux(index);
                     // The two constraints
                     //   a*x = 0
                     //   a*d + x = 1, for some d
@@ -271,14 +278,14 @@ impl<F: Field> Op<F> {
                 let func = toplevel.get_by_index(*idx);
                 let mut out = Vec::with_capacity(func.output_size);
                 for _ in 0..func.output_size {
-                    let o = *local.next_aux(index);
+                    let o = local.next_aux(index);
                     map.push(Val::Expr(o.into()));
                     out.push(o.into());
                 }
                 let inp = inp.iter().map(|i| map[*i].to_expr());
-                let prev_nonce = *local.next_aux(index);
-                let prev_count = *local.next_aux(index);
-                let count_inv = *local.next_aux(index);
+                let prev_nonce = local.next_aux(index);
+                let prev_count = local.next_aux(index);
+                let count_inv = local.next_aux(index);
                 let record = RequireRecord {
                     prev_nonce,
                     prev_count,
@@ -295,14 +302,14 @@ impl<F: Field> Op<F> {
                 let func = toplevel.get_by_index(*idx);
                 let mut inp = Vec::with_capacity(func.input_size);
                 for _ in 0..func.input_size {
-                    let i = *local.next_aux(index);
+                    let i = local.next_aux(index);
                     map.push(Val::Expr(i.into()));
                     inp.push(i.into());
                 }
                 let out = out.iter().map(|o| map[*o].to_expr());
-                let prev_nonce = *local.next_aux(index);
-                let prev_count = *local.next_aux(index);
-                let count_inv = *local.next_aux(index);
+                let prev_nonce = local.next_aux(index);
+                let prev_count = local.next_aux(index);
+                let count_inv = local.next_aux(index);
                 let record = RequireRecord {
                     prev_nonce,
                     prev_count,
@@ -316,13 +323,13 @@ impl<F: Field> Op<F> {
                 );
             }
             Op::Store(values, _) => {
-                let ptr = *local.next_aux(index);
+                let ptr = local.next_aux(index);
                 map.push(Val::Expr(ptr.into()));
                 let values = values.iter().map(|&idx| map[idx].to_expr());
 
-                let prev_nonce = *local.next_aux(index);
-                let prev_count = *local.next_aux(index);
-                let count_inv = *local.next_aux(index);
+                let prev_nonce = local.next_aux(index);
+                let prev_count = local.next_aux(index);
+                let count_inv = local.next_aux(index);
                 let record = RequireRecord {
                     prev_nonce,
                     prev_count,
@@ -341,15 +348,15 @@ impl<F: Field> Op<F> {
                 // This must be collected to ensure the side effects take place
                 let values = (0..*len)
                     .map(|_| {
-                        let o = *local.next_aux(index);
+                        let o = local.next_aux(index);
                         map.push(Val::Expr(o.into()));
                         o
                     })
                     .collect::<Vec<_>>();
 
-                let prev_nonce = *local.next_aux(index);
-                let prev_count = *local.next_aux(index);
-                let count_inv = *local.next_aux(index);
+                let prev_nonce = local.next_aux(index);
+                let prev_count = local.next_aux(index);
+                let count_inv = local.next_aux(index);
                 let record = RequireRecord {
                     prev_nonce,
                     prev_count,
@@ -409,7 +416,7 @@ impl<F: Field> Ctrl<F> {
 
                 if let Some(branch) = &cases.default {
                     let invs = (0..cases.branches.size())
-                        .map(|_| *local.next_aux(index))
+                        .map(|_| local.next_aux(index))
                         .collect::<Vec<_>>();
                     let sel = branch.return_sel::<AB>(local);
                     branch.eval(builder, local, &sel, index, map, toplevel, call_ctx);
@@ -437,7 +444,7 @@ impl<F: Field> Ctrl<F> {
 
                 if let Some(branch) = &cases.default {
                     let wit: Vec<Vec<_>> = (0..cases.branches.size())
-                        .map(|_| (0..vars.len()).map(|_| *local.next_aux(index)).collect())
+                        .map(|_| (0..vars.len()).map(|_| local.next_aux(index)).collect())
                         .collect();
                     let sel = branch.return_sel::<AB>(local);
                     branch.eval(builder, local, &sel, index, map, toplevel, call_ctx);
@@ -458,7 +465,7 @@ impl<F: Field> Ctrl<F> {
                 let init_state = index.save();
                 let b = map[*b].to_expr();
 
-                let inv = *local.next_aux(index);
+                let inv = local.next_aux(index);
                 let t_sel = t.return_sel::<AB>(local);
                 t.eval(
                     builder,
@@ -483,7 +490,7 @@ impl<F: Field> Ctrl<F> {
                 let map_len = map.len();
                 let init_state = index.save();
 
-                let coeffs = vars.iter().map(|_| *local.next_aux(index)).collect();
+                let coeffs = vars.iter().map(|_| local.next_aux(index)).collect();
                 let vals = vars.iter().map(|&v| map[v].to_expr()).collect();
                 let t_sel = t.return_sel::<AB>(local);
                 t.eval(
@@ -512,8 +519,8 @@ impl<F: Field> Ctrl<F> {
                 let sel = local.sel[*ident];
                 let out = vs.iter().map(|v| map[*v].to_expr());
                 let CallCtx { func_idx, call_inp } = call_ctx;
-                let last_nonce = *local.next_aux(index);
-                let last_count = *local.next_aux(index);
+                let last_nonce = local.next_aux(index);
+                let last_count = local.next_aux(index);
                 let record = ProvideRecord {
                     last_nonce,
                     last_count,
@@ -540,7 +547,11 @@ fn constrain_inequality_witness<AB: AirBuilder>(
 
 #[cfg(test)]
 mod tests {
-    use crate::{air::debug::debug_constraints_collecting_queries, func, lair::hasher::LurkHasher};
+    use crate::{
+        air::debug::debug_constraints_collecting_queries,
+        func,
+        lair::{execute::Shard, hasher::LurkHasher},
+    };
     use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
     use p3_matrix::dense::RowMajorMatrix;
@@ -554,10 +565,10 @@ mod tests {
     #[test]
     fn lair_constraint_test() {
         let toplevel = demo_toplevel::<_, LurkHasher>();
-        let queries = &mut QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
-        toplevel.execute_by_name("factorial", &[F::from_canonical_usize(5)], queries);
-        let factorial_trace = factorial_chip.generate_trace_sequential(queries);
+        toplevel.execute_by_name("factorial", &[F::from_canonical_usize(5)], &mut queries);
+        let factorial_trace = factorial_chip.generate_trace(&Shard::new(&queries));
         let factorial_width = factorial_chip.width();
         let expected_factorial_trace = RowMajorMatrix::new(
             [
@@ -580,8 +591,9 @@ mod tests {
         assert_eq!(factorial_trace, expected_factorial_trace);
 
         let fib_chip = FuncChip::from_name("fib", &toplevel);
-        toplevel.execute_by_name("fib", &[F::from_canonical_usize(7)], queries);
-        let fib_trace = fib_chip.generate_trace_sequential(queries);
+        let mut queries = QueryRecord::new(&toplevel);
+        toplevel.execute_by_name("fib", &[F::from_canonical_usize(7)], &mut queries);
+        let fib_trace = fib_chip.generate_trace(&Shard::new(&queries));
         let fib_width = fib_chip.width();
         let expected_fib_trace = RowMajorMatrix::new(
             // in order: nonce, n, 1/n, 1/(n-1), fib(n-1), lookup nonces and counts, fib(n-2), lookup nonces and counts, and selectors
@@ -616,9 +628,9 @@ mod tests {
         let toplevel = demo_toplevel::<_, LurkHasher>();
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         let args = &[field_from_u32(20000)];
-        let queries = &mut QueryRecord::new(&toplevel);
-        toplevel.execute_by_name("fib", args, queries);
-        let fib_trace = fib_chip.generate_trace_parallel(queries);
+        let mut queries = QueryRecord::new(&toplevel);
+        toplevel.execute_by_name("fib", args, &mut queries);
+        let fib_trace = fib_chip.generate_trace(&Shard::new(&queries));
 
         let _ = debug_constraints_collecting_queries(&fib_chip, &[], None, &fib_trace);
     }
@@ -639,16 +651,16 @@ mod tests {
         let eq_chip = FuncChip::from_name("eq", &toplevel);
         let not_chip = FuncChip::from_name("not", &toplevel);
 
-        let queries = &mut QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
         let args = &[field_from_u32(4)];
-        toplevel.execute_by_name("not", args, queries);
+        toplevel.execute_by_name("not", args, &mut queries);
         let args = &[field_from_u32(8)];
-        toplevel.execute_by_name("not", args, queries);
+        toplevel.execute_by_name("not", args, &mut queries);
         let args = &[field_from_u32(0)];
-        toplevel.execute_by_name("not", args, queries);
+        toplevel.execute_by_name("not", args, &mut queries);
         let args = &[field_from_u32(1)];
-        toplevel.execute_by_name("not", args, queries);
-        let not_trace = not_chip.generate_trace_sequential(queries);
+        toplevel.execute_by_name("not", args, &mut queries);
+        let not_trace = not_chip.generate_trace(&Shard::new(&queries));
 
         let not_width = not_chip.width();
         let expected_not_trace = RowMajorMatrix::new(
@@ -665,15 +677,16 @@ mod tests {
         );
         assert_eq!(not_trace, expected_not_trace);
 
+        let mut queries = QueryRecord::new(&toplevel);
         let args = &[field_from_u32(4), field_from_u32(2)];
-        toplevel.execute_by_name("eq", args, queries);
+        toplevel.execute_by_name("eq", args, &mut queries);
         let args = &[field_from_u32(4), field_from_u32(4)];
-        toplevel.execute_by_name("eq", args, queries);
+        toplevel.execute_by_name("eq", args, &mut queries);
         let args = &[field_from_u32(0), field_from_u32(3)];
-        toplevel.execute_by_name("eq", args, queries);
+        toplevel.execute_by_name("eq", args, &mut queries);
         let args = &[field_from_u32(0), field_from_u32(0)];
-        toplevel.execute_by_name("eq", args, queries);
-        let eq_trace = eq_chip.generate_trace_sequential(queries);
+        toplevel.execute_by_name("eq", args, &mut queries);
+        let eq_trace = eq_chip.generate_trace(&Shard::new(&queries));
 
         let eq_width = eq_chip.width();
         let expected_eq_trace = RowMajorMatrix::new(
@@ -708,18 +721,18 @@ mod tests {
         let toplevel = Toplevel::<F, LurkHasher>::new(&[if_many_func]);
         let if_many_chip = FuncChip::from_name("if_many", &toplevel);
 
-        let queries = &mut QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
         let f = field_from_u32;
         let args = &[f(0), f(0), f(0), f(0)];
-        toplevel.execute_by_name("if_many", args, queries);
+        toplevel.execute_by_name("if_many", args, &mut queries);
         let args = &[f(1), f(3), f(8), f(2)];
-        toplevel.execute_by_name("if_many", args, queries);
+        toplevel.execute_by_name("if_many", args, &mut queries);
         let args = &[f(0), f(0), f(4), f(1)];
-        toplevel.execute_by_name("if_many", args, queries);
+        toplevel.execute_by_name("if_many", args, &mut queries);
         let args = &[f(0), f(0), f(0), f(9)];
-        toplevel.execute_by_name("if_many", args, queries);
+        toplevel.execute_by_name("if_many", args, &mut queries);
 
-        let if_many_trace = if_many_chip.generate_trace_parallel(queries);
+        let if_many_trace = if_many_chip.generate_trace(&Shard::new(&queries));
 
         let if_many_width = if_many_chip.width();
         let expected_trace = RowMajorMatrix::new(
@@ -768,20 +781,20 @@ mod tests {
         let toplevel = Toplevel::<F, LurkHasher>::new(&[match_many_func]);
         let match_many_chip = FuncChip::from_name("match_many", &toplevel);
 
-        let queries = &mut QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
         let f = field_from_u32;
         let args = &[f(0), f(0)];
-        toplevel.execute_by_name("match_many", args, queries);
+        toplevel.execute_by_name("match_many", args, &mut queries);
         let args = &[f(0), f(1)];
-        toplevel.execute_by_name("match_many", args, queries);
+        toplevel.execute_by_name("match_many", args, &mut queries);
         let args = &[f(1), f(0)];
-        toplevel.execute_by_name("match_many", args, queries);
+        toplevel.execute_by_name("match_many", args, &mut queries);
         let args = &[f(1), f(1)];
-        toplevel.execute_by_name("match_many", args, queries);
+        toplevel.execute_by_name("match_many", args, &mut queries);
         let args = &[f(0), f(8)];
-        toplevel.execute_by_name("match_many", args, queries);
+        toplevel.execute_by_name("match_many", args, &mut queries);
 
-        let match_many_trace = match_many_chip.generate_trace_parallel(queries);
+        let match_many_trace = match_many_chip.generate_trace(&Shard::new(&queries));
 
         let match_many_width = match_many_chip.width();
         let expected_trace = RowMajorMatrix::new(

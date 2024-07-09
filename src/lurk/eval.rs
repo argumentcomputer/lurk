@@ -1310,14 +1310,14 @@ mod test {
     use p3_field::AbstractField;
     use sphinx_core::{
         air::MachineAir,
-        stark::{StarkGenericConfig, StarkMachine},
+        stark::{MachineRecord, StarkMachine},
         utils::BabyBearPoseidon2,
     };
 
     use crate::{
         air::debug::{debug_constraints_collecting_queries, TraceQueries},
         lair::{
-            execute::QueryRecord,
+            execute::{QueryRecord, Shard, ShardingConfig},
             func_chip::FuncChip,
             hasher::LurkHasher,
             lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
@@ -1390,7 +1390,7 @@ mod test {
                 digest: expr_digest,
             } = zstore.read_with_state(state.clone(), expr).unwrap();
 
-            let record = &mut QueryRecord::new(toplevel);
+            let mut record = QueryRecord::new(toplevel);
             record.inject_inv_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
 
             let ZPtr {
@@ -1403,32 +1403,54 @@ mod test {
             full_input[8..16].copy_from_slice(&expr_digest);
 
             let full_input: List<_> = full_input.into();
-            toplevel.execute(lurk_main.func, &full_input, record);
-            let result = record.get_output(lurk_main.func, &full_input);
+            toplevel.execute(lurk_main.func, &full_input, &mut record);
+            let result = record.get_output(lurk_main.func, &full_input).to_vec();
 
             assert_eq!(&result[0], &expected_tag.to_field());
             assert_eq!(&result[8..], &expected_digest);
 
             let lair_chips =
-                build_lair_chip_vector(&lurk_main, full_input.clone().into(), result.to_vec());
+                build_lair_chip_vector(&lurk_main, full_input.clone().into(), result.clone());
 
+            let full_shard = Shard::new(&record);
+            // Verify lookup queries without sharding
             let lookup_queries: Vec<_> = lair_chips
                 .iter()
                 .map(|chip| {
-                    let trace = chip.generate_trace(record, &mut Default::default());
+                    let trace = chip.generate_trace(&full_shard, &mut Default::default());
                     debug_constraints_collecting_queries(chip, &[], None, &trace)
                 })
                 .collect();
             TraceQueries::verify_many(lookup_queries);
 
+            let shards = full_shard
+                .clone()
+                .shard(&ShardingConfig { max_shard_size: 4 });
+            // Verify lookup queries with aggressive sharding
+            let mut lookup_queries = Vec::new();
+            for shard in shards.iter() {
+                let queries: Vec<_> = lair_chips
+                    .iter()
+                    .map(|chip| {
+                        if chip.included(shard) {
+                            let trace = chip.generate_trace(shard, &mut Shard::default());
+                            debug_constraints_collecting_queries(chip, &[], None, &trace)
+                        } else {
+                            Default::default()
+                        }
+                    })
+                    .collect();
+                lookup_queries.extend(queries.into_iter());
+            }
+            TraceQueries::verify_many(lookup_queries);
+
             let machine = StarkMachine::new(
                 config.clone(),
-                build_chip_vector(&lurk_main, full_input.into(), result.into()),
+                build_chip_vector(&lurk_main, full_input.into(), result),
                 0,
             );
             let (pk, _vk) = machine.setup(&LairMachineProgram);
-            let mut challenger_p = machine.config().challenger();
-            machine.debug_constraints(&pk, record.clone(), &mut challenger_p);
+            machine.debug_constraints(&pk, full_shard);
         };
 
         eval_aux("t", "t");
@@ -1505,18 +1527,18 @@ mod test {
 
             let digest: List<_> = digest.into();
 
-            let queries = &mut QueryRecord::new(toplevel);
+            let mut queries = QueryRecord::new(toplevel);
             queries.inject_inv_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
 
             let mut ingress_args = [F::zero(); 16];
             ingress_args[0] = tag;
             ingress_args[8..].copy_from_slice(&digest);
 
-            toplevel.execute(ingress, &ingress_args, queries);
+            toplevel.execute(ingress, &ingress_args, &mut queries);
             let ingress_out_ptr = queries.get_output(ingress, &ingress_args)[0];
 
             let egress_args = &[tag, ingress_out_ptr];
-            toplevel.execute(egress, egress_args, queries);
+            toplevel.execute(egress, egress_args, &mut queries);
             let egress_out = queries.get_output(egress, egress_args);
 
             assert_eq!(
@@ -1525,7 +1547,7 @@ mod test {
                 "ingress -> egress doesn't roundtrip"
             );
 
-            let hash_32_8_trace = hash_32_8_chip.generate_trace_parallel(queries);
+            let hash_32_8_trace = hash_32_8_chip.generate_trace(&Shard::new(&queries));
             debug_constraints_collecting_queries(&hash_32_8_chip, &[], None, &hash_32_8_trace);
         };
 

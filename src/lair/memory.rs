@@ -1,25 +1,24 @@
 use p3_air::{Air, AirBuilder, BaseAir};
-use p3_field::{AbstractField, Field};
+use p3_field::{AbstractField, PrimeField32};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use p3_maybe_rayon::prelude::*;
-use sphinx_core::air::{EventLens, MachineAir, WithEvents};
+use rayon::iter::{IndexedParallelIterator, ParallelIterator};
 use std::marker::PhantomData;
 
 use crate::air::builder::{LookupBuilder, ProvideRecord};
 
 use super::{
-    execute::{mem_index_from_len, MemMap, QueryRecord},
-    lair_chip::LairMachineProgram,
+    execute::{mem_index_from_len, Shard},
     relations::MemoryRelation,
 };
 
 #[derive(Default)]
 pub struct MemChip<F> {
-    len: usize,
+    pub(crate) len: usize,
     _p: PhantomData<F>,
 }
 
-impl<F> MemChip<F> {
+impl<F: PrimeField32> MemChip<F> {
     #[inline]
     pub fn new(len: usize) -> Self {
         Self {
@@ -28,15 +27,18 @@ impl<F> MemChip<F> {
         }
     }
 
-    pub fn generate_trace_parallel(&self, queries: &[MemMap<F>]) -> RowMajorMatrix<F>
-    where
-        F: Field,
-    {
+    pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
+        let queries = &shard.queries().mem_queries;
         let mem_idx = mem_index_from_len(self.len);
         let mem = &queries[mem_idx];
         let width = self.width();
 
-        let height = mem.len().next_power_of_two().max(4); // TODO: Remove?
+        let height = mem.len().next_power_of_two().max(4); // TODO: Remove? loam#118
+
+        // TODO: This snippet or equivalent is needed for memory sharding
+        // let range = shard.get_mem_range(mem_index_from_len(self.len));
+        // let non_dummy_height = range.len();
+        // let height = non_dummy_height.next_power_of_two().max(4);
 
         let mut trace = RowMajorMatrix::new(vec![F::zero(); height * width], width);
 
@@ -44,62 +46,25 @@ impl<F> MemChip<F> {
             .par_rows_mut()
             .zip(mem.par_iter())
             .enumerate()
-            .for_each(|(i, (row, (args, callers_nonces)))| {
-                let (_, last_nonce, _) = callers_nonces
-                    .last()
-                    .expect("Must have at least one caller");
-                let last_count = callers_nonces.len();
+            // TODO: This snippet or equivalent is needed for memory sharding
+            // .skip(range.start)
+            // .take(non_dummy_height)
+            .for_each(|(i, (row, (args, mem_result)))| {
+                let (last_count, last_nonce) = mem_result.get_provide_hints(&shard.shard_config);
 
                 // is_real
                 row[0] = F::one();
                 // ptr: We skip the address 0 as to leave room for null pointers
                 row[1] = F::from_canonical_usize(i + 1);
+                // TODO: the ptr can be "duplicated" when sharding is involved: how do we deal with this?
+
                 // last_nonce
-                row[2] = F::from_canonical_usize(*last_nonce);
+                row[2] = last_nonce;
                 // last_count
-                row[3] = F::from_canonical_usize(last_count);
+                row[3] = last_count;
                 row[4..].copy_from_slice(args)
             });
         trace
-    }
-}
-
-impl<F: Field> EventLens<MemChip<F>> for QueryRecord<F> {
-    fn events(&self) -> <MemChip<F> as WithEvents<'_>>::Events {
-        self.mem_queries.as_slice()
-    }
-}
-
-impl<'a, F: Field> WithEvents<'a> for MemChip<F> {
-    type Events = &'a [MemMap<F>];
-}
-
-impl<F: Field> MachineAir<F> for MemChip<F> {
-    type Record = QueryRecord<F>;
-    type Program = LairMachineProgram;
-
-    #[inline]
-    fn name(&self) -> String {
-        format!("{}-wide", self.len)
-    }
-
-    #[inline]
-    fn generate_trace<EL: EventLens<Self>>(
-        &self,
-        input: &EL,
-        _: &mut Self::Record,
-    ) -> RowMajorMatrix<F> {
-        self.generate_trace_parallel(input.events())
-    }
-
-    #[inline]
-    fn generate_dependencies<EL: EventLens<Self>>(&self, _: &EL, _: &mut Self::Record) {}
-
-    #[inline]
-    fn included(&self, queries: &Self::Record) -> bool {
-        queries.mem_queries[mem_index_from_len(self.len)]
-            .values()
-            .any(|set| !set.is_empty())
     }
 }
 
@@ -153,6 +118,7 @@ impl<F: Sync> BaseAir<F> for MemChip<F> {
 #[cfg(test)]
 mod tests {
     use crate::air::debug::debug_constraints_collecting_queries;
+    use crate::lair::execute::QueryRecord;
     use crate::{
         func,
         lair::{func_chip::FuncChip, hasher::LurkHasher, toplevel::Toplevel},
@@ -175,9 +141,9 @@ mod tests {
         });
         let toplevel = Toplevel::<F, LurkHasher>::new(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
-        let queries = &mut QueryRecord::new(&toplevel);
-        toplevel.execute_by_name("test", &[], queries);
-        let func_trace = test_chip.generate_trace_sequential(queries);
+        let mut queries = QueryRecord::new(&toplevel);
+        toplevel.execute_by_name("test", &[], &mut queries);
+        let func_trace = test_chip.generate_trace(&Shard::new(&queries));
 
         #[rustfmt::skip]
         let expected_trace = [
@@ -193,7 +159,8 @@ mod tests {
 
         let mem_len = 3;
         let mem_chip = MemChip::new(mem_len);
-        let mem_trace = mem_chip.generate_trace_parallel(&queries.mem_queries);
+        let shard = Shard::new(&queries);
+        let mem_trace = mem_chip.generate_trace(&shard);
 
         #[rustfmt::skip]
         let expected_trace = [

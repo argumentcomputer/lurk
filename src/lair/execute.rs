@@ -3,6 +3,7 @@ use indexmap::{IndexMap, IndexSet};
 use p3_field::{AbstractField, Field, PrimeField32};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use sphinx_core::stark::{Indexed, MachineRecord};
+use std::ops::Range;
 
 use super::{
     bytecode::{Ctrl, Func, Op},
@@ -16,49 +17,126 @@ type FxIndexSet<K> = IndexSet<K, FxBuildHasher>;
 
 type QueryMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
 type InvQueryMap<F> = FxHashMap<List<F>, List<F>>;
-pub(crate) type MemMap<F> = FxIndexMap<List<F>, FxIndexSet<(usize, usize, usize)>>;
+pub(crate) type MemMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
+
+/// This uniquely identifies each call site that performs a require/provide.
+#[derive(Clone, Copy, Default, Debug, Eq, PartialEq, Hash)]
+pub(crate) struct LookupId {
+    pub(crate) func_index: usize,
+    pub(crate) query_index: usize,
+    pub(crate) op_id: usize,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct QueryResult<F> {
     pub(crate) output: Option<List<F>>,
-    /// (func_idx, caller_nonce, call_ident)
-    pub(crate) callers_nonces: FxIndexSet<(usize, usize, usize)>,
+    pub(crate) callers_lookups: FxIndexSet<LookupId>,
 }
 
-impl<F> QueryResult<F> {
+impl<F: PrimeField32> QueryResult<F> {
     #[inline]
     pub(crate) fn expect_output(&self) -> &[F] {
         self.output.as_ref().expect("Result not computed").as_ref()
+    }
+
+    /// This function returns the values for `last_count` and `last_nonce`
+    pub(crate) fn get_provide_hints(&self, config: &ShardingConfig) -> (F, F) {
+        let last_count = self.callers_lookups.len();
+        let lookup_id = self
+            .callers_lookups
+            .last()
+            .expect("Must have at least one caller lookup");
+
+        let (_, nonce) = config.index_to_shard_nonce(lookup_id.query_index);
+        (
+            F::from_canonical_usize(last_count),
+            F::from_canonical_usize(nonce),
+        )
+    }
+
+    /// This function returns the values for `prev_nonce`, `prev_count` and `count_inv`
+    pub(crate) fn get_require_hints(
+        &self,
+        caller_lookup: &LookupId,
+        shard_config: &ShardingConfig,
+    ) -> (F, F, F) {
+        let prev_count = self
+            .callers_lookups
+            .get_index_of(caller_lookup)
+            .expect("Cannot find caller lookup entry");
+        if prev_count == 0 {
+            // we are the first require, fill in hardcoded provide values
+            (F::zero(), F::zero(), F::one())
+        } else {
+            // we are somewhere in the middle of the list, get the predecessor
+            let prev_lookup_id = self.callers_lookups.get_index(prev_count - 1).unwrap();
+            let (_, prev_nonce) = shard_config.index_to_shard_nonce(prev_lookup_id.query_index);
+            (
+                F::from_canonical_usize(prev_nonce),
+                F::from_canonical_usize(prev_count),
+                F::from_canonical_usize(prev_count + 1).inverse(),
+            )
+        }
     }
 }
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
 pub struct QueryRecord<F: Field> {
-    index: u32,
     pub(crate) func_queries: Vec<QueryMap<F>>,
     pub(crate) inv_func_queries: Vec<Option<InvQueryMap<F>>>,
     pub(crate) mem_queries: Vec<MemMap<F>>,
 }
 
-impl<F: Field> Indexed for QueryRecord<F> {
+#[derive(Default, Clone, Debug, Eq, PartialEq)]
+pub struct Shard<'a, F: Field> {
+    pub(crate) index: u32,
+    // The option is only necessary because we must implement the default trait
+    pub(crate) queries: Option<&'a QueryRecord<F>>,
+    pub(crate) shard_config: ShardingConfig,
+}
+
+impl<'a, F: Field> Shard<'a, F> {
+    /// Creates a new initial shard from the given `QueryRecord`.
+    ///
+    /// # Note
+    ///
+    /// Make sure to call `.shard()` on a `Shard` created by `new` when generating the traces, otherwise you will only get the first shard's trace.
+    pub fn new(queries: &'a QueryRecord<F>) -> Self {
+        let index = 0;
+        let shard_config = ShardingConfig::default();
+        Shard {
+            index,
+            queries: queries.into(),
+            shard_config,
+        }
+    }
+
+    pub fn queries(&self) -> &QueryRecord<F> {
+        self.queries.expect("Missing query record reference")
+    }
+
+    pub fn get_func_range(&self, func_index: usize) -> Range<usize> {
+        let num_func_queries = self.queries().func_queries[func_index].len();
+        let shard_idx = self.index as usize;
+        let max_shard_size = self.shard_config.max_shard_size;
+        shard_idx * max_shard_size..((shard_idx + 1) * max_shard_size).min(num_func_queries)
+    }
+
+    pub fn get_mem_range(&self, mem_chip_idx: usize) -> Range<usize> {
+        let num_mem_queries = self.queries().mem_queries[mem_chip_idx].len();
+        let shard_idx = self.index as usize;
+        let max_shard_size = self.shard_config.max_shard_size;
+        shard_idx * max_shard_size..((shard_idx + 1) * max_shard_size).min(num_mem_queries)
+    }
+}
+
+impl<'a, F: Field> Indexed for Shard<'a, F> {
     fn index(&self) -> u32 {
         self.index
     }
 }
 
-pub struct ShardingConfig {
-    max_shard_size: usize,
-}
-
-impl Default for ShardingConfig {
-    fn default() -> Self {
-        Self {
-            max_shard_size: 1 << 20,
-        }
-    }
-}
-
-impl<F: Field> MachineRecord for QueryRecord<F> {
+impl<'a, F: Field> MachineRecord for Shard<'a, F> {
     type Config = ShardingConfig;
 
     fn set_index(&mut self, index: u32) {
@@ -68,31 +146,46 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
     fn stats(&self) -> HashMap<String, usize> {
         // TODO: use `IndexMap` instead so the original insertion order is kept
         let mut map = HashMap::default();
+        let queries = &self.queries();
 
-        map.insert("num_funcs".to_string(), self.func_queries.len());
+        map.insert("num_funcs".to_string(), queries.func_queries.len());
         map.insert(
             "num_func_queries".to_string(),
-            self.func_queries.iter().map(|im| im.iter().count()).sum(),
+            queries
+                .func_queries
+                .iter()
+                .map(|im| im.iter().count())
+                .sum(),
         );
         map.insert(
             "sum_func_queries_mults".to_string(),
-            self.func_queries
+            queries
+                .func_queries
                 .iter()
-                .map(|im| im.values().map(|r| r.callers_nonces.len()).sum::<usize>())
+                .map(|im| im.values().map(|r| r.callers_lookups.len()).sum::<usize>())
                 .sum(),
         );
 
-        map.insert("num_mem_tables".to_string(), self.mem_queries.len());
+        map.insert("num_mem_tables".to_string(), queries.mem_queries.len());
         map.insert(
             "num_mem_queries".to_string(),
-            self.mem_queries.iter().map(|im| im.iter().count()).sum(),
+            queries.mem_queries.iter().map(|im| im.iter().count()).sum(),
         );
         map.insert(
             "sum_mem_queries_mults".to_string(),
-            self.mem_queries
+            queries
+                .mem_queries
                 .iter()
-                .map(|im| im.values().map(|set| set.len()).sum::<usize>())
+                .map(|im| {
+                    im.values()
+                        .map(|set| set.callers_lookups.len())
+                        .sum::<usize>()
+                })
                 .sum(),
+        );
+        map.insert(
+            "num_mem_locations".to_string(),
+            queries.mem_queries.iter().map(|im| im.values().len()).sum(),
         );
         map
     }
@@ -102,76 +195,69 @@ impl<F: Field> MachineRecord for QueryRecord<F> {
     }
 
     fn shard(self, config: &Self::Config) -> Vec<Self> {
-        let Self {
-            index: _,
-            mut func_queries,
-            inv_func_queries,
-            mut mem_queries,
-        } = self;
+        let queries = self.queries();
+        let shard_size = config.max_shard_size;
+        let max_num_func_rows: usize = queries
+            .func_queries
+            .iter()
+            .map(|q| q.len())
+            .max()
+            .unwrap_or_default();
+        // TODO: This snippet or equivalent is needed for memory sharding
+        // let max_num_mem_rows: usize = queries
+        //     .mem_queries
+        //     .iter()
+        //     .map(|q| q.len())
+        //     .max()
+        //     .unwrap_or_default();
+        // let max_num_rows = max_num_func_rows.max(max_num_mem_rows);
+        let max_num_rows = max_num_func_rows;
 
-        let num_funcs = func_queries.len();
-        let num_mem_tables = mem_queries.len();
-
-        let max_shard_size = config.max_shard_size;
-
-        if max_shard_size == 0 {
-            return vec![Self {
-                index: 0,
-                func_queries,
-                inv_func_queries,
-                mem_queries,
-            }];
+        let remainder = max_num_rows % shard_size;
+        let num_shards = max_num_rows / shard_size + if remainder > 0 { 1 } else { 0 };
+        let mut shards = Vec::with_capacity(num_shards);
+        for shard_index in 0..num_shards {
+            shards.push(Shard {
+                index: shard_index as u32,
+                queries: self.queries,
+                shard_config: *config,
+            });
         }
-
-        let max_num_func_queries = func_queries.iter().map(IndexMap::len).max().unwrap_or(0);
-        let max_num_mem_queries = mem_queries.iter().map(IndexMap::len).max().unwrap_or(0);
-
-        let div_ceil = |numer, denom| (numer + denom - 1) / denom;
-        let num_shards_needed_for_func_queries = div_ceil(max_num_func_queries, max_shard_size);
-        let num_shards_needed_for_mem_queries = div_ceil(max_num_mem_queries, max_shard_size);
-        let num_shards_needed =
-            num_shards_needed_for_func_queries.max(num_shards_needed_for_mem_queries);
-
-        if num_shards_needed < 2 {
-            vec![Self {
-                index: 0,
-                func_queries,
-                inv_func_queries,
-                mem_queries,
-            }]
-        } else {
-            let empty_func_queries = vec![FxIndexMap::default(); num_funcs];
-            let empty_mem_queries = vec![FxIndexMap::default(); num_mem_tables];
-            let mut shards = Vec::with_capacity(num_shards_needed);
-            let num_shards_needed_u32: u32 = num_shards_needed
-                .try_into()
-                .expect("Number of shards needed is too big");
-            for index in 0..num_shards_needed_u32 {
-                let mut sharded_func_queries = empty_func_queries.clone();
-                for func_idx in 0..num_funcs {
-                    let queries = &mut func_queries[func_idx];
-                    sharded_func_queries[func_idx]
-                        .extend(queries.drain(0..max_shard_size.min(queries.len())));
-                }
-                let mut sharded_mem_queries = empty_mem_queries.clone();
-                for mem_idx in 0..num_mem_tables {
-                    let queries = &mut mem_queries[mem_idx];
-                    sharded_mem_queries[mem_idx]
-                        .extend(queries.drain(0..max_shard_size.min(queries.len())));
-                }
-                shards.push(QueryRecord {
-                    index,
-                    func_queries: sharded_func_queries,
-                    inv_func_queries: inv_func_queries.clone(), // We can use the same inverse map for all shards
-                    mem_queries: sharded_mem_queries,
-                });
-            }
-            shards
-        }
+        shards
     }
 
     fn public_values<F2: AbstractField>(&self) -> Vec<F2> {
         vec![]
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ShardingConfig {
+    pub(crate) max_shard_size: usize,
+}
+
+impl ShardingConfig {
+    #[inline]
+    pub fn index_from_shard_nonce(&self, shard: usize, nonce: usize) -> usize {
+        let size = self.max_shard_size;
+        assert!(nonce < size);
+        shard * size + nonce
+    }
+
+    #[inline]
+    pub fn index_to_shard_nonce(&self, query_index: usize) -> (usize, usize) {
+        let size = self.max_shard_size;
+        let shard = query_index / size;
+        let nonce = query_index % size;
+        (shard, nonce)
+    }
+}
+
+impl Default for ShardingConfig {
+    fn default() -> Self {
+        Self {
+            max_shard_size: 1 << 22,
+        }
     }
 }
 
@@ -208,7 +294,6 @@ impl<F: PrimeField32> QueryRecord<F> {
             })
             .collect();
         Self {
-            index: 0,
             func_queries,
             inv_func_queries,
             mem_queries,
@@ -266,15 +351,17 @@ impl<F: PrimeField32> QueryRecord<F> {
         &mut self,
         index: usize,
         input: &[F],
-        caller_index: usize,
-        caller_nonce: usize,
-        call_ident: usize,
+        caller_func_index: usize,
+        caller_query_index: usize,
+        op_id: usize,
     ) -> Option<&List<F>> {
         if let Some(event) = self.func_queries[index].get_mut(input) {
             let output = event.output.as_ref().expect("Loop detected");
-            event
-                .callers_nonces
-                .insert((caller_index, caller_nonce, call_ident));
+            event.callers_lookups.insert(LookupId {
+                func_index: caller_func_index,
+                query_index: caller_query_index,
+                op_id,
+            });
             Some(output)
         } else {
             None
@@ -285,9 +372,9 @@ impl<F: PrimeField32> QueryRecord<F> {
         &mut self,
         index: usize,
         out: &[F],
-        caller_index: usize,
-        caller_nonce: usize,
-        call_ident: usize,
+        caller_func_index: usize,
+        caller_query_index: usize,
+        op_id: usize,
     ) -> &List<F> {
         let inp = self.inv_func_queries[index]
             .as_ref()
@@ -297,71 +384,65 @@ impl<F: PrimeField32> QueryRecord<F> {
         let func_queries = &mut self.func_queries[index];
         if let Some(event) = func_queries.get_mut(inp) {
             assert_eq!(out, event.expect_output());
-            event
-                .callers_nonces
-                .insert((caller_index, caller_nonce, call_ident));
+            event.callers_lookups.insert(LookupId {
+                func_index: caller_func_index,
+                query_index: caller_query_index,
+                op_id,
+            });
         } else {
-            let mut callers_nonces = IndexSet::default();
-            callers_nonces.insert((caller_index, caller_nonce, call_ident));
+            let mut callers_lookups = IndexSet::default();
+            callers_lookups.insert(LookupId {
+                func_index: caller_func_index,
+                query_index: caller_query_index,
+                op_id,
+            });
             let result = QueryResult {
                 output: Some(out.into()),
-                callers_nonces,
+                callers_lookups,
             };
             func_queries.insert(inp.clone(), result);
         }
         inp
     }
 
-    fn store(
-        &mut self,
-        args: List<F>,
-        caller_index: usize,
-        caller_nonce: usize,
-        store_ident: usize,
-    ) -> F {
+    fn store(&mut self, args: List<F>, caller_lookup: LookupId) -> F {
         let mem_idx = mem_index_from_len(args.len());
         let mem_map = &mut self.mem_queries[mem_idx];
-        let mem_map_idx = if let Some((i, _, callers_nonces)) = mem_map.get_full_mut(&args) {
-            callers_nonces.insert((caller_index, caller_nonce, store_ident));
+        let mem_map_idx = if let Some((i, _, mem_result)) = mem_map.get_full_mut(&args) {
+            mem_result.callers_lookups.insert(caller_lookup);
             i
         } else {
-            let mut callers_nonces = IndexSet::default();
-            callers_nonces.insert((caller_index, caller_nonce, store_ident));
-            mem_map.insert_full(args, callers_nonces).0
+            let mut mem_result = QueryResult::default();
+            mem_result.callers_lookups.insert(caller_lookup);
+            mem_map.insert_full(args, mem_result).0
         };
         F::from_canonical_usize(mem_map_idx + 1)
     }
 
-    fn load(
-        &mut self,
-        len: usize,
-        ptr: F,
-        caller_index: usize,
-        caller_nonce: usize,
-        load_ident: usize,
-    ) -> &[F] {
+    fn load(&mut self, len: usize, ptr: F, caller_lookup: LookupId) -> &[F] {
         let ptr_f = ptr.as_canonical_u32() as usize;
         let mem_idx = mem_index_from_len(len);
-        let (args, callers_nonces) = self.mem_queries[mem_idx]
+        let (args, mem_result) = self.mem_queries[mem_idx]
             .get_index_mut(ptr_f - 1)
             .expect("Unbound pointer");
-        callers_nonces.insert((caller_index, caller_nonce, load_ident));
+        mem_result.callers_lookups.insert(caller_lookup);
         args
     }
 }
 
 impl<F: PrimeField32, H: Hasher<F>> Toplevel<F, H> {
     pub fn execute(&self, func: &Func<F>, args: &[F], record: &mut QueryRecord<F>) -> List<F> {
-        let index = func.index;
-        let (nonce, _) =
-            record.func_queries[index].insert_full(args.into(), QueryResult::default());
-        let out = func.execute(args, self, record, nonce);
-        if let Some(inv_map) = &mut record.inv_func_queries[index] {
+        let func_index = func.index;
+        let mut query_result = QueryResult::default();
+        // the following `callers_lookups` entry corresponds to the builder.receive done in LairChip::Entrypoint
+        query_result.callers_lookups.insert(LookupId::default());
+        let (query_index, _) =
+            record.func_queries[func_index].insert_full(args.into(), query_result);
+
+        let out = func.execute(args, self, record, query_index);
+        if let Some(inv_map) = &mut record.inv_func_queries[func_index] {
             inv_map.insert(out.clone(), args.into());
         }
-        let query_result = record.func_queries[index].get_index_mut(nonce).unwrap().1;
-        // the following entry corresponds to the builder.receive done in LairChip::Entrypoint
-        query_result.callers_nonces.insert((0, 0, 0));
         out
     }
 
@@ -383,9 +464,9 @@ enum ExecEntry<'a, F> {
 }
 
 struct CallerState<F> {
-    func_idx: usize,
-    nonce: usize,
-    call_ident: usize,
+    func_index: usize,
+    query_index: usize,
+    op_id: usize,
     map: Vec<F>,
 }
 
@@ -395,10 +476,12 @@ impl<F: PrimeField32> Func<F> {
         args: &[F],
         toplevel: &Toplevel<F, H>,
         record: &mut QueryRecord<F>,
-        mut nonce: usize,
+        mut query_index: usize,
     ) -> List<F> {
         assert!(
-            record.func_queries[self.index].get_index(nonce).is_some(),
+            record.func_queries[self.index]
+                .get_index(query_index)
+                .is_some(),
             "Query map entry not preallocated"
         );
         let mut exec_entries_stack = vec![];
@@ -411,37 +494,40 @@ impl<F: PrimeField32> Func<F> {
         }
         push_block_exec_entries!(&self.body);
         let mut map = args.to_vec();
-        let mut func_idx = self.index;
+        let mut func_index = self.index;
         while let Some(exec_entry) = exec_entries_stack.pop() {
             match exec_entry {
-                ExecEntry::Op(Op::Call(index, inp, ident)) => {
+                ExecEntry::Op(Op::Call(callee_index, inp, op_id)) => {
                     // `map_buffer` will become the map for the called function
                     let mut map_buffer = inp.iter().map(|v| map[*v]).collect::<Vec<_>>();
-                    if let Some(out) = record.query(*index, &map_buffer, func_idx, nonce, *ident) {
+                    if let Some(out) =
+                        record.query(*callee_index, &map_buffer, func_index, query_index, *op_id)
+                    {
                         map.extend(out.iter())
                     } else {
                         // insert dummy entry
-                        let (callee_nonce, _) = record.func_queries[*index]
+                        let (callee_query_index, _) = record.func_queries[*callee_index]
                             .insert_full(map_buffer.clone().into(), QueryResult::default());
                         // swap so we can save the old map in `map_buffer` and move on
                         // with `map` already set
                         std::mem::swap(&mut map_buffer, &mut map);
                         // save the current caller state
                         callers_states_stack.push(CallerState {
-                            func_idx,
-                            nonce,
-                            call_ident: *ident,
+                            func_index,
+                            query_index,
+                            op_id: *op_id,
                             map: map_buffer,
                         });
                         // prepare outer variables to go into the new func scope
-                        func_idx = *index;
-                        nonce = callee_nonce;
-                        push_block_exec_entries!(&toplevel.get_by_index(func_idx).body);
+                        func_index = *callee_index;
+                        query_index = callee_query_index;
+                        push_block_exec_entries!(&toplevel.get_by_index(func_index).body);
                     }
                 }
-                ExecEntry::Op(Op::PreImg(index, out, ident)) => {
+                ExecEntry::Op(Op::PreImg(callee_index, out, op_id)) => {
                     let out = out.iter().map(|v| map[*v]).collect::<List<_>>();
-                    let inp = record.query_preimage(*index, &out, func_idx, nonce, *ident);
+                    let inp =
+                        record.query_preimage(*callee_index, &out, func_index, query_index, *op_id);
                     map.extend(inp.iter());
                 }
                 ExecEntry::Op(Op::Const(c)) => map.push(*c),
@@ -454,14 +540,24 @@ impl<F: PrimeField32> Func<F> {
                 } else {
                     F::zero()
                 }),
-                ExecEntry::Op(Op::Store(args, ident)) => {
+                ExecEntry::Op(Op::Store(args, op_id)) => {
                     let args = args.iter().map(|a| map[*a]).collect();
-                    let ptr = record.store(args, func_idx, nonce, *ident);
+                    let lookup_id = LookupId {
+                        func_index,
+                        query_index,
+                        op_id: *op_id,
+                    };
+                    let ptr = record.store(args, lookup_id);
                     map.push(ptr);
                 }
-                ExecEntry::Op(Op::Load(len, ptr, ident)) => {
+                ExecEntry::Op(Op::Load(len, ptr, op_id)) => {
                     let ptr = map[*ptr];
-                    let args = record.load(*len, ptr, func_idx, nonce, *ident);
+                    let lookup_id = LookupId {
+                        func_index,
+                        query_index,
+                        op_id: *op_id,
+                    };
+                    let args = record.load(*len, ptr, lookup_id);
                     map.extend(args);
                 }
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
@@ -471,29 +567,32 @@ impl<F: PrimeField32> Func<F> {
                 }
                 ExecEntry::Ctrl(Ctrl::Return(_, out)) => {
                     let out = out.iter().map(|v| map[*v]).collect::<Vec<_>>();
-                    let (inp, query_result) =
-                        record.func_queries[func_idx].get_index_mut(nonce).unwrap();
+                    let (inp, query_result) = record.func_queries[func_index]
+                        .get_index_mut(query_index)
+                        .unwrap();
                     assert!(query_result.output.is_none());
                     let out_list: List<_> = out.clone().into();
-                    if let Some(inv_map) = &mut record.inv_func_queries[func_idx] {
+                    if let Some(inv_map) = &mut record.inv_func_queries[func_index] {
                         inv_map.insert(out_list.clone(), inp.clone());
                     }
                     query_result.output = Some(out_list);
                     if let Some(CallerState {
-                        func_idx: caller_func_idx,
-                        nonce: caller_nonce,
+                        func_index: caller_func_index,
+                        query_index: caller_query_index,
                         map: caller_map,
-                        call_ident,
+                        op_id,
                     }) = callers_states_stack.pop()
                     {
                         // recover the state of the caller
-                        func_idx = caller_func_idx;
-                        nonce = caller_nonce;
+                        func_index = caller_func_index;
+                        query_index = caller_query_index;
                         map = caller_map;
                         // insert caller nonce data
-                        query_result
-                            .callers_nonces
-                            .insert((func_idx, nonce, call_ident));
+                        query_result.callers_lookups.insert(LookupId {
+                            func_index,
+                            query_index,
+                            op_id,
+                        });
                         // extend the map with the call output
                         map.extend(out);
                     } else {
@@ -535,8 +634,13 @@ mod tests {
     use crate::{
         func,
         lair::{
-            demo_toplevel, execute::QueryRecord, field_from_u32, func_chip::FuncChip,
-            hasher::LurkHasher, toplevel::Toplevel, List,
+            demo_toplevel,
+            execute::{QueryRecord, Shard},
+            field_from_u32,
+            func_chip::FuncChip,
+            hasher::LurkHasher,
+            toplevel::Toplevel,
+            List,
         },
     };
 
@@ -708,35 +812,38 @@ mod tests {
         let half_chip = FuncChip::from_name("half", &toplevel);
         let double_chip = FuncChip::from_name("double", &toplevel);
 
-        let queries = &mut QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
         let f = F::from_canonical_u32;
         queries.inject_inv_queries("double", &toplevel, [(&[f(1)], &[f(2)])]);
         let args = &[f(2)];
 
-        toplevel.execute(half, args, queries);
+        toplevel.execute(half, args, &mut queries);
         let res1 = queries.get_output(half, args).to_vec();
+        let shard = Shard::new(&queries);
         let traces1 = (
-            half_chip.generate_trace_sequential(queries),
-            double_chip.generate_trace_sequential(queries),
+            half_chip.generate_trace(&shard),
+            double_chip.generate_trace(&shard),
         );
 
         // even after `clean`, the preimg of `double(1)` can still be recovered
         queries.clean();
-        toplevel.execute(half, args, queries);
+        toplevel.execute(half, args, &mut queries);
         let res2 = queries.get_output(half, args).to_vec();
+        let shard = Shard::new(&queries);
         let traces2 = (
-            half_chip.generate_trace_sequential(queries),
-            double_chip.generate_trace_sequential(queries),
+            half_chip.generate_trace(&shard),
+            double_chip.generate_trace(&shard),
         );
         assert_eq!(res1, res2);
         assert_eq!(traces1, traces2);
 
         queries.clean();
-        toplevel.execute(half, args, queries);
-        let res3 = queries.get_output(half, args);
+        toplevel.execute(half, args, &mut queries);
+        let res3 = queries.get_output(half, args).to_vec();
+        let shard = Shard::new(&queries);
         let traces3 = (
-            half_chip.generate_trace_sequential(queries),
-            double_chip.generate_trace_sequential(queries),
+            half_chip.generate_trace(&shard),
+            double_chip.generate_trace(&shard),
         );
         assert_eq!(res2, res3);
         assert_eq!(traces2, traces3);

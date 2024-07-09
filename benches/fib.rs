@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use loam::{
     lair::{
-        execute::QueryRecord,
+        execute::{QueryRecord, Shard},
         func_chip::FuncChip,
         hasher::{Hasher, LurkHasher},
         lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
@@ -93,7 +93,8 @@ fn trace_generation(c: &mut Criterion) {
         let lair_chips = build_lair_chip_vector(&lurk_main, args.into(), out.into());
         b.iter(|| {
             lair_chips.par_iter().for_each(|func_chip| {
-                func_chip.generate_trace(&record, &mut Default::default());
+                let shard = Shard::new(&record);
+                func_chip.generate_trace(&shard, &mut Default::default());
             })
         })
     });
@@ -118,7 +119,8 @@ fn e2e(c: &mut Criterion) {
                 let (pk, _) = machine.setup(&LairMachineProgram);
                 let mut challenger_p = machine.config().challenger();
                 let opts = SphinxCoreOpts::default();
-                machine.prove::<LocalProver<_, _>>(&pk, record, &mut challenger_p, opts);
+                let shard = Shard::new(&record);
+                machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
             },
             BatchSize::SmallInput,
         )
