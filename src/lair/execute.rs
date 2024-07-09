@@ -1,10 +1,9 @@
-use std::{ops::Range, sync::Arc};
-
 use hashbrown::HashMap;
 use indexmap::{IndexMap, IndexSet};
 use p3_field::{AbstractField, Field, PrimeField32};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use sphinx_core::stark::{Indexed, MachineRecord};
+use std::{ops::Range, sync::Arc};
 
 use super::{
     bytecode::{Ctrl, Func, Op},
@@ -201,7 +200,7 @@ impl<F: Field> MachineRecord for Shard<F> {
 
         let remainder = max_num_rows % shard_size;
         let num_shards = max_num_rows / shard_size + if remainder > 0 { 1 } else { 0 };
-        let mut shards = vec![];
+        let mut shards = Vec::with_capacity(num_shards);
         for shard_index in 0..num_shards {
             shards.push(Shard {
                 index: shard_index as u32,
