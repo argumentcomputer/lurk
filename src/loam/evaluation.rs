@@ -418,7 +418,7 @@ ascent! {
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
 
-    f_value(Ptr(Tag::Num.elt(), value.f()), value) <-- alloc(&Tag::Num.elt(), value); // let f = value.f();
+    f_value(Ptr(Tag::Num.elt(), value.f()), value) <-- alloc(&Tag::Num.elt(), value);
 
     cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0.0)),
     cons_mem(car, cdr, addr) <--
@@ -429,7 +429,7 @@ ascent! {
 
     ptr(cons), car(cons, car), cdr(cons, cdr) <-- cons_rel(car, cdr, cons);
 
-    f_value(ptr, Wide::widen(ptr.1)) <-- ptr(ptr), if ptr.is_f();
+    f_value(ptr, Wide::widen(ptr.1)) <-- ptr(ptr), if ptr.is_num();
     ptr(ptr) <-- f_value(ptr, _);
 
     // Provide cons_value when known.
@@ -449,8 +449,8 @@ ascent! {
     // Fun
     egress(args), egress(body), egress(closed_env) <-- egress(fun), fun_rel(args, body, closed_env, fun);
 
-    // F: FIXME: change this when F becomes u32.
-    ptr_tag(ptr, Tag::Num.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_f();
+    // Num: FIXME: change this when F becomes u32.
+    ptr_tag(ptr, Tag::Num.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_num();
 
     // Err
     ptr_tag(ptr, Tag::Err.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_err();
@@ -511,7 +511,7 @@ ascent! {
     eval_input(expr, env) <-- input_ptr(expr, env);
 
     // expr is F: self-evaluating.
-    eval(expr, env, expr) <-- eval_input(expr, env), if expr.is_f();
+    eval(expr, env, expr) <-- eval_input(expr, env), if expr.is_num();
 
     // expr is Nil: self-evaluating. TODO: check value == nil value
     eval(expr, env, expr) <-- eval_input(expr, env), if expr.is_nil();
@@ -879,7 +879,7 @@ ascent! {
     // When left-folding, if car has been evaled and is F, apply the op to it and the acc, then recursively
     // fold acc and new tail. TODO: error if car is not f.
     ingress(cdr), fold(expr, env, op, op.apply_op(*acc, Num(evaled_car.1)), cdr) <--
-        fold(expr, env, op, acc, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car), if evaled_car.is_f();
+        fold(expr, env, op, acc, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car), if evaled_car.is_num();
 
     // left-folding operation with an empty (nil) tail
     eval(expr, env, Ptr(Tag::Num.elt(), acc.0)) <-- fold(expr, env, _, acc, tail), if tail.is_nil();
@@ -904,7 +904,7 @@ ascent! {
     ingress(cdr), fold(expr, env, op, Num(evaled_car.1), cdr) <--
         fold_right(expr, env, op, tail),
         cons_rel(car, cdr, tail),
-        eval(car, env, evaled_car), if evaled_car.is_f();
+        eval(car, env, evaled_car), if evaled_car.is_num();
 
     // output
     output_ptr(output) <-- input_ptr(input, env), eval(input, env, output);

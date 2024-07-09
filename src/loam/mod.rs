@@ -53,7 +53,7 @@ impl Ptr {
     fn f(val: LE) -> Self {
         Self(Tag::Num.elt(), val)
     }
-    fn is_f(&self) -> bool {
+    fn is_num(&self) -> bool {
         self.0 == Tag::Num.elt()
     }
     fn is_cons(&self) -> bool {

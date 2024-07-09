@@ -171,7 +171,7 @@ ascent! {
     relation cons(Ptr, Ptr); // (car, cdr)
     relation car(Ptr, Ptr); // (cons, car)
     relation cdr(Ptr, Ptr); // (cons, cdr)
-    relation hash4(Ptr, Wide, Wide, Wide, Wide); // (a, b, c, d)
+    relation hash4(Ptr, Wide, Wide, Wide, Wide); // (ptr, a, b, c, d)
     relation unhash4(LE, Wide, Ptr); // (tag, digest, ptr)
     relation hash4_rel(Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, digest)
 
@@ -203,11 +203,11 @@ ascent! {
     relation cons_rel(Ptr, Ptr, Ptr); // (car, cdr, cons)
 
     // Memory to support conses allocated by digest or contents.
-    lattice cons_digest_mem(Wide, Dual<LEWrap>); // (tag, wide-tag, value, addr)
+    lattice cons_digest_mem(Wide, Dual<LEWrap>); // (digest, addr)
     lattice cons_mem(Ptr, Ptr, Dual<LEWrap>); // (car, cdr, addr)
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
-    cons_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::from_canonical_u32(0))))) <-- alloc(tag, value), if *tag == Tag::Cons.elt();
+    cons_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::from_canonical_u32(0))))) <-- alloc(Tag::Cons.elt(), value);
 
     // Convert addr to ptr and register ptr relations.
     ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0.0);
@@ -258,8 +258,7 @@ ascent! {
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
 
-    ptr(Ptr(Tag::Num.elt(), f)),
-    f_value(Ptr(Tag::Num.elt(), f), Wide::widen(f)) <-- alloc(&Tag::Num.elt(), value), let f = value.f();
+    f_value(Ptr(Tag::Num.elt(), value.f()), value) <-- alloc(&Tag::Num.elt(), value);
 
     cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0.0)),
     cons_mem(car, cdr, addr) <--
@@ -270,7 +269,7 @@ ascent! {
 
     ptr(cons), car(cons, car), cdr(cons, cdr) <-- cons_rel(car, cdr, cons);
 
-    f_value(ptr, Wide::widen(ptr.1)) <-- ptr(ptr), if ptr.is_f();
+    f_value(ptr, Wide::widen(ptr.1)) <-- ptr(ptr), if ptr.is_num();
     ptr(ptr) <-- f_value(ptr, _);
 
     // Provide cons_value when known.
@@ -287,7 +286,7 @@ ascent! {
 
     egress(car), egress(cdr) <-- egress(cons), cons_rel(car, cdr, cons);
 
-    ptr_tag(ptr, Tag::Num.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_f();
+    ptr_tag(ptr, Tag::Num.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_num();
 
     output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), ptr_value(ptr, value), ptr_tag(ptr, wide_tag);
 
@@ -316,7 +315,7 @@ ascent! {
     relation map_double(Ptr, Ptr); // (input-ptr, output-ptr)
 
     ptr(doubled),
-    map_double(ptr, doubled) <-- map_double_input(ptr), if ptr.is_f(), let doubled = Ptr(Tag::Num.elt(), ptr.1.double());
+    map_double(ptr, doubled) <-- map_double_input(ptr), if ptr.is_num(), let doubled = Ptr(Tag::Num.elt(), ptr.1.double());
 
     map_double_input(ptr) <-- input_ptr(ptr);
 
@@ -381,36 +380,6 @@ impl AllocationProgram {
             && addrs[0].0.is_zero()
             && LE::as_canonical_u32(&addrs[len - 1].0) as usize == len - 1
     }
-}
-
-// This simple allocation program demonstrates how we can use ascent's lattice feature to achieve memoized allocation
-// with an incrementing counter but without mutable state held outside the program (as in the Allocator) above.
-ascent! {
-    struct SimpleAllocProgram;
-
-    // Input must be added one element at a time, so we do it within the program.
-    relation input(usize, usize); // (a, b)
-
-    // Memory holds two elements, and an address allocated for each unique row. The Dual annotation ensures that if an
-    // (a, b, addr) tuple is added when an (a, b, addr') tuple already exists, the lower (first-allocated) address will
-    // be used.
-    lattice mem(usize, usize, Dual<usize>); // (a, b, addr)
-
-    // The counter holds the value of the most-recently allocated address, initially zero (so there will be no memory
-    // with allocated address 0).
-    lattice counter(usize) = vec![(0,)]; // (addr)
-
-    // Add each new input to mem, using the next counter value as address.
-//    mem(a, b, Dual(counter + 1)) <-- input(a, b), counter(counter);
-    mem(a, b, Dual(counter + 1)) <-- input(a, b), counter(counter);
-
-    // The address of every new tuple in mem is added to counter. Since counter has only a single lattice attribute, the
-    // new value will replace the old if greater than the old.
-    counter(max.0) <-- mem(_, _, max);
-
-    // When counter is incremented, generate a new tuple. The generation rules will only produce six unique inputs.
-    input(a, b) <-- counter(x) if *x < 100, let a = *x % 2, let b = *x % 3;
-
 }
 
 #[cfg(test)]
@@ -534,35 +503,5 @@ mod test {
             cons_rel,
             cons_digest_mem,
         );
-    }
-
-    #[test]
-    fn test_simple_alloc() {
-        let mut prog = SimpleAllocProgram::default();
-
-        prog.run();
-
-        println!("{}", prog.relation_sizes_summary());
-
-        let SimpleAllocProgram {
-            counter, mut mem, ..
-        } = prog;
-
-        mem.sort_by_key(|(_, _, c)| (*c));
-        mem.reverse();
-
-        assert_eq!(6, mem.len());
-        // Counter relation never grows, but its single value evolves incrementally.
-        assert_eq!(1, counter.len());
-        assert_eq!((6,), counter[0]);
-        assert_eq!((0, 0, Dual(1)), mem[0]);
-        assert_eq!((1, 1, Dual(2)), mem[1]);
-        assert_eq!((0, 2, Dual(3)), mem[2]);
-        assert_eq!((1, 0, Dual(4)), mem[3]);
-        assert_eq!((0, 1, Dual(5)), mem[4]);
-        assert_eq!((1, 2, Dual(6)), mem[5]);
-
-        // NOTE: If memoization were not working, we would expect (0, 1, Dual(7)) next.
-        assert!(mem.get(6).is_none());
     }
 }
