@@ -104,17 +104,17 @@ impl<F: Field> Shard<F> {
     }
 
     pub fn get_func_range(&self, func_idx: usize) -> Range<usize> {
-        let func_queries = &self.events.func_queries[func_idx];
-        ((self.index as usize) * self.shard_config.max_shard_size)
-            ..((((self.index as usize) + 1) * self.shard_config.max_shard_size)
-                .min(func_queries.len()))
+        let num_func_queries = self.events.func_queries[func_idx].len();
+        let shard_idx = self.index as usize;
+        let max_shard_size = self.shard_config.max_shard_size;
+        shard_idx * max_shard_size..((shard_idx + 1) * max_shard_size).min(num_func_queries)
     }
 
     pub fn get_mem_range(&self, mem_chip_idx: usize) -> Range<usize> {
-        let mem_queries = &self.events.mem_queries[mem_chip_idx];
-        ((self.index as usize) * self.shard_config.max_shard_size)
-            ..((((self.index as usize) + 1) * self.shard_config.max_shard_size)
-                .min(mem_queries.len()))
+        let num_mem_queries = self.events.mem_queries[mem_chip_idx].len();
+        let shard_idx = self.index as usize;
+        let max_shard_size = self.shard_config.max_shard_size;
+        shard_idx * max_shard_size..((shard_idx + 1) * max_shard_size).min(num_mem_queries)
     }
 }
 
@@ -389,27 +389,27 @@ impl<F: PrimeField32> QueryRecord<F> {
         inp
     }
 
-    fn store(&mut self, args: List<F>, caller_lookup: &LookupId) -> F {
+    fn store(&mut self, args: List<F>, caller_lookup: LookupId) -> F {
         let mem_idx = mem_index_from_len(args.len());
         let mem_map = &mut self.mem_queries[mem_idx];
         let mem_map_idx = if let Some((i, _, mem_result)) = mem_map.get_full_mut(&args) {
-            mem_result.callers_nonces.insert(*caller_lookup);
+            mem_result.callers_nonces.insert(caller_lookup);
             i
         } else {
             let mut mem_result = QueryResult::default();
-            mem_result.callers_nonces.insert(*caller_lookup);
+            mem_result.callers_nonces.insert(caller_lookup);
             mem_map.insert_full(args, mem_result).0
         };
         F::from_canonical_usize(mem_map_idx + 1)
     }
 
-    fn load(&mut self, len: usize, ptr: F, caller_lookup: &LookupId) -> &[F] {
+    fn load(&mut self, len: usize, ptr: F, caller_lookup: LookupId) -> &[F] {
         let ptr_f = ptr.as_canonical_u32() as usize;
         let mem_idx = mem_index_from_len(len);
         let (args, mem_result) = self.mem_queries[mem_idx]
             .get_index_mut(ptr_f - 1)
             .expect("Unbound pointer");
-        mem_result.callers_nonces.insert(*caller_lookup);
+        mem_result.callers_nonces.insert(caller_lookup);
         args
     }
 }
@@ -542,7 +542,7 @@ impl<F: PrimeField32> Func<F> {
                         query_index,
                         op_id: *store_id,
                     };
-                    let ptr = record.store(args, &lookup_id);
+                    let ptr = record.store(args, lookup_id);
                     map.push(ptr);
                 }
                 ExecEntry::Op(Op::Load(len, ptr, load_id)) => {
@@ -552,7 +552,7 @@ impl<F: PrimeField32> Func<F> {
                         query_index,
                         op_id: *load_id,
                     };
-                    let args = record.load(*len, ptr, &lookup_id);
+                    let args = record.load(*len, ptr, lookup_id);
                     map.extend(args);
                 }
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
