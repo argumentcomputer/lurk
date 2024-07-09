@@ -24,6 +24,7 @@ pub enum LairChip<'a, F, H: Hasher<F>> {
         inp: Vec<F>, // TODO: remove this!
         out: Vec<F>, // TODO: remove this!
     },
+    Preprocessed,
 }
 
 impl<'a, F, H: Hasher<F>> LairChip<'a, F, H> {
@@ -48,7 +49,7 @@ impl<'a, F: Sync, H: Hasher<F>> BaseAir<F> for LairChip<'a, F, H> {
         match self {
             Self::Func(func_chip) => func_chip.width(),
             Self::Mem(mem_chip) => mem_chip.width(),
-            Self::Entrypoint { .. } => 1,
+            Self::Entrypoint { .. } | Self::Preprocessed => 1,
         }
     }
 }
@@ -69,9 +70,12 @@ impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
         match self {
             Self::Func(func_chip) => format!("Func[{}]", func_chip.func.name),
             Self::Mem(mem_chip) => format!("{}-wide", mem_chip.len),
+            Self::Entrypoint { func_idx, inp, out } => {
+                format!("Entrypoint[{}, {:?}] -> {:?}", func_idx, inp, out)
+            }
             // the following is required by sphinx
             // TODO: engineer our way out of such upstream check
-            Self::Entrypoint { .. } => "CPU".to_string(),
+            Self::Preprocessed => "CPU".to_string(),
         }
     }
 
@@ -83,13 +87,21 @@ impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
         match self {
             Self::Func(func_chip) => func_chip.generate_trace(shard.events()),
             Self::Mem(mem_chip) => mem_chip.generate_trace(shard.events()),
-            Self::Entrypoint { .. } => RowMajorMatrix::new(vec![F::zero(); 1], 1),
+            Self::Entrypoint { .. } => {
+                if shard.index() == 0 {
+                    RowMajorMatrix::new(vec![F::one()], 1)
+                } else {
+                    RowMajorMatrix::new(vec![F::zero()], 1)
+                }
+            }
+            Self::Preprocessed => RowMajorMatrix::new(vec![F::zero(); 1], 1),
         }
     }
 
     fn generate_dependencies<EL: EventLens<Self>>(&self, _: &EL, _: &mut Self::Record) {}
 
     fn included(&self, queries: &Self::Record) -> bool {
+        // TODO: it looks like this is not functioning as we expect; Entrypoint is still included in every shard?
         match self {
             Self::Func(func_chip) => {
                 let range = queries.get_func_range(func_chip.func.index);
@@ -101,19 +113,20 @@ impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
                 // !range.is_empty()
             }
             Self::Entrypoint { .. } => queries.index == 0,
+            Self::Preprocessed => true,
         }
     }
 
     fn preprocessed_width(&self) -> usize {
         match self {
-            Self::Entrypoint { .. } => 1,
+            Self::Preprocessed => 1,
             _ => 0,
         }
     }
 
     fn generate_preprocessed_trace(&self, _program: &Self::Program) -> Option<RowMajorMatrix<F>> {
         match self {
-            Self::Entrypoint { .. } => Some(RowMajorMatrix::new(vec![F::zero(); 1], 1)),
+            Self::Preprocessed => Some(RowMajorMatrix::new(vec![F::zero(); 1], 1)),
             _ => None,
         }
     }
@@ -129,6 +142,10 @@ where
             Self::Func(func_chip) => func_chip.eval(builder),
             Self::Mem(mem_chip) => mem_chip.eval(builder),
             Self::Entrypoint { func_idx, inp, out } => {
+                let is_real = builder.main().get(0, 0).into();
+
+                builder.assert_bool(is_real.clone());
+
                 builder.require(
                     CallRelation(*func_idx, inp.clone(), out.clone()),
                     AB::F::zero(),
@@ -137,8 +154,12 @@ where
                         prev_count: AB::F::zero(),
                         count_inv: AB::F::one(),
                     },
-                    AB::F::one(),
+                    is_real,
                 );
+                // Dummy constraint of degree 3
+                // builder.assert_one(tmp.cube());
+            }
+            Self::Preprocessed => {
                 // Dummy constraint of degree 3
                 let tmp = builder.main().get(0, 0).into();
                 builder.assert_zero(tmp.cube());
@@ -168,6 +189,7 @@ pub fn build_lair_chip_vector<'a, F: PrimeField32, H: Hasher<F>>(
     for mem_len in MEM_TABLE_SIZES {
         chip_vector.push(LairChip::Mem(MemChip::new(mem_len)));
     }
+    chip_vector.push(LairChip::Preprocessed);
     chip_vector
 }
 
@@ -228,10 +250,10 @@ mod tests {
             }
         );
         let func_e = func!(
-        fn test(): [2] {
+        fn test(): [1] {
             let one = 1;
-            let two = 2;
-            let _three = 3;
+            // let _two = 2;
+            // let _three = 3;
             let x = call(test2, one);
             let x = call(test2, x);
             let x = call(test2, x);
@@ -245,7 +267,7 @@ mod tests {
             let x = call(test2, x);
             let x = call(test2, x);
             let x = call(test2, x);
-            return (two, x)
+            return x
         });
         // let ptr1 = store(one, two, three);
         // let ptr2 = store(one, one, one);
@@ -263,6 +285,11 @@ mod tests {
         let inp = &[];
         toplevel.execute_by_name("test", inp, &mut queries);
         let out = queries.get_output(test_chip.func, inp).to_vec();
+        // let entrypoint = LairChip::entrypoint(
+        //     toplevel.get_by_name("test").index,
+        //     inp.iter().map(|n| n.as_canonical_u32() as usize).collect(),
+        //     out.iter().map(|n| n.as_canonical_u32() as usize).collect(),
+        // );
 
         let config = BabyBearPoseidon2::new();
         let machine = StarkMachine::new(config, build_chip_vector(&test_chip, vec![], out), 0);
@@ -271,13 +298,13 @@ mod tests {
         let mut challenger_p = machine.config().challenger();
         let mut challenger_v = machine.config().challenger();
         let shard = Shard::new(queries.into());
-        // use sphinx_core::stark::MachineRecord;
-        // let shards = shard
-        //     .clone()
-        //     .shard(&crate::lair::execute::ShardingConfig { max_shard_size: 4 });
-        // panic!("num_shards: {}", shards.len());
+        use sphinx_core::stark::MachineRecord;
+        let shards = shard
+            .clone()
+            .shard(&crate::lair::execute::ShardingConfig { max_shard_size: 4 });
+        println!("num_shards: {}", shards.len());
 
-        machine.debug_constraints(&pk, shard.clone(), &mut challenger_p.clone());
+        machine.debug_constraints(&pk, shard.clone());
         let opts = SphinxCoreOpts::default();
         let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
         machine

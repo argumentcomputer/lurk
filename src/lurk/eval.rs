@@ -1310,7 +1310,7 @@ mod test {
     use p3_field::AbstractField;
     use sphinx_core::{
         air::MachineAir,
-        stark::{MachineRecord, StarkGenericConfig, StarkMachine},
+        stark::{MachineRecord, StarkMachine},
         utils::BabyBearPoseidon2,
     };
 
@@ -1440,46 +1440,45 @@ mod test {
                 0,
             );
             let (pk, _vk) = machine.setup(&LairMachineProgram);
-            let mut challenger_p = machine.config().challenger();
-            machine.debug_constraints(&pk, shard, &mut challenger_p);
+            machine.debug_constraints(&pk, shard);
         };
 
-        // eval_aux("t", "t");
-        // eval_aux("nil", "nil");
-        // eval_aux("((lambda (x) x) 1)", "1");
-        // eval_aux("((lambda (x y z) x) 1 2 3)", "1");
-        // eval_aux("((lambda (x y z) z) 1 2 3)", "3");
-        // eval_aux("((lambda (x) (lambda (y) x)) 1 2)", "1");
-        // eval_aux("(if 1 2 3)", "2");
-        // eval_aux("(if nil 2 3)", "3");
-        // eval_aux("(let ((x 1) (y 2) (z 3)) y)", "2");
-        // eval_aux("(letrec ((x 1) (y 2) (z 3)) y)", "2");
-        // eval_aux("(+ 1 2)", "3");
-        // eval_aux("(+ (* 2 2) (* 2 3))", "10");
-        // eval_aux("(= 0 1)", "nil");
-        // eval_aux("(= 0 0)", "t");
-        // eval_aux("(begin 1 2 3)", "3");
-        // eval_aux("'x", "x");
-        // eval_aux("'(+ 1 2)", "(+ 1 2)");
-        // eval_aux("(eval 'x (let ((x 1)) (current-env)))", "1");
-        // eval_aux("(eval '(+ 1 2) (empty-env))", "3");
-        // eval_aux("(cons 1 2)", "(1 . 2)");
-        // eval_aux("(strcons 'a' \"bc\")", "\"abc\"");
-        // eval_aux("'a'", "'a'");
-        // eval_aux("(eq (cons 1 2) '(1 . 2))", "t");
-        // eval_aux("(eq (cons 1 3) '(1 . 2))", "nil");
-        // eval_aux("(car (cons 1 2))", "1");
-        // eval_aux("(cdr (cons 1 (cons 2 3)))", "(2 . 3)");
-        // eval_aux(
-        //     "
-        // (letrec ((factorial
-        //           (lambda (n)
-        //             (if (= n 0) 1
-        //               (* n (factorial (- n 1)))))))
-        //   (factorial 5))
-        // ",
-        //     "120",
-        // );
+        eval_aux("t", "t");
+        eval_aux("nil", "nil");
+        eval_aux("((lambda (x) x) 1)", "1");
+        eval_aux("((lambda (x y z) x) 1 2 3)", "1");
+        eval_aux("((lambda (x y z) z) 1 2 3)", "3");
+        eval_aux("((lambda (x) (lambda (y) x)) 1 2)", "1");
+        eval_aux("(if 1 2 3)", "2");
+        eval_aux("(if nil 2 3)", "3");
+        eval_aux("(let ((x 1) (y 2) (z 3)) y)", "2");
+        eval_aux("(letrec ((x 1) (y 2) (z 3)) y)", "2");
+        eval_aux("(+ 1 2)", "3");
+        eval_aux("(+ (* 2 2) (* 2 3))", "10");
+        eval_aux("(= 0 1)", "nil");
+        eval_aux("(= 0 0)", "t");
+        eval_aux("(begin 1 2 3)", "3");
+        eval_aux("'x", "x");
+        eval_aux("'(+ 1 2)", "(+ 1 2)");
+        eval_aux("(eval 'x (let ((x 1)) (current-env)))", "1");
+        eval_aux("(eval '(+ 1 2) (empty-env))", "3");
+        eval_aux("(cons 1 2)", "(1 . 2)");
+        eval_aux("(strcons 'a' \"bc\")", "\"abc\"");
+        eval_aux("'a'", "'a'");
+        eval_aux("(eq (cons 1 2) '(1 . 2))", "t");
+        eval_aux("(eq (cons 1 3) '(1 . 2))", "nil");
+        eval_aux("(car (cons 1 2))", "1");
+        eval_aux("(cdr (cons 1 (cons 2 3)))", "(2 . 3)");
+        eval_aux(
+            "
+        (letrec ((factorial
+                  (lambda (n)
+                    (if (= n 0) 1
+                      (* n (factorial (- n 1)))))))
+          (factorial 5))
+        ",
+            "120",
+        );
         eval_aux(
             "
         (letrec ((fib

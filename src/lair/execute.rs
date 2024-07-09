@@ -241,8 +241,8 @@ impl ShardingConfig {
 impl Default for ShardingConfig {
     fn default() -> Self {
         Self {
-            // max_shard_size: 1 << 20,
-            max_shard_size: 4,
+            max_shard_size: 1 << 22,
+            // max_shard_size: 4,
         }
     }
 }
@@ -419,18 +419,16 @@ impl<F: PrimeField32> QueryRecord<F> {
 impl<F: PrimeField32, H: Hasher<F>> Toplevel<F, H> {
     pub fn execute(&self, func: &Func<F>, args: &[F], record: &mut QueryRecord<F>) -> List<F> {
         let func_index = func.index;
+        let mut query_result = QueryResult::default();
+        // the following `callers_lookups` entry corresponds to the builder.receive done in LairChip::Entrypoint
+        query_result.callers_lookups.insert(LookupId::default());
         let (query_index, _) =
-            record.func_queries[func_index].insert_full(args.into(), QueryResult::default());
+            record.func_queries[func_index].insert_full(args.into(), query_result);
+
         let out = func.execute(args, self, record, query_index);
         if let Some(inv_map) = &mut record.inv_func_queries[func_index] {
             inv_map.insert(out.clone(), args.into());
         }
-        let query_result = record.func_queries[func_index]
-            .get_index_mut(query_index)
-            .unwrap()
-            .1;
-        // the following entry corresponds to the builder.receive done in LairChip::Entrypoint
-        query_result.callers_lookups.insert(LookupId::default());
         out
     }
 
