@@ -3,7 +3,7 @@ use std::num::TryFromIntError;
 
 pub mod builder;
 pub mod record;
-mod relation;
+pub mod relation;
 pub mod trace;
 
 /// A generic input for a byte relation, used as index in a record of required relations,

@@ -156,7 +156,7 @@ impl<F: PrimeField> RequireRecord<F> {
     pub fn populate(&mut self, record: Record) {
         self.prev_nonce = F::from_canonical_u32(record.nonce);
         self.prev_count = F::from_canonical_u32(record.count);
-        self.count_inv = (self.prev_count.clone() + F::one()).inverse()
+        self.count_inv = (self.prev_count + F::one()).inverse()
     }
 
     pub fn populate_and_update(&mut self, nonce: u32, record: &mut Record) {
