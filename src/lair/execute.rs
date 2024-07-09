@@ -31,7 +31,7 @@ pub(crate) struct LookupId {
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct QueryResult<F> {
     pub(crate) output: Option<List<F>>,
-    pub(crate) callers_nonces: FxIndexSet<LookupId>,
+    pub(crate) callers_lookups: FxIndexSet<LookupId>,
 }
 
 impl<F: PrimeField32> QueryResult<F> {
@@ -41,12 +41,12 @@ impl<F: PrimeField32> QueryResult<F> {
     }
 
     /// This function returns the values for `last_count` and `last_nonce`
-    pub(crate) fn get_provide_hints(&self, config: ShardingConfig) -> (F, F) {
-        let last_count = self.callers_nonces.len();
+    pub(crate) fn get_provide_hints(&self, config: &ShardingConfig) -> (F, F) {
+        let last_count = self.callers_lookups.len();
         let lookup_id = self
-            .callers_nonces
+            .callers_lookups
             .last()
-            .expect("Must have at least one caller");
+            .expect("Must have at least one caller lookup");
 
         let (_, nonce) = config.index_to_shard_nonce(lookup_id.query_index);
         (
@@ -56,18 +56,22 @@ impl<F: PrimeField32> QueryResult<F> {
     }
 
     /// This function returns the values for `prev_nonce`, `prev_count` and `count_inv`
-    pub(crate) fn get_require_hints(&self, caller: &LookupId, config: ShardingConfig) -> (F, F, F) {
+    pub(crate) fn get_require_hints(
+        &self,
+        caller_lookup: &LookupId,
+        shard_config: &ShardingConfig,
+    ) -> (F, F, F) {
         let prev_count = self
-            .callers_nonces
-            .get_index_of(caller)
-            .expect("Cannot find caller nonce entry");
+            .callers_lookups
+            .get_index_of(caller_lookup)
+            .expect("Cannot find caller lookup entry");
         if prev_count == 0 {
             // we are the first require, fill in hardcoded provide values
             (F::zero(), F::zero(), F::one())
         } else {
             // we are somewhere in the middle of the list, get the predecessor
-            let prev_lookup_id = self.callers_nonces.get_index(prev_count - 1).unwrap();
-            let (_, prev_nonce) = config.index_to_shard_nonce(prev_lookup_id.query_index);
+            let prev_lookup_id = self.callers_lookups.get_index(prev_count - 1).unwrap();
+            let (_, prev_nonce) = shard_config.index_to_shard_nonce(prev_lookup_id.query_index);
             (
                 F::from_canonical_usize(prev_nonce),
                 F::from_canonical_usize(prev_count),
@@ -102,8 +106,8 @@ impl<F: Field> Shard<F> {
         }
     }
 
-    pub fn get_func_range(&self, func_idx: usize) -> Range<usize> {
-        let num_func_queries = self.events.func_queries[func_idx].len();
+    pub fn get_func_range(&self, func_index: usize) -> Range<usize> {
+        let num_func_queries = self.events.func_queries[func_index].len();
         let shard_idx = self.index as usize;
         let max_shard_size = self.shard_config.max_shard_size;
         shard_idx * max_shard_size..((shard_idx + 1) * max_shard_size).min(num_func_queries)
@@ -145,7 +149,7 @@ impl<F: Field> MachineRecord for Shard<F> {
             events
                 .func_queries
                 .iter()
-                .map(|im| im.values().map(|r| r.callers_nonces.len()).sum::<usize>())
+                .map(|im| im.values().map(|r| r.callers_lookups.len()).sum::<usize>())
                 .sum(),
         );
 
@@ -161,7 +165,7 @@ impl<F: Field> MachineRecord for Shard<F> {
                 .iter()
                 .map(|im| {
                     im.values()
-                        .map(|set| set.callers_nonces.len())
+                        .map(|set| set.callers_lookups.len())
                         .sum::<usize>()
                 })
                 .sum(),
@@ -340,7 +344,7 @@ impl<F: PrimeField32> QueryRecord<F> {
     ) -> Option<&List<F>> {
         if let Some(event) = self.func_queries[index].get_mut(input) {
             let output = event.output.as_ref().expect("Loop detected");
-            event.callers_nonces.insert(LookupId {
+            event.callers_lookups.insert(LookupId {
                 func_index: caller_func_index,
                 query_index: caller_query_index,
                 op_id,
@@ -367,21 +371,21 @@ impl<F: PrimeField32> QueryRecord<F> {
         let func_queries = &mut self.func_queries[index];
         if let Some(event) = func_queries.get_mut(inp) {
             assert_eq!(out, event.expect_output());
-            event.callers_nonces.insert(LookupId {
+            event.callers_lookups.insert(LookupId {
                 func_index: caller_func_index,
                 query_index: caller_query_index,
                 op_id,
             });
         } else {
-            let mut callers_nonces = IndexSet::default();
-            callers_nonces.insert(LookupId {
+            let mut callers_lookups = IndexSet::default();
+            callers_lookups.insert(LookupId {
                 func_index: caller_func_index,
                 query_index: caller_query_index,
                 op_id,
             });
             let result = QueryResult {
                 output: Some(out.into()),
-                callers_nonces,
+                callers_lookups,
             };
             func_queries.insert(inp.clone(), result);
         }
@@ -392,11 +396,11 @@ impl<F: PrimeField32> QueryRecord<F> {
         let mem_idx = mem_index_from_len(args.len());
         let mem_map = &mut self.mem_queries[mem_idx];
         let mem_map_idx = if let Some((i, _, mem_result)) = mem_map.get_full_mut(&args) {
-            mem_result.callers_nonces.insert(caller_lookup);
+            mem_result.callers_lookups.insert(caller_lookup);
             i
         } else {
             let mut mem_result = QueryResult::default();
-            mem_result.callers_nonces.insert(caller_lookup);
+            mem_result.callers_lookups.insert(caller_lookup);
             mem_map.insert_full(args, mem_result).0
         };
         F::from_canonical_usize(mem_map_idx + 1)
@@ -408,7 +412,7 @@ impl<F: PrimeField32> QueryRecord<F> {
         let (args, mem_result) = self.mem_queries[mem_idx]
             .get_index_mut(ptr_f - 1)
             .expect("Unbound pointer");
-        mem_result.callers_nonces.insert(caller_lookup);
+        mem_result.callers_lookups.insert(caller_lookup);
         args
     }
 }
@@ -427,7 +431,7 @@ impl<F: PrimeField32, H: Hasher<F>> Toplevel<F, H> {
             .unwrap()
             .1;
         // the following entry corresponds to the builder.receive done in LairChip::Entrypoint
-        query_result.callers_nonces.insert(LookupId::default());
+        query_result.callers_lookups.insert(LookupId::default());
         out
     }
 
@@ -482,16 +486,12 @@ impl<F: PrimeField32> Func<F> {
         let mut func_index = self.index;
         while let Some(exec_entry) = exec_entries_stack.pop() {
             match exec_entry {
-                ExecEntry::Op(Op::Call(callee_index, inp, call_id)) => {
+                ExecEntry::Op(Op::Call(callee_index, inp, op_id)) => {
                     // `map_buffer` will become the map for the called function
                     let mut map_buffer = inp.iter().map(|v| map[*v]).collect::<Vec<_>>();
-                    if let Some(out) = record.query(
-                        *callee_index,
-                        &map_buffer,
-                        func_index,
-                        query_index,
-                        *call_id,
-                    ) {
+                    if let Some(out) =
+                        record.query(*callee_index, &map_buffer, func_index, query_index, *op_id)
+                    {
                         map.extend(out.iter())
                     } else {
                         // insert dummy entry
@@ -504,7 +504,7 @@ impl<F: PrimeField32> Func<F> {
                         callers_states_stack.push(CallerState {
                             func_index,
                             query_index,
-                            op_id: *call_id,
+                            op_id: *op_id,
                             map: map_buffer,
                         });
                         // prepare outer variables to go into the new func scope
@@ -513,15 +513,10 @@ impl<F: PrimeField32> Func<F> {
                         push_block_exec_entries!(&toplevel.get_by_index(func_index).body);
                     }
                 }
-                ExecEntry::Op(Op::PreImg(callee_index, out, preimg_id)) => {
+                ExecEntry::Op(Op::PreImg(callee_index, out, op_id)) => {
                     let out = out.iter().map(|v| map[*v]).collect::<List<_>>();
-                    let inp = record.query_preimage(
-                        *callee_index,
-                        &out,
-                        func_index,
-                        query_index,
-                        *preimg_id,
-                    );
+                    let inp =
+                        record.query_preimage(*callee_index, &out, func_index, query_index, *op_id);
                     map.extend(inp.iter());
                 }
                 ExecEntry::Op(Op::Const(c)) => map.push(*c),
@@ -534,22 +529,22 @@ impl<F: PrimeField32> Func<F> {
                 } else {
                     F::zero()
                 }),
-                ExecEntry::Op(Op::Store(args, store_id)) => {
+                ExecEntry::Op(Op::Store(args, op_id)) => {
                     let args = args.iter().map(|a| map[*a]).collect();
                     let lookup_id = LookupId {
                         func_index,
                         query_index,
-                        op_id: *store_id,
+                        op_id: *op_id,
                     };
                     let ptr = record.store(args, lookup_id);
                     map.push(ptr);
                 }
-                ExecEntry::Op(Op::Load(len, ptr, load_id)) => {
+                ExecEntry::Op(Op::Load(len, ptr, op_id)) => {
                     let ptr = map[*ptr];
                     let lookup_id = LookupId {
                         func_index,
                         query_index,
-                        op_id: *load_id,
+                        op_id: *op_id,
                     };
                     let args = record.load(*len, ptr, lookup_id);
                     map.extend(args);
@@ -571,20 +566,20 @@ impl<F: PrimeField32> Func<F> {
                     }
                     query_result.output = Some(out_list);
                     if let Some(CallerState {
-                        func_index: caller_func_idx,
+                        func_index: caller_func_index,
                         query_index: caller_query_index,
                         map: caller_map,
                         op_id,
                     }) = callers_states_stack.pop()
                     {
                         // recover the state of the caller
-                        func_index = caller_func_idx;
+                        func_index = caller_func_index;
                         query_index = caller_query_index;
                         map = caller_map;
                         // insert caller nonce data
-                        query_result.callers_nonces.insert(LookupId {
+                        query_result.callers_lookups.insert(LookupId {
                             func_index,
-                            query_index: caller_query_index,
+                            query_index,
                             op_id,
                         });
                         // extend the map with the call output

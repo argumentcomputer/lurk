@@ -56,7 +56,7 @@ impl<'a, T> ColumnMutSlice<'a, T> {
 }
 
 impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
-    /// Generates the trace containing only queries with non-zero multiplicities
+    /// Per-row parallel trace generation
     pub fn generate_trace(&self, shard: &Shard<F>) -> RowMajorMatrix<F> {
         let func_queries = &shard.events.func_queries()[self.func.index];
         let range = shard.get_func_range(self.func.index);
@@ -143,7 +143,7 @@ impl<F: PrimeField32> Ctrl<F> {
                 let result = query_map
                     .get(&func_ctx.call_inp)
                     .expect("Cannot find query result");
-                let (last_count, last_nonce) = result.get_provide_hints(shard.shard_config);
+                let (last_count, last_nonce) = result.get_provide_hints(&shard.shard_config);
                 slice.push_aux(index, last_nonce);
                 slice.push_aux(index, last_count);
             }
@@ -289,7 +289,7 @@ impl<F: PrimeField32> Op<F> {
                         query_index,
                         op_id: *op_id,
                     },
-                    shard.shard_config,
+                    &shard.shard_config,
                 );
                 slice.push_aux(index, prev_nonce);
                 slice.push_aux(index, prev_count);
@@ -318,7 +318,7 @@ impl<F: PrimeField32> Op<F> {
                         query_index,
                         op_id: *op_id,
                     },
-                    shard.shard_config,
+                    &shard.shard_config,
                 );
                 slice.push_aux(index, prev_nonce);
                 slice.push_aux(index, prev_count);
@@ -344,7 +344,7 @@ impl<F: PrimeField32> Op<F> {
                         query_index,
                         op_id: *op_id,
                     },
-                    shard.shard_config,
+                    &shard.shard_config,
                 );
                 slice.push_aux(index, prev_nonce);
                 slice.push_aux(index, prev_count);
@@ -372,7 +372,7 @@ impl<F: PrimeField32> Op<F> {
                         query_index,
                         op_id: *op_id,
                     },
-                    shard.shard_config,
+                    &shard.shard_config,
                 );
                 slice.push_aux(index, prev_nonce);
                 slice.push_aux(index, prev_count);

@@ -33,6 +33,7 @@ struct CallCtx<F, T> {
 }
 
 pub type ColumnSlice<'a, T> = ColumnLayout<&'a T, &'a [T]>;
+
 impl<'a, T> ColumnSlice<'a, T> {
     pub fn from_slice(slice: &'a [T], layout_sizes: LayoutSizes) -> Self {
         let (nonce, slice) = slice.split_at(1);
@@ -49,14 +50,20 @@ impl<'a, T> ColumnSlice<'a, T> {
         }
     }
 
-    pub fn next_input(&self, index: &mut ColumnIndex) -> &T {
-        let t = &self.input[index.input];
+    pub fn next_input(&self, index: &mut ColumnIndex) -> T
+    where
+        T: Copy,
+    {
+        let t = self.input[index.input];
         index.input += 1;
         t
     }
 
-    pub fn next_aux(&self, index: &mut ColumnIndex) -> &T {
-        let t = &self.aux[index.aux];
+    pub fn next_aux(&self, index: &mut ColumnIndex) -> T
+    where
+        T: Copy,
+    {
+        let t = self.aux[index.aux];
         index.aux += 1;
         t
     }
@@ -113,7 +120,7 @@ impl<F: Field> Func<F> {
         let nonce = *local.nonce;
         let next_nonce = *next.nonce;
 
-        // this prevents evil provers from starting ahead (maybe close to |F|)
+        // nonce counting starts from zero
         builder.when_first_row().assert_zero(nonce);
 
         // nonces are unique, even for dummy rows
@@ -124,7 +131,7 @@ impl<F: Field> Func<F> {
         let map = &mut vec![];
         let mut call_inp = Vec::with_capacity(self.input_size);
         for _ in 0..self.input_size {
-            let i = *local.next_input(index);
+            let i = local.next_input(index);
             map.push(Val::Expr(i.into()));
             call_inp.push(i.into());
         }
@@ -229,7 +236,7 @@ impl<F: Field> Op<F> {
                 let c = if let (Val::Const(a), Val::Const(b)) = (a, b) {
                     Val::Const(*a * *b)
                 } else {
-                    let c = *local.next_aux(index);
+                    let c = local.next_aux(index);
                     builder
                         .when(sel.clone())
                         .assert_eq(a.to_expr() * b.to_expr(), c);
@@ -242,7 +249,7 @@ impl<F: Field> Op<F> {
                 let c = if let Val::Const(a) = a {
                     Val::Const(a.inverse())
                 } else {
-                    let c = *local.next_aux(index);
+                    let c = local.next_aux(index);
                     builder.when(sel.clone()).assert_one(a.to_expr() * c);
                     Val::Expr(c.into())
                 };
@@ -254,8 +261,8 @@ impl<F: Field> Op<F> {
                     let x = if a.is_zero() { F::one() } else { F::zero() };
                     Val::Const(x)
                 } else {
-                    let d = *local.next_aux(index);
-                    let x = *local.next_aux(index);
+                    let d = local.next_aux(index);
+                    let x = local.next_aux(index);
                     // The two constraints
                     //   a*x = 0
                     //   a*d + x = 1, for some d
@@ -271,14 +278,14 @@ impl<F: Field> Op<F> {
                 let func = toplevel.get_by_index(*idx);
                 let mut out = Vec::with_capacity(func.output_size);
                 for _ in 0..func.output_size {
-                    let o = *local.next_aux(index);
+                    let o = local.next_aux(index);
                     map.push(Val::Expr(o.into()));
                     out.push(o.into());
                 }
                 let inp = inp.iter().map(|i| map[*i].to_expr());
-                let prev_nonce = *local.next_aux(index);
-                let prev_count = *local.next_aux(index);
-                let count_inv = *local.next_aux(index);
+                let prev_nonce = local.next_aux(index);
+                let prev_count = local.next_aux(index);
+                let count_inv = local.next_aux(index);
                 let record = RequireRecord {
                     prev_nonce,
                     prev_count,
@@ -295,14 +302,14 @@ impl<F: Field> Op<F> {
                 let func = toplevel.get_by_index(*idx);
                 let mut inp = Vec::with_capacity(func.input_size);
                 for _ in 0..func.input_size {
-                    let i = *local.next_aux(index);
+                    let i = local.next_aux(index);
                     map.push(Val::Expr(i.into()));
                     inp.push(i.into());
                 }
                 let out = out.iter().map(|o| map[*o].to_expr());
-                let prev_nonce = *local.next_aux(index);
-                let prev_count = *local.next_aux(index);
-                let count_inv = *local.next_aux(index);
+                let prev_nonce = local.next_aux(index);
+                let prev_count = local.next_aux(index);
+                let count_inv = local.next_aux(index);
                 let record = RequireRecord {
                     prev_nonce,
                     prev_count,
@@ -316,13 +323,13 @@ impl<F: Field> Op<F> {
                 );
             }
             Op::Store(values, _) => {
-                let ptr = *local.next_aux(index);
+                let ptr = local.next_aux(index);
                 map.push(Val::Expr(ptr.into()));
                 let values = values.iter().map(|&idx| map[idx].to_expr());
 
-                let prev_nonce = *local.next_aux(index);
-                let prev_count = *local.next_aux(index);
-                let count_inv = *local.next_aux(index);
+                let prev_nonce = local.next_aux(index);
+                let prev_count = local.next_aux(index);
+                let count_inv = local.next_aux(index);
                 let record = RequireRecord {
                     prev_nonce,
                     prev_count,
@@ -341,15 +348,15 @@ impl<F: Field> Op<F> {
                 // This must be collected to ensure the side effects take place
                 let values = (0..*len)
                     .map(|_| {
-                        let o = *local.next_aux(index);
+                        let o = local.next_aux(index);
                         map.push(Val::Expr(o.into()));
                         o
                     })
                     .collect::<Vec<_>>();
 
-                let prev_nonce = *local.next_aux(index);
-                let prev_count = *local.next_aux(index);
-                let count_inv = *local.next_aux(index);
+                let prev_nonce = local.next_aux(index);
+                let prev_count = local.next_aux(index);
+                let count_inv = local.next_aux(index);
                 let record = RequireRecord {
                     prev_nonce,
                     prev_count,
@@ -409,7 +416,7 @@ impl<F: Field> Ctrl<F> {
 
                 if let Some(branch) = &cases.default {
                     let invs = (0..cases.branches.size())
-                        .map(|_| *local.next_aux(index))
+                        .map(|_| local.next_aux(index))
                         .collect::<Vec<_>>();
                     let sel = branch.return_sel::<AB>(local);
                     branch.eval(builder, local, &sel, index, map, toplevel, call_ctx);
@@ -437,7 +444,7 @@ impl<F: Field> Ctrl<F> {
 
                 if let Some(branch) = &cases.default {
                     let wit: Vec<Vec<_>> = (0..cases.branches.size())
-                        .map(|_| (0..vars.len()).map(|_| *local.next_aux(index)).collect())
+                        .map(|_| (0..vars.len()).map(|_| local.next_aux(index)).collect())
                         .collect();
                     let sel = branch.return_sel::<AB>(local);
                     branch.eval(builder, local, &sel, index, map, toplevel, call_ctx);
@@ -458,7 +465,7 @@ impl<F: Field> Ctrl<F> {
                 let init_state = index.save();
                 let b = map[*b].to_expr();
 
-                let inv = *local.next_aux(index);
+                let inv = local.next_aux(index);
                 let t_sel = t.return_sel::<AB>(local);
                 t.eval(
                     builder,
@@ -483,7 +490,7 @@ impl<F: Field> Ctrl<F> {
                 let map_len = map.len();
                 let init_state = index.save();
 
-                let coeffs = vars.iter().map(|_| *local.next_aux(index)).collect();
+                let coeffs = vars.iter().map(|_| local.next_aux(index)).collect();
                 let vals = vars.iter().map(|&v| map[v].to_expr()).collect();
                 let t_sel = t.return_sel::<AB>(local);
                 t.eval(
@@ -512,8 +519,8 @@ impl<F: Field> Ctrl<F> {
                 let sel = local.sel[*ident];
                 let out = vs.iter().map(|v| map[*v].to_expr());
                 let CallCtx { func_idx, call_inp } = call_ctx;
-                let last_nonce = *local.next_aux(index);
-                let last_count = *local.next_aux(index);
+                let last_nonce = local.next_aux(index);
+                let last_count = local.next_aux(index);
                 let record = ProvideRecord {
                     last_nonce,
                     last_count,

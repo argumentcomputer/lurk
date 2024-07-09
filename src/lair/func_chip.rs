@@ -7,11 +7,11 @@ use super::{
 };
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-pub struct ColumnLayout<N, T> {
-    pub(crate) nonce: N,
-    pub(crate) input: T,
-    pub(crate) aux: T,
-    pub(crate) sel: T,
+pub struct ColumnLayout<Value, Slice> {
+    pub(crate) nonce: Value,
+    pub(crate) input: Slice,
+    pub(crate) aux: Slice,
+    pub(crate) sel: Slice,
 }
 
 pub type LayoutSizes = ColumnLayout<usize, usize>;
