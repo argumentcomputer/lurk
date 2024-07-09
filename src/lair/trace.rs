@@ -657,7 +657,10 @@ mod tests {
         let (pk, _vk) = machine.setup(&LairMachineProgram);
         let shard = Shard::new(queries.into());
         let shards = shard.clone().shard(&ShardingConfig::default());
-        assert!(shards.len() > 1, "lair_shard_test must have more than one shard");
+        assert!(
+            shards.len() > 1,
+            "lair_shard_test must have more than one shard"
+        );
 
         let mut lookup_queries = Vec::new();
         for shard in shards.iter() {
