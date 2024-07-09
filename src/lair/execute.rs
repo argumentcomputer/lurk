@@ -815,8 +815,8 @@ mod tests {
         let res1 = queries.get_output(half, args).to_vec();
         let shard = Shard::new(queries.clone().into());
         let traces1 = (
-            half_chip.generate_trace_sequential(&shard),
-            double_chip.generate_trace_sequential(&shard),
+            half_chip.generate_trace(&shard),
+            double_chip.generate_trace(&shard),
         );
 
         // even after `clean`, the preimg of `double(1)` can still be recovered
@@ -825,8 +825,8 @@ mod tests {
         let res2 = queries.get_output(half, args).to_vec();
         let shard = Shard::new(queries.clone().into());
         let traces2 = (
-            half_chip.generate_trace_sequential(&shard),
-            double_chip.generate_trace_sequential(&shard),
+            half_chip.generate_trace(&shard),
+            double_chip.generate_trace(&shard),
         );
         assert_eq!(res1, res2);
         assert_eq!(traces1, traces2);
@@ -836,8 +836,8 @@ mod tests {
         let res3 = queries.get_output(half, args).to_vec();
         let shard = Shard::new(queries.into());
         let traces3 = (
-            half_chip.generate_trace_sequential(&shard),
-            double_chip.generate_trace_sequential(&shard),
+            half_chip.generate_trace(&shard),
+            double_chip.generate_trace(&shard),
         );
         assert_eq!(res2, res3);
         assert_eq!(traces2, traces3);

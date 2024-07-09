@@ -140,7 +140,7 @@ mod tests {
         let test_chip = FuncChip::from_name("test", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         toplevel.execute_by_name("test", &[], &mut queries);
-        let func_trace = test_chip.generate_trace_sequential(&Shard::new(queries.clone().into()));
+        let func_trace = test_chip.generate_trace(&Shard::new(queries.clone().into()));
 
         #[rustfmt::skip]
         let expected_trace = [

@@ -1538,8 +1538,7 @@ mod test {
                 "ingress -> egress doesn't roundtrip"
             );
 
-            let hash_32_8_trace =
-                hash_32_8_chip.generate_trace_parallel(&Shard::new(queries.into()));
+            let hash_32_8_trace = hash_32_8_chip.generate_trace(&Shard::new(queries.into()));
             debug_constraints_collecting_queries(&hash_32_8_chip, &[], None, &hash_32_8_trace);
         };
 

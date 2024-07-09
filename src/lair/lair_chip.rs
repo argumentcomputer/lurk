@@ -81,7 +81,7 @@ impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
         _: &mut Self::Record,
     ) -> RowMajorMatrix<F> {
         match self {
-            Self::Func(func_chip) => func_chip.generate_trace_parallel(shard.events()),
+            Self::Func(func_chip) => func_chip.generate_trace(shard.events()),
             Self::Mem(mem_chip) => mem_chip.generate_trace(shard.events()),
             Self::Entrypoint { .. } => RowMajorMatrix::new(vec![F::zero(); 1], 1),
         }
