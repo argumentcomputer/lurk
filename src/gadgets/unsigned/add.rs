@@ -1,4 +1,4 @@
-use crate::gadgets::bytes::ByteRecord;
+use crate::gadgets::bytes::{ByteAirRecord, ByteRecord};
 use crate::gadgets::unsigned::{Word, WORD_SIZE};
 use p3_air::AirBuilder;
 use p3_field::AbstractField;
@@ -32,6 +32,10 @@ impl<F: AbstractField> AddWitness<F> {
         result.range_check(record);
         result
     }
+
+    const fn num_requires() -> usize {
+        WORD_SIZE / 2
+    }
 }
 
 pub fn eval_add<AB: AirBuilder>(
@@ -39,6 +43,7 @@ pub fn eval_add<AB: AirBuilder>(
     (in1, in2): (Word<impl Into<AB::Expr>>, Word<impl Into<AB::Expr>>),
     out: Word<impl Into<AB::Expr>>,
     witness: &AddWitness<AB::Var>,
+    record: &mut impl ByteAirRecord<AB::Expr>,
     is_real: impl Into<AB::Expr>,
 ) {
     let in1 = in1.into();
@@ -65,12 +70,16 @@ pub fn eval_add<AB: AirBuilder>(
             builder.when(diff.clone()).assert_eq(diff, base);
         }
     }
+
+    record.range_check_u8_iter(out, is_real);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gadgets::bytes::NonceByteRecord;
+    use crate::air::builder::RequireRecord;
+    use crate::gadgets::bytes::builder::BytesAirRecordWithContext;
+    use crate::gadgets::bytes::record::BytesRecord;
     use crate::gadgets::debug::GadgetAirBuilder;
     use p3_baby_bear::BabyBear;
 
@@ -85,7 +94,7 @@ mod tests {
             (1u64, u64::MAX),
             (u64::MAX, 1u64),
         ];
-        let mut record = NonceByteRecord::default();
+        let mut record = BytesRecord::default();
 
         for (i, (lhs, rhs)) in inputs.into_iter().enumerate() {
             let nonce = i as u32;
@@ -95,8 +104,15 @@ mod tests {
             let out_expected = Word(out.to_le_bytes());
 
             let mut witness = AddWitness::<F>::default();
-            let out = witness.populate(lhs, rhs, &mut record.with_nonce(nonce));
+            let mut requires = vec![RequireRecord::<F>::default(); AddWitness::<F>::num_requires()];
+            let out = witness.populate(
+                lhs,
+                rhs,
+                &mut record.with_context(nonce, requires.iter_mut()),
+            );
             assert_eq!(out, out_expected);
+
+            let mut air_record = BytesAirRecordWithContext::default();
 
             let mut builder = GadgetAirBuilder::<F>::default();
             eval_add(
@@ -104,6 +120,7 @@ mod tests {
                 (lhs.into_field::<F>(), rhs.into_field::<F>()),
                 out.into_field::<F>(),
                 &witness,
+                &mut air_record,
                 F::one(),
             );
         }

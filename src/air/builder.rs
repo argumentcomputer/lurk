@@ -1,8 +1,9 @@
 use itertools::chain;
 use p3_air::{AirBuilder, AirBuilderWithPublicValues};
-use p3_field::AbstractField;
+use p3_field::{AbstractField, PrimeField};
 use sphinx_core::air::{AirInteraction, MessageBuilder};
 use sphinx_core::lookup::InteractionKind;
+use sphinx_derive::AlignedBorrow;
 
 /// Tagged tuple describing an element of a relation
 ///
@@ -131,26 +132,53 @@ impl<AB: AirBuilder + MessageBuilder<AirInteraction<AB::Expr>>> LookupBuilder fo
     }
 }
 
-/// A [RequireRecord] contains witness values
-#[derive(Copy, Clone, Default, Debug)]
-#[repr(C)]
-pub struct RequireRecord<E> {
-    /// The `nonce` is the row in the trace where the previous access occurred.
-    pub prev_nonce: E,
-    /// The `count`
-    /// May be zero when the previous access was `provide`, or for padding when `is_real = 0`.
-    pub prev_count: E,
-    /// Inverse of `count = prev_count + 1`, proving that `count` is non-zero.
-    /// May be zero when `is_real = 0`
-    pub count_inv: E,
+#[derive(Copy, Clone, Default, Debug, Eq, PartialEq)]
+pub struct Record {
+    nonce: u32,
+    count: u32,
 }
 
-#[derive(Copy, Clone, Default, Debug)]
+/// A [RequireRecord] contains witness values
+#[derive(Copy, Clone, Default, Debug, AlignedBorrow)]
 #[repr(C)]
-pub struct ProvideRecord<E> {
+pub struct RequireRecord<T> {
+    /// The `nonce` is the row in the trace where the previous access occurred.
+    pub prev_nonce: T,
+    /// The `count`
+    /// May be zero when the previous access was `provide`, or for padding when `is_real = 0`.
+    pub prev_count: T,
+    /// Inverse of `count = prev_count + 1`, proving that `count` is non-zero.
+    /// May be zero when `is_real = 0`
+    pub count_inv: T,
+}
+
+impl<F: PrimeField> RequireRecord<F> {
+    pub fn populate(&mut self, record: Record) {
+        self.prev_nonce = F::from_canonical_u32(record.nonce);
+        self.prev_count = F::from_canonical_u32(record.count);
+        self.count_inv = (self.prev_count.clone() + F::one()).inverse()
+    }
+
+    pub fn populate_and_update(&mut self, nonce: u32, record: &mut Record) {
+        self.populate(*record);
+        record.nonce = nonce;
+        record.count += 1;
+    }
+}
+
+#[derive(Copy, Clone, Default, Debug, AlignedBorrow)]
+#[repr(C)]
+pub struct ProvideRecord<T> {
     /// The `nonce` is the row in the trace where the last `require` access occurred.
-    pub last_nonce: E,
+    pub last_nonce: T,
     /// The `count` written by the final `require` access, also sometimes referred to as the
     /// "multiplicity" of the query.
-    pub last_count: E,
+    pub last_count: T,
+}
+
+impl<F: PrimeField> ProvideRecord<F> {
+    pub fn populate(&mut self, record: Record) {
+        self.last_count = F::from_canonical_u32(record.nonce);
+        self.last_nonce = F::from_canonical_u32(record.count);
+    }
 }

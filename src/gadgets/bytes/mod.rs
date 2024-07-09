@@ -1,7 +1,13 @@
-mod trace;
+use p3_field::{AbstractField, PrimeField32};
+use std::num::TryFromIntError;
 
-use std::collections::BTreeMap;
+pub mod builder;
+pub mod record;
+mod relation;
+pub mod trace;
 
+/// A generic input for a byte relation, used as index in a record of required relations,
+/// and can compute the expected result of an operation applied to the input.
 #[derive(Copy, Clone, Debug, Default, Ord, PartialOrd, Eq, PartialEq)]
 pub struct ByteInput(u16);
 
@@ -55,6 +61,20 @@ impl ByteInput {
     }
 }
 
+impl<F: PrimeField32> TryFrom<(F, F)> for ByteInput {
+    type Error = TryFromIntError;
+
+    fn try_from(value: (F, F)) -> Result<Self, Self::Error> {
+        let (i1, i2) = value;
+        let i1 = u8::try_from(i1.as_canonical_u32())?;
+        let i2 = u8::try_from(i2.as_canonical_u32())?;
+        Ok(Self(u16::from_le_bytes([i1, i2])))
+    }
+}
+
+/// A ByteRecord is passed a mutable reference to a witness generation subroutine,
+/// and records all the relations that were required in order to validate the correctness
+/// of the witness.
 pub trait ByteRecord {
     fn range_check_u8(&mut self, i: u8) {
         self.range_check_u8_pair(i, 0);
@@ -76,82 +96,38 @@ pub trait ByteRecord {
     fn msb(&mut self, i: u8) -> bool;
 }
 
-#[derive(Copy, Clone, Debug, Default)]
-pub struct ByteInputRecord {
-    nonce: u32,
-}
-
-#[derive(Debug, Default)]
-pub struct NonceByteRecord {
-    range_u8: BTreeMap<ByteInput, Vec<ByteInputRecord>>,
-    range_u16: BTreeMap<ByteInput, Vec<ByteInputRecord>>,
-    less_then: BTreeMap<ByteInput, Vec<ByteInputRecord>>,
-    and: BTreeMap<ByteInput, Vec<ByteInputRecord>>,
-    xor: BTreeMap<ByteInput, Vec<ByteInputRecord>>,
-    or: BTreeMap<ByteInput, Vec<ByteInputRecord>>,
-    msb: BTreeMap<ByteInput, Vec<ByteInputRecord>>,
-}
-
-impl NonceByteRecord {
-    pub fn with_nonce(&mut self, nonce: u32) -> ByteRecordWithContext {
-        ByteRecordWithContext {
-            nonce,
-            record: self,
+/// A ByteAirRecord is passed as mutable reference to a function that evaluates the Air constraints
+/// for a witness, in a given row. The main chip will initialize this structure at the start of
+/// `Air::eval`, and perform any necessary bookkeeping to ensure the relations are added to a
+/// lookup argument.  
+pub trait ByteAirRecord<F: AbstractField> {
+    fn range_check_u8(&mut self, i: impl Into<F>, is_real: impl Into<F>) {
+        self.range_check_u8_pair(i, F::default(), is_real);
+    }
+    fn range_check_u8_pair(&mut self, i1: impl Into<F>, i2: impl Into<F>, is_real: impl Into<F>);
+    fn range_check_u8_iter<IT: Into<F>>(
+        &mut self,
+        iter: impl IntoIterator<Item = IT>,
+        is_real: impl Into<F>,
+    ) {
+        let is_real = is_real.into();
+        let mut iter = iter.into_iter();
+        while let Some(i1) = iter.next() {
+            let i2 = iter.next().map(Into::into).unwrap_or_default();
+            self.range_check_u8_pair(i1, i2, is_real.clone())
         }
     }
-}
+    fn range_check_u16(&mut self, i: impl Into<F>, is_real: impl Into<F>);
 
-pub struct ByteRecordWithContext<'a> {
-    nonce: u32,
-    record: &'a mut NonceByteRecord,
-}
-
-impl<'a> ByteRecord for ByteRecordWithContext<'a> {
-    fn range_check_u8_pair(&mut self, i1: u8, i2: u8) {
-        let input = ByteInput::new(i1, i2);
-        let records = self.record.range_u8.entry(input).or_default();
-        records.push(ByteInputRecord { nonce: self.nonce });
-    }
-
-    fn range_check_u16(&mut self, i: u16) {
-        let [i1, i2] = i.to_le_bytes();
-        let input = ByteInput::new(i1, i2);
-        let records = self.record.range_u16.entry(input).or_default();
-        records.push(ByteInputRecord { nonce: self.nonce });
-    }
-
-    fn less_than(&mut self, i1: u8, i2: u8) -> bool {
-        let input = ByteInput::new(i1, i2);
-        let records = self.record.less_then.entry(input).or_default();
-        records.push(ByteInputRecord { nonce: self.nonce });
-        input.less_than()
-    }
-
-    fn and(&mut self, i1: u8, i2: u8) -> u8 {
-        let input = ByteInput::new(i1, i2);
-        let records = self.record.and.entry(input).or_default();
-        records.push(ByteInputRecord { nonce: self.nonce });
-        input.and()
-    }
-
-    fn xor(&mut self, i1: u8, i2: u8) -> u8 {
-        let input = ByteInput::new(i1, i2);
-        let records = self.record.xor.entry(input).or_default();
-        records.push(ByteInputRecord { nonce: self.nonce });
-        input.xor()
-    }
-
-    fn or(&mut self, i1: u8, i2: u8) -> u8 {
-        let input = ByteInput::new(i1, i2);
-        let records = self.record.or.entry(input).or_default();
-        records.push(ByteInputRecord { nonce: self.nonce });
-        input.or()
-    }
-
-    fn msb(&mut self, i: u8) -> bool {
-        let input = ByteInput::new(i, 0);
-        let records = self.record.msb.entry(input).or_default();
-        records.push(ByteInputRecord { nonce: self.nonce });
-        input.msb()
-    }
+    fn less_than(
+        &mut self,
+        i1: impl Into<F>,
+        i2: impl Into<F>,
+        r: impl Into<F>,
+        is_real: impl Into<F>,
+    );
+    fn and(&mut self, i1: impl Into<F>, i2: impl Into<F>, r: impl Into<F>, is_real: impl Into<F>);
+    fn xor(&mut self, i1: impl Into<F>, i2: impl Into<F>, r: impl Into<F>, is_real: impl Into<F>);
+    fn or(&mut self, i1: impl Into<F>, i2: impl Into<F>, r: impl Into<F>, is_real: impl Into<F>);
+    fn msb(&mut self, i: impl Into<F>, r: impl Into<F>, is_real: impl Into<F>);
 }

@@ -47,15 +47,18 @@ pub fn eval_is_zero<AB: AirBuilder>(
 
     builder.assert_bool(is_zero.clone());
 
+    // If is_zero, all limbs are zero
     for i in &input {
         builder.when(is_zero.clone()).assert_zero(i.clone());
     }
 
+    // Otherwise, there exist w such that 1 = ∑ w[i]*limb[i]
+    let not_zero = is_zero - AB::F::one();
     let lc = zip(input, witness.inverses)
         .map(|(i, inv)| i * inv.into())
         .sum::<AB::Expr>();
 
-    builder.when_ne(is_zero, AB::F::one()).assert_one(lc);
+    builder.when(not_zero).assert_one(lc);
 }
 
 pub fn eval_is_equal<AB: AirBuilder>(
