@@ -3,7 +3,7 @@ use indexmap::{IndexMap, IndexSet};
 use p3_field::{AbstractField, Field, PrimeField32};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use sphinx_core::stark::{Indexed, MachineRecord};
-use std::{ops::Range, sync::Arc};
+use std::ops::Range;
 
 use super::{
     bytecode::{Ctrl, Func, Op},
@@ -88,50 +88,55 @@ pub struct QueryRecord<F: Field> {
 }
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
-pub struct Shard<F: Field> {
+pub struct Shard<'a, F: Field> {
     pub(crate) index: u32,
-    pub(crate) events: Arc<QueryRecord<F>>,
+    // The option is only necessary because we must implement the default trait
+    pub(crate) queries: Option<&'a QueryRecord<F>>,
     pub(crate) shard_config: ShardingConfig,
 }
 
-impl<F: Field> Shard<F> {
+impl<'a, F: Field> Shard<'a, F> {
     /// Creates a new initial shard from the given `QueryRecord`.
     ///
     /// # Note
     ///
     /// Make sure to call `.shard()` on a `Shard` created by `new` when generating the traces, otherwise you will only get the first shard's trace.
-    pub fn new(events: Arc<QueryRecord<F>>) -> Self {
+    pub fn new(queries: &'a QueryRecord<F>) -> Self {
         let index = 0;
         let shard_config = ShardingConfig::default();
         Shard {
             index,
-            events,
+            queries: queries.into(),
             shard_config,
         }
     }
 
+    pub fn queries(&self) -> &QueryRecord<F> {
+        self.queries.expect("Missing query record reference")
+    }
+
     pub fn get_func_range(&self, func_index: usize) -> Range<usize> {
-        let num_func_queries = self.events.func_queries[func_index].len();
+        let num_func_queries = self.queries().func_queries[func_index].len();
         let shard_idx = self.index as usize;
         let max_shard_size = self.shard_config.max_shard_size;
         shard_idx * max_shard_size..((shard_idx + 1) * max_shard_size).min(num_func_queries)
     }
 
     pub fn get_mem_range(&self, mem_chip_idx: usize) -> Range<usize> {
-        let num_mem_queries = self.events.mem_queries[mem_chip_idx].len();
+        let num_mem_queries = self.queries().mem_queries[mem_chip_idx].len();
         let shard_idx = self.index as usize;
         let max_shard_size = self.shard_config.max_shard_size;
         shard_idx * max_shard_size..((shard_idx + 1) * max_shard_size).min(num_mem_queries)
     }
 }
 
-impl<F: Field> Indexed for Shard<F> {
+impl<'a, F: Field> Indexed for Shard<'a, F> {
     fn index(&self) -> u32 {
         self.index
     }
 }
 
-impl<F: Field> MachineRecord for Shard<F> {
+impl<'a, F: Field> MachineRecord for Shard<'a, F> {
     type Config = ShardingConfig;
 
     fn set_index(&mut self, index: u32) {
@@ -141,30 +146,34 @@ impl<F: Field> MachineRecord for Shard<F> {
     fn stats(&self) -> HashMap<String, usize> {
         // TODO: use `IndexMap` instead so the original insertion order is kept
         let mut map = HashMap::default();
-        let events = &self.events;
+        let queries = &self.queries();
 
-        map.insert("num_funcs".to_string(), events.func_queries.len());
+        map.insert("num_funcs".to_string(), queries.func_queries.len());
         map.insert(
             "num_func_queries".to_string(),
-            events.func_queries.iter().map(|im| im.iter().count()).sum(),
+            queries
+                .func_queries
+                .iter()
+                .map(|im| im.iter().count())
+                .sum(),
         );
         map.insert(
             "sum_func_queries_mults".to_string(),
-            events
+            queries
                 .func_queries
                 .iter()
                 .map(|im| im.values().map(|r| r.callers_lookups.len()).sum::<usize>())
                 .sum(),
         );
 
-        map.insert("num_mem_tables".to_string(), events.mem_queries.len());
+        map.insert("num_mem_tables".to_string(), queries.mem_queries.len());
         map.insert(
             "num_mem_queries".to_string(),
-            events.mem_queries.iter().map(|im| im.iter().count()).sum(),
+            queries.mem_queries.iter().map(|im| im.iter().count()).sum(),
         );
         map.insert(
             "sum_mem_queries_mults".to_string(),
-            events
+            queries
                 .mem_queries
                 .iter()
                 .map(|im| {
@@ -176,7 +185,7 @@ impl<F: Field> MachineRecord for Shard<F> {
         );
         map.insert(
             "num_mem_locations".to_string(),
-            events.mem_queries.iter().map(|im| im.values().len()).sum(),
+            queries.mem_queries.iter().map(|im| im.values().len()).sum(),
         );
         map
     }
@@ -186,16 +195,16 @@ impl<F: Field> MachineRecord for Shard<F> {
     }
 
     fn shard(self, config: &Self::Config) -> Vec<Self> {
-        let events = &self.events;
+        let queries = self.queries();
         let shard_size = config.max_shard_size;
-        let max_num_func_rows: usize = events
+        let max_num_func_rows: usize = queries
             .func_queries
             .iter()
             .map(|q| q.len())
             .max()
             .unwrap_or_default();
         // TODO: This snippet or equivalent is needed for memory sharding
-        // let max_num_mem_rows: usize = events
+        // let max_num_mem_rows: usize = queries
         //     .mem_queries
         //     .iter()
         //     .map(|q| q.len())
@@ -210,7 +219,7 @@ impl<F: Field> MachineRecord for Shard<F> {
         for shard_index in 0..num_shards {
             shards.push(Shard {
                 index: shard_index as u32,
-                events: events.clone(),
+                queries: self.queries,
                 shard_config: *config,
             });
         }
@@ -810,7 +819,7 @@ mod tests {
 
         toplevel.execute(half, args, &mut queries);
         let res1 = queries.get_output(half, args).to_vec();
-        let shard = Shard::new(queries.clone().into());
+        let shard = Shard::new(&queries);
         let traces1 = (
             half_chip.generate_trace(&shard),
             double_chip.generate_trace(&shard),
@@ -820,7 +829,7 @@ mod tests {
         queries.clean();
         toplevel.execute(half, args, &mut queries);
         let res2 = queries.get_output(half, args).to_vec();
-        let shard = Shard::new(queries.clone().into());
+        let shard = Shard::new(&queries);
         let traces2 = (
             half_chip.generate_trace(&shard),
             double_chip.generate_trace(&shard),
@@ -831,7 +840,7 @@ mod tests {
         queries.clean();
         toplevel.execute(half, args, &mut queries);
         let res3 = queries.get_output(half, args).to_vec();
-        let shard = Shard::new(queries.into());
+        let shard = Shard::new(&queries);
         let traces3 = (
             half_chip.generate_trace(&shard),
             double_chip.generate_trace(&shard),

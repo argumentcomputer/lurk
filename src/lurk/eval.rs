@@ -1412,7 +1412,7 @@ mod test {
             let lair_chips =
                 build_lair_chip_vector(&lurk_main, full_input.clone().into(), result.clone());
 
-            let full_shard = Shard::new(record.into());
+            let full_shard = Shard::new(&record);
             // Verify lookup queries without sharding
             let lookup_queries: Vec<_> = lair_chips
                 .iter()
@@ -1547,7 +1547,7 @@ mod test {
                 "ingress -> egress doesn't roundtrip"
             );
 
-            let hash_32_8_trace = hash_32_8_chip.generate_trace(&Shard::new(queries.into()));
+            let hash_32_8_trace = hash_32_8_chip.generate_trace(&Shard::new(&queries));
             debug_constraints_collecting_queries(&hash_32_8_chip, &[], None, &hash_32_8_trace);
         };
 

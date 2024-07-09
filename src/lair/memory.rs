@@ -27,10 +27,10 @@ impl<F: PrimeField32> MemChip<F> {
         }
     }
 
-    pub fn generate_trace(&self, shard: &Shard<F>) -> RowMajorMatrix<F> {
-        let events = &shard.events.mem_queries;
+    pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
+        let queries = &shard.queries().mem_queries;
         let mem_idx = mem_index_from_len(self.len);
-        let mem = &events[mem_idx];
+        let mem = &queries[mem_idx];
         let width = self.width();
 
         let height = mem.len().next_power_of_two().max(4); // TODO: Remove? loam#118
@@ -143,7 +143,7 @@ mod tests {
         let test_chip = FuncChip::from_name("test", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         toplevel.execute_by_name("test", &[], &mut queries);
-        let func_trace = test_chip.generate_trace(&Shard::new(queries.clone().into()));
+        let func_trace = test_chip.generate_trace(&Shard::new(&queries));
 
         #[rustfmt::skip]
         let expected_trace = [
@@ -159,7 +159,7 @@ mod tests {
 
         let mem_len = 3;
         let mem_chip = MemChip::new(mem_len);
-        let shard = Shard::new(queries.into());
+        let shard = Shard::new(&queries);
         let mem_trace = mem_chip.generate_trace(&shard);
 
         #[rustfmt::skip]

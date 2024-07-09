@@ -57,8 +57,8 @@ impl<'a, T> ColumnMutSlice<'a, T> {
 
 impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
     /// Per-row parallel trace generation
-    pub fn generate_trace(&self, shard: &Shard<F>) -> RowMajorMatrix<F> {
-        let func_queries = &shard.events.func_queries()[self.func.index];
+    pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
+        let func_queries = &shard.queries().func_queries()[self.func.index];
         let range = shard.get_func_range(self.func.index);
         let width = self.width();
         let non_dummy_height = range.len();
@@ -89,7 +89,7 @@ impl<F: PrimeField32> Func<F> {
         args: &[F],
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
-        shard: &Shard<F>,
+        shard: &Shard<'_, F>,
         hasher: &H,
     ) {
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
@@ -114,7 +114,7 @@ impl<F: PrimeField32> Block<F> {
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
-        shard: &Shard<F>,
+        shard: &Shard<'_, F>,
         hasher: &H,
     ) {
         self.ops
@@ -132,10 +132,10 @@ impl<F: PrimeField32> Ctrl<F> {
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
-        shard: &Shard<F>,
+        shard: &Shard<'_, F>,
         hasher: &H,
     ) {
-        let queries = &shard.events;
+        let queries = &shard.queries();
         match self {
             Ctrl::Return(ident, _) => {
                 slice.sel[*ident] = F::one();
@@ -218,10 +218,10 @@ impl<F: PrimeField32> Op<F> {
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
-        shard: &Shard<F>,
+        shard: &Shard<'_, F>,
         hasher: &H,
     ) {
-        let queries = &shard.events;
+        let queries = &shard.queries();
         match self {
             Op::Const(f) => map.push((*f, 0)),
             Op::Add(a, b) => {
@@ -446,7 +446,7 @@ mod tests {
 
         let args = &[F::from_canonical_u32(5)];
         toplevel.execute_by_name("factorial", args, &mut queries);
-        let trace = factorial_chip.generate_trace(&Shard::new(queries.into()));
+        let trace = factorial_chip.generate_trace(&Shard::new(&queries));
         let expected_trace = [
             // in order: nonce, n, 1/n, fact(n-1), prev_nonce, prev_count, count_inv, n*fact(n-1), last_nonce, last_count and selectors
             0, 5, 1610612737, 24, 0, 0, 1, 120, 0, 1, 1, 0, //
@@ -467,7 +467,7 @@ mod tests {
         let mut queries = QueryRecord::new(&toplevel);
         let args = &[F::from_canonical_u32(7)];
         toplevel.execute_by_name("fib", args, &mut queries);
-        let trace = fib_chip.generate_trace(&Shard::new(queries.into()));
+        let trace = fib_chip.generate_trace(&Shard::new(&queries));
 
         let expected_trace = [
             // in order: nonce, n, 1/n, 1/(n-1), fib(n-1), prev_nonce, prev_count, count_inv, fib(n-2), prev_nonce, prev_count, count_inv, last_nonce, last_count and selectors
@@ -526,7 +526,7 @@ mod tests {
         let args = &[F::from_canonical_u32(5), F::from_canonical_u32(2)];
         let mut queries = QueryRecord::new(&toplevel);
         toplevel.execute_by_name("test", args, &mut queries);
-        let trace = test_chip.generate_trace(&Shard::new(queries.into()));
+        let trace = test_chip.generate_trace(&Shard::new(&queries));
         let expected_trace = [
             // The big numbers in the trace are the inverted elements, the witnesses of
             // the inequalities that appear on the default case. Note that the branch
@@ -598,7 +598,7 @@ mod tests {
         toplevel.execute(test_func, one, &mut queries);
         toplevel.execute(test_func, two, &mut queries);
         toplevel.execute(test_func, three, &mut queries);
-        let trace = test_chip.generate_trace(&Shard::new(queries.into()));
+        let trace = test_chip.generate_trace(&Shard::new(&queries));
 
         let expected_trace = [
             // nonce, two inputs, last_nonce, last_count, selectors
@@ -656,7 +656,7 @@ mod tests {
         let machine = StarkMachine::new(config, build_chip_vector(&ack_chip, inp.into(), out), 0);
 
         let (pk, _vk) = machine.setup(&LairMachineProgram);
-        let shard = Shard::new(queries.into());
+        let shard = Shard::new(&queries);
         let shards = shard.clone().shard(&ShardingConfig::default());
         assert!(
             shards.len() > 1,

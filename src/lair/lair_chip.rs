@@ -35,10 +35,10 @@ impl<'a, F, H: Hasher<F>> LairChip<'a, F, H> {
 }
 
 impl<'a, F: Field, H: Hasher<F>> WithEvents<'a> for LairChip<'_, F, H> {
-    type Events = &'a Shard<F>;
+    type Events = &'a Shard<'a, F>;
 }
 
-impl<'a, F: Field, H: Hasher<F>> EventLens<LairChip<'a, F, H>> for Shard<F> {
+impl<'a, F: Field, H: Hasher<F>> EventLens<LairChip<'a, F, H>> for Shard<'a, F> {
     fn events(&self) -> <LairChip<'a, F, H> as WithEvents<'_>>::Events {
         self
     }
@@ -63,7 +63,7 @@ impl<F: AbstractField> MachineProgram<F> for LairMachineProgram {
 }
 
 impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
-    type Record = Shard<F>;
+    type Record = Shard<'a, F>;
     type Program = LairMachineProgram;
 
     fn name(&self) -> String {
@@ -259,7 +259,7 @@ mod tests {
         let (pk, vk) = machine.setup(&LairMachineProgram);
         let mut challenger_p = machine.config().challenger();
         let mut challenger_v = machine.config().challenger();
-        let shard = Shard::new(queries.into());
+        let shard = Shard::new(&queries);
 
         machine.debug_constraints(&pk, shard.clone());
         let opts = SphinxCoreOpts::default();
