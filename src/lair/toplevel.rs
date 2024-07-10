@@ -223,7 +223,7 @@ impl<F: Field + Ord> CtrlE<F> {
             CtrlE::Match(t, cases) => {
                 let size = t.size;
                 let vars: List<_> = use_var(t, ctx).into();
-                let mut vec = Vec::with_capacity(cases.branches.size());
+                let mut vec = Vec::with_capacity(cases.branches.len());
                 for (fs, block) in cases.branches.iter() {
                     assert_eq!(fs.len(), size, "Pattern must have size {size}");
                     ctx.block_ident += 1;

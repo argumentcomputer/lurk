@@ -8,7 +8,6 @@ use crate::{
     lair::{
         expr::{BlockE, CasesE, CtrlE, FuncE, OpE, Var},
         hasher::LurkHasher,
-        map::Map,
         toplevel::Toplevel,
         List, Name,
     },
@@ -231,13 +230,11 @@ fn ingress_builtin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Fun
         ops: [OpE::Const(ret_var, F::from_canonical_usize(i))].into(),
         ctrl: CtrlE::<F>::Return([ret_var].into()),
     };
-    let branches = Map::from_vec(
-        builtins
-            .iter()
-            .enumerate()
-            .map(|(i, (_, digest))| (digest.clone(), branch(i)))
-            .collect(),
-    );
+    let branches = builtins
+        .iter()
+        .enumerate()
+        .map(|(i, (_, digest))| (digest.clone(), branch(i)))
+        .collect();
     let cases = CasesE {
         branches,
         default: None,
@@ -349,13 +346,11 @@ fn egress_builtin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Func
         ops: [OpE::Array(ret_var, arr)].into(),
         ctrl: CtrlE::<F>::Return([ret_var].into()),
     };
-    let branches = Map::from_vec(
-        builtins
-            .iter()
-            .enumerate()
-            .map(|(i, (_, digest))| ([F::from_canonical_usize(i)].into(), branch(digest.clone())))
-            .collect(),
-    );
+    let branches = builtins
+        .iter()
+        .enumerate()
+        .map(|(i, (_, digest))| ([F::from_canonical_usize(i)].into(), branch(digest.clone())))
+        .collect();
     let cases = CasesE {
         branches,
         default: None,
