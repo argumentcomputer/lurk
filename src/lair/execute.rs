@@ -1,6 +1,6 @@
 use hashbrown::HashMap;
 use indexmap::{IndexMap, IndexSet};
-use p3_field::{AbstractField, Field, PrimeField32};
+use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use sphinx_core::stark::{Indexed, MachineRecord};
 use std::ops::Range;
@@ -80,63 +80,70 @@ impl<F: PrimeField32> QueryResult<F> {
     }
 }
 
-#[derive(Default, Clone, Debug, Eq, PartialEq)]
-pub struct QueryRecord<F: Field> {
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct QueryRecord<F: PrimeField32> {
+    pub(crate) public_values: Option<Vec<F>>,
     pub(crate) func_queries: Vec<QueryMap<F>>,
     pub(crate) inv_func_queries: Vec<Option<InvQueryMap<F>>>,
     pub(crate) mem_queries: Vec<MemMap<F>>,
 }
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
-pub struct Shard<'a, F: Field> {
+pub struct Shard<'a, F: PrimeField32> {
     pub(crate) index: u32,
-    // The option is only necessary because we must implement the default trait
-    pub(crate) queries: Option<&'a QueryRecord<F>>,
+    // TODO: remove this `Option` once Sphinx no longer requires `Default`
+    pub(crate) record: Option<&'a QueryRecord<F>>,
     pub(crate) shard_config: ShardingConfig,
 }
 
-impl<'a, F: Field> Shard<'a, F> {
+impl<'a, F: PrimeField32> Shard<'a, F> {
     /// Creates a new initial shard from the given `QueryRecord`.
     ///
     /// # Note
     ///
-    /// Make sure to call `.shard()` on a `Shard` created by `new` when generating the traces, otherwise you will only get the first shard's trace.
-    pub fn new(queries: &'a QueryRecord<F>) -> Self {
-        let index = 0;
-        let shard_config = ShardingConfig::default();
+    /// Make sure to call `.shard()` on a `Shard` created by `new` when generating
+    /// the traces, otherwise you will only get the first shard's trace.
+    #[inline]
+    pub fn new(record: &'a QueryRecord<F>) -> Self {
         Shard {
-            index,
-            queries: queries.into(),
-            shard_config,
+            index: 0,
+            record: record.into(),
+            shard_config: ShardingConfig::default(),
         }
     }
 
-    pub fn queries(&self) -> &QueryRecord<F> {
-        self.queries.expect("Missing query record reference")
+    #[inline]
+    pub fn record(&self) -> &QueryRecord<F> {
+        self.record.expect("Missing query record reference")
     }
 
     pub fn get_func_range(&self, func_index: usize) -> Range<usize> {
-        let num_func_queries = self.queries().func_queries[func_index].len();
+        let num_func_queries = self.record().func_queries[func_index].len();
         let shard_idx = self.index as usize;
         let max_shard_size = self.shard_config.max_shard_size;
         shard_idx * max_shard_size..((shard_idx + 1) * max_shard_size).min(num_func_queries)
     }
 
     pub fn get_mem_range(&self, mem_chip_idx: usize) -> Range<usize> {
-        let num_mem_queries = self.queries().mem_queries[mem_chip_idx].len();
+        let num_mem_queries = self.record().mem_queries[mem_chip_idx].len();
         let shard_idx = self.index as usize;
         let max_shard_size = self.shard_config.max_shard_size;
         shard_idx * max_shard_size..((shard_idx + 1) * max_shard_size).min(num_mem_queries)
     }
+
+    #[inline]
+    pub(crate) fn expect_public_values(&self) -> &[F] {
+        self.record().expect_public_values()
+    }
 }
 
-impl<'a, F: Field> Indexed for Shard<'a, F> {
+impl<'a, F: PrimeField32> Indexed for Shard<'a, F> {
     fn index(&self) -> u32 {
         self.index
     }
 }
 
-impl<'a, F: Field> MachineRecord for Shard<'a, F> {
+impl<'a, F: PrimeField32> MachineRecord for Shard<'a, F> {
     type Config = ShardingConfig;
 
     fn set_index(&mut self, index: u32) {
@@ -146,7 +153,7 @@ impl<'a, F: Field> MachineRecord for Shard<'a, F> {
     fn stats(&self) -> HashMap<String, usize> {
         // TODO: use `IndexMap` instead so the original insertion order is kept
         let mut map = HashMap::default();
-        let queries = &self.queries();
+        let queries = self.record();
 
         map.insert("num_funcs".to_string(), queries.func_queries.len());
         map.insert(
@@ -195,16 +202,16 @@ impl<'a, F: Field> MachineRecord for Shard<'a, F> {
     }
 
     fn shard(self, config: &Self::Config) -> Vec<Self> {
-        let queries = self.queries();
+        let record = self.record();
         let shard_size = config.max_shard_size;
-        let max_num_func_rows: usize = queries
+        let max_num_func_rows: usize = record
             .func_queries
             .iter()
             .map(|q| q.len())
             .max()
             .unwrap_or_default();
         // TODO: This snippet or equivalent is needed for memory sharding
-        // let max_num_mem_rows: usize = queries
+        // let max_num_mem_rows: usize = record
         //     .mem_queries
         //     .iter()
         //     .map(|q| q.len())
@@ -219,7 +226,7 @@ impl<'a, F: Field> MachineRecord for Shard<'a, F> {
         for shard_index in 0..num_shards {
             shards.push(Shard {
                 index: shard_index as u32,
-                queries: self.queries,
+                record: self.record,
                 shard_config: *config,
             });
         }
@@ -227,7 +234,10 @@ impl<'a, F: Field> MachineRecord for Shard<'a, F> {
     }
 
     fn public_values<F2: AbstractField>(&self) -> Vec<F2> {
-        vec![]
+        self.expect_public_values()
+            .iter()
+            .map(|f| F2::from_canonical_u32(f.as_canonical_u32()))
+            .collect()
     }
 }
 
@@ -294,6 +304,7 @@ impl<F: PrimeField32> QueryRecord<F> {
             })
             .collect();
         Self {
+            public_values: None,
             func_queries,
             inv_func_queries,
             mem_queries,
@@ -368,7 +379,7 @@ impl<F: PrimeField32> QueryRecord<F> {
         }
     }
 
-    pub fn query_preimage(
+    fn query_preimage(
         &mut self,
         index: usize,
         out: &[F],
@@ -428,6 +439,11 @@ impl<F: PrimeField32> QueryRecord<F> {
         mem_result.callers_lookups.insert(caller_lookup);
         args
     }
+
+    #[inline]
+    pub fn expect_public_values(&self) -> &[F] {
+        self.public_values.as_ref().expect("Public values not set")
+    }
 }
 
 impl<F: PrimeField32, H: Hasher<F>> Toplevel<F, H> {
@@ -443,6 +459,10 @@ impl<F: PrimeField32, H: Hasher<F>> Toplevel<F, H> {
         if let Some(inv_map) = &mut record.inv_func_queries[func_index] {
             inv_map.insert(out.clone(), args.into());
         }
+        let mut public_values = Vec::with_capacity(args.len() + out.len());
+        public_values.extend(args);
+        public_values.extend(out.iter());
+        record.public_values = Some(public_values);
         out
     }
 

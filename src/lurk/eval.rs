@@ -1403,14 +1403,12 @@ mod test {
             full_input[8..16].copy_from_slice(&expr_digest);
 
             let full_input: List<_> = full_input.into();
-            toplevel.execute(lurk_main.func, &full_input, &mut record);
-            let result = record.get_output(lurk_main.func, &full_input).to_vec();
+            let result = toplevel.execute(lurk_main.func, &full_input, &mut record);
 
             assert_eq!(&result[0], &expected_tag.to_field());
             assert_eq!(&result[8..], &expected_digest);
 
-            let lair_chips =
-                build_lair_chip_vector(&lurk_main, full_input.clone().into(), result.clone());
+            let lair_chips = build_lair_chip_vector(&lurk_main);
 
             let full_shard = Shard::new(&record);
             // Verify lookup queries without sharding
@@ -1446,8 +1444,8 @@ mod test {
 
             let machine = StarkMachine::new(
                 config.clone(),
-                build_chip_vector(&lurk_main, full_input.into(), result),
-                0,
+                build_chip_vector(&lurk_main),
+                record.expect_public_values().len(),
             );
             let (pk, _vk) = machine.setup(&LairMachineProgram);
             machine.debug_constraints(&pk, full_shard);

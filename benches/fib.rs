@@ -89,8 +89,8 @@ fn trace_generation(c: &mut Criterion) {
     c.bench_function(&format!("trace-generation-{arg}"), |b| {
         let toplevel = build_lurk_toplevel();
         let (args, lurk_main, mut record) = setup(arg, &toplevel);
-        let out = toplevel.execute(lurk_main.func(), &args, &mut record);
-        let lair_chips = build_lair_chip_vector(&lurk_main, args.into(), out.into());
+        toplevel.execute(lurk_main.func(), &args, &mut record);
+        let lair_chips = build_lair_chip_vector(&lurk_main);
         b.iter(|| {
             lair_chips.par_iter().for_each(|func_chip| {
                 let shard = Shard::new(&record);
@@ -109,12 +109,12 @@ fn e2e(c: &mut Criterion) {
         b.iter_batched(
             || (record.clone(), args.clone()),
             |(mut record, args)| {
-                let out = toplevel.execute(lurk_main.func(), &args, &mut record);
+                toplevel.execute(lurk_main.func(), &args, &mut record);
                 let config = BabyBearPoseidon2::new();
                 let machine = StarkMachine::new(
                     config,
-                    build_chip_vector(&lurk_main, args.into(), out.into()),
-                    0,
+                    build_chip_vector(&lurk_main),
+                    record.expect_public_values().len(),
                 );
                 let (pk, _) = machine.setup(&LairMachineProgram);
                 let mut challenger_p = machine.config().challenger();

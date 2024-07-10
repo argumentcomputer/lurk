@@ -7,6 +7,7 @@ const CALL_TAG: u32 = 0;
 const MEMORY_TAG: u32 = 1;
 
 pub struct CallRelation<Idx, Inp, Out>(pub Idx, pub Inp, pub Out);
+pub struct OuterCallRelation<Idx, PublicValues>(pub Idx, pub PublicValues);
 pub struct MemoryRelation<Ptr, ValuesIter>(pub Ptr, pub ValuesIter);
 
 impl<F: AbstractField, FuncIdx: Into<F>, IntoInputIter, IntoOutputIter, Value: Into<F>> Relation<F>
@@ -23,6 +24,20 @@ where
                 input.into_iter().map(Into::into),
                 output.into_iter().map(Into::into),
             ),
+        )
+    }
+}
+
+impl<F: AbstractField, FuncIdx: Into<F>, IntoValueIter, Value: Into<F>> Relation<F>
+    for OuterCallRelation<FuncIdx, IntoValueIter>
+where
+    IntoValueIter: IntoIterator<Item = Value>,
+{
+    fn values(self) -> impl IntoIterator<Item = F> {
+        let Self(func_idx, public_values) = self;
+        chain(
+            [F::from_canonical_u32(CALL_TAG), func_idx.into()],
+            public_values.into_iter().map(Into::into),
         )
     }
 }

@@ -58,7 +58,7 @@ impl<'a, T> ColumnMutSlice<'a, T> {
 impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
     /// Per-row parallel trace generation
     pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
-        let func_queries = &shard.queries().func_queries()[self.func.index];
+        let func_queries = &shard.record().func_queries()[self.func.index];
         let range = shard.get_func_range(self.func.index);
         let width = self.width();
         let non_dummy_height = range.len();
@@ -135,11 +135,11 @@ impl<F: PrimeField32> Ctrl<F> {
         shard: &Shard<'_, F>,
         hasher: &H,
     ) {
-        let queries = &shard.queries();
+        let record = shard.record();
         match self {
             Ctrl::Return(ident, _) => {
                 slice.sel[*ident] = F::one();
-                let query_map = &queries.func_queries()[func_ctx.func_idx];
+                let query_map = &record.func_queries()[func_ctx.func_idx];
                 let result = query_map
                     .get(&func_ctx.call_inp)
                     .expect("Cannot find query result");
@@ -221,7 +221,7 @@ impl<F: PrimeField32> Op<F> {
         shard: &Shard<'_, F>,
         hasher: &H,
     ) {
-        let queries = &shard.queries();
+        let record = shard.record();
         match self {
             Op::Const(f) => map.push((*f, 0)),
             Op::Add(a, b) => {
@@ -272,7 +272,7 @@ impl<F: PrimeField32> Op<F> {
             }
             Op::Call(idx, inp, op_id) => {
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let query_map = &queries.func_queries()[*idx];
+                let query_map = &record.func_queries()[*idx];
                 let result = query_map.get(&args).expect("Cannot find query result");
                 for f in result.expect_output().iter() {
                     map.push((*f, 1));
@@ -297,7 +297,7 @@ impl<F: PrimeField32> Op<F> {
             }
             Op::PreImg(idx, out, op_id) => {
                 let out = out.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let inv_map = queries.inv_func_queries[*idx]
+                let inv_map = record.inv_func_queries[*idx]
                     .as_ref()
                     .expect("Function not invertible");
                 let inp = inv_map.get(&out).expect("Cannot find preimage");
@@ -305,7 +305,7 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let query_map = &queries.func_queries()[*idx];
+                let query_map = &record.func_queries()[*idx];
                 let query_result = query_map.get(inp).expect("Cannot find query result");
                 let shard_index = shard.index as usize;
                 let nonce = slice.nonce.as_canonical_u32() as usize;
@@ -326,7 +326,7 @@ impl<F: PrimeField32> Op<F> {
             }
             Op::Store(args, op_id) => {
                 let mem_idx = mem_index_from_len(args.len());
-                let query_map = &queries.mem_queries[mem_idx];
+                let query_map = &record.mem_queries[mem_idx];
                 let args = args.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let (i, _, mem_result) =
                     query_map.get_full(&args).expect("Cannot find query result");
@@ -352,7 +352,7 @@ impl<F: PrimeField32> Op<F> {
             }
             Op::Load(len, ptr, op_id) => {
                 let mem_idx = mem_index_from_len(*len);
-                let query_map = &queries.mem_queries[mem_idx];
+                let query_map = &record.mem_queries[mem_idx];
                 let ptr = map[*ptr].0.as_canonical_u32() as usize;
                 let (args, mem_result) = query_map
                     .get_index(ptr - 1)
@@ -643,17 +643,17 @@ mod tests {
         let mut queries = QueryRecord::new(&toplevel);
 
         let f = F::from_canonical_usize;
-        // These inputs should perform enough recursive calls (5242889) to generate 2 shards with the default shard size of 1 << 22
+        // These inputs should perform enough recursive calls (5242889) to
+        // generate 2 shards with the default shard size of 1 << 22
         let inp = &[f(3), f(18)];
-        toplevel.execute_by_name("ackermann", inp, &mut queries);
-        let out = queries.get_output(ack_chip.func, inp).to_vec();
+        let out = toplevel.execute_by_name("ackermann", inp, &mut queries);
         // For constant m = 3, A(3, n) = 2^(n + 3) - 3
         assert_eq!(out[0], f(2097149));
 
-        let lair_chips = build_lair_chip_vector(&ack_chip, inp.into(), out.clone());
+        let lair_chips = build_lair_chip_vector(&ack_chip);
 
         let config = BabyBearPoseidon2::new();
-        let machine = StarkMachine::new(config, build_chip_vector(&ack_chip, inp.into(), out), 0);
+        let machine = StarkMachine::new(config, build_chip_vector(&ack_chip), 0);
 
         let (pk, _vk) = machine.setup(&LairMachineProgram);
         let shard = Shard::new(&queries);

@@ -28,9 +28,9 @@ impl<F: PrimeField32> MemChip<F> {
     }
 
     pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
-        let queries = &shard.queries().mem_queries;
+        let record = &shard.record().mem_queries;
         let mem_idx = mem_index_from_len(self.len);
-        let mem = &queries[mem_idx];
+        let mem = &record[mem_idx];
         let width = self.width();
 
         let height = mem.len().next_power_of_two().max(4); // TODO: Remove? loam#118
