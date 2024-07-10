@@ -452,6 +452,21 @@ impl<F: Field> Ctrl<F> {
                     process(block)
                 };
             }
+            Ctrl::ChooseMany(_, cases) => {
+                let map_len = map.len();
+                let init_state = index.save();
+
+                let mut process = |block: &Block<F>| {
+                    let sel = block.return_sel::<AB>(local);
+                    block.eval(builder, local, &sel, index, map, toplevel, call_ctx.clone());
+                    map.truncate(map_len);
+                    index.restore(init_state);
+                };
+                cases.branches.iter().for_each(|(_, block)| process(block));
+                if let Some(block) = cases.default.as_ref() {
+                    process(block)
+                };
+            }
             Ctrl::Return(ident, vs) => {
                 let sel = local.sel[*ident];
                 let out = vs.iter().map(|v| map[*v].to_expr());

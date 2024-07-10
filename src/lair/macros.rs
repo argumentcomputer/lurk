@@ -257,7 +257,7 @@ macro_rules! block {
         {
             $(
                 branches.push((
-                    [$crate::lair::field_from_i32($num)].into(),
+                    $crate::lair::field_from_i32($num),
                     $crate::block_init!( $branch )
                 ));
                 $(
@@ -294,7 +294,7 @@ macro_rules! block {
         }
         let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
-        let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
+        let ctrl = $crate::lair::expr::CtrlE::MatchMany($var, cases);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
     ({ match $var:ident { $( $raw:expr $(, $other_raw:expr)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
@@ -304,12 +304,12 @@ macro_rules! block {
         {
             $(
                 branches.push((
-                    [$raw.to_field()].into(),
+                    $raw.to_field(),
                     $crate::block_init!( $branch )
                 ));
                 $(
                     branches.push((
-                        [$other_raw.to_field()].into(),
+                        $other_raw.to_field(),
                         $crate::block_init!( $branch ),
                     ));
                 )*
@@ -327,12 +327,12 @@ macro_rules! block {
         {
             $(
                 branches.push((
-                    [$cloj($raw)].into(),
+                    $cloj($raw),
                     $crate::block_init!( $branch )
                 ));
                 $(
                     branches.push((
-                        [$cloj($other_raw)].into(),
+                        $cloj($other_raw),
                         $crate::block_init!( $branch ),
                     ));
                 )*

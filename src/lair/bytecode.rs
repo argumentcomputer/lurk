@@ -61,8 +61,10 @@ pub struct Block<F> {
 /// Encodes the logical flow of a Lair program
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Ctrl<F> {
-    /// `Choose(x, cases)` non-deterministically chooses which case to execute based on `x`
-    Choose(List<usize>, Cases<List<F>, F>),
+    /// `Choose(x, cases)` non-deterministically chooses which case to execute based on a value `x`
+    Choose(usize, Cases<F, F>),
+    /// `ChooseMany(x, cases)` non-deterministically chooses which case to execute based on an array `x`
+    ChooseMany(List<usize>, Cases<List<F>, F>),
     /// Contains the variables whose bindings will construct the output of the
     /// block. The first `usize` is an unique identifier, representing the
     /// selector used for arithmetization
