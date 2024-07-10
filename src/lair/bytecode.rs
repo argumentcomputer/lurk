@@ -61,6 +61,8 @@ pub struct Block<F> {
 /// Encodes the logical flow of a Lair program
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Ctrl<F> {
+    /// `Choose(x, cases)` non-deterministically chooses which case to execute based on `x`
+    Choose(List<usize>, Cases<List<F>, F>),
     /// `Match(x, cases)` matches on `x` in order to decide which case to execute
     Match(usize, Cases<F, F>),
     /// `MatchMany(x, cases)` matches on array `x` in order to decide which case to execute
