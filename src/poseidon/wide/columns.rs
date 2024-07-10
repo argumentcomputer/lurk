@@ -1,3 +1,5 @@
+use std::mem::size_of;
+
 use crate::poseidon::config::PoseidonConfig;
 
 use hybrid_array::{typenum::*, Array, ArraySize};
