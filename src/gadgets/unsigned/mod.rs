@@ -66,6 +66,12 @@ impl From<Word<u8>> for u64 {
     }
 }
 
+impl<T> From<[T; WORD_SIZE]> for Word<T> {
+    fn from(value: [T; WORD_SIZE]) -> Self {
+        Self(value)
+    }
+}
+
 //
 // Arithmetic Ops
 //
