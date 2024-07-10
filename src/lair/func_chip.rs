@@ -148,6 +148,21 @@ impl<F> Ctrl<F> {
                 };
                 *aux = max_aux;
             }
+            Ctrl::ChooseMany(_, cases) => {
+                let degrees_len = degrees.len();
+                let mut max_aux = *aux;
+                let mut process = |block: &Block<_>| {
+                    let block_aux = &mut aux.clone();
+                    block.compute_layout_sizes(degrees, toplevel, block_aux, sel);
+                    degrees.truncate(degrees_len);
+                    max_aux = max_aux.max(*block_aux);
+                };
+                cases.branches.iter().for_each(|(_, block)| process(block));
+                if let Some(block) = cases.default.as_ref() {
+                    process(block)
+                };
+                *aux = max_aux;
+            }
         }
     }
 }

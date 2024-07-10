@@ -232,6 +232,39 @@ impl<F: Field + Ord> CtrlE<F> {
                 ctrl
             }
             CtrlE::Match(t, cases) => {
+                assert_eq!(t.size, 1);
+                let var = use_var(t, ctx)[0];
+                let mut vec = Vec::with_capacity(cases.branches.len());
+                for (f, block) in cases.branches.iter() {
+                    ctx.block_ident += 1;
+                    let state = ctx.save_bind_state();
+                    let mut ops = Vec::new();
+                    // Collect constant as var
+                    ops.push(Op::Const(*f));
+                    let f_var = ctx.new_var();
+                    // Assert equality of matched var
+                    ops.push(Op::AssertEq([var].into(), [f_var].into()));
+                    let block = block.check_and_link_with_ops(ops, ctx, hasher);
+                    ctx.restore_bind_state(state);
+                    vec.push((*f, block))
+                }
+                let branches = Map::from_vec(vec);
+                let default = cases.default.as_ref().map(|def| {
+                    ctx.block_ident += 1;
+                    let mut ops = Vec::new();
+                    for (f, _) in cases.branches.iter() {
+                        // Collect constant as var
+                        ops.push(Op::Const(*f));
+                        let f_var = ctx.new_var();
+                        // Assert inequality of matched var
+                        ops.push(Op::AssertNe([var].into(), [f_var].into()));
+                    }
+                    def.check_and_link_with_ops(ops, ctx, hasher).into()
+                });
+                let cases = Cases { branches, default };
+                Ctrl::Choose(var, cases)
+            }
+            CtrlE::MatchMany(t, cases) => {
                 let size = t.size;
                 let vars: List<_> = use_var(t, ctx).into();
                 let mut vec = Vec::with_capacity(cases.branches.len());
@@ -261,7 +294,7 @@ impl<F: Field + Ord> CtrlE<F> {
                     def.check_and_link_with_ops(ops, ctx).into()
                 });
                 let cases = Cases { branches, default };
-                Ctrl::Choose(vars, cases)
+                Ctrl::ChooseMany(vars, cases)
             }
             CtrlE::If(b, true_block, false_block) => {
                 let size = b.size;
@@ -285,13 +318,22 @@ impl<F: Field + Ord> CtrlE<F> {
                 ops.push(Op::AssertEq(vars.clone(), zeros));
                 let false_block = false_block.check_and_link_with_ops(ops, ctx);
 
-                let arr = vec![F::zero(); b.size];
-                let branches = Map::from_vec(vec![(arr.into(), false_block)]);
-                let cases = Cases {
-                    branches,
-                    default: Some(true_block.into()),
-                };
-                Ctrl::Choose(vars, cases)
+                if size == 1 {
+                    let branches = Map::from_vec(vec![(F::zero(), false_block)]);
+                    let cases = Cases {
+                        branches,
+                        default: Some(true_block.into()),
+                    };
+                    Ctrl::Choose(vars[0], cases)
+                } else {
+                    let arr = vec![F::zero(); b.size];
+                    let branches = Map::from_vec(vec![(arr.into(), false_block)]);
+                    let cases = Cases {
+                        branches,
+                        default: Some(true_block.into()),
+                    };
+                    Ctrl::ChooseMany(vars, cases)
+                }
             }
         }
     }
