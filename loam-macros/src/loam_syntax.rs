@@ -1,6 +1,9 @@
 //! This file is largely taken from https://github.com/s-arash/ascent/blob/master/ascent_macro/src/ascent_syntax.rs
 
 #![deny(warnings)]
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use proc_macro2::{Span, TokenStream};
 use syn::parse::{Parse, ParseStream};
 use syn::{
@@ -11,6 +14,7 @@ use syn::{token, ExprMacro, ExprPath, Path};
 
 use derive_syn_parse::Parse;
 use itertools::Itertools;
+use lazy_static::lazy_static;
 use quote::ToTokens;
 
 // resources:
@@ -746,7 +750,10 @@ fn rule_desugar_with_binding(
                 .iter()
                 .map(|hi| &hi.clause().rel)
                 .join("_");
-            Ident::new(&format!("{}_bindings", join_clauses), Span::call_site())
+            let base_name = format!("{}_bindings", join_clauses);
+            let unique_name = get_unique_name(&base_name);
+
+            Ident::new(&unique_name, Span::call_site())
         });
 
         let binding_relation = RelationNode {
@@ -798,4 +805,19 @@ pub(crate) fn compile_new_ascent_to_ascent(mut new_prog: LoamProgram) -> TokenSt
     let mut output = TokenStream::new();
     new_prog.to_tokens(&mut output);
     output
+}
+
+lazy_static! {
+    static ref NAME_COUNTERS: Mutex<HashMap<String, usize>> = Mutex::new(HashMap::new());
+}
+
+fn get_unique_name(base_name: &str) -> String {
+    let mut counters = NAME_COUNTERS.lock().unwrap();
+    let counter = counters.entry(base_name.to_string()).or_insert(0);
+    *counter += 1;
+    if *counter == 1 {
+        base_name.to_string()
+    } else {
+        format!("{}_{}", base_name, counter)
+    }
 }

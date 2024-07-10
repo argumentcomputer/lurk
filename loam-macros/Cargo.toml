@@ -16,6 +16,7 @@ quote = "1.0.31"
 syn = { version = "2.0.57", features = ["derive", "full", "extra-traits", "visit-mut"] }
 derive-syn-parse = "0.2.0"
 itertools = "0.12.0"
+lazy_static = "1.4.0"
 
 [dev-dependencies]
 ascent = "0.6.0"
