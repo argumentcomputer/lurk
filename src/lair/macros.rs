@@ -255,22 +255,21 @@ macro_rules! block {
     }};
     ({ match $var:ident { $( $num:literal $(, $other_num:literal)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
         let ops = $ops.into();
-        let mut vec = Vec::new();
+        let mut branches = Vec::new();
         {
             $(
-                vec.push((
+                branches.push((
                     [$crate::lair::field_from_i32($num)].into(),
                     $crate::block_init!( $branch )
                 ));
                 $(
-                    vec.push((
+                    branches.push((
                         $crate::lair::field_from_i32($other_num),
                         $crate::block_init!( $branch ),
                     ));
                 )*
             )*
         }
-        let branches = $crate::lair::map::Map::from_vec(vec);
         let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
@@ -278,24 +277,23 @@ macro_rules! block {
     }};
     ({ match $var:ident { $( $arr:tt $(, $other_arr:tt)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
         let ops = $ops.into();
-        let mut vec = Vec::new();
+        let mut branches = Vec::new();
         {
             $({
                 let arr = $arr.map($crate::lair::field_from_i32).into_iter().collect();
-                vec.push((
+                branches.push((
                     arr,
                     $crate::block_init!( $branch )
                 ));
                 $({
                     let other_arr = $other_arr.map($crate::lair::field_from_i32).into_iter().collect();
-                    vec.push((
+                    branches.push((
                         other_arr,
                         $crate::block_init!( $branch ),
                     ));
                 })*
             })*
         }
-        let branches = $crate::lair::map::Map::from_vec(vec);
         let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
@@ -303,23 +301,22 @@ macro_rules! block {
     }};
     ({ match $var:ident { $( $raw:expr $(, $other_raw:expr)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
         let ops = $ops.into();
-        let mut vec = Vec::new();
+        let mut branches = Vec::new();
         #[allow(clippy::redundant_closure_call)]
         {
             $(
-                vec.push((
+                branches.push((
                     [$raw.to_field()].into(),
                     $crate::block_init!( $branch )
                 ));
                 $(
-                    vec.push((
+                    branches.push((
                         [$other_raw.to_field()].into(),
                         $crate::block_init!( $branch ),
                     ));
                 )*
             )*
         }
-        let branches = $crate::lair::map::Map::from_vec(vec);
         let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
@@ -327,23 +324,22 @@ macro_rules! block {
     }};
     ({ match $var:ident [$cloj:expr] { $( $raw:expr $(, $other_raw:expr)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
         let ops = $ops.into();
-        let mut vec = Vec::new();
+        let mut branches = Vec::new();
         #[allow(clippy::redundant_closure_call)]
         {
             $(
-                vec.push((
+                branches.push((
                     [$cloj($raw)].into(),
                     $crate::block_init!( $branch )
                 ));
                 $(
-                    vec.push((
+                    branches.push((
                         [$cloj($other_raw)].into(),
                         $crate::block_init!( $branch ),
                     ));
                 )*
             )*
         }
-        let branches = $crate::lair::map::Map::from_vec(vec);
         let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);

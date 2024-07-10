@@ -1,6 +1,6 @@
 //! Defines a frontend for Lair using named references for variables and functions.
 
-use super::{map::Map, List, Name};
+use super::{List, Name};
 
 /// The type for variable references
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
@@ -115,7 +115,7 @@ pub enum CtrlE<F> {
 /// is encoded as its own block
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CasesE<K, F> {
-    pub branches: Map<K, BlockE<F>>,
+    pub branches: Vec<(K, BlockE<F>)>,
     pub default: Option<Box<BlockE<F>>>,
 }
 
