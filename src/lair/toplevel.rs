@@ -253,17 +253,34 @@ impl<F: Field + Ord> CtrlE<F> {
                 Ctrl::Choose(vars, cases)
             }
             CtrlE::If(b, true_block, false_block) => {
-                let vars = use_var(b, ctx).into();
+                let size = b.size;
+                let vars: List<_> = use_var(b, ctx).into();
 
-                ctx.block_ident += 1;
                 let state = ctx.save_bind_state();
-                let true_block = true_block.check_and_link(ctx, hasher);
+                ctx.block_ident += 1;
+                let mut ops = Vec::new();
+                ops.push(Op::Const(F::zero()));
+                let zero = ctx.new_var();
+                let zeros = (0..size).map(|_| zero).collect();
+                ops.push(Op::AssertNe(vars.clone(), zeros));
+                let true_block = true_block.check_and_link_with_ops(ops, ctx, hasher);
                 ctx.restore_bind_state(state);
 
                 ctx.block_ident += 1;
-                let false_block = false_block.check_and_link(ctx, hasher);
+                let mut ops = Vec::new();
+                ops.push(Op::Const(F::zero()));
+                let zero = ctx.new_var();
+                let zeros = (0..size).map(|_| zero).collect();
+                ops.push(Op::AssertEq(vars.clone(), zeros));
+                let false_block = false_block.check_and_link_with_ops(ops, ctx, hasher);
 
-                Ctrl::IfMany(vars, true_block.into(), false_block.into())
+                let arr = vec![F::zero(); b.size];
+                let branches = Map::from_vec(vec![(arr.into(), false_block)]);
+                let cases = Cases {
+                    branches,
+                    default: Some(true_block.into()),
+                };
+                Ctrl::Choose(vars, cases)
             }
         }
     }

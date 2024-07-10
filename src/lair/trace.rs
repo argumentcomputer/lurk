@@ -152,15 +152,6 @@ impl<F: PrimeField32> Ctrl<F> {
                 let branch = cases.match_case(&vals).expect("No match");
                 branch.populate_row(func_ctx, map, index, slice, shard, hasher);
             }
-            Ctrl::IfMany(vars, t, f) => {
-                let vals = vars.iter().map(|&var| map[var].0);
-                if vals.clone().any(|b| b != F::zero()) {
-                    push_inequality_witness(index, slice, vals);
-                    t.populate_row(func_ctx, map, index, slice, shard, hasher);
-                } else {
-                    f.populate_row(func_ctx, map, index, slice, shard, hasher);
-                }
-            }
         }
     }
 }

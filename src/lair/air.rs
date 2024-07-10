@@ -452,35 +452,6 @@ impl<F: Field> Ctrl<F> {
                     process(block)
                 };
             }
-            Ctrl::IfMany(vars, t, f) => {
-                let map_len = map.len();
-                let init_state = index.save();
-
-                let coeffs = vars.iter().map(|_| local.next_aux(index)).collect();
-                let vals = vars.iter().map(|&v| map[v].to_expr()).collect();
-                let t_sel = t.return_sel::<AB>(local);
-                t.eval(
-                    builder,
-                    local,
-                    &t_sel,
-                    index,
-                    map,
-                    toplevel,
-                    call_ctx.clone(),
-                );
-                constrain_inequality_witness(t_sel, coeffs, vals, builder);
-                map.truncate(map_len);
-                index.restore(init_state);
-
-                let f_sel = f.return_sel::<AB>(local);
-                f.eval(builder, local, &f_sel, index, map, toplevel, call_ctx);
-                for var in vars.iter() {
-                    let b = map[*var].to_expr();
-                    builder.when(f_sel.clone()).assert_zero(b);
-                }
-                map.truncate(map_len);
-                index.restore(init_state);
-            }
             Ctrl::Return(ident, vs) => {
                 let sel = local.sel[*ident];
                 let out = vs.iter().map(|v| map[*v].to_expr());

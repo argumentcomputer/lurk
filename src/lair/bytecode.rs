@@ -63,8 +63,6 @@ pub struct Block<F> {
 pub enum Ctrl<F> {
     /// `Choose(x, cases)` non-deterministically chooses which case to execute based on `x`
     Choose(List<usize>, Cases<List<F>, F>),
-    /// `IfMany(bs, t, f)` executes block `f` if `bs` is a zero array and `t` otherwise
-    IfMany(List<usize>, Box<Block<F>>, Box<Block<F>>),
     /// Contains the variables whose bindings will construct the output of the
     /// block. The first `usize` is an unique identifier, representing the
     /// selector used for arithmetization
