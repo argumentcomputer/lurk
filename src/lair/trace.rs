@@ -152,40 +152,6 @@ impl<F: PrimeField32> Ctrl<F> {
                 let branch = cases.match_case(&vals).expect("No match");
                 branch.populate_row(func_ctx, map, index, slice, shard, hasher);
             }
-            Ctrl::Match(t, cases) => {
-                let (t, _) = map[*t];
-                if let Some(branch) = cases.branches.get(&t) {
-                    branch.populate_row(func_ctx, map, index, slice, shard, hasher);
-                } else {
-                    for (f, _) in cases.branches.iter() {
-                        slice.push_aux(index, (t - *f).inverse());
-                    }
-                    let branch = cases.default.as_ref().expect("No match");
-                    branch.populate_row(func_ctx, map, index, slice, shard, hasher);
-                }
-            }
-            Ctrl::MatchMany(vars, cases) => {
-                let vals = vars.iter().map(|&var| map[var].0).collect();
-                if let Some(branch) = cases.branches.get(&vals) {
-                    branch.populate_row(func_ctx, map, index, slice, shard, hasher);
-                } else {
-                    for (fs, _) in cases.branches.iter() {
-                        let diffs = vals.iter().zip(fs.iter()).map(|(val, f)| *val - *f);
-                        push_inequality_witness(index, slice, diffs);
-                    }
-                    let branch = cases.default.as_ref().expect("No match");
-                    branch.populate_row(func_ctx, map, index, slice, shard, hasher);
-                }
-            }
-            Ctrl::If(b, t, f) => {
-                let (b, _) = map[*b];
-                if b != F::zero() {
-                    slice.push_aux(index, b.inverse());
-                    t.populate_row(func_ctx, map, index, slice, shard, hasher);
-                } else {
-                    f.populate_row(func_ctx, map, index, slice, shard, hasher);
-                }
-            }
             Ctrl::IfMany(vars, t, f) => {
                 let vals = vars.iter().map(|&var| map[var].0);
                 if vals.clone().any(|b| b != F::zero()) {

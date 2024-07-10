@@ -243,7 +243,7 @@ fn ingress_builtin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Fun
         default: None,
     };
     let ops = [].into();
-    let ctrl = CtrlE::<F>::MatchMany(input_var, cases);
+    let ctrl = CtrlE::<F>::Match(input_var, cases);
 
     FuncE {
         name: Name("ingress_builtin"),
@@ -353,7 +353,7 @@ fn egress_builtin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Func
         builtins
             .iter()
             .enumerate()
-            .map(|(i, (_, digest))| (F::from_canonical_usize(i), branch(digest.clone())))
+            .map(|(i, (_, digest))| ([F::from_canonical_usize(i)].into(), branch(digest.clone())))
             .collect(),
     );
     let cases = CasesE {
