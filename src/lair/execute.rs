@@ -555,13 +555,6 @@ impl<F: PrimeField32> Func<F> {
                         break;
                     }
                 }
-                ExecEntry::Ctrl(Ctrl::IfMany(bs, t, f)) => {
-                    if bs.iter().any(|b| !map[*b].is_zero()) {
-                        push_block_exec_entries!(t);
-                    } else {
-                        push_block_exec_entries!(f);
-                    }
-                }
                 ExecEntry::Ctrl(Ctrl::Choose(vs, cases)) => {
                     let vs = vs.iter().map(|v| map[*v]).collect();
                     let block = cases.match_case(&vs).expect("No match");
