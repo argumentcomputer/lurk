@@ -259,7 +259,7 @@ macro_rules! block {
         {
             $(
                 vec.push((
-                    $crate::lair::field_from_i32($num),
+                    [$crate::lair::field_from_i32($num)].into(),
                     $crate::block_init!( $branch )
                 ));
                 $(
@@ -298,7 +298,7 @@ macro_rules! block {
         let branches = $crate::lair::map::Map::from_vec(vec);
         let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
-        let ctrl = $crate::lair::expr::CtrlE::MatchMany($var, cases);
+        let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
     ({ match $var:ident { $( $raw:expr $(, $other_raw:expr)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
@@ -308,12 +308,12 @@ macro_rules! block {
         {
             $(
                 vec.push((
-                    $raw.to_field(),
+                    [$raw.to_field()].into(),
                     $crate::block_init!( $branch )
                 ));
                 $(
                     vec.push((
-                        $other_raw.to_field(),
+                        [$other_raw.to_field()].into(),
                         $crate::block_init!( $branch ),
                     ));
                 )*
@@ -332,12 +332,12 @@ macro_rules! block {
         {
             $(
                 vec.push((
-                    $cloj($raw),
+                    [$cloj($raw)].into(),
                     $crate::block_init!( $branch )
                 ));
                 $(
                     vec.push((
-                        $cloj($other_raw),
+                        [$cloj($other_raw)].into(),
                         $crate::block_init!( $branch ),
                     ));
                 )*

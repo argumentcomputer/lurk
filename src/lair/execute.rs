@@ -555,13 +555,6 @@ impl<F: PrimeField32> Func<F> {
                         break;
                     }
                 }
-                ExecEntry::Ctrl(Ctrl::If(b, t, f)) => {
-                    if map[*b].is_zero() {
-                        push_block_exec_entries!(f);
-                    } else {
-                        push_block_exec_entries!(t);
-                    }
-                }
                 ExecEntry::Ctrl(Ctrl::IfMany(bs, t, f)) => {
                     if bs.iter().any(|b| !map[*b].is_zero()) {
                         push_block_exec_entries!(t);
@@ -570,15 +563,6 @@ impl<F: PrimeField32> Func<F> {
                     }
                 }
                 ExecEntry::Ctrl(Ctrl::Choose(vs, cases)) => {
-                    let vs = vs.iter().map(|v| map[*v]).collect();
-                    let block = cases.match_case(&vs).expect("No match");
-                    push_block_exec_entries!(block);
-                }
-                ExecEntry::Ctrl(Ctrl::Match(v, cases)) => {
-                    let block = cases.match_case(&map[*v]).expect("No match");
-                    push_block_exec_entries!(block);
-                }
-                ExecEntry::Ctrl(Ctrl::MatchMany(vs, cases)) => {
                     let vs = vs.iter().map(|v| map[*v]).collect();
                     let block = cases.match_case(&vs).expect("No match");
                     push_block_exec_entries!(block);

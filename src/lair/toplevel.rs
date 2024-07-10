@@ -1,3 +1,4 @@
+use p3_field::Field;
 use rustc_hash::FxHashMap;
 
 use super::{bytecode::*, chipset::Chipset, expr::*, map::Map, List, Name};
@@ -13,7 +14,7 @@ pub(crate) struct FuncInfo {
     output_size: usize,
 }
 
-impl<F: Clone + Ord, H: Chipset<F>> Toplevel<F, H> {
+impl<F: Field + Ord, H: Chipset<F>> Toplevel<F, H> {
     pub fn new(funcs: &[FuncE<F>], chip_map: Map<Name, H>) -> Self {
         let ordered_funcs = Map::from_vec(funcs.iter().map(|func| (func.name, func)).collect());
         let info_vec = ordered_funcs
@@ -138,7 +139,7 @@ impl<'a, H> CheckCtx<'a, H> {
     }
 }
 
-impl<F: Clone + Ord> FuncE<F> {
+impl<F: Field + Ord> FuncE<F> {
     /// Checks if a named `Func` is correct, and produces an index-based `Func`
     /// by replacing names with indices
     fn check_and_link<H: Chipset<F>>(
@@ -180,9 +181,12 @@ impl<F: Clone + Ord> FuncE<F> {
     }
 }
 
-impl<F: Clone + Ord> BlockE<F> {
-    fn check_and_link<H: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, H>) -> Block<F> {
-        let mut ops = Vec::new();
+impl<F: Field + Ord> BlockE<F> {
+    fn check_and_link_with_ops<H: Chipset<F>>(
+        &self,
+        mut ops: Vec<Op<F>>,
+        ctx: &mut CheckCtx<'_, H>,
+    ) -> Block<F> {
         self.ops
             .iter()
             .for_each(|op| op.check_and_link(&mut ops, ctx));
@@ -202,9 +206,13 @@ impl<F: Clone + Ord> BlockE<F> {
             return_idents: block_return_idents.into(),
         }
     }
+
+    fn check_and_link<H: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, H>) -> Block<F> {
+        self.check_and_link_with_ops(Vec::new(), ctx)
+    }
 }
 
-impl<F: Clone + Ord> CtrlE<F> {
+impl<F: Field + Ord> CtrlE<F> {
     fn check_and_link<H: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, H>) -> Ctrl<F> {
         match &self {
             CtrlE::Return(return_vars) => {
@@ -223,44 +231,37 @@ impl<F: Clone + Ord> CtrlE<F> {
                 ctx.return_ident += 1;
                 ctrl
             }
-            CtrlE::Match(var, cases) => {
-                assert_eq!(var.size, 1);
-                let t = use_var(var, ctx)[0];
-                let mut vec = Vec::with_capacity(cases.branches.size());
-                for (f, block) in cases.branches.iter() {
-                    ctx.block_ident += 1;
-                    let state = ctx.save_bind_state();
-                    let block = block.check_and_link(ctx);
-                    ctx.restore_bind_state(state);
-                    vec.push((f.clone(), block))
-                }
-                let branches = Map::from_vec(vec);
-                let default = cases.default.as_ref().map(|def| {
-                    ctx.block_ident += 1;
-                    def.check_and_link(ctx).into()
-                });
-                let cases = Cases { branches, default };
-                Ctrl::Match(t, cases)
-            }
-            CtrlE::MatchMany(t, cases) => {
+            CtrlE::Match(t, cases) => {
                 let size = t.size;
-                let vars = use_var(t, ctx).into();
+                let vars: List<_> = use_var(t, ctx).into();
                 let mut vec = Vec::with_capacity(cases.branches.size());
                 for (fs, block) in cases.branches.iter() {
                     assert_eq!(fs.len(), size, "Pattern must have size {size}");
                     ctx.block_ident += 1;
                     let state = ctx.save_bind_state();
-                    let block = block.check_and_link(ctx);
+                    let mut ops = Vec::new();
+                    // Collect all constants as vars
+                    let fs_vars = push_const_array(fs, &mut ops, ctx);
+                    // Assert equality of matched vars
+                    ops.push(Op::AssertEq(vars.clone(), fs_vars));
+                    let block = block.check_and_link_with_ops(ops, ctx);
                     ctx.restore_bind_state(state);
                     vec.push((fs.clone(), block))
                 }
                 let branches = Map::from_vec(vec);
                 let default = cases.default.as_ref().map(|def| {
                     ctx.block_ident += 1;
-                    def.check_and_link(ctx).into()
+                    let mut ops = Vec::new();
+                    for (fs, _) in cases.branches.iter() {
+                        // Collect all constants as vars
+                        let fs_vars = push_const_array(fs, &mut ops, ctx);
+                        // Assert inequality of matched vars
+                        ops.push(Op::AssertNe(vars.clone(), fs_vars));
+                    }
+                    def.check_and_link_with_ops(ops, ctx).into()
                 });
                 let cases = Cases { branches, default };
-                Ctrl::MatchMany(vars, cases)
+                Ctrl::Choose(vars, cases)
             }
             CtrlE::If(b, true_block, false_block) => {
                 let vars = use_var(b, ctx).into();
@@ -273,17 +274,13 @@ impl<F: Clone + Ord> CtrlE<F> {
                 ctx.block_ident += 1;
                 let false_block = false_block.check_and_link(ctx);
 
-                if b.size != 1 {
-                    Ctrl::IfMany(vars, true_block.into(), false_block.into())
-                } else {
-                    Ctrl::If(vars[0], true_block.into(), false_block.into())
-                }
+                Ctrl::IfMany(vars, true_block.into(), false_block.into())
             }
         }
     }
 }
 
-impl<F: Clone + Ord> OpE<F> {
+impl<F: Field + Ord> OpE<F> {
     fn check_and_link<H: Chipset<F>>(&self, ops: &mut Vec<Op<F>>, ctx: &mut CheckCtx<'_, H>) {
         match self {
             OpE::AssertNe(a, b) => {
@@ -304,13 +301,13 @@ impl<F: Clone + Ord> OpE<F> {
             }
             OpE::Const(tgt, f) => {
                 assert_eq!(tgt.size, 1);
-                ops.push(Op::Const(f.clone()));
+                ops.push(Op::Const(*f));
                 bind_new(tgt, ctx);
             }
             OpE::Array(tgt, fs) => {
                 assert_eq!(tgt.size, fs.len());
                 for f in fs.iter() {
-                    ops.push(Op::Const(f.clone()));
+                    ops.push(Op::Const(*f));
                 }
                 bind_new(tgt, ctx);
             }
@@ -449,4 +446,17 @@ impl<F: Clone + Ord> OpE<F> {
             }
         }
     }
+}
+
+fn push_const_array<F: Field + Ord, H>(
+    fs: &[F],
+    ops: &mut Vec<Op<F>>,
+    ctx: &mut CheckCtx<'_, H>,
+) -> List<usize> {
+    fs.iter()
+        .map(|f| {
+            ops.push(Op::Const(*f));
+            ctx.new_var()
+        })
+        .collect()
 }

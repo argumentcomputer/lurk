@@ -61,12 +61,6 @@ pub struct Block<F> {
 pub enum Ctrl<F> {
     /// `Choose(x, cases)` non-deterministically chooses which case to execute based on `x`
     Choose(List<usize>, Cases<List<F>, F>),
-    /// `Match(x, cases)` matches on `x` in order to decide which case to execute
-    Match(usize, Cases<F, F>),
-    /// `MatchMany(x, cases)` matches on array `x` in order to decide which case to execute
-    MatchMany(List<usize>, Cases<List<F>, F>),
-    /// `If(b, t, f)` executes block `f` if `stack[b]` is zero and `t` otherwise
-    If(usize, Box<Block<F>>, Box<Block<F>>),
     /// `IfMany(bs, t, f)` executes block `f` if `bs` is a zero array and `t` otherwise
     IfMany(List<usize>, Box<Block<F>>, Box<Block<F>>),
     /// Contains the variables whose bindings will construct the output of the
