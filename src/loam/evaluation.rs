@@ -226,7 +226,7 @@ ascent! {
     // Final
     relation hash4(Ptr, Wide, Wide, Wide, Wide); // (a, b, c, d)
     // Signal
-    relation unhash4(LE, Wide, Ptr); // (tag, digest, ptr)
+    relation unhash4(LE, Wide); // (tag, digest)
     // Final
     relation hash4_rel(Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, digest)
 
@@ -235,7 +235,7 @@ ascent! {
     // Final
     relation hash6(Ptr, Wide, Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, e, f)
     // Signal
-    relation unhash6(LE, Wide, Ptr); // (tag, digest, ptr)
+    relation unhash6(LE, Wide); // (tag, digest)
     // Final
     relation hash6_rel(Wide, Wide, Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, e, f, digest)
 
@@ -401,19 +401,19 @@ ascent! {
         ptr_tag(env_ptr, env.0), ptr_value(env_ptr, env.1);
 
     // mark ingress conses for unhashing.
-    unhash4(Tag::Cons.elt(), digest, ptr) <-- ingress(ptr), if ptr.is_cons(), ptr_value(ptr, digest);
+    unhash4(Tag::Cons.elt(), digest) <-- ingress(ptr), if ptr.is_cons(), ptr_value(ptr, digest);
 
     // unhash to acquire preimage pointers from digest.
-    hash4_rel(a, b, c, d, digest) <-- unhash4(_, digest, ptr), let [a, b, c, d] = allocator().unhash4(digest).unwrap();
+    hash4_rel(a, b, c, d, digest) <-- unhash4(_, digest), let [a, b, c, d] = allocator().unhash4(digest).unwrap();
 
     // mark ingress funs for unhashing
-    unhash6(Tag::Fun.elt(), digest, ptr) <-- ingress(ptr), if ptr.is_fun(), ptr_value(ptr, digest);
+    unhash6(Tag::Fun.elt(), digest) <-- ingress(ptr), if ptr.is_fun(), ptr_value(ptr, digest);
 
-    hash6_rel(a, b, c, d, e, f, digest) <-- unhash6(_, digest, ptr), let [a, b, c, d, e, f] = allocator().unhash6(digest).unwrap();
+    hash6_rel(a, b, c, d, e, f, digest) <-- unhash6(_, digest), let [a, b, c, d, e, f] = allocator().unhash6(digest).unwrap();
 
     alloc(car_tag, car_value),
     alloc(cdr_tag, cdr_value) <--
-        unhash4(&Tag::Cons.elt(), digest, _),
+        unhash4(&Tag::Cons.elt(), digest),
         hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);

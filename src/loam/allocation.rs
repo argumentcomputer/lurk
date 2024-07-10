@@ -172,7 +172,7 @@ ascent! {
     relation car(Ptr, Ptr); // (cons, car)
     relation cdr(Ptr, Ptr); // (cons, cdr)
     relation hash4(Ptr, Wide, Wide, Wide, Wide); // (ptr, a, b, c, d)
-    relation unhash4(LE, Wide, Ptr); // (tag, digest, ptr)
+    relation unhash4(LE, Wide); // (tag, digest)
     relation hash4_rel(Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, digest)
 
     // inclusion triggers *_value relations.
@@ -244,16 +244,16 @@ ascent! {
     input_ptr(ptr) <-- input_expr(wide_ptr), ptr_tag(ptr, wide_ptr.0), ptr_value(ptr, wide_ptr.1);
 
     // mark ingress conses for unhashing.
-    unhash4(Tag::Cons.elt(), digest, ptr) <--
+    unhash4(Tag::Cons.elt(), digest) <--
         ingress(ptr), if ptr.is_cons(),
         ptr_value(ptr, digest);
 
     // unhash to acquire preimage pointers from digest.
-    hash4_rel(a, b, c, d, digest) <-- unhash4(_, digest, ptr), let [a, b, c, d] = allocator().unhash4(digest).unwrap();
+    hash4_rel(a, b, c, d, digest) <-- unhash4(_, digest), let [a, b, c, d] = allocator().unhash4(digest).unwrap();
 
     alloc(car_tag, car_value),
     alloc(cdr_tag, cdr_value) <--
-        unhash4(&Tag::Cons.elt(), digest, _),
+        unhash4(&Tag::Cons.elt(), digest),
         hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
@@ -467,7 +467,7 @@ mod test {
 
         // debugging
 
-        // println!("{}", prog.relation_sizes_summary());
+        println!("{}", prog.relation_sizes_summary());
 
         let AllocationProgram {
             car,
