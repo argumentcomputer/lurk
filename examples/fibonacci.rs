@@ -1,4 +1,6 @@
 //! Conditional `if` clause
+// Ignore xclippy for now -- it really doesn't like the macro :(
+#![allow(clippy::all)]
 
 use ascent::ascent;
 use loam_macros::loam;
