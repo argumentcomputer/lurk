@@ -1,7 +1,7 @@
 //! Conditional `if` clause
 
-use loam_macros::loam;
 use ascent::ascent;
+use loam_macros::loam;
 
 ascent! {
     // Facts:
@@ -50,7 +50,9 @@ fn main() {
     loam_prog.number = (0..6).map(|n| (n,)).collect();
     loam_prog.run();
 
-    let LoamProgram { mut fib_table_2, .. } = loam_prog;
+    let LoamProgram {
+        mut fib_table_2, ..
+    } = loam_prog;
 
     fib_table.sort_by_key(|(key, _, _)| *key);
     println!("{:?}", fib_table);

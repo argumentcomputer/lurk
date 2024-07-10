@@ -1,7 +1,6 @@
 //! This file is largely taken from https://github.com/s-arash/ascent/blob/master/ascent_macro/src/ascent_syntax.rs
 
 #![deny(warnings)]
-extern crate proc_macro;
 use proc_macro2::{Span, TokenStream};
 use syn::parse::{Parse, ParseStream};
 use syn::{
@@ -36,7 +35,7 @@ struct Signatures {
 }
 
 impl Parse for Signatures {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
         let declaration = TypeSignature::parse(input)?;
         let implementation = if input.peek(Token![impl]) {
             Some(ImplSignature::parse(input)?)
@@ -112,7 +111,7 @@ impl ToTokens for ImplSignature {
 }
 
 /// Parse impl on Generics does not parse WhereClauses, hence this function
-fn parse_generics_with_where_clause(input: ParseStream) -> Result<Generics> {
+fn parse_generics_with_where_clause(input: ParseStream<'_>) -> Result<Generics> {
     let mut res = Generics::parse(input)?;
     if input.peek(Token![where]) {
         res.where_clause = Some(input.parse()?);
@@ -131,7 +130,7 @@ struct RelationNode {
 }
 
 impl Parse for RelationNode {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
         let is_lattice = input.peek(kw::lattice);
         if is_lattice {
             input.parse::<kw::lattice>()?;
@@ -189,22 +188,22 @@ enum BodyItemNode {
     #[peek(kw::agg, name = "aggregate clause")]
     Agg(AggClauseNode),
     #[peek_with(peek_macro_invocation, name = "macro invocation")]
-    MacroInvocation(syn::ExprMacro),
+    MacroInvocation(ExprMacro),
     #[peek(Ident, name = "body clause")]
     Clause(BodyClauseNode),
     #[peek(Token![!], name = "negation clause")]
     Negation(NegationClauseNode),
-    #[peek(syn::token::Paren, name = "disjunction node")]
+    #[peek(token::Paren, name = "disjunction node")]
     Disjunction(DisjunctionNode),
     #[peek_with(peek_if_or_let, name = "if condition or let binding")]
     Cond(CondClause),
 }
 
-fn peek_macro_invocation(parse_stream: ParseStream) -> bool {
+fn peek_macro_invocation(parse_stream: ParseStream<'_>) -> bool {
     parse_stream.peek(Ident) && parse_stream.peek2(Token![!])
 }
 
-fn peek_if_or_let(parse_stream: ParseStream) -> bool {
+fn peek_if_or_let(parse_stream: ParseStream<'_>) -> bool {
     parse_stream.peek(Token![if]) || parse_stream.peek(Token![let])
 }
 
@@ -243,12 +242,12 @@ impl ToTokens for BodyItemNode {
 
 #[derive(Clone)]
 struct DisjunctionNode {
-    _paren: syn::token::Paren,
+    _paren: token::Paren,
     disjuncts: Punctuated<Punctuated<BodyItemNode, Token![,]>, Token![||]>,
 }
 
 impl Parse for DisjunctionNode {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
         let content;
         let _paren = parenthesized!(content in input);
         let res: Punctuated<Punctuated<BodyItemNode, Token![,]>, Token![||]> =
@@ -297,7 +296,7 @@ enum BodyClauseArg {
 }
 
 impl ToTokens for BodyClauseArg {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         match self {
             BodyClauseArg::Pat(pat) => {
                 pat.huh_token.to_tokens(tokens);
@@ -348,7 +347,7 @@ enum CondClause {
 }
 
 impl Parse for CondClause {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
         if input.peek(Token![if]) {
             if input.peek2(Token![let]) {
                 let cl: IfLetClause = input.parse()?;
@@ -388,7 +387,7 @@ impl ToTokens for CondClause {
 }
 
 impl Parse for BodyClauseNode {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
         let rel: Ident = input.parse()?;
         let args_content;
         parenthesized!(args_content in input);
@@ -449,7 +448,7 @@ struct HeadClauseNode {
 }
 
 impl Parse for HeadClauseNode {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
         let rel: Ident = input.parse()?;
         let args_content;
         parenthesized!(args_content in input);
@@ -494,7 +493,7 @@ enum AggregatorNode {
 }
 
 impl Parse for AggregatorNode {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
         if input.peek(token::Paren) {
             let inside_parens;
             parenthesized!(inside_parens in input);
@@ -521,7 +520,7 @@ struct RuleNode {
 }
 
 impl Parse for RuleNode {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
         let head_clauses = if input.peek(token::Brace) {
             let content;
             braced!(content in input);
@@ -601,8 +600,7 @@ enum MacroParamKind {
 impl ToTokens for MacroParamKind {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         match self {
-            MacroParamKind::Expr(ident) => ident.to_tokens(tokens),
-            MacroParamKind::Ident(ident) => ident.to_tokens(tokens),
+            MacroParamKind::Expr(ident) | MacroParamKind::Ident(ident) => ident.to_tokens(tokens),
         }
     }
 }
@@ -646,7 +644,7 @@ pub(crate) struct LoamProgram {
 }
 
 impl Parse for LoamProgram {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
         let attributes = Attribute::parse_inner(input)?;
         let mut struct_attrs = Attribute::parse_outer(input)?;
         let signatures = if input.peek(Token![pub]) || input.peek(Token![struct]) {
@@ -710,27 +708,10 @@ impl ToTokens for LoamProgram {
     }
 }
 
-#[derive(PartialEq, Eq, Hash, Clone, Debug)]
-struct RelationIdentity {
-    name: Ident,
-    field_types: Vec<Type>,
-    is_lattice: bool,
-}
-
-impl From<&RelationNode> for RelationIdentity {
-    fn from(relation_node: &RelationNode) -> Self {
-        RelationIdentity {
-            name: relation_node.name.clone(),
-            field_types: relation_node.field_types.iter().cloned().collect(),
-            is_lattice: relation_node.is_lattice,
-        }
-    }
-}
-
 fn rule_desugar_with_binding(
     rule: &mut RuleNode,
     relations: &[RelationNode],
-) -> Result<Option<RelationNode>> {
+) -> Option<RelationNode> {
     let mut bindings = Vec::new();
     let mut binding_tys = Vec::new();
 
@@ -771,7 +752,7 @@ fn rule_desugar_with_binding(
         let binding_relation = RelationNode {
             attrs: Vec::new(),
             name: binding_relation_name.clone(),
-            field_types: Punctuated::from_iter(binding_tys.iter().cloned()),
+            field_types: binding_tys.iter().cloned().collect::<Punctuated<_, _>>(),
             _initialization: None,
             _semi_colon: Token![;](Span::call_site()),
             is_lattice: false,
@@ -779,41 +760,42 @@ fn rule_desugar_with_binding(
 
         let binding_head_clause = HeadClauseNode {
             rel: binding_relation_name,
-            args: Punctuated::from_iter(bindings.iter().map(|ident| {
-                Expr::Path(ExprPath {
-                    attrs: Vec::new(),
-                    qself: None,
-                    path: Path::from(ident.clone()),
+            args: bindings
+                .iter()
+                .map(|ident| {
+                    Expr::Path(ExprPath {
+                        attrs: Vec::new(),
+                        qself: None,
+                        path: Path::from(ident.clone()),
+                    })
                 })
-            })),
+                .collect(),
         };
 
         rule.head_clauses
             .push(HeadItemNode::HeadClause(binding_head_clause));
-        Ok(Some(binding_relation))
+        Some(binding_relation)
     } else {
-        Ok(None)
+        None
     }
 }
 
-fn rules_desugar_with_binding(prog: &mut LoamProgram) -> Result<()> {
+fn rules_desugar_with_binding(prog: &mut LoamProgram) {
     let mut new_relations = Vec::new();
 
     for rule in &mut prog.rules {
-        if let Some(new_relation) = rule_desugar_with_binding(rule, &prog.relations)? {
+        if let Some(new_relation) = rule_desugar_with_binding(rule, &prog.relations) {
             new_relations.push(new_relation);
         }
     }
 
     prog.relations.extend(new_relations);
-    Ok(())
 }
 
-pub(crate) fn compile_new_ascent_to_ascent(mut new_prog: LoamProgram) -> Result<TokenStream> {
-    rules_desugar_with_binding(&mut new_prog)?;
+pub(crate) fn compile_new_ascent_to_ascent(mut new_prog: LoamProgram) -> TokenStream {
+    rules_desugar_with_binding(&mut new_prog);
 
     let mut output = TokenStream::new();
     new_prog.to_tokens(&mut output);
-    print!("HELLO IS THIS EVEN POSSIBLE");
-    Ok(output)
+    output
 }
