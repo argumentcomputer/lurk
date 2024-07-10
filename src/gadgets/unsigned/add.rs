@@ -12,7 +12,7 @@ pub struct AddWitness<T> {
 }
 
 impl<F: AbstractField> AddWitness<F> {
-    pub fn populate(
+    pub fn populate_add(
         &mut self,
         in1: Word<u8>,
         in2: Word<u8>,
@@ -30,6 +30,20 @@ impl<F: AbstractField> AddWitness<F> {
             carry_prev = carry.into();
         }
         record.range_check_u8_iter(result);
+        result
+    }
+
+    pub fn populate_sub(
+        &mut self,
+        in1: Word<u8>,
+        in2: Word<u8>,
+        record: &mut impl ByteRecord,
+    ) -> Word<u8> {
+        let result = in1 - in2;
+
+        let in1_expected = self.populate_add(in2, result, record);
+        debug_assert_eq!(in1, in1_expected);
+
         result
     }
 
@@ -74,6 +88,17 @@ pub fn eval_add<AB: AirBuilder>(
     record.range_check_u8_iter(out, is_real);
 }
 
+pub fn eval_sub<AB: AirBuilder>(
+    builder: &mut AB,
+    (in1, in2): (Word<impl Into<AB::Expr>>, Word<impl Into<AB::Expr>>),
+    out: Word<impl Into<AB::Expr>>,
+    witness: &AddWitness<AB::Var>,
+    record: &mut impl ByteAirRecord<AB::Expr>,
+    is_real: impl Into<AB::Expr>,
+) {
+    eval_add(builder, (in2, out), in1, witness, record, is_real)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,7 +130,7 @@ mod tests {
 
             let mut witness = AddWitness::<F>::default();
             let mut requires = vec![RequireRecord::<F>::default(); AddWitness::<F>::num_requires()];
-            let out = witness.populate(
+            let out = witness.populate_add(
                 lhs,
                 rhs,
                 &mut record.with_context(nonce, requires.iter_mut()),
@@ -123,6 +148,7 @@ mod tests {
                 &mut air_record,
                 F::one(),
             );
+            // air_record.require_all(&mut builder, F::from_canonical_u32(nonce), requires);
         }
     }
 }

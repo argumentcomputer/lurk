@@ -136,6 +136,7 @@ mod tests {
                 &mut air_record,
                 F::one(),
             );
+            // air_record.require_all(&mut builder, F::from_canonical_u32(nonce), requires);
         }
     }
 }

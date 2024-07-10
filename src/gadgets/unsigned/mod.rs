@@ -1,5 +1,5 @@
 use p3_field::AbstractField;
-use std::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign};
+use std::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign};
 use std::{array, slice};
 
 pub mod add;
@@ -12,40 +12,6 @@ pub const WORD_SIZE: usize = 8;
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
 pub struct Word<T>([T; WORD_SIZE]);
-
-impl Add for Word<u8> {
-    type Output = Word<u8>;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        let lhs = u64::from_le_bytes(self.0);
-        let rhs = u64::from_le_bytes(rhs.0);
-        let out = lhs + rhs;
-        Self(out.to_le_bytes())
-    }
-}
-
-impl AddAssign for Word<u8> {
-    fn add_assign(&mut self, rhs: Self) {
-        *self = *self + rhs;
-    }
-}
-
-impl Mul for Word<u8> {
-    type Output = Word<u8>;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        let lhs = u64::from_le_bytes(self.0);
-        let rhs = u64::from_le_bytes(rhs.0);
-        let out = lhs * rhs;
-        Self(out.to_le_bytes())
-    }
-}
-
-impl MulAssign for Word<u8> {
-    fn mul_assign(&mut self, rhs: Self) {
-        *self = *self * rhs;
-    }
-}
 
 impl<T> Word<T> {
     #[inline]
@@ -78,12 +44,89 @@ impl<T> Word<T> {
     }
 }
 
+//
+// Conversion
+//
+
 impl Word<u8> {
     #[inline]
     pub fn into_field<F: AbstractField>(self) -> Word<F> {
         self.map(F::from_canonical_u8)
     }
 }
+
+impl From<u64> for Word<u8> {
+    fn from(value: u64) -> Self {
+        Self(value.to_le_bytes())
+    }
+}
+impl From<Word<u8>> for u64 {
+    fn from(value: Word<u8>) -> Self {
+        u64::from_le_bytes(value.0)
+    }
+}
+
+//
+// Arithmetic Ops
+//
+
+impl Add for Word<u8> {
+    type Output = Word<u8>;
+
+    fn add(mut self, rhs: Self) -> Self::Output {
+        self += rhs;
+        self
+    }
+}
+
+impl SubAssign for Word<u8> {
+    fn sub_assign(&mut self, rhs: Self) {
+        let lhs = u64::from(*self);
+        let rhs = u64::from(rhs);
+        let out = lhs - rhs;
+        *self = out.into();
+    }
+}
+
+impl Sub for Word<u8> {
+    type Output = Word<u8>;
+
+    fn sub(mut self, rhs: Self) -> Self::Output {
+        self -= rhs;
+        self
+    }
+}
+
+impl AddAssign for Word<u8> {
+    fn add_assign(&mut self, rhs: Self) {
+        let lhs = u64::from(*self);
+        let rhs = u64::from(rhs);
+        let out = lhs + rhs;
+        *self = out.into();
+    }
+}
+
+impl Mul for Word<u8> {
+    type Output = Word<u8>;
+
+    fn mul(mut self, rhs: Self) -> Self::Output {
+        self *= rhs;
+        self
+    }
+}
+
+impl MulAssign for Word<u8> {
+    fn mul_assign(&mut self, rhs: Self) {
+        let lhs = u64::from(*self);
+        let rhs = u64::from(rhs);
+        let out = lhs * rhs;
+        *self = out.into();
+    }
+}
+
+//
+// Iterator
+//
 
 impl<T> IntoIterator for Word<T> {
     type Item = T;

@@ -16,10 +16,12 @@ impl ByteInput {
     pub fn from_u8(i: u8) -> Self {
         Self::from_u8_pair(i, 0)
     }
+
     #[inline]
     pub fn from_u8_pair(i1: u8, i2: u8) -> Self {
         Self(u16::from_le_bytes([i1, i2]))
     }
+
     #[inline]
     pub fn from_u16(i: u16) -> Self {
         Self(i)
@@ -96,7 +98,9 @@ pub trait ByteRecord {
     fn range_check_u8(&mut self, i: u8) {
         self.range_check_u8_pair(i, 0);
     }
+
     fn range_check_u8_pair(&mut self, i1: u8, i2: u8);
+
     fn range_check_u8_iter(&mut self, iter: impl IntoIterator<Item = u8>) {
         let mut iter = iter.into_iter();
         while let Some(i1) = iter.next() {
@@ -104,12 +108,17 @@ pub trait ByteRecord {
             self.range_check_u8_pair(i1, i2)
         }
     }
+
     fn range_check_u16(&mut self, i: u16);
 
     fn less_than(&mut self, i1: u8, i2: u8) -> bool;
+
     fn and(&mut self, i1: u8, i2: u8) -> u8;
+
     fn xor(&mut self, i1: u8, i2: u8) -> u8;
+
     fn or(&mut self, i1: u8, i2: u8) -> u8;
+
     fn msb(&mut self, i: u8) -> bool;
 }
 
@@ -121,7 +130,9 @@ pub trait ByteAirRecord<F: AbstractField> {
     fn range_check_u8(&mut self, i: impl Into<F>, is_real: impl Into<F>) {
         self.range_check_u8_pair(i, F::default(), is_real);
     }
+
     fn range_check_u8_pair(&mut self, i1: impl Into<F>, i2: impl Into<F>, is_real: impl Into<F>);
+
     fn range_check_u8_iter<IT: Into<F>>(
         &mut self,
         iter: impl IntoIterator<Item = IT>,
@@ -134,6 +145,7 @@ pub trait ByteAirRecord<F: AbstractField> {
             self.range_check_u8_pair(i1, i2, is_real.clone())
         }
     }
+
     fn range_check_u16(&mut self, i: impl Into<F>, is_real: impl Into<F>);
 
     fn less_than(
@@ -143,8 +155,12 @@ pub trait ByteAirRecord<F: AbstractField> {
         r: impl Into<F>,
         is_real: impl Into<F>,
     );
+
     fn and(&mut self, i1: impl Into<F>, i2: impl Into<F>, r: impl Into<F>, is_real: impl Into<F>);
+
     fn xor(&mut self, i1: impl Into<F>, i2: impl Into<F>, r: impl Into<F>, is_real: impl Into<F>);
+
     fn or(&mut self, i1: impl Into<F>, i2: impl Into<F>, r: impl Into<F>, is_real: impl Into<F>);
+
     fn msb(&mut self, i: impl Into<F>, r: impl Into<F>, is_real: impl Into<F>);
 }
