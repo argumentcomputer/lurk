@@ -42,7 +42,7 @@ impl<F: AbstractField> BytesAirRecordWithContext<F> {
     {
         for (relation, is_real) in &self.records {
             if is_real.is_zero() {
-                return;
+                continue;
             }
             assert!(is_real.is_one());
             relation.check();
