@@ -1,11 +1,14 @@
+use crate::gadgets::api::{AirGadget, AirGadgetBase, AirGadgetExt};
 use crate::gadgets::bytes::{ByteAirRecord, ByteRecord};
 use crate::gadgets::unsigned::Word;
 use hybrid_array::sizes::{U4, U8};
 use hybrid_array::typenum::{Sub1, B1};
 use hybrid_array::{Array, ArraySize};
 use p3_air::AirBuilder;
-use p3_field::AbstractField;
+use p3_field::{AbstractField, Field};
+use std::borrow::{Borrow, BorrowMut};
 use std::iter::zip;
+use std::marker::PhantomData;
 use std::ops::Sub;
 
 #[derive(Clone, Default)]
@@ -134,6 +137,61 @@ pub fn eval_sub<AB: AirBuilder, W: ArraySize + Sub<B1>>(
     let is_real = is_real.into();
     eval_add_sub(builder, (in2, out.clone()), in1, witness, is_real.clone());
     record.range_check_u8_iter(out, is_real);
+}
+
+struct AddGadget<W> {
+    _marker: PhantomData<W>,
+}
+
+impl<F: Field, W> AirGadgetBase<F> for AddGadget<W>
+where
+    W: ArraySize + Sub<B1> + Sync,
+    Sub1<W>: ArraySize,
+{
+    type Input = Word<u8, W>;
+    type InputAir<T> = Word<T, W>;
+    type Output = Word<u8, W>;
+    type OutputAir<T> = Word<T, W>;
+    type Witness<T> = AddWitness<T, W>;
+    type Record = ();
+    type RecordAir = ();
+
+    fn populate_mut<Witness>(
+        &self,
+        input: &Self::Input,
+        witness: &mut Witness,
+        record: &mut Self::Record,
+    ) -> Self::Output
+    where
+        Witness: BorrowMut<Self::Witness<F>>,
+    {
+        todo!()
+    }
+
+    fn eval<AB, I, IVar, O, OVar, Witness>(
+        &self,
+        input: &I,
+        output: &O,
+        witness: &Witness,
+        record: &mut Self::RecordAir,
+        is_real: impl Into<AB::Expr>,
+    ) where
+        AB: AirBuilder<F = F>,
+        IVar: Into<AB::Expr> + Clone,
+        OVar: Into<AB::Expr> + Clone,
+        I: Borrow<Self::InputAir<IVar>>,
+        O: Borrow<Self::OutputAir<OVar>>,
+        Witness: Borrow<Self::Witness<AB::Var>>,
+    {
+        todo!()
+    }
+}
+
+impl<F: Field, W> AirGadget<F> for AddGadget<W>
+where
+    W: ArraySize + Sub<B1> + Sync,
+    Sub1<W>: ArraySize,
+{
 }
 
 #[cfg(test)]
