@@ -256,16 +256,11 @@ macro_rules! block {
         let mut branches = Vec::new();
         {
             $(
+                let f = $crate::lair::field_from_i32;
                 branches.push((
-                    $crate::lair::field_from_i32($num),
+                    [f($num), $(f($other_num), )*].into(),
                     $crate::block_init!( $branch )
                 ));
-                $(
-                    branches.push((
-                        $crate::lair::field_from_i32($other_num),
-                        $crate::block_init!( $branch ),
-                    ));
-                )*
             )*
         }
         let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;
@@ -304,15 +299,9 @@ macro_rules! block {
         {
             $(
                 branches.push((
-                    $raw.to_field(),
+                    [$raw.to_field(), $($other_raw.to_field(),)*].into(),
                     $crate::block_init!( $branch )
                 ));
-                $(
-                    branches.push((
-                        $other_raw.to_field(),
-                        $crate::block_init!( $branch ),
-                    ));
-                )*
             )*
         }
         let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;
@@ -327,15 +316,9 @@ macro_rules! block {
         {
             $(
                 branches.push((
-                    $cloj($raw),
+                    [$cloj($raw), $($cloj($other_raw),)*].into(),
                     $crate::block_init!( $branch )
                 ));
-                $(
-                    branches.push((
-                        $cloj($other_raw),
-                        $crate::block_init!( $branch ),
-                    ));
-                )*
             )*
         }
         let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;

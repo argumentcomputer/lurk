@@ -133,7 +133,7 @@ impl<F> Ctrl<F> {
                 // last nonce, last count
                 *aux += 2;
             }
-            Ctrl::Choose(_, cases) => {
+            Ctrl::Choose(_, cases, branches) => {
                 let degrees_len = degrees.len();
                 let mut max_aux = *aux;
                 let mut process = |block: &Block<_>| {
@@ -142,7 +142,7 @@ impl<F> Ctrl<F> {
                     degrees.truncate(degrees_len);
                     max_aux = max_aux.max(*block_aux);
                 };
-                cases.branches.iter().for_each(|(_, block)| process(block));
+                branches.iter().for_each(&mut process);
                 if let Some(block) = cases.default.as_ref() {
                     process(block)
                 };

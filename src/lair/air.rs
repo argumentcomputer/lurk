@@ -437,7 +437,7 @@ impl<F: Field> Ctrl<F> {
         <AB as AirBuilder>::Var: Debug,
     {
         match self {
-            Ctrl::Choose(_, cases) => {
+            Ctrl::Choose(_, cases, branches) => {
                 let map_len = map.len();
                 let init_state = index.save();
 
@@ -447,7 +447,7 @@ impl<F: Field> Ctrl<F> {
                     map.truncate(map_len);
                     index.restore(init_state);
                 };
-                cases.branches.iter().for_each(|(_, block)| process(block));
+                branches.iter().for_each(&mut process);
                 if let Some(block) = cases.default.as_ref() {
                     process(block)
                 };
@@ -804,6 +804,53 @@ mod tests {
                 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ]
+            .into_iter()
+            .map(F::from_canonical_u32)
+            .collect::<Vec<_>>(),
+            chip.width(),
+        );
+        assert_eq!(trace, expected_trace);
+        let _ = debug_constraints_collecting_queries(&chip, &[], None, &trace);
+    }
+
+    #[test]
+    fn lair_equal_branch_test() {
+        let func = func!(
+        fn test(a): [1] {
+            match a {
+                2, 3, 4 => {
+                    let one = 1;
+                    return one
+                }
+            };
+            return a
+        });
+        let toplevel = Toplevel::<F, LurkHasher>::new(&[func]);
+        let mut queries = QueryRecord::new(&toplevel);
+        let f = field_from_u32;
+        let args = &[f(1)];
+        toplevel.execute_by_name("test", args, &mut queries);
+        let args = &[f(2)];
+        toplevel.execute_by_name("test", args, &mut queries);
+        let args = &[f(3)];
+        toplevel.execute_by_name("test", args, &mut queries);
+        let args = &[f(4)];
+        toplevel.execute_by_name("test", args, &mut queries);
+        let chip = FuncChip::from_name("test", &toplevel);
+        let trace = chip.generate_trace(&Shard::new(&queries));
+
+        #[rustfmt::skip]
+        let expected_trace = RowMajorMatrix::new(
+            [
+                // branch case:
+                //   nonce, input, (a-2)*(a-3), (a-2)*(a-3)*(a-4), dummy, last nonce, last count, two selectors
+                // default case:
+                //   nonce, input, 1/(a-2), 1/(a-3), 1/(a-4), last nonce, last count, two selectors
+                0, 1, 2013265920, 1006632960, 671088640, 0, 1, 0, 1,
+                1, 2,          0,          0,         0, 1, 0, 1, 0,
+                2, 3,          0,          0,         0, 1, 0, 1, 0,
+                3, 4,          2,          0,         0, 1, 0, 1, 0
             ]
             .into_iter()
             .map(F::from_canonical_u32)
