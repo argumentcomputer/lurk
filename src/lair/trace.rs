@@ -162,10 +162,10 @@ impl<F: PrimeField32> Ctrl<F> {
                 slice.push_aux(index, provide.last_nonce);
                 slice.push_aux(index, provide.last_count);
             }
-            Ctrl::Choose(var, cases) => {
+            Ctrl::Choose(var, cases, _) => {
                 let val = map[*var].0;
                 let branch = cases.match_case(&val).expect("No match");
-                branch.populate_row(func_ctx, map, index, slice, shard, hasher);
+                branch.populate_row(ctx, map, index, slice);
             }
             Ctrl::ChooseMany(vars, cases) => {
                 let vals = vars.iter().map(|&var| map[var].0).collect();

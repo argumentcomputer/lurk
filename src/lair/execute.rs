@@ -555,7 +555,7 @@ impl<F: PrimeField32> Func<F> {
                         break;
                     }
                 }
-                ExecEntry::Ctrl(Ctrl::Choose(v, cases)) => {
+                ExecEntry::Ctrl(Ctrl::Choose(v, cases, _)) => {
                     let v = map[*v];
                     let block = cases.match_case(&v).expect("No match");
                     push_block_exec_entries!(block);

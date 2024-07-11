@@ -235,34 +235,37 @@ impl<F: Field + Ord> CtrlE<F> {
                 assert_eq!(t.size, 1);
                 let var = use_var(t, ctx)[0];
                 let mut vec = Vec::with_capacity(cases.branches.len());
-                for (f, block) in cases.branches.iter() {
+                let mut unique_branches = Vec::new();
+                for (fs, block) in cases.branches.iter() {
                     ctx.block_ident += 1;
                     let state = ctx.save_bind_state();
                     let mut ops = Vec::new();
-                    // Collect constant as var
-                    ops.push(Op::Const(*f));
-                    let f_var = ctx.new_var();
-                    // Assert equality of matched var
-                    ops.push(Op::AssertEq([var].into(), [f_var].into()));
-                    let block = block.check_and_link_with_ops(ops, ctx, hasher);
+                    // Collect all constants as vars
+                    let fs_vars = push_const_array(fs, &mut ops, ctx);
+                    // Assert that var is contained in the constants
+                    ops.push(Op::Contains(fs_vars, var));
+                    let block = block.check_and_link_with_ops(ops, ctx);
                     ctx.restore_bind_state(state);
-                    vec.push((*f, block))
+                    fs.iter().for_each(|f| vec.push((*f, block.clone())));
+                    unique_branches.push(block);
                 }
                 let branches = Map::from_vec(vec);
                 let default = cases.default.as_ref().map(|def| {
                     ctx.block_ident += 1;
                     let mut ops = Vec::new();
-                    for (f, _) in cases.branches.iter() {
-                        // Collect constant as var
-                        ops.push(Op::Const(*f));
-                        let f_var = ctx.new_var();
-                        // Assert inequality of matched var
-                        ops.push(Op::AssertNe([var].into(), [f_var].into()));
+                    for (fs, _) in cases.branches.iter() {
+                        for f in fs.iter() {
+                            // Collect constant as var
+                            ops.push(Op::Const(*f));
+                            let f_var = ctx.new_var();
+                            // Assert inequality of matched var
+                            ops.push(Op::AssertNe([var].into(), [f_var].into()));
+                        }
                     }
-                    def.check_and_link_with_ops(ops, ctx, hasher).into()
+                    def.check_and_link_with_ops(ops, ctx).into()
                 });
                 let cases = Cases { branches, default };
-                Ctrl::Choose(var, cases)
+                Ctrl::Choose(var, cases, unique_branches.into())
             }
             CtrlE::MatchMany(t, cases) => {
                 let size = t.size;
@@ -319,12 +322,12 @@ impl<F: Field + Ord> CtrlE<F> {
                 let false_block = false_block.check_and_link_with_ops(ops, ctx);
 
                 if size == 1 {
-                    let branches = Map::from_vec(vec![(F::zero(), false_block)]);
+                    let branches = Map::from_vec(vec![(F::zero(), false_block.clone())]);
                     let cases = Cases {
                         branches,
                         default: Some(true_block.into()),
                     };
-                    Ctrl::Choose(vars[0], cases)
+                    Ctrl::Choose(vars[0], cases, [false_block].into())
                 } else {
                     let arr = vec![F::zero(); b.size];
                     let branches = Map::from_vec(vec![(arr.into(), false_block)]);

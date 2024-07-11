@@ -101,8 +101,9 @@ pub struct BlockE<F> {
 /// Encodes the logical flow of a Lair program
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CtrlE<F> {
-    /// `Match(x, cases)` matches on `x` in order to decide which case to execute
-    Match(Var, CasesE<F, F>),
+    /// `Match(x, cases)` matches on `x` in order to decide which case to execute.
+    /// The list collects all the values that map to the same branch
+    Match(Var, CasesE<List<F>, F>),
     /// `MatchMany(x, cases)` matches on array `x` in order to decide which case to execute
     MatchMany(Var, CasesE<List<F>, F>),
     /// `If(b, t, f)` executes block `f` if `b` is zero and `t` otherwise

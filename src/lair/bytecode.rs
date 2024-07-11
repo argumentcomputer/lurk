@@ -60,7 +60,8 @@ pub struct Block<F> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Ctrl<F> {
     /// `Choose(x, cases)` non-deterministically chooses which case to execute based on a value `x`
-    Choose(usize, Cases<F, F>),
+    /// The third item is the list of unique branches, needed for `eval`
+    Choose(usize, Cases<F, F>, List<Block<F>>), // TODO use Arc or indices so that blocks are not duplicated
     /// `ChooseMany(x, cases)` non-deterministically chooses which case to execute based on an array `x`
     ChooseMany(List<usize>, Cases<List<F>, F>),
     /// Contains the variables whose bindings will construct the output of the

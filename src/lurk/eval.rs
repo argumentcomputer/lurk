@@ -382,7 +382,7 @@ fn egress_builtin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Func
     let branches = builtins
         .iter()
         .enumerate()
-        .map(|(i, (_, digest))| (F::from_canonical_usize(i), branch(digest.clone())))
+        .map(|(i, (_, digest))| ([F::from_canonical_usize(i)].into(), branch(digest.clone())))
         .collect();
     let cases = CasesE {
         branches,
@@ -1474,7 +1474,7 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["52"]);
-        expect_eq(eval.width(), expect!["119"]);
+        expect_eq(eval.width(), expect!["107"]);
         expect_eq(eval_comm_unop.width(), expect!["71"]);
         expect_eq(eval_hide.width(), expect!["76"]);
         expect_eq(eval_unop.width(), expect!["33"]);
@@ -1483,13 +1483,13 @@ mod test {
         expect_eq(eval_let.width(), expect!["54"]);
         expect_eq(eval_letrec.width(), expect!["58"]);
         expect_eq(equal.width(), expect!["44"]);
-        expect_eq(equal_inner.width(), expect!["63"]);
+        expect_eq(equal_inner.width(), expect!["53"]);
         expect_eq(car_cdr.width(), expect!["34"]);
         expect_eq(apply.width(), expect!["60"]);
         expect_eq(env_lookup.width(), expect!["47"]);
-        expect_eq(ingress.width(), expect!["102"]);
+        expect_eq(ingress.width(), expect!["97"]);
         expect_eq(ingress_builtin.width(), expect!["46"]);
-        expect_eq(egress.width(), expect!["73"]);
+        expect_eq(egress.width(), expect!["68"]);
         expect_eq(egress_builtin.width(), expect!["39"]);
         expect_eq(hash_24_8.width(), expect!["485"]);
         expect_eq(hash_32_8.width(), expect!["647"]);
