@@ -1,78 +1,92 @@
 use crate::gadgets::bytes::{ByteAirRecord, ByteRecord};
-use crate::gadgets::unsigned::{Word, WORD_SIZE};
+use crate::gadgets::unsigned::Word;
+use hybrid_array::sizes::{U4, U8};
+use hybrid_array::typenum::{Sub1, B1};
+use hybrid_array::{Array, ArraySize};
 use p3_air::AirBuilder;
 use p3_field::AbstractField;
-use sphinx_derive::AlignedBorrow;
 use std::iter::zip;
+use std::ops::Sub;
 
-#[derive(Clone, Debug, Default, AlignedBorrow)]
+#[derive(Clone, Default)]
 #[repr(C)]
-pub struct AddWitness<T> {
-    carry: [T; WORD_SIZE - 1],
+pub struct AddWitness<T, W: ArraySize + Sub<B1>>
+where
+    Sub1<W>: ArraySize,
+{
+    carry: Array<T, Sub1<W>>,
 }
 
-impl<F: AbstractField> AddWitness<F> {
-    pub fn populate_add(
-        &mut self,
-        in1: Word<u8>,
-        in2: Word<u8>,
-        record: &mut impl ByteRecord,
-    ) -> Word<u8> {
+pub type Add64Witness<T> = AddWitness<T, U8>;
+pub type Add32Witness<T> = AddWitness<T, U4>;
+
+impl<F: AbstractField, W: ArraySize + Sub<B1>> AddWitness<F, W>
+where
+    Sub1<W>: ArraySize,
+{
+    fn populate_add_sub(&mut self, in1: &Word<u8, W>, in2: &Word<u8, W>) -> Word<u8, W> {
         let mut result = Word::default();
         let mut carry_prev = 0u16;
-        for (i, (in1, in2)) in zip(in1, in2).enumerate() {
+        for (i, (&in1, &in2)) in zip(in1, in2).enumerate() {
             let [out, carry] = (u16::from(in1) + u16::from(in2) + carry_prev).to_le_bytes();
             result[i] = out;
             debug_assert!(carry == 0 || carry == 1);
-            if carry == 1 && i < WORD_SIZE - 1 {
+            if carry == 1 && i < W::USIZE - 1 {
                 self.carry[i] = F::one();
             }
             carry_prev = carry.into();
         }
-        record.range_check_u8_iter(result);
+        result
+    }
+
+    pub fn populate_add(
+        &mut self,
+        in1: &Word<u8, W>,
+        in2: &Word<u8, W>,
+        record: &mut impl ByteRecord,
+    ) -> Word<u8, W> {
+        let result = self.populate_add_sub(in1, in2);
+        record.range_check_u8_iter(result.clone());
         result
     }
 
     pub fn populate_sub(
         &mut self,
-        in1: Word<u8>,
-        in2: Word<u8>,
+        in1: &Word<u8, W>,
+        in2: &Word<u8, W>,
         record: &mut impl ByteRecord,
-    ) -> Word<u8> {
-        let result = in1 - in2;
+    ) -> Word<u8, W> {
+        let result = in1.clone() - in2.clone();
 
-        let in1_expected = self.populate_add(in2, result, record);
-        debug_assert_eq!(in1, in1_expected);
+        let in1_expected = self.populate_add_sub(in2, &result);
+        debug_assert_eq!(*in1, in1_expected);
+        record.range_check_u8_iter(result.clone());
 
         result
     }
 
     const fn num_requires() -> usize {
-        WORD_SIZE / 2
+        W::USIZE / 2
     }
 }
 
-pub fn eval_add<AB: AirBuilder>(
+fn eval_add_sub<AB: AirBuilder, W: ArraySize + Sub<B1>>(
     builder: &mut AB,
-    (in1, in2): (Word<impl Into<AB::Expr>>, Word<impl Into<AB::Expr>>),
-    out: Word<impl Into<AB::Expr>>,
-    witness: &AddWitness<AB::Var>,
-    record: &mut impl ByteAirRecord<AB::Expr>,
-    is_real: impl Into<AB::Expr>,
-) {
-    let in1 = in1.into();
-    let in2 = in2.into();
-    let out = out.into();
-    let is_real = is_real.into();
-
+    (in1, in2): (Word<AB::Expr, W>, Word<AB::Expr, W>),
+    out: Word<AB::Expr, W>,
+    witness: &AddWitness<AB::Var, W>,
+    is_real: AB::Expr,
+) where
+    Sub1<W>: ArraySize,
+{
     let builder = &mut builder.when(is_real.clone());
 
     let base = AB::F::from_canonical_u16(256);
     let mut carry_prev = AB::Expr::zero();
-    for i in 0..WORD_SIZE {
+    for i in 0..W::USIZE {
         let sum = in1[i].clone() + in2[i].clone() + carry_prev.clone();
 
-        if i < WORD_SIZE - 1 {
+        if i < W::USIZE - 1 {
             let carry = witness.carry[i];
             builder.assert_bool(carry);
 
@@ -84,19 +98,42 @@ pub fn eval_add<AB: AirBuilder>(
             builder.when(diff.clone()).assert_eq(diff, base);
         }
     }
+}
 
+pub fn eval_add<AB: AirBuilder, W: ArraySize + Sub<B1>>(
+    builder: &mut AB,
+    (in1, in2): (Word<impl Into<AB::Expr>, W>, Word<impl Into<AB::Expr>, W>),
+    out: Word<impl Into<AB::Expr>, W>,
+    witness: &AddWitness<AB::Var, W>,
+    record: &mut impl ByteAirRecord<AB::Expr>,
+    is_real: impl Into<AB::Expr>,
+) where
+    Sub1<W>: ArraySize,
+{
+    let in1 = in1.into();
+    let in2 = in2.into();
+    let out = out.into();
+    let is_real = is_real.into();
+    eval_add_sub(builder, (in1, in2), out.clone(), witness, is_real.clone());
     record.range_check_u8_iter(out, is_real);
 }
 
-pub fn eval_sub<AB: AirBuilder>(
+pub fn eval_sub<AB: AirBuilder, W: ArraySize + Sub<B1>>(
     builder: &mut AB,
-    (in1, in2): (Word<impl Into<AB::Expr>>, Word<impl Into<AB::Expr>>),
-    out: Word<impl Into<AB::Expr>>,
-    witness: &AddWitness<AB::Var>,
+    (in1, in2): (Word<impl Into<AB::Expr>, W>, Word<impl Into<AB::Expr>, W>),
+    out: Word<impl Into<AB::Expr>, W>,
+    witness: &AddWitness<AB::Var, W>,
     record: &mut impl ByteAirRecord<AB::Expr>,
     is_real: impl Into<AB::Expr>,
-) {
-    eval_add(builder, (in2, out), in1, witness, record, is_real)
+) where
+    Sub1<W>: ArraySize,
+{
+    let in1 = in1.into();
+    let in2 = in2.into();
+    let out = out.into();
+    let is_real = is_real.into();
+    eval_add_sub(builder, (in2, out.clone()), in1, witness, is_real.clone());
+    record.range_check_u8_iter(out, is_real);
 }
 
 #[cfg(test)]
@@ -106,49 +143,97 @@ mod tests {
     use crate::gadgets::bytes::builder::BytesAirRecordWithContext;
     use crate::gadgets::bytes::record::BytesRecord;
     use crate::gadgets::debug::GadgetAirBuilder;
+    use crate::gadgets::unsigned::{Word32, Word64};
     use p3_baby_bear::BabyBear;
+    use proptest::prelude::*;
+
+    type F = BabyBear;
+
+    fn test_add<W: ArraySize + Sub<B1>>(in1: Word<u8, W>, in2: Word<u8, W>, expected: Word<u8, W>)
+    where
+        Sub1<W>: ArraySize,
+    {
+        let mut record = BytesRecord::default();
+        let mut builder = GadgetAirBuilder::<F>::default();
+        let mut requires = vec![RequireRecord::<F>::default(); AddWitness::<F, W>::num_requires()];
+
+        assert_eq!(in1.clone() + in2.clone(), expected.clone());
+        let mut witness = AddWitness::<F, W>::default();
+
+        let result =
+            witness.populate_add(&in1, &in2, &mut record.with_context(0, requires.iter_mut()));
+        assert_eq!(result, expected);
+
+        let mut air_record = BytesAirRecordWithContext::default();
+
+        eval_add(
+            &mut builder,
+            (in1.into_field::<F>(), in2.into_field::<F>()),
+            result.into_field::<F>(),
+            &witness,
+            &mut air_record,
+            F::one(),
+        );
+
+        air_record.check();
+        // air_record.require_all(&mut builder, F::from_canonical_u32(nonce), requires);
+    }
+
+    fn test_sub<W: ArraySize + Sub<B1>>(in1: Word<u8, W>, in2: Word<u8, W>, expected: Word<u8, W>)
+    where
+        Sub1<W>: ArraySize,
+    {
+        let mut record = BytesRecord::default();
+        let mut builder = GadgetAirBuilder::<F>::default();
+        let mut requires = vec![RequireRecord::<F>::default(); AddWitness::<F, W>::num_requires()];
+
+        assert_eq!(in1.clone() - in2.clone(), expected.clone());
+        let mut witness = AddWitness::<F, W>::default();
+
+        let result =
+            witness.populate_sub(&in1, &in2, &mut record.with_context(0, requires.iter_mut()));
+        assert_eq!(result, expected);
+
+        let mut air_record = BytesAirRecordWithContext::default();
+
+        eval_sub(
+            &mut builder,
+            (in1.into_field::<F>(), in2.into_field::<F>()),
+            result.into_field::<F>(),
+            &witness,
+            &mut air_record,
+            F::one(),
+        );
+
+        air_record.check();
+        // air_record.require_all(&mut builder, F::from_canonical_u32(nonce), requires);
+    }
+
+    proptest! {
 
     #[test]
-    fn test_add() {
-        type F = BabyBear;
+    fn test_add_32(a: u32, b: u32) {
+        let c = a.wrapping_add(b);
+        test_add(Word32::from(a), Word32::from(b), Word32::from(c))
+    }
 
-        let inputs = [
-            (0u64, 0u64),
-            (0u64, u64::MAX),
-            (u64::MAX, 0u64),
-            (1u64, u64::MAX),
-            (u64::MAX, 1u64),
-        ];
-        let mut record = BytesRecord::default();
+    #[test]
+    fn test_add_64(a: u64, b: u64) {
+        let c = a.wrapping_add(b);
+        test_add(Word64::from(a), Word64::from(b), Word64::from(c))
+    }
 
-        for (i, (lhs, rhs)) in inputs.into_iter().enumerate() {
-            let nonce = i as u32;
-            let out = lhs.wrapping_add(rhs);
-            let lhs = Word(lhs.to_le_bytes());
-            let rhs = Word(rhs.to_le_bytes());
-            let out_expected = Word(out.to_le_bytes());
+    #[test]
+    fn test_sub_32(a: u32, b: u32) {
+        let c = a.wrapping_sub(b);
+        test_sub(Word32::from(a), Word32::from(b), Word32::from(c))
+    }
 
-            let mut witness = AddWitness::<F>::default();
-            let mut requires = vec![RequireRecord::<F>::default(); AddWitness::<F>::num_requires()];
-            let out = witness.populate_add(
-                lhs,
-                rhs,
-                &mut record.with_context(nonce, requires.iter_mut()),
-            );
-            assert_eq!(out, out_expected);
+    #[test]
+    fn test_sub_64(a: u64, b: u64) {
+        let c = a.wrapping_sub(b);
+        test_sub(Word64::from(a), Word64::from(b), Word64::from(c))
+    }
 
-            let mut air_record = BytesAirRecordWithContext::default();
-
-            let mut builder = GadgetAirBuilder::<F>::default();
-            eval_add(
-                &mut builder,
-                (lhs.into_field::<F>(), rhs.into_field::<F>()),
-                out.into_field::<F>(),
-                &witness,
-                &mut air_record,
-                F::one(),
-            );
-            // air_record.require_all(&mut builder, F::from_canonical_u32(nonce), requires);
-        }
     }
 }

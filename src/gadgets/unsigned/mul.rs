@@ -1,5 +1,7 @@
 use crate::gadgets::bytes::{ByteAirRecord, ByteRecord};
-use crate::gadgets::unsigned::{Word, WORD_SIZE};
+use crate::gadgets::unsigned::Word;
+use hybrid_array::sizes::{U4, U8};
+use hybrid_array::{Array, ArraySize};
 use p3_air::AirBuilder;
 use p3_field::AbstractField;
 use sphinx_derive::AlignedBorrow;
@@ -7,20 +9,23 @@ use std::iter::zip;
 
 #[derive(Clone, Debug, Default, AlignedBorrow)]
 #[repr(C)]
-pub struct MulWitness<T> {
-    carry: [T; WORD_SIZE],
+pub struct MulWitness<T, W: ArraySize> {
+    carry: Array<T, W>,
 }
 
-impl<F: AbstractField> MulWitness<F> {
+pub type Mul64Witness<T> = MulWitness<T, U8>;
+pub type Mul32Witness<T> = MulWitness<T, U4>;
+
+impl<F: AbstractField, W: ArraySize> MulWitness<F, W> {
     pub fn populate(
         &mut self,
-        lhs: Word<u8>,
-        rhs: Word<u8>,
+        lhs: &Word<u8, W>,
+        rhs: &Word<u8, W>,
         byte_record: &mut impl ByteRecord,
-    ) -> Word<u8> {
+    ) -> Word<u8, W> {
         let mut carry = 0u16;
         let mut result = Word::default();
-        for k in 0..WORD_SIZE {
+        for k in 0..W::USIZE {
             let product = (0..=k).fold(u32::from(carry), |acc, i| {
                 let j = k - i;
                 acc + u32::from(lhs[i]) * u32::from(rhs[j])
@@ -35,22 +40,22 @@ impl<F: AbstractField> MulWitness<F> {
 
             result[k] = limb
         }
-        byte_record.range_check_u8_iter(result);
+        byte_record.range_check_u8_iter(result.clone());
 
         result
     }
 
     const fn num_requires() -> usize {
-        WORD_SIZE // u16 carry checks
-        + WORD_SIZE / 2 // range check output
+        W::USIZE // u16 carry checks
+        + W::USIZE / 2 // range check output
     }
 }
 
-pub fn eval_mul<AB: AirBuilder>(
+pub fn eval_mul<AB: AirBuilder, W: ArraySize>(
     builder: &mut AB,
-    (in1, in2): (Word<impl Into<AB::Expr>>, Word<impl Into<AB::Expr>>),
-    out: Word<impl Into<AB::Expr>>,
-    witness: &MulWitness<AB::Var>,
+    (in1, in2): (Word<impl Into<AB::Expr>, W>, Word<impl Into<AB::Expr>, W>),
+    out: Word<impl Into<AB::Expr>, W>,
+    witness: &MulWitness<AB::Var, W>,
     record: &mut impl ByteAirRecord<AB::Expr>,
     is_real: impl Into<AB::Expr>,
 ) {
@@ -61,7 +66,8 @@ pub fn eval_mul<AB: AirBuilder>(
 
     let base = AB::F::from_canonical_u16(256);
 
-    let expected = zip(out.clone(), witness.carry).map(|(limb, carry)| limb + carry.into() * base);
+    let expected =
+        zip(out.clone(), &witness.carry).map(|(limb, &carry)| limb + carry.into() * base);
 
     let mut carry = AB::Expr::zero();
     for (k, expected) in expected.enumerate() {
@@ -85,58 +91,51 @@ mod tests {
     use crate::gadgets::bytes::builder::BytesAirRecordWithContext;
     use crate::gadgets::bytes::record::BytesRecord;
     use crate::gadgets::debug::GadgetAirBuilder;
+    use crate::gadgets::unsigned::{Word32, Word64};
     use p3_baby_bear::BabyBear;
+    use proptest::proptest;
+
+    type F = BabyBear;
+
+    fn test_mul<W: ArraySize>(in1: Word<u8, W>, in2: Word<u8, W>, expected: Word<u8, W>) {
+        let mut record = BytesRecord::default();
+        let mut builder = GadgetAirBuilder::<F>::default();
+        let mut requires = vec![RequireRecord::<F>::default(); MulWitness::<F, W>::num_requires()];
+
+        assert_eq!(in1.clone() * in2.clone(), expected.clone());
+        let mut witness = MulWitness::<F, W>::default();
+
+        let result = witness.populate(&in1, &in2, &mut record.with_context(0, requires.iter_mut()));
+        assert_eq!(result, expected);
+
+        let mut air_record = BytesAirRecordWithContext::default();
+
+        eval_mul(
+            &mut builder,
+            (in1.into_field::<F>(), in2.into_field::<F>()),
+            result.into_field::<F>(),
+            &witness,
+            &mut air_record,
+            F::one(),
+        );
+
+        air_record.check();
+        // air_record.require_all(&mut builder, F::from_canonical_u32(nonce), requires);
+    }
+
+    proptest! {
 
     #[test]
-    fn test_mul() {
-        type F = BabyBear;
+    fn test_mul_32(a: u32, b: u32) {
+        let c = a.wrapping_mul(b);
+        test_mul(Word32::from(a), Word32::from(b), Word32::from(c))
+    }
 
-        let inputs = [
-            (0u64, 0u64),
-            (0u64, 1u64),
-            (1u64, 0u64),
-            (1u64, 1u64),
-            (0u64, u64::MAX),
-            (1u64, u64::MAX),
-            (u64::MAX, 0u64),
-            (u64::MAX, 1u64),
-            (0u64, u64::MAX),
-            (1u64, u64::MAX),
-            (u64::MAX, 0u64),
-            (u64::MAX, 1u64),
-            (2u64, u64::MAX),
-            (u64::MAX, 2u64),
-        ];
+    #[test]
+    fn test_mul_64(a: u64, b: u64) {
+        let c = a.wrapping_mul(b);
+        test_mul(Word64::from(a), Word64::from(b), Word64::from(c))
+    }
 
-        let mut record = BytesRecord::default();
-
-        for (i, (lhs, rhs)) in inputs.into_iter().enumerate() {
-            let nonce = i as u32;
-            let out = lhs.wrapping_mul(rhs);
-            let lhs = Word(lhs.to_le_bytes());
-            let rhs = Word(rhs.to_le_bytes());
-            let out_expected = Word(out.to_le_bytes());
-
-            let mut witness = MulWitness::<F>::default();
-            let mut requires = vec![RequireRecord::<F>::default(); MulWitness::<F>::num_requires()];
-            let out = witness.populate(
-                lhs,
-                rhs,
-                &mut record.with_context(nonce, requires.iter_mut()),
-            );
-            assert_eq!(out, out_expected, "lhs: {:?}, rhs: {:?}", lhs, rhs);
-
-            let mut builder = GadgetAirBuilder::<F>::default();
-            let mut air_record = BytesAirRecordWithContext::default();
-            eval_mul(
-                &mut builder,
-                (lhs.into_field::<F>(), rhs.into_field::<F>()),
-                out.into_field::<F>(),
-                &witness,
-                &mut air_record,
-                F::one(),
-            );
-            // air_record.require_all(&mut builder, F::from_canonical_u32(nonce), requires);
-        }
     }
 }

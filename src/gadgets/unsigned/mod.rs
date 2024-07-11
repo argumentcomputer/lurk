@@ -1,29 +1,33 @@
+use hybrid_array::sizes::{U4, U8};
+use hybrid_array::{Array, ArraySize};
 use p3_field::AbstractField;
+use std::fmt::{Debug, Formatter, Pointer};
+use std::iter::repeat_with;
 use std::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign};
-use std::{array, slice};
 
 pub mod add;
 mod bitwise;
 pub mod is_zero;
 pub mod mul;
 
-pub const WORD_SIZE: usize = 8;
-
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default)]
 #[repr(C)]
-pub struct Word<T>([T; WORD_SIZE]);
+pub struct Word<T, W: ArraySize>(Array<T, W>);
 
-impl<T> Word<T> {
+pub type Word32<T> = Word<T, U4>;
+pub type Word64<T> = Word<T, U8>;
+
+impl<T, W: ArraySize> Word<T, W> {
     #[inline]
     pub fn from_fn<F>(cb: F) -> Self
     where
         F: FnMut(usize) -> T,
     {
-        Self(array::from_fn(cb))
+        Self(Array::from_fn(cb))
     }
 
     #[inline]
-    pub fn map<F, O>(self, f: F) -> Word<O>
+    pub fn map<F, O>(self, f: F) -> Word<O, W>
     where
         F: FnMut(T) -> O,
     {
@@ -31,7 +35,7 @@ impl<T> Word<T> {
     }
 
     #[inline]
-    pub fn into<U>(self) -> Word<U>
+    pub fn into<U>(self) -> Word<U, W>
     where
         T: Into<U>,
     {
@@ -44,31 +48,70 @@ impl<T> Word<T> {
     }
 }
 
+impl<T: Default, W: ArraySize> Word<T, W> {
+    #[inline]
+    pub fn zero() -> Self {
+        Self::default()
+    }
+
+    #[inline]
+    pub fn is_zero(&self) -> bool
+    where
+        T: PartialEq,
+    {
+        self.0.iter().all(|limb| limb.eq(&T::default()))
+    }
+}
+
 //
 // Conversion
 //
 
-impl Word<u8> {
+impl<W: ArraySize> Word<u8, W> {
     #[inline]
-    pub fn into_field<F: AbstractField>(self) -> Word<F> {
+    pub fn into_field<F: AbstractField>(self) -> Word<F, W> {
         self.map(F::from_canonical_u8)
     }
 }
 
-impl From<u64> for Word<u8> {
-    fn from(value: u64) -> Self {
-        Self(value.to_le_bytes())
-    }
-}
-impl From<Word<u8>> for u64 {
-    fn from(value: Word<u8>) -> Self {
-        u64::from_le_bytes(value.0)
+impl From<Word64<u8>> for u64 {
+    fn from(value: Word64<u8>) -> Self {
+        Self::from_le_bytes(value.0.into())
     }
 }
 
-impl<T> From<[T; WORD_SIZE]> for Word<T> {
-    fn from(value: [T; WORD_SIZE]) -> Self {
-        Self(value)
+impl From<Word32<u8>> for u32 {
+    fn from(value: Word32<u8>) -> Self {
+        Self::from_le_bytes(value.0.into())
+    }
+}
+
+impl From<u64> for Word64<u8> {
+    fn from(value: u64) -> Self {
+        Self(value.to_le_bytes().into())
+    }
+}
+
+impl From<u32> for Word32<u8> {
+    fn from(value: u32) -> Self {
+        Self(value.to_le_bytes().into())
+    }
+}
+
+impl<T: Default> From<Word32<T>> for Word64<T> {
+    fn from(value: Word<T, U4>) -> Self {
+        Self(Array::from_iter(
+            value.0.into_iter().chain(repeat_with(|| T::default())),
+        ))
+    }
+}
+
+impl<T, W, const N: usize> From<[T; N]> for Word<T, W>
+where
+    W: ArraySize<ArrayType<T> = [T; N]>,
+{
+    fn from(value: [T; N]) -> Self {
+        Self(value.into())
     }
 }
 
@@ -76,8 +119,8 @@ impl<T> From<[T; WORD_SIZE]> for Word<T> {
 // Arithmetic Ops
 //
 
-impl Add for Word<u8> {
-    type Output = Word<u8>;
+impl<W: ArraySize> Add for Word<u8, W> {
+    type Output = Word<u8, W>;
 
     fn add(mut self, rhs: Self) -> Self::Output {
         self += rhs;
@@ -85,17 +128,20 @@ impl Add for Word<u8> {
     }
 }
 
-impl SubAssign for Word<u8> {
-    fn sub_assign(&mut self, rhs: Self) {
-        let lhs = u64::from(*self);
-        let rhs = u64::from(rhs);
-        let out = lhs - rhs;
-        *self = out.into();
+impl<W: ArraySize> AddAssign for Word<u8, W> {
+    fn add_assign(&mut self, rhs: Self) {
+        let mut carry = false;
+        for (limb_l, &limb_r) in self.0.iter_mut().zip(rhs.0.iter()) {
+            let (sum, overflow1) = limb_l.overflowing_add(limb_r);
+            let (sum, overflow2) = sum.overflowing_add(carry as u8);
+            *limb_l = sum;
+            carry = overflow1 || overflow2;
+        }
     }
 }
 
-impl Sub for Word<u8> {
-    type Output = Word<u8>;
+impl<W: ArraySize> Sub for Word<u8, W> {
+    type Output = Word<u8, W>;
 
     fn sub(mut self, rhs: Self) -> Self::Output {
         self -= rhs;
@@ -103,17 +149,20 @@ impl Sub for Word<u8> {
     }
 }
 
-impl AddAssign for Word<u8> {
-    fn add_assign(&mut self, rhs: Self) {
-        let lhs = u64::from(*self);
-        let rhs = u64::from(rhs);
-        let out = lhs + rhs;
-        *self = out.into();
+impl<W: ArraySize> SubAssign for Word<u8, W> {
+    fn sub_assign(&mut self, rhs: Self) {
+        let mut borrow = false;
+        for (limb_l, &limb_r) in self.0.iter_mut().zip(rhs.0.iter()) {
+            let (diff, underflow1) = limb_l.overflowing_sub(limb_r);
+            let (diff, underflow2) = diff.overflowing_sub(borrow as u8);
+            *limb_l = diff;
+            borrow = underflow1 || underflow2;
+        }
     }
 }
 
-impl Mul for Word<u8> {
-    type Output = Word<u8>;
+impl<W: ArraySize> Mul for Word<u8, W> {
+    type Output = Word<u8, W>;
 
     fn mul(mut self, rhs: Self) -> Self::Output {
         self *= rhs;
@@ -121,12 +170,21 @@ impl Mul for Word<u8> {
     }
 }
 
-impl MulAssign for Word<u8> {
+impl<W: ArraySize> MulAssign for Word<u8, W> {
     fn mul_assign(&mut self, rhs: Self) {
-        let lhs = u64::from(*self);
-        let rhs = u64::from(rhs);
-        let out = lhs * rhs;
-        *self = out.into();
+        let mut result = Self::default();
+
+        for i in 0..W::USIZE {
+            let mut carry = 0u16;
+            for j in 0..(W::USIZE - i) {
+                let product = (self.0[i] as u16) * (rhs.0[j] as u16);
+                let sum = product + (result.0[i + j] as u16) + carry;
+                result.0[i + j] = sum as u8;
+                carry = sum >> 8;
+            }
+        }
+
+        *self = result;
     }
 }
 
@@ -134,9 +192,9 @@ impl MulAssign for Word<u8> {
 // Iterator
 //
 
-impl<T> IntoIterator for Word<T> {
+impl<T, W: ArraySize> IntoIterator for Word<T, W> {
     type Item = T;
-    type IntoIter = array::IntoIter<T, WORD_SIZE>;
+    type IntoIter = <Array<T, W> as IntoIterator>::IntoIter;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
@@ -144,9 +202,9 @@ impl<T> IntoIterator for Word<T> {
     }
 }
 
-impl<'a, T> IntoIterator for &'a Word<T> {
+impl<'a, T, W: ArraySize> IntoIterator for &'a Word<T, W> {
     type Item = &'a T;
-    type IntoIter = slice::Iter<'a, T>;
+    type IntoIter = <&'a Array<T, W> as IntoIterator>::IntoIter;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
@@ -154,7 +212,7 @@ impl<'a, T> IntoIterator for &'a Word<T> {
     }
 }
 
-impl<T, I> Index<I> for Word<T>
+impl<T, I, W: ArraySize> Index<I> for Word<T, W>
 where
     [T]: Index<I>,
 {
@@ -166,7 +224,7 @@ where
     }
 }
 
-impl<T, I> IndexMut<I> for Word<T>
+impl<T, I, W: ArraySize> IndexMut<I> for Word<T, W>
 where
     [T]: IndexMut<I>,
 {
@@ -176,8 +234,22 @@ where
     }
 }
 
-impl<T> AsRef<[T]> for Word<T> {
+impl<T, W: ArraySize> AsRef<[T]> for Word<T, W> {
     fn as_ref(&self) -> &[T] {
         self.0.as_slice()
     }
 }
+
+impl<T, W: ArraySize> Debug for Word<T, W> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.as_slice().fmt(f)
+    }
+}
+
+impl<T: PartialEq, W: ArraySize> PartialEq for Word<T, W> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+
+impl<T: Eq, W: ArraySize> Eq for Word<T, W> {}
