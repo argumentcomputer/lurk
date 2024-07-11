@@ -2,11 +2,9 @@ use hybrid_array::sizes::{U4, U8};
 use hybrid_array::{Array, ArraySize};
 use p3_field::AbstractField;
 use std::fmt::{Debug, Formatter, Pointer};
-use std::iter::repeat_with;
 use std::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign};
 
 pub mod add;
-mod bitwise;
 pub mod is_zero;
 pub mod mul;
 
@@ -99,10 +97,10 @@ impl From<u32> for Word32<u8> {
 }
 
 impl<T: Default> From<Word32<T>> for Word64<T> {
-    fn from(value: Word<T, U4>) -> Self {
-        Self(Array::from_iter(
-            value.0.into_iter().chain(repeat_with(|| T::default())),
-        ))
+    fn from(mut value: Word<T, U4>) -> Self {
+        let mut limbs = Self::default();
+        limbs.0[..4].swap_with_slice(&mut value.0);
+        limbs
     }
 }
 
@@ -133,7 +131,7 @@ impl<W: ArraySize> AddAssign for Word<u8, W> {
         let mut carry = false;
         for (limb_l, &limb_r) in self.0.iter_mut().zip(rhs.0.iter()) {
             let (sum, overflow1) = limb_l.overflowing_add(limb_r);
-            let (sum, overflow2) = sum.overflowing_add(carry as u8);
+            let (sum, overflow2) = sum.overflowing_add(u8::from(carry));
             *limb_l = sum;
             carry = overflow1 || overflow2;
         }
@@ -154,7 +152,7 @@ impl<W: ArraySize> SubAssign for Word<u8, W> {
         let mut borrow = false;
         for (limb_l, &limb_r) in self.0.iter_mut().zip(rhs.0.iter()) {
             let (diff, underflow1) = limb_l.overflowing_sub(limb_r);
-            let (diff, underflow2) = diff.overflowing_sub(borrow as u8);
+            let (diff, underflow2) = diff.overflowing_sub(u8::from(borrow));
             *limb_l = diff;
             borrow = underflow1 || underflow2;
         }
@@ -177,8 +175,8 @@ impl<W: ArraySize> MulAssign for Word<u8, W> {
         for i in 0..W::USIZE {
             let mut carry = 0u16;
             for j in 0..(W::USIZE - i) {
-                let product = (self.0[i] as u16) * (rhs.0[j] as u16);
-                let sum = product + (result.0[i + j] as u16) + carry;
+                let product = u16::from(self.0[i]) * u16::from(rhs.0[j]);
+                let sum = product + u16::from(result.0[i + j]) + carry;
                 result.0[i + j] = sum as u8;
                 carry = sum >> 8;
             }

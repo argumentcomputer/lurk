@@ -149,7 +149,7 @@ mod tests {
 
     type F = BabyBear;
 
-    fn test_add<W: ArraySize + Sub<B1>>(in1: Word<u8, W>, in2: Word<u8, W>, expected: Word<u8, W>)
+    fn test_add<W: ArraySize + Sub<B1>>(in1: Word<u8, W>, in2: Word<u8, W>, expected: &Word<u8, W>)
     where
         Sub1<W>: ArraySize,
     {
@@ -157,12 +157,12 @@ mod tests {
         let mut builder = GadgetAirBuilder::<F>::default();
         let mut requires = vec![RequireRecord::<F>::default(); AddWitness::<F, W>::num_requires()];
 
-        assert_eq!(in1.clone() + in2.clone(), expected.clone());
+        assert_eq!(in1.clone() + in2.clone(), *expected);
         let mut witness = AddWitness::<F, W>::default();
 
         let result =
             witness.populate_add(&in1, &in2, &mut record.with_context(0, requires.iter_mut()));
-        assert_eq!(result, expected);
+        assert_eq!(result, *expected);
 
         let mut air_record = BytesAirRecordWithContext::default();
 
@@ -179,7 +179,7 @@ mod tests {
         // air_record.require_all(&mut builder, F::from_canonical_u32(nonce), requires);
     }
 
-    fn test_sub<W: ArraySize + Sub<B1>>(in1: Word<u8, W>, in2: Word<u8, W>, expected: Word<u8, W>)
+    fn test_sub<W: ArraySize + Sub<B1>>(in1: Word<u8, W>, in2: Word<u8, W>, expected: &Word<u8, W>)
     where
         Sub1<W>: ArraySize,
     {
@@ -187,12 +187,12 @@ mod tests {
         let mut builder = GadgetAirBuilder::<F>::default();
         let mut requires = vec![RequireRecord::<F>::default(); AddWitness::<F, W>::num_requires()];
 
-        assert_eq!(in1.clone() - in2.clone(), expected.clone());
+        assert_eq!(in1.clone() - in2.clone(), *expected);
         let mut witness = AddWitness::<F, W>::default();
 
         let result =
             witness.populate_sub(&in1, &in2, &mut record.with_context(0, requires.iter_mut()));
-        assert_eq!(result, expected);
+        assert_eq!(result, *expected);
 
         let mut air_record = BytesAirRecordWithContext::default();
 
@@ -214,25 +214,25 @@ mod tests {
     #[test]
     fn test_add_32(a: u32, b: u32) {
         let c = a.wrapping_add(b);
-        test_add(Word32::from(a), Word32::from(b), Word32::from(c))
+        test_add(Word32::from(a), Word32::from(b), &Word32::from(c))
     }
 
     #[test]
     fn test_add_64(a: u64, b: u64) {
         let c = a.wrapping_add(b);
-        test_add(Word64::from(a), Word64::from(b), Word64::from(c))
+        test_add(Word64::from(a), Word64::from(b), &Word64::from(c))
     }
 
     #[test]
     fn test_sub_32(a: u32, b: u32) {
         let c = a.wrapping_sub(b);
-        test_sub(Word32::from(a), Word32::from(b), Word32::from(c))
+        test_sub(Word32::from(a), Word32::from(b), &Word32::from(c))
     }
 
     #[test]
     fn test_sub_64(a: u64, b: u64) {
         let c = a.wrapping_sub(b);
-        test_sub(Word64::from(a), Word64::from(b), Word64::from(c))
+        test_sub(Word64::from(a), Word64::from(b), &Word64::from(c))
     }
 
     }

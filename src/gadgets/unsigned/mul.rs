@@ -97,16 +97,16 @@ mod tests {
 
     type F = BabyBear;
 
-    fn test_mul<W: ArraySize>(in1: Word<u8, W>, in2: Word<u8, W>, expected: Word<u8, W>) {
+    fn test_mul<W: ArraySize>(in1: Word<u8, W>, in2: Word<u8, W>, expected: &Word<u8, W>) {
         let mut record = BytesRecord::default();
         let mut builder = GadgetAirBuilder::<F>::default();
         let mut requires = vec![RequireRecord::<F>::default(); MulWitness::<F, W>::num_requires()];
 
-        assert_eq!(in1.clone() * in2.clone(), expected.clone());
+        assert_eq!(in1.clone() * in2.clone(), *expected);
         let mut witness = MulWitness::<F, W>::default();
 
         let result = witness.populate(&in1, &in2, &mut record.with_context(0, requires.iter_mut()));
-        assert_eq!(result, expected);
+        assert_eq!(result, *expected);
 
         let mut air_record = BytesAirRecordWithContext::default();
 
@@ -128,13 +128,13 @@ mod tests {
     #[test]
     fn test_mul_32(a: u32, b: u32) {
         let c = a.wrapping_mul(b);
-        test_mul(Word32::from(a), Word32::from(b), Word32::from(c))
+        test_mul(Word32::from(a), Word32::from(b), &Word32::from(c))
     }
 
     #[test]
     fn test_mul_64(a: u64, b: u64) {
         let c = a.wrapping_mul(b);
-        test_mul(Word64::from(a), Word64::from(b), Word64::from(c))
+        test_mul(Word64::from(a), Word64::from(b), &Word64::from(c))
     }
 
     }
