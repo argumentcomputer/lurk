@@ -1563,4 +1563,28 @@ mod test {
         assert_ingress_egress_correctness("(+ 1 2)");
         assert_ingress_egress_correctness("(a 'b c)");
     }
+
+    #[test]
+    fn test_fun_io() {
+        let toplevel = &build_lurk_toplevel();
+        let zstore = &mut ZStore::<F, LurkHasher>::default();
+
+        let ZPtr { tag, digest } = zstore.read("(lambda (x) x)").unwrap();
+        let mut input = [F::zero(); 24];
+        input[0] = tag.to_field();
+        input[8..16].copy_from_slice(&digest);
+
+        let record = &mut QueryRecord::new(toplevel);
+        record.inject_inv_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
+
+        let fun1 = toplevel.execute_by_name("lurk_main", &input, record);
+
+        let record2 = &mut QueryRecord::new(toplevel);
+        record2.inv_func_queries = record.inv_func_queries.clone();
+
+        input[..16].copy_from_slice(&fun1);
+        let fun2 = toplevel.execute_by_name("lurk_main", &input, record2);
+
+        assert_eq!(fun1, fun2);
+    }
 }
