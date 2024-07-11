@@ -29,6 +29,7 @@ pub trait Hasher<F>: Default + Sync {
     );
 }
 
+#[derive(Clone)]
 pub struct LurkHasher {
     hasher_24_8: Poseidon2<
         BabyBear,

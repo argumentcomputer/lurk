@@ -347,6 +347,17 @@ impl<F: PrimeField32> QueryRecord<F> {
         }
     }
 
+    pub fn get_inv_queries<H: Hasher<F>>(
+        &self,
+        name: &'static str,
+        toplevel: &Toplevel<F, H>,
+    ) -> &InvQueryMap<F> {
+        let func = toplevel.get_by_name(name);
+        self.inv_func_queries[func.index]
+            .as_ref()
+            .expect("Inverse query map not found")
+    }
+
     /// Erases the records of func and memory queries, but leaves the history of
     /// invertible queries untouched
     pub fn clean(&mut self) {
