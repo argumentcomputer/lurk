@@ -192,8 +192,8 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
                     let trd_ptr = call(ingress, trd_tag_full, trd_digest);
                     let (fst_tag, _rest: [7]) = fst_tag_full;
                     let (snd_tag, _rest: [7]) = snd_tag_full;
-                    let (trd_tag, _rest: [7]) = trd_tag_full;
-                    let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr, trd_tag, trd_ptr);
+                    let (_trd_tag, _rest: [7]) = trd_tag_full;
+                    let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr, trd_ptr);
                     return ptr
                 }
                 Tag::Env => {
@@ -302,7 +302,8 @@ pub fn egress<F: AbstractField + Ord>(nil: List<F>) -> FuncE<F> {
                     return digest
                 }
                 Tag::Fun => {
-                    let (fst_tag, fst_ptr, snd_tag, snd_ptr, trd_tag, trd_ptr) = load(val);
+                    let (fst_tag, fst_ptr, snd_tag, snd_ptr, trd_ptr) = load(val);
+                    let trd_tag = Tag::Env;
                     let fst_digest: [8] = call(egress, fst_tag, fst_ptr);
                     let snd_digest: [8] = call(egress, snd_tag, snd_ptr);
                     let trd_digest: [8] = call(egress, trd_tag, trd_ptr);
