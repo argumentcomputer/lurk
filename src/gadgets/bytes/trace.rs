@@ -2,15 +2,12 @@ use crate::air::builder::{LookupBuilder, ProvideRecord};
 use crate::gadgets::bytes::record::BytesRecord;
 use crate::gadgets::bytes::relation::ByteRelation;
 use crate::gadgets::bytes::ByteInput;
-use crate::lair::execute::QueryRecord;
-use crate::lair::lair_chip::LairMachineProgram;
 use itertools::zip_eq;
 use p3_air::{Air, BaseAir, PairBuilder};
 use p3_field::{AbstractField, Field, PrimeField32};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::Matrix;
 use p3_maybe_rayon::prelude::*;
-use sphinx_core::air::{EventLens, MachineAir, WithEvents};
 use sphinx_derive::AlignedBorrow;
 use std::borrow::{Borrow, BorrowMut};
 use std::iter::zip;
@@ -73,31 +70,12 @@ impl<F: Field> BaseAir<F> for BytesChip<F> {
     }
 }
 
-impl<F: Field> EventLens<BytesChip<F>> for QueryRecord<F> {
-    fn events(&self) -> <BytesChip<F> as WithEvents<'_>>::Events {
-        &self.byte_records
-    }
-}
-
-impl<'a, F> WithEvents<'a> for BytesChip<F> {
-    type Events = &'a BytesRecord;
-}
-
-impl<F: PrimeField32> MachineAir<F> for BytesChip<F> {
-    type Record = QueryRecord<F>;
-    type Program = LairMachineProgram;
-
+impl<F: PrimeField32> BytesChip<F> {
     fn name(&self) -> String {
         "Bytes".to_string()
     }
 
-    fn generate_trace<EL: EventLens<Self>>(
-        &self,
-        input: &EL,
-        _output: &mut Self::Record,
-    ) -> RowMajorMatrix<F> {
-        let all_records = input.events();
-
+    fn generate_trace(&self, bytes_record: &BytesRecord) -> RowMajorMatrix<F> {
         let height = u16::MAX as usize;
         let width = MAIN_BYTES_NUM_COLS;
         let mut trace = RowMajorMatrix::new(vec![F::zero(); height * width], width);
@@ -107,7 +85,7 @@ impl<F: PrimeField32> MachineAir<F> for BytesChip<F> {
             let input = ByteInput::from_u16(index);
             let row: &mut MainBytesCols<F> = row.borrow_mut();
 
-            if let Some(row_records) = all_records.get(input) {
+            if let Some(row_records) = bytes_record.get(input) {
                 for (record, provide) in zip_eq(row_records.iter_records(), row.provides.iter_mut())
                 {
                     provide.populate(record);
@@ -118,17 +96,15 @@ impl<F: PrimeField32> MachineAir<F> for BytesChip<F> {
         trace
     }
 
-    fn generate_dependencies<EL: EventLens<Self>>(&self, _input: &EL, _output: &mut Self::Record) {}
-
-    fn included(&self, shard: &Self::Record) -> bool {
-        !shard.byte_records.is_empty()
+    fn included(&self, byte_record: &BytesRecord) -> bool {
+        !byte_record.is_empty()
     }
 
     fn preprocessed_width(&self) -> usize {
         PREPROCESSED_BYTES_NUM_COLS
     }
 
-    fn generate_preprocessed_trace(&self, _program: &Self::Program) -> Option<RowMajorMatrix<F>> {
+    fn generate_preprocessed_trace(&self) -> Option<RowMajorMatrix<F>> {
         self.preprocessed_trace()
     }
 }
