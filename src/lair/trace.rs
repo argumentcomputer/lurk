@@ -15,13 +15,6 @@ use super::{
     List,
 };
 
-// TODO: Should we reuse the existing CallCtx instead and remove this? (probably yes if we can)
-#[derive(Clone)]
-struct FuncCtx<F> {
-    func_idx: usize,
-    call_inp: List<F>,
-}
-
 #[derive(Default)]
 pub struct NA;
 
@@ -83,8 +76,16 @@ impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
     }
 }
 
+#[derive(Clone)]
+struct TraceCtx<'a, F: PrimeField32, H> {
+    shard: &'a Shard<'a, F>,
+    hasher: &'a H,
+    func_idx: usize,
+    call_inp: List<F>,
+}
+
 impl<F: PrimeField32> Func<F> {
-    pub fn populate_row<H: Hasher<F>>(
+    fn populate_row<H: Hasher<F>>(
         &self,
         args: &[F],
         index: &mut ColumnIndex,
@@ -96,98 +97,94 @@ impl<F: PrimeField32> Func<F> {
         // Variable to value map
         let map = &mut args.iter().map(|arg| (*arg, 1)).collect();
         // Context of which function this is
-        let func_ctx = FuncCtx {
+        let ctx = &TraceCtx {
             func_idx: self.index,
             call_inp: args.into(),
+            shard,
+            hasher,
         };
         // One column per input
         args.iter().for_each(|arg| slice.push_input(index, *arg));
-        self.body
-            .populate_row(&func_ctx, map, index, slice, shard, hasher);
+        self.body.populate_row(ctx, map, index, slice);
     }
 }
 
 impl<F: PrimeField32> Block<F> {
     fn populate_row<H: Hasher<F>>(
         &self,
-        func_ctx: &FuncCtx<F>,
+        ctx: &TraceCtx<'_, F, H>,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
-        shard: &Shard<'_, F>,
-        hasher: &H,
     ) {
         self.ops
             .iter()
-            .for_each(|op| op.populate_row(func_ctx, map, index, slice, shard, hasher));
-        self.ctrl
-            .populate_row(func_ctx, map, index, slice, shard, hasher);
+            .for_each(|op| op.populate_row(ctx, map, index, slice));
+        self.ctrl.populate_row(ctx, map, index, slice);
     }
 }
 
 impl<F: PrimeField32> Ctrl<F> {
     fn populate_row<H: Hasher<F>>(
         &self,
-        func_ctx: &FuncCtx<F>,
+        ctx: &TraceCtx<'_, F, H>,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
-        shard: &Shard<'_, F>,
-        hasher: &H,
     ) {
-        let record = shard.record();
+        let record = ctx.shard.record();
         match self {
             Ctrl::Return(ident, _) => {
                 slice.sel[*ident] = F::one();
-                let query_map = &record.func_queries()[func_ctx.func_idx];
+                let query_map = &record.func_queries()[ctx.func_idx];
                 let result = query_map
-                    .get(&func_ctx.call_inp)
+                    .get(&ctx.call_inp)
                     .expect("Cannot find query result");
-                let (last_count, last_nonce) = result.get_provide_hints(&shard.shard_config);
+                let (last_count, last_nonce) = result.get_provide_hints(&ctx.shard.shard_config);
                 slice.push_aux(index, last_nonce);
                 slice.push_aux(index, last_count);
             }
             Ctrl::Match(t, cases) => {
                 let (t, _) = map[*t];
                 if let Some(branch) = cases.branches.get(&t) {
-                    branch.populate_row(func_ctx, map, index, slice, shard, hasher);
+                    branch.populate_row(ctx, map, index, slice);
                 } else {
                     for (f, _) in cases.branches.iter() {
                         slice.push_aux(index, (t - *f).inverse());
                     }
                     let branch = cases.default.as_ref().expect("No match");
-                    branch.populate_row(func_ctx, map, index, slice, shard, hasher);
+                    branch.populate_row(ctx, map, index, slice);
                 }
             }
             Ctrl::MatchMany(vars, cases) => {
                 let vals = vars.iter().map(|&var| map[var].0).collect();
                 if let Some(branch) = cases.branches.get(&vals) {
-                    branch.populate_row(func_ctx, map, index, slice, shard, hasher);
+                    branch.populate_row(ctx, map, index, slice);
                 } else {
                     for (fs, _) in cases.branches.iter() {
                         let diffs = vals.iter().zip(fs.iter()).map(|(val, f)| *val - *f);
                         push_inequality_witness(index, slice, diffs);
                     }
                     let branch = cases.default.as_ref().expect("No match");
-                    branch.populate_row(func_ctx, map, index, slice, shard, hasher);
+                    branch.populate_row(ctx, map, index, slice);
                 }
             }
             Ctrl::If(b, t, f) => {
                 let (b, _) = map[*b];
                 if b != F::zero() {
                     slice.push_aux(index, b.inverse());
-                    t.populate_row(func_ctx, map, index, slice, shard, hasher);
+                    t.populate_row(ctx, map, index, slice);
                 } else {
-                    f.populate_row(func_ctx, map, index, slice, shard, hasher);
+                    f.populate_row(ctx, map, index, slice);
                 }
             }
             Ctrl::IfMany(vars, t, f) => {
                 let vals = vars.iter().map(|&var| map[var].0);
                 if vals.clone().any(|b| b != F::zero()) {
                     push_inequality_witness(index, slice, vals);
-                    t.populate_row(func_ctx, map, index, slice, shard, hasher);
+                    t.populate_row(ctx, map, index, slice);
                 } else {
-                    f.populate_row(func_ctx, map, index, slice, shard, hasher);
+                    f.populate_row(ctx, map, index, slice);
                 }
             }
         }
@@ -214,14 +211,12 @@ fn push_inequality_witness<F: PrimeField, I: Iterator<Item = F>>(
 impl<F: PrimeField32> Op<F> {
     fn populate_row<H: Hasher<F>>(
         &self,
-        func_ctx: &FuncCtx<F>,
+        ctx: &TraceCtx<'_, F, H>,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
-        shard: &Shard<'_, F>,
-        hasher: &H,
     ) {
-        let record = shard.record();
+        let record = ctx.shard.record();
         match self {
             Op::Const(f) => map.push((*f, 0)),
             Op::Add(a, b) => {
@@ -278,18 +273,19 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let shard_index = shard.index as usize;
+                let shard_index = ctx.shard.index as usize;
                 let nonce = slice.nonce.as_canonical_u32() as usize;
-                let query_index = shard
+                let query_index = ctx
+                    .shard
                     .shard_config
                     .index_from_shard_nonce(shard_index, nonce);
                 let (prev_nonce, prev_count, count_inv) = result.get_require_hints(
                     &LookupId {
-                        func_index: func_ctx.func_idx,
+                        func_index: ctx.func_idx,
                         query_index,
                         op_id: *op_id,
                     },
-                    &shard.shard_config,
+                    &ctx.shard.shard_config,
                 );
                 slice.push_aux(index, prev_nonce);
                 slice.push_aux(index, prev_count);
@@ -307,18 +303,19 @@ impl<F: PrimeField32> Op<F> {
                 }
                 let query_map = &record.func_queries()[*idx];
                 let query_result = query_map.get(inp).expect("Cannot find query result");
-                let shard_index = shard.index as usize;
+                let shard_index = ctx.shard.index as usize;
                 let nonce = slice.nonce.as_canonical_u32() as usize;
-                let query_index = shard
+                let query_index = ctx
+                    .shard
                     .shard_config
                     .index_from_shard_nonce(shard_index, nonce);
                 let (prev_nonce, prev_count, count_inv) = query_result.get_require_hints(
                     &LookupId {
-                        func_index: func_ctx.func_idx,
+                        func_index: ctx.func_idx,
                         query_index,
                         op_id: *op_id,
                     },
-                    &shard.shard_config,
+                    &ctx.shard.shard_config,
                 );
                 slice.push_aux(index, prev_nonce);
                 slice.push_aux(index, prev_count);
@@ -333,18 +330,19 @@ impl<F: PrimeField32> Op<F> {
                 let f = F::from_canonical_usize(i + 1);
                 map.push((f, 1));
                 slice.push_aux(index, f);
-                let shard_index = shard.index as usize;
+                let shard_index = ctx.shard.index as usize;
                 let nonce = slice.nonce.as_canonical_u32() as usize;
-                let query_index = shard
+                let query_index = ctx
+                    .shard
                     .shard_config
                     .index_from_shard_nonce(shard_index, nonce);
                 let (prev_nonce, prev_count, count_inv) = mem_result.get_require_hints(
                     &LookupId {
-                        func_index: func_ctx.func_idx,
+                        func_index: ctx.func_idx,
                         query_index,
                         op_id: *op_id,
                     },
-                    &shard.shard_config,
+                    &ctx.shard.shard_config,
                 );
                 slice.push_aux(index, prev_nonce);
                 slice.push_aux(index, prev_count);
@@ -361,18 +359,19 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let shard_index = shard.index as usize;
+                let shard_index = ctx.shard.index as usize;
                 let nonce = slice.nonce.as_canonical_u32() as usize;
-                let query_index = shard
+                let query_index = ctx
+                    .shard
                     .shard_config
                     .index_from_shard_nonce(shard_index, nonce);
                 let (prev_nonce, prev_count, count_inv) = mem_result.get_require_hints(
                     &LookupId {
-                        func_index: func_ctx.func_idx,
+                        func_index: ctx.func_idx,
                         query_index,
                         op_id: *op_id,
                     },
-                    &shard.shard_config,
+                    &ctx.shard.shard_config,
                 );
                 slice.push_aux(index, prev_nonce);
                 slice.push_aux(index, prev_count);
@@ -380,9 +379,9 @@ impl<F: PrimeField32> Op<F> {
             }
             Op::Hash(preimg) => {
                 let preimg = preimg.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let witness_size = hasher.witness_size(preimg.len());
+                let witness_size = ctx.hasher.witness_size(preimg.len());
                 let mut witness = vec![F::zero(); witness_size];
-                let img = hasher.populate_witness(&preimg, &mut witness);
+                let img = ctx.hasher.populate_witness(&preimg, &mut witness);
                 for f in img {
                     map.push((f, 1));
                     slice.push_aux(index, f);
