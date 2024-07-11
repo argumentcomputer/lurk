@@ -79,22 +79,22 @@ fn eval_add_sub<AB: AirBuilder, W: ArraySize + Sub<B1>>(
 ) where
     Sub1<W>: ArraySize,
 {
-    let builder = &mut builder.when(is_real.clone());
+    let builder = &mut builder.when(is_real);
 
     let base = AB::F::from_canonical_u16(256);
     let mut carry_prev = AB::Expr::zero();
-    for i in 0..W::USIZE {
+    for (i, out) in out.into_iter().enumerate() {
         let sum = in1[i].clone() + in2[i].clone() + carry_prev.clone();
 
         if i < W::USIZE - 1 {
             let carry = witness.carry[i];
             builder.assert_bool(carry);
 
-            builder.assert_eq(sum, out[i].clone() + carry.into() * base);
+            builder.assert_eq(sum, out + carry.into() * base);
 
             carry_prev = carry.into();
         } else {
-            let diff = sum - out[i].clone();
+            let diff = sum - out;
             builder.when(diff.clone()).assert_eq(diff, base);
         }
     }

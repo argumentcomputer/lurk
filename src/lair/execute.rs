@@ -530,7 +530,7 @@ impl<F: PrimeField32> Func<F> {
                             .insert_full(map_buffer.clone().into(), QueryResult::default());
                         // swap so we can save the old map in `map_buffer` and move on
                         // with `map` already set
-                        mem::swap(&mut map_buffer, &mut map);
+                        std::mem::swap(&mut map_buffer, &mut map);
                         // save the current caller state
                         callers_states_stack.push(CallerState {
                             func_index,
