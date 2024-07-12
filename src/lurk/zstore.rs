@@ -19,6 +19,8 @@ use crate::{
     },
 };
 
+use super::eval::EvalErr;
+
 const DIGEST_SIZE: usize = 8;
 
 const ZPTR_SIZE: usize = 2 * DIGEST_SIZE;
@@ -82,42 +84,55 @@ pub struct ZPtr<F> {
 }
 
 impl<F: AbstractField + Copy> ZPtr<F> {
+    #[inline]
     pub fn into_inner(self) -> (Tag, [F; DIGEST_SIZE]) {
         let ZPtr { tag, digest } = self;
         (tag, digest)
     }
 
-    fn null(tag: Tag) -> Self {
+    #[inline]
+    pub fn null(tag: Tag) -> Self {
         Self {
             tag,
             digest: [F::zero(); DIGEST_SIZE],
         }
     }
 
-    fn num(f: F) -> Self {
+    #[inline]
+    pub fn num(f: F) -> Self {
         Self {
             tag: Tag::Num,
             digest: digest_from_field(f),
         }
     }
 
-    fn char(c: char) -> Self {
+    #[inline]
+    pub fn char(c: char) -> Self {
         Self {
             tag: Tag::Char,
             digest: digest_from_field(F::from_canonical_u32(c as u32)),
         }
     }
 
-    fn u64(u: u64) -> Self {
+    #[inline]
+    pub fn u64(u: u64) -> Self {
         Self {
             tag: Tag::U64,
             digest: u.to_le_bytes().map(F::from_canonical_u8),
         }
     }
+
+    #[inline]
+    pub fn err(err: EvalErr) -> Self {
+        Self {
+            tag: Tag::Err,
+            digest: digest_from_field(err.to_field()),
+        }
+    }
 }
 
 impl<F: AbstractField + Copy> ZPtr<F> {
-    fn flatten(&self) -> [F; ZPTR_SIZE] {
+    pub fn flatten(&self) -> [F; ZPTR_SIZE] {
         let mut buffer = SizedBuffer::default();
         buffer.write_tag(self.tag);
         buffer.write_slice(&self.digest);
@@ -234,6 +249,11 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
     }
 
     #[inline]
+    pub fn intern_empty_env(&mut self) -> ZPtr<F> {
+        self.intern_null(Tag::Env)
+    }
+
+    #[inline]
     pub fn intern_num(&mut self, f: F) -> ZPtr<F> {
         self.memoize_atom_dag(ZPtr::num(f))
     }
@@ -246,6 +266,11 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
     #[inline]
     pub fn intern_u64(&mut self, u: u64) -> ZPtr<F> {
         self.memoize_atom_dag(ZPtr::u64(u))
+    }
+
+    #[inline]
+    pub fn intern_error(&mut self, err: EvalErr) -> ZPtr<F> {
+        self.memoize_atom_dag(ZPtr::err(err))
     }
 
     pub fn intern_string(&mut self, s: &str) -> ZPtr<F> {

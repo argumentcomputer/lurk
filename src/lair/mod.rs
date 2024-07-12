@@ -63,7 +63,8 @@ pub(crate) fn demo_toplevel<F: Field + Ord, H: Hasher<F>>() -> Toplevel<F, H> {
         let one = 1;
         match n {
             0 => {
-                return one
+                let zero = 0;
+                return zero
             }
             1 => {
                 return one
