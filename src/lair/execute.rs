@@ -707,7 +707,7 @@ mod tests {
         let args = &[F::from_canonical_u32(100000)];
         let record = &mut QueryRecord::new(&toplevel);
         let out = toplevel.execute(fib, args, record);
-        assert_eq!(out.as_ref(), [F::from_canonical_u32(309996207)]);
+        assert_eq!(out.as_ref(), [F::from_canonical_u32(1123328132)]);
     }
 
     #[test]

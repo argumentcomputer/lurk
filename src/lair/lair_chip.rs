@@ -197,13 +197,23 @@ pub fn build_lair_chip_vector<'a, F: PrimeField32, H: Hasher<F>>(
     chip_vector
 }
 
+#[inline]
+pub fn build_chip_vector_from_lair_chips<
+    'a,
+    F: PrimeField32,
+    H: Hasher<F>,
+    I: IntoIterator<Item = LairChip<'a, F, H>>,
+>(
+    lair_chips: I,
+) -> Vec<Chip<F, LairChip<'a, F, H>>> {
+    lair_chips.into_iter().map(Chip::new).collect()
+}
+
+#[inline]
 pub fn build_chip_vector<'a, F: PrimeField32, H: Hasher<F>>(
     entry_func_chip: &FuncChip<'a, F, H>,
 ) -> Vec<Chip<F, LairChip<'a, F, H>>> {
-    build_lair_chip_vector(entry_func_chip)
-        .into_iter()
-        .map(Chip::new)
-        .collect()
+    build_chip_vector_from_lair_chips(build_lair_chip_vector(entry_func_chip))
 }
 
 #[cfg(test)]

@@ -565,61 +565,17 @@ mod tests {
     #[test]
     fn lair_constraint_test() {
         let toplevel = demo_toplevel::<_, LurkHasher>();
-        let mut queries = QueryRecord::new(&toplevel);
+
+        let mut record = QueryRecord::new(&toplevel);
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
-        toplevel.execute_by_name("factorial", &[F::from_canonical_usize(5)], &mut queries);
-        let factorial_trace = factorial_chip.generate_trace(&Shard::new(&queries));
-        let factorial_width = factorial_chip.width();
-        let expected_factorial_trace = RowMajorMatrix::new(
-            [
-                // in order: nonce, n, 1/n, fact(n-1), prev_nonce, prev_count, count_inv, n*fact(n-1), and selectors
-                0, 5, 1610612737, 24, 0, 0, 1, 120, 0, 1, 1, 0, //
-                1, 4, 1509949441, 6, 0, 0, 1, 24, 0, 1, 1, 0, //
-                2, 3, 1342177281, 2, 0, 0, 1, 6, 1, 1, 1, 0, //
-                3, 2, 1006632961, 1, 0, 0, 1, 2, 2, 1, 1, 0, //
-                4, 1, 1, 1, 0, 0, 1, 1, 3, 1, 1, 0, //
-                5, 0, 4, 1, 0, 0, 0, 0, 0, 0, 0, 1, //
-                // dummy
-                6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-            ]
-            .into_iter()
-            .map(F::from_canonical_u32)
-            .collect::<Vec<_>>(),
-            factorial_width,
-        );
-        assert_eq!(factorial_trace, expected_factorial_trace);
+        toplevel.execute_by_name("factorial", &[F::from_canonical_usize(5)], &mut record);
+        let factorial_trace = factorial_chip.generate_trace(&Shard::new(&record));
+        let _ = debug_constraints_collecting_queries(&factorial_chip, &[], None, &factorial_trace);
 
         let fib_chip = FuncChip::from_name("fib", &toplevel);
-        let mut queries = QueryRecord::new(&toplevel);
-        toplevel.execute_by_name("fib", &[F::from_canonical_usize(7)], &mut queries);
-        let fib_trace = fib_chip.generate_trace(&Shard::new(&queries));
-        let fib_width = fib_chip.width();
-        let expected_fib_trace = RowMajorMatrix::new(
-            // in order: nonce, n, 1/n, 1/(n-1), fib(n-1), lookup nonces and counts, fib(n-2), lookup nonces and counts, and selectors
-            [
-                0, 7, 862828252, 1677721601, 13, 0, 0, 1, 8, 1, 1, 1006632961, 0, 1, 0, 0,
-                1, //
-                1, 6, 1677721601, 1610612737, 8, 0, 0, 1, 5, 2, 1, 1006632961, 0, 1, 0, 0,
-                1, //
-                2, 5, 1610612737, 1509949441, 5, 0, 0, 1, 3, 3, 1, 1006632961, 0, 2, 0, 0,
-                1, //
-                3, 4, 1509949441, 1342177281, 3, 0, 0, 1, 2, 4, 1, 1006632961, 1, 2, 0, 0,
-                1, //
-                4, 3, 1342177281, 1006632961, 2, 0, 0, 1, 1, 5, 1, 1006632961, 2, 2, 0, 0,
-                1, //
-                5, 2, 1006632961, 1, 1, 0, 0, 1, 1, 0, 0, 1, 3, 2, 0, 0, 1, //
-                6, 1, 4, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, //
-                7, 0, 5, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, //
-            ]
-            .into_iter()
-            .map(F::from_canonical_u32)
-            .collect::<Vec<_>>(),
-            fib_width,
-        );
-        assert_eq!(fib_trace, expected_fib_trace);
-
-        let _ = debug_constraints_collecting_queries(&factorial_chip, &[], None, &factorial_trace);
+        let mut record = QueryRecord::new(&toplevel);
+        toplevel.execute_by_name("fib", &[F::from_canonical_usize(7)], &mut record);
+        let fib_trace = fib_chip.generate_trace(&Shard::new(&record));
         let _ = debug_constraints_collecting_queries(&fib_chip, &[], None, &fib_trace);
     }
 

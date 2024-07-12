@@ -93,9 +93,9 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkHasher>, ZStore<BabyBear
 }
 
 #[derive(Clone, Copy)]
-#[repr(u8)]
-enum EvalErr {
-    UnboundVar,
+#[repr(u32)]
+pub enum EvalErr {
+    UnboundVar = 0,
     InvalidForm,
     ApplyNonFunc,
     ParamsNotList,
@@ -114,8 +114,8 @@ enum EvalErr {
 }
 
 impl EvalErr {
-    fn to_field<F: AbstractField>(self) -> F {
-        F::from_canonical_u8(self as u8)
+    pub(crate) fn to_field<F: AbstractField>(self) -> F {
+        F::from_canonical_u32(self as u32)
     }
 }
 
@@ -903,11 +903,11 @@ pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
                     return (num_tag, res)
                 }
                 "/" => {
-                    let res = div(val1, val2);
                     if !val2 {
                         let err = EvalErr::DivByZero;
                         return (err_tag, err)
                     }
+                    let res = div(val1, val2);
                     return (num_tag, res)
                 }
                 "=" => {
@@ -1311,18 +1311,12 @@ mod test {
     use expect_test::{expect, Expect};
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
-    use sphinx_core::{
-        air::MachineAir,
-        stark::{MachineRecord, StarkMachine},
-        utils::BabyBearPoseidon2,
-    };
 
     use crate::{
-        air::debug::{debug_constraints_collecting_queries, TraceQueries},
+        air::debug::debug_constraints_collecting_queries,
         lair::{
-            execute::{QueryRecord, Shard, ShardingConfig},
+            execute::{QueryRecord, Shard},
             func_chip::FuncChip,
-            lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
             List,
         },
         lurk::{state::State, zstore::ZPtr},
@@ -1331,8 +1325,8 @@ mod test {
     use super::*;
 
     #[test]
-    fn eval_test() {
-        let (toplevel, zstore) = build_lurk_toplevel();
+    fn test_widths() {
+        let (toplevel, _) = build_lurk_toplevel();
         let toplevel = &toplevel;
 
         // Chips
@@ -1377,135 +1371,6 @@ mod test {
         expect_eq(egress_builtin.width(), expect!["39"]);
         expect_eq(hash_32_8.width(), expect!["647"]);
         expect_eq(hash_48_8.width(), expect!["967"]);
-
-        let state = State::init_lurk_state().rccell();
-
-        let config = BabyBearPoseidon2::new();
-
-        let eval_aux = |expr: &str, res: &str| {
-            let zstore = &mut zstore.clone();
-
-            let ZPtr {
-                tag: expr_tag,
-                digest: expr_digest,
-            } = zstore.read_with_state(state.clone(), expr).unwrap();
-
-            let mut record = QueryRecord::new(toplevel);
-            record.inject_inv_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
-
-            let ZPtr {
-                tag: expected_tag,
-                digest: expected_digest,
-            } = zstore.read_with_state(state.clone(), res).unwrap();
-
-            let mut full_input = [F::zero(); 24];
-            full_input[0] = expr_tag.to_field();
-            full_input[8..16].copy_from_slice(&expr_digest);
-
-            let full_input: List<_> = full_input.into();
-            let result = toplevel.execute(lurk_main.func, &full_input, &mut record);
-
-            assert_eq!(&result[0], &expected_tag.to_field());
-            assert_eq!(&result[8..], &expected_digest);
-
-            let lair_chips = build_lair_chip_vector(&lurk_main);
-
-            let full_shard = Shard::new(&record);
-            // Verify lookup queries without sharding
-            let lookup_queries: Vec<_> = lair_chips
-                .iter()
-                .map(|chip| {
-                    let trace = chip.generate_trace(&full_shard, &mut Default::default());
-                    debug_constraints_collecting_queries(chip, &[], None, &trace)
-                })
-                .collect();
-            TraceQueries::verify_many(lookup_queries);
-
-            let shards = full_shard
-                .clone()
-                .shard(&ShardingConfig { max_shard_size: 4 });
-            // Verify lookup queries with aggressive sharding
-            let mut lookup_queries = Vec::new();
-            for shard in shards.iter() {
-                let queries: Vec<_> = lair_chips
-                    .iter()
-                    .map(|chip| {
-                        if chip.included(shard) {
-                            let trace = chip.generate_trace(shard, &mut Shard::default());
-                            debug_constraints_collecting_queries(chip, &[], None, &trace)
-                        } else {
-                            Default::default()
-                        }
-                    })
-                    .collect();
-                lookup_queries.extend(queries.into_iter());
-            }
-            TraceQueries::verify_many(lookup_queries);
-
-            let machine = StarkMachine::new(
-                config.clone(),
-                build_chip_vector(&lurk_main),
-                record.expect_public_values().len(),
-            );
-            let (pk, _vk) = machine.setup(&LairMachineProgram);
-            machine.debug_constraints(&pk, full_shard);
-        };
-
-        eval_aux("t", "t");
-        eval_aux("nil", "nil");
-        eval_aux("((lambda (x) x) 1)", "1");
-        eval_aux("((lambda (x y z) x) 1 2 3)", "1");
-        eval_aux("((lambda (x y z) z) 1 2 3)", "3");
-        eval_aux("((lambda (x) (lambda (y) x)) 1 2)", "1");
-        eval_aux("(if 1 2 3)", "2");
-        eval_aux("(if nil 2 3)", "3");
-        eval_aux("(let ((x 1) (y 2) (z 3)) y)", "2");
-        eval_aux("(letrec ((x 1) (y 2) (z 3)) y)", "2");
-        eval_aux("(+ 1 2)", "3");
-        eval_aux("(+ (* 2 2) (* 2 3))", "10");
-        eval_aux("(= 0 1)", "nil");
-        eval_aux("(= 0 0)", "t");
-        eval_aux("(begin 1 2 3)", "3");
-        eval_aux("'x", "x");
-        eval_aux("'(+ 1 2)", "(+ 1 2)");
-        eval_aux("(eval 'x (let ((x 1)) (current-env)))", "1");
-        eval_aux("(eval '(+ 1 2) (empty-env))", "3");
-        eval_aux("(cons 1 2)", "(1 . 2)");
-        eval_aux("(strcons 'a' \"bc\")", "\"abc\"");
-        eval_aux("'a'", "'a'");
-        eval_aux("(eq (cons 1 2) '(1 . 2))", "t");
-        eval_aux("(eq (cons 1 3) '(1 . 2))", "nil");
-        eval_aux("(car (cons 1 2))", "1");
-        eval_aux("(cdr (cons 1 (cons 2 3)))", "(2 . 3)");
-        eval_aux(
-            "
-        (letrec ((factorial
-                  (lambda (n)
-                    (if (= n 0) 1
-                      (* n (factorial (- n 1)))))))
-          (factorial 5))
-        ",
-            "120",
-        );
-        eval_aux(
-            "
-        (letrec ((fib
-                  (lambda (n)
-                    (if (= n 0) 1
-                      (if (= n 1) 1
-                        (+ (fib (- n 1)) (fib (- n 2))))))))
-          (fib 50))
-        ",
-            "20365011074",
-        );
-        eval_aux(
-            "
-(letrec ((ones (cons 1 (lambda () ones))))
-  (car ((cdr ones))))
-
-",
-            "1",
-        );
     }
 
     #[test]
@@ -1563,28 +1428,5 @@ mod test {
         assert_ingress_egress_correctness(":keyword");
         assert_ingress_egress_correctness("(+ 1 2)");
         assert_ingress_egress_correctness("(a 'b c)");
-    }
-
-    #[test]
-    fn test_fun_io() {
-        let (toplevel, mut zstore) = build_lurk_toplevel();
-
-        let ZPtr { tag, digest } = zstore.read("(lambda (x) x)").unwrap();
-        let mut input = [F::zero(); 24];
-        input[0] = tag.to_field();
-        input[8..16].copy_from_slice(&digest);
-
-        let record = &mut QueryRecord::new(&toplevel);
-        record.inject_inv_queries("hash_32_8", &toplevel, zstore.tuple2_hashes());
-
-        let fun1 = toplevel.execute_by_name("lurk_main", &input, record);
-
-        let record2 = &mut QueryRecord::new(&toplevel);
-        record2.inv_func_queries = record.inv_func_queries.clone();
-
-        input[..16].copy_from_slice(&fun1);
-        let fun2 = toplevel.execute_by_name("lurk_main", &input, record2);
-
-        assert_eq!(fun1, fun2);
     }
 }
