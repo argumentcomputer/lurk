@@ -55,6 +55,7 @@ hybrid-array = "0.2.0-rc"
 lazy_static = "1.4.0"
 hashbrown = "0.14.5"
 rand_chacha = "0.3.1"
+proptest = "1.5.0"
 
 #
 ascent = "0.6.0"
@@ -105,6 +106,7 @@ loam-macros = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
+proptest = { workspace = true }
 
 [[bench]]
 name = "fib"
