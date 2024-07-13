@@ -234,6 +234,7 @@ mod tests {
 
     #[test]
     fn test_prove_and_verify() {
+        sphinx_core::utils::setup_logger();
         type F = BabyBear;
         type H = LurkHasher;
         let func_e = func!(

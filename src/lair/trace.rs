@@ -1,3 +1,5 @@
+use std::slice::Iter;
+
 use p3_field::{PrimeField, PrimeField32};
 use p3_matrix::dense::RowMajorMatrix;
 use rayon::{
@@ -9,7 +11,7 @@ use crate::lair::execute::mem_index_from_len;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
-    execute::{LookupId, Shard},
+    execute::{LookupHint, Shard},
     func_chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
     hasher::Hasher,
     List,
@@ -66,11 +68,18 @@ impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
             .par_chunks_mut(width)
             .enumerate()
             .for_each(|(i, row)| {
-                let (args, _) = func_queries.get_index(range.start + i).unwrap();
+                let (args, result) = func_queries.get_index(range.start + i).unwrap();
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-                self.func
-                    .populate_row(args, index, slice, shard, &self.toplevel.hasher);
+                let require_hints = result.require_hints.iter();
+                self.func.populate_row(
+                    args,
+                    index,
+                    slice,
+                    shard,
+                    require_hints,
+                    &self.toplevel.hasher,
+                );
             });
         RowMajorMatrix::new(rows, width)
     }
@@ -82,6 +91,7 @@ struct TraceCtx<'a, F: PrimeField32, H> {
     hasher: &'a H,
     func_idx: usize,
     call_inp: List<F>,
+    require_hints: Iter<'a, LookupHint>,
 }
 
 impl<F: PrimeField32> Func<F> {
@@ -91,17 +101,19 @@ impl<F: PrimeField32> Func<F> {
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
         shard: &Shard<'_, F>,
+        require_hints: Iter<'_, LookupHint>,
         hasher: &H,
     ) {
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
         // Variable to value map
         let map = &mut args.iter().map(|arg| (*arg, 1)).collect();
         // Context of which function this is
-        let ctx = &TraceCtx {
+        let ctx = &mut TraceCtx {
             func_idx: self.index,
             call_inp: args.into(),
             shard,
             hasher,
+            require_hints,
         };
         // One column per input
         args.iter().for_each(|arg| slice.push_input(index, *arg));
@@ -112,7 +124,7 @@ impl<F: PrimeField32> Func<F> {
 impl<F: PrimeField32> Block<F> {
     fn populate_row<H: Hasher<F>>(
         &self,
-        ctx: &TraceCtx<'_, F, H>,
+        ctx: &mut TraceCtx<'_, F, H>,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
@@ -127,7 +139,7 @@ impl<F: PrimeField32> Block<F> {
 impl<F: PrimeField32> Ctrl<F> {
     fn populate_row<H: Hasher<F>>(
         &self,
-        ctx: &TraceCtx<'_, F, H>,
+        ctx: &mut TraceCtx<'_, F, H>,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
@@ -211,7 +223,7 @@ fn push_inequality_witness<F: PrimeField, I: Iterator<Item = F>>(
 impl<F: PrimeField32> Op<F> {
     fn populate_row<H: Hasher<F>>(
         &self,
-        ctx: &TraceCtx<'_, F, H>,
+        ctx: &mut TraceCtx<'_, F, H>,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
@@ -265,7 +277,7 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, f);
                 }
             }
-            Op::Call(idx, inp, op_id) => {
+            Op::Call(idx, inp, ..) => {
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let query_map = &record.func_queries()[*idx];
                 let result = query_map.get(&args).expect("Cannot find query result");
@@ -273,25 +285,17 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let shard_index = ctx.shard.index as usize;
-                let nonce = slice.nonce.as_canonical_u32() as usize;
-                let query_index = ctx
-                    .shard
-                    .shard_config
-                    .index_from_shard_nonce(shard_index, nonce);
-                let (prev_nonce, prev_count, count_inv) = result.get_require_hints(
-                    &LookupId {
-                        func_index: ctx.func_idx,
-                        query_index,
-                        op_id: *op_id,
-                    },
-                    &ctx.shard.shard_config,
-                );
-                slice.push_aux(index, prev_nonce);
-                slice.push_aux(index, prev_count);
-                slice.push_aux(index, count_inv);
+                let LookupHint {
+                    query_index, count, ..
+                } = ctx.require_hints.next().expect("Not enough require hints");
+                let (_, nonce) = ctx.shard.shard_config.index_to_shard_nonce(*query_index);
+                let f = F::from_canonical_usize;
+                let next_count_inv = f(count + 1).inverse();
+                slice.push_aux(index, f(nonce));
+                slice.push_aux(index, f(*count));
+                slice.push_aux(index, next_count_inv);
             }
-            Op::PreImg(idx, out, op_id) => {
+            Op::PreImg(idx, out, ..) => {
                 let out = out.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let inv_map = record.inv_func_queries[*idx]
                     .as_ref()
@@ -301,81 +305,56 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let query_map = &record.func_queries()[*idx];
-                let query_result = query_map.get(inp).expect("Cannot find query result");
-                let shard_index = ctx.shard.index as usize;
-                let nonce = slice.nonce.as_canonical_u32() as usize;
-                let query_index = ctx
-                    .shard
-                    .shard_config
-                    .index_from_shard_nonce(shard_index, nonce);
-                let (prev_nonce, prev_count, count_inv) = query_result.get_require_hints(
-                    &LookupId {
-                        func_index: ctx.func_idx,
-                        query_index,
-                        op_id: *op_id,
-                    },
-                    &ctx.shard.shard_config,
-                );
-                slice.push_aux(index, prev_nonce);
-                slice.push_aux(index, prev_count);
-                slice.push_aux(index, count_inv);
+                let LookupHint {
+                    query_index, count, ..
+                } = ctx.require_hints.next().expect("Not enough require hints");
+                let (_, nonce) = ctx.shard.shard_config.index_to_shard_nonce(*query_index);
+                let f = F::from_canonical_usize;
+                let next_count_inv = f(count + 1).inverse();
+                slice.push_aux(index, f(nonce));
+                slice.push_aux(index, f(*count));
+                slice.push_aux(index, next_count_inv);
             }
-            Op::Store(args, op_id) => {
+            Op::Store(args, ..) => {
                 let mem_idx = mem_index_from_len(args.len());
                 let query_map = &record.mem_queries[mem_idx];
                 let args = args.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let (i, _, mem_result) =
-                    query_map.get_full(&args).expect("Cannot find query result");
+                let i = query_map
+                    .get_index_of(&args)
+                    .expect("Cannot find query result");
                 let f = F::from_canonical_usize(i + 1);
                 map.push((f, 1));
                 slice.push_aux(index, f);
-                let shard_index = ctx.shard.index as usize;
-                let nonce = slice.nonce.as_canonical_u32() as usize;
-                let query_index = ctx
-                    .shard
-                    .shard_config
-                    .index_from_shard_nonce(shard_index, nonce);
-                let (prev_nonce, prev_count, count_inv) = mem_result.get_require_hints(
-                    &LookupId {
-                        func_index: ctx.func_idx,
-                        query_index,
-                        op_id: *op_id,
-                    },
-                    &ctx.shard.shard_config,
-                );
-                slice.push_aux(index, prev_nonce);
-                slice.push_aux(index, prev_count);
-                slice.push_aux(index, count_inv);
+                let LookupHint {
+                    query_index, count, ..
+                } = ctx.require_hints.next().expect("Not enough require hints");
+                let (_, nonce) = ctx.shard.shard_config.index_to_shard_nonce(*query_index);
+                let f = F::from_canonical_usize;
+                let next_count_inv = f(count + 1).inverse();
+                slice.push_aux(index, f(nonce));
+                slice.push_aux(index, f(*count));
+                slice.push_aux(index, next_count_inv);
             }
-            Op::Load(len, ptr, op_id) => {
+            Op::Load(len, ptr, ..) => {
                 let mem_idx = mem_index_from_len(*len);
                 let query_map = &record.mem_queries[mem_idx];
                 let ptr = map[*ptr].0.as_canonical_u32() as usize;
-                let (args, mem_result) = query_map
+                let (args, _) = query_map
                     .get_index(ptr - 1)
                     .expect("Cannot find query result");
                 for f in args.iter() {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let shard_index = ctx.shard.index as usize;
-                let nonce = slice.nonce.as_canonical_u32() as usize;
-                let query_index = ctx
-                    .shard
-                    .shard_config
-                    .index_from_shard_nonce(shard_index, nonce);
-                let (prev_nonce, prev_count, count_inv) = mem_result.get_require_hints(
-                    &LookupId {
-                        func_index: ctx.func_idx,
-                        query_index,
-                        op_id: *op_id,
-                    },
-                    &ctx.shard.shard_config,
-                );
-                slice.push_aux(index, prev_nonce);
-                slice.push_aux(index, prev_count);
-                slice.push_aux(index, count_inv);
+                let LookupHint {
+                    query_index, count, ..
+                } = ctx.require_hints.next().expect("Not enough require hints");
+                let (_, nonce) = ctx.shard.shard_config.index_to_shard_nonce(*query_index);
+                let f = F::from_canonical_usize;
+                let next_count_inv = f(count + 1).inverse();
+                slice.push_aux(index, f(nonce));
+                slice.push_aux(index, f(*count));
+                slice.push_aux(index, next_count_inv);
             }
             Op::Hash(preimg) => {
                 let preimg = preimg.iter().map(|a| map[*a].0).collect::<List<_>>();
@@ -446,17 +425,18 @@ mod tests {
         let args = &[F::from_canonical_u32(5)];
         toplevel.execute_by_name("factorial", args, &mut queries);
         let trace = factorial_chip.generate_trace(&Shard::new(&queries));
+        #[rustfmt::skip]
         let expected_trace = [
             // in order: nonce, n, 1/n, fact(n-1), prev_nonce, prev_count, count_inv, n*fact(n-1), last_nonce, last_count and selectors
-            0, 5, 1610612737, 24, 0, 0, 1, 120, 0, 1, 1, 0, //
-            1, 4, 1509949441, 6, 0, 0, 1, 24, 0, 1, 1, 0, //
-            2, 3, 1342177281, 2, 0, 0, 1, 6, 1, 1, 1, 0, //
-            3, 2, 1006632961, 1, 0, 0, 1, 2, 2, 1, 1, 0, //
-            4, 1, 1, 1, 0, 0, 1, 1, 3, 1, 1, 0, //
-            5, 0, 4, 1, 0, 0, 0, 0, 0, 0, 0, 1, //
+            0, 5, 1610612737, 24, 0, 0, 1, 120, 0, 1, 1, 0,
+            1, 4, 1509949441,  6, 0, 0, 1,  24, 0, 1, 1, 0,
+            2, 3, 1342177281,  2, 0, 0, 1,   6, 1, 1, 1, 0,
+            3, 2, 1006632961,  1, 0, 0, 1,   2, 2, 1, 1, 0,
+            4, 1,          1,  1, 0, 0, 1,   1, 3, 1, 1, 0,
+            5, 0,          4,  1, 0, 0, 0,   0, 0, 0, 0, 1,
             // dummy
-            6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-            7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+            6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ]
         .into_iter()
         .map(field_from_u32)

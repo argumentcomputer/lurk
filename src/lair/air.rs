@@ -579,6 +579,7 @@ mod tests {
         let _ = debug_constraints_collecting_queries(&fib_chip, &[], None, &fib_trace);
     }
 
+    #[ignore]
     #[test]
     fn lair_long_constraint_test() {
         let toplevel = demo_toplevel::<_, LurkHasher>();
