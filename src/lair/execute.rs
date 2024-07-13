@@ -3,6 +3,7 @@ use indexmap::IndexMap;
 use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use sphinx_core::stark::{Indexed, MachineRecord};
+use stacker::maybe_grow;
 use std::ops::Range;
 
 use super::{
@@ -387,6 +388,9 @@ impl<F: PrimeField32> Func<F> {
     }
 }
 
+const STACK_RED_ZONE: usize = 32 * 1024;
+const STACK_SIZE: usize = 32 * 1024 * 1024;
+
 impl<F: PrimeField32> Block<F> {
     fn execute<'a, H: Hasher<F>>(
         &self,
@@ -406,7 +410,9 @@ impl<F: PrimeField32> Block<F> {
                             result
                         } else {
                             let callee = toplevel.get_by_index(*callee_index);
-                            callee.execute(&inp, toplevel, record)
+                            maybe_grow(STACK_RED_ZONE, STACK_SIZE, || {
+                                callee.execute(&inp, toplevel, record)
+                            })
                         };
                     let count = result.provide_hints.count;
                     require_hints.push(result.provide_hints);
@@ -430,7 +436,9 @@ impl<F: PrimeField32> Block<F> {
                             result
                         } else {
                             let callee = toplevel.get_by_index(*callee_index);
-                            callee.execute(&inp, toplevel, record)
+                            maybe_grow(STACK_RED_ZONE, STACK_SIZE, || {
+                                callee.execute(&inp, toplevel, record)
+                            })
                         };
                     let count = result.provide_hints.count;
                     require_hints.push(result.provide_hints);
@@ -615,7 +623,6 @@ mod tests {
         assert_eq!(out.as_ref(), [F::from_canonical_u32(0)]);
     }
 
-    #[ignore]
     #[test]
     fn lair_execute_iter_test() {
         let toplevel = demo_toplevel::<_, LurkHasher>();
