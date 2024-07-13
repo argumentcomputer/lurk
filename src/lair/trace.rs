@@ -71,15 +71,9 @@ impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
                 let (args, result) = func_queries.get_index(range.start + i).unwrap();
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-                let require_hints = result.require_hints.iter();
-                self.func.populate_row(
-                    args,
-                    index,
-                    slice,
-                    shard,
-                    require_hints,
-                    &self.toplevel.hasher,
-                );
+                let requires = result.requires.iter();
+                self.func
+                    .populate_row(args, index, slice, shard, requires, &self.toplevel.hasher);
             });
         RowMajorMatrix::new(rows, width)
     }
@@ -150,12 +144,13 @@ impl<F: PrimeField32> Ctrl<F> {
                 assert!(ctx.require_hints.next().is_none());
                 slice.sel[*ident] = F::one();
                 let query_map = &record.func_queries()[ctx.func_idx];
-                let result = query_map
+                let lookup = query_map
                     .get(&ctx.call_inp)
-                    .expect("Cannot find query result");
-                let (last_count, last_nonce) = result.get_provide_hints(&ctx.shard.shard_config);
-                slice.push_aux(index, last_nonce);
-                slice.push_aux(index, last_count);
+                    .expect("Cannot find query result")
+                    .provide;
+                for f in lookup.get_provide_hints(ctx.shard.shard_config) {
+                    slice.push_aux(index, f);
+                }
             }
             Ctrl::Match(t, cases) => {
                 let (t, _) = map[*t];
@@ -286,15 +281,10 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let LookupHint {
-                    query_index, count, ..
-                } = ctx.require_hints.next().expect("Not enough require hints");
-                let (_, nonce) = ctx.shard.shard_config.index_to_shard_nonce(*query_index);
-                let f = F::from_canonical_usize;
-                let next_count_inv = f(count + 1).inverse();
-                slice.push_aux(index, f(nonce));
-                slice.push_aux(index, f(*count));
-                slice.push_aux(index, next_count_inv);
+                let lookup = ctx.require_hints.next().expect("Not enough require hints");
+                for f in lookup.get_require_hints(ctx.shard.shard_config) {
+                    slice.push_aux(index, f);
+                }
             }
             Op::PreImg(idx, out) => {
                 let out = out.iter().map(|a| map[*a].0).collect::<List<_>>();
@@ -306,15 +296,10 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let LookupHint {
-                    query_index, count, ..
-                } = ctx.require_hints.next().expect("Not enough require hints");
-                let (_, nonce) = ctx.shard.shard_config.index_to_shard_nonce(*query_index);
-                let f = F::from_canonical_usize;
-                let next_count_inv = f(count + 1).inverse();
-                slice.push_aux(index, f(nonce));
-                slice.push_aux(index, f(*count));
-                slice.push_aux(index, next_count_inv);
+                let lookup = ctx.require_hints.next().expect("Not enough require hints");
+                for f in lookup.get_require_hints(ctx.shard.shard_config) {
+                    slice.push_aux(index, f);
+                }
             }
             Op::Store(args) => {
                 let mem_idx = mem_index_from_len(args.len());
@@ -326,15 +311,10 @@ impl<F: PrimeField32> Op<F> {
                 let f = F::from_canonical_usize(i + 1);
                 map.push((f, 1));
                 slice.push_aux(index, f);
-                let LookupHint {
-                    query_index, count, ..
-                } = ctx.require_hints.next().expect("Not enough require hints");
-                let (_, nonce) = ctx.shard.shard_config.index_to_shard_nonce(*query_index);
-                let f = F::from_canonical_usize;
-                let next_count_inv = f(count + 1).inverse();
-                slice.push_aux(index, f(nonce));
-                slice.push_aux(index, f(*count));
-                slice.push_aux(index, next_count_inv);
+                let lookup = ctx.require_hints.next().expect("Not enough require hints");
+                for f in lookup.get_require_hints(ctx.shard.shard_config) {
+                    slice.push_aux(index, f);
+                }
             }
             Op::Load(len, ptr) => {
                 let mem_idx = mem_index_from_len(*len);
@@ -347,15 +327,10 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let LookupHint {
-                    query_index, count, ..
-                } = ctx.require_hints.next().expect("Not enough require hints");
-                let (_, nonce) = ctx.shard.shard_config.index_to_shard_nonce(*query_index);
-                let f = F::from_canonical_usize;
-                let next_count_inv = f(count + 1).inverse();
-                slice.push_aux(index, f(nonce));
-                slice.push_aux(index, f(*count));
-                slice.push_aux(index, next_count_inv);
+                let lookup = ctx.require_hints.next().expect("Not enough require hints");
+                for f in lookup.get_require_hints(ctx.shard.shard_config) {
+                    slice.push_aux(index, f);
+                }
             }
             Op::Hash(preimg) => {
                 let preimg = preimg.iter().map(|a| map[*a].0).collect::<List<_>>();

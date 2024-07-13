@@ -25,11 +25,35 @@ pub(crate) struct LookupHint {
     pub(crate) count: usize,
 }
 
+impl LookupHint {
+    /// This function returns the values for `last_count` and `last_nonce`
+    pub(crate) fn get_provide_hints<F: PrimeField32>(self, config: ShardingConfig) -> [F; 2] {
+        let LookupHint {
+            query_index, count, ..
+        } = self;
+
+        let (_, nonce) = config.index_to_shard_nonce(query_index);
+        let f = F::from_canonical_usize;
+        [f(nonce), f(count)]
+    }
+
+    /// This function returns the values for `last_count` and `last_nonce`
+    pub(crate) fn get_require_hints<F: PrimeField32>(self, config: ShardingConfig) -> [F; 3] {
+        let LookupHint {
+            query_index, count, ..
+        } = self;
+        let (_, nonce) = config.index_to_shard_nonce(query_index);
+        let f = F::from_canonical_usize;
+        let next_count_inv = f(count + 1).inverse();
+        [f(nonce), f(count), next_count_inv]
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct QueryResult<F> {
     pub(crate) output: Option<List<F>>,
-    pub(crate) provide_hints: LookupHint,
-    pub(crate) require_hints: Vec<LookupHint>,
+    pub(crate) provide: LookupHint,
+    pub(crate) requires: Vec<LookupHint>,
 }
 
 impl<F: PrimeField32> QueryResult<F> {
@@ -38,15 +62,13 @@ impl<F: PrimeField32> QueryResult<F> {
         self.output.as_ref().expect("Result not computed").as_ref()
     }
 
-    /// This function returns the values for `last_count` and `last_nonce`
-    pub(crate) fn get_provide_hints(&self, config: &ShardingConfig) -> (F, F) {
-        let LookupHint {
-            query_index, count, ..
-        } = self.provide_hints;
-
-        let (_, nonce) = config.index_to_shard_nonce(query_index);
-        let f = F::from_canonical_usize;
-        (f(count), f(nonce))
+    pub(crate) fn new_lookup(&mut self, query_index: usize, caller_requires: &mut Vec<LookupHint>) {
+        let count = self.provide.count;
+        caller_requires.push(self.provide);
+        self.provide = LookupHint {
+            query_index,
+            count: count + 1,
+        };
     }
 }
 
@@ -139,7 +161,7 @@ impl<'a, F: PrimeField32> MachineRecord for Shard<'a, F> {
             queries
                 .func_queries
                 .iter()
-                .map(|im| im.values().map(|r| r.provide_hints.count).sum::<usize>())
+                .map(|im| im.values().map(|r| r.provide.count).sum::<usize>())
                 .sum(),
         );
 
@@ -153,7 +175,7 @@ impl<'a, F: PrimeField32> MachineRecord for Shard<'a, F> {
             queries
                 .mem_queries
                 .iter()
-                .map(|im| im.values().map(|r| r.provide_hints.count).sum::<usize>())
+                .map(|im| im.values().map(|r| r.provide.count).sum::<usize>())
                 .sum(),
         );
         map.insert(
@@ -344,7 +366,7 @@ impl<F: PrimeField32> QueryRecord<F> {
 impl<F: PrimeField32, H: Hasher<F>> Toplevel<F, H> {
     pub fn execute(&self, func: &Func<F>, args: &[F], record: &mut QueryRecord<F>) -> List<F> {
         let result = func.execute(args, self, record);
-        result.provide_hints.count = 1;
+        result.provide.count = 1;
         let out = result.output.clone().unwrap();
         let mut public_values = Vec::with_capacity(args.len() + out.len());
         public_values.extend(args);
@@ -374,17 +396,11 @@ impl<F: PrimeField32> Func<F> {
     ) -> &'a mut QueryResult<F> {
         assert_eq!(args.len(), self.input_size);
         let map = args.to_vec();
-        let require_hints = Vec::new();
+        let requires = Vec::new();
         let (query_index, _) =
             record.func_queries[self.index].insert_full(args.into(), QueryResult::default());
-        self.body.execute(
-            toplevel,
-            record,
-            map,
-            query_index,
-            self.index,
-            require_hints,
-        )
+        self.body
+            .execute(toplevel, record, map, query_index, self.index, requires)
     }
 }
 
@@ -399,7 +415,7 @@ impl<F: PrimeField32> Block<F> {
         mut map: Vec<F>,
         query_index: usize,
         func_index: usize,
-        mut require_hints: Vec<LookupHint>,
+        mut requires: Vec<LookupHint>,
     ) -> &'a mut QueryResult<F> {
         for op in self.ops.iter() {
             match op {
@@ -414,14 +430,9 @@ impl<F: PrimeField32> Block<F> {
                                 callee.execute(&inp, toplevel, record)
                             })
                         };
-                    let count = result.provide_hints.count;
-                    require_hints.push(result.provide_hints);
-                    result.provide_hints = LookupHint {
-                        query_index,
-                        count: count + 1,
-                    };
                     let out = result.output.as_ref().expect("Loop detected");
                     map.extend(out);
+                    result.new_lookup(query_index, &mut requires);
                 }
                 Op::PreImg(callee_index, out) => {
                     let out = out.iter().map(|v| map[*v]).collect::<List<_>>();
@@ -440,15 +451,10 @@ impl<F: PrimeField32> Block<F> {
                                 callee.execute(&inp, toplevel, record)
                             })
                         };
-                    let count = result.provide_hints.count;
-                    require_hints.push(result.provide_hints);
-                    result.provide_hints = LookupHint {
-                        query_index,
-                        count: count + 1,
-                    };
                     let result_out = result.output.as_ref().expect("Loop detected");
                     assert_eq!(&out, result_out);
                     map.extend(inp);
+                    result.new_lookup(query_index, &mut requires);
                 }
                 Op::Store(args) => {
                     let args: List<_> = args.iter().map(|a| map[*a]).collect();
@@ -461,13 +467,8 @@ impl<F: PrimeField32> Block<F> {
                         let (_, result) = mem_map.get_index_mut(i).unwrap();
                         (i, result)
                     };
-                    let count = result.provide_hints.count;
-                    require_hints.push(result.provide_hints);
-                    result.provide_hints = LookupHint {
-                        query_index,
-                        count: count + 1,
-                    };
                     map.push(F::from_canonical_usize(i + 1));
+                    result.new_lookup(query_index, &mut requires);
                 }
                 Op::Load(len, ptr) => {
                     let ptr = map[*ptr];
@@ -476,13 +477,8 @@ impl<F: PrimeField32> Block<F> {
                     let (args, result) = record.mem_queries[mem_idx]
                         .get_index_mut(ptr_f - 1)
                         .expect("Unbound pointer");
-                    let count = result.provide_hints.count;
-                    require_hints.push(result.provide_hints);
-                    result.provide_hints = LookupHint {
-                        query_index,
-                        count: count + 1,
-                    };
                     map.extend(args);
+                    result.new_lookup(query_index, &mut requires);
                 }
                 Op::Const(c) => map.push(*c),
                 Op::Add(a, b) => map.push(map[*a] + map[*b]),
@@ -512,73 +508,31 @@ impl<F: PrimeField32> Block<F> {
                     inv_map.insert(out.clone(), args.clone());
                 }
                 result.output = Some(out);
-                result.require_hints = require_hints;
+                result.requires = requires;
                 result
             }
             Ctrl::If(b, t, f) => {
                 if map[*b].is_zero() {
-                    f.execute(
-                        toplevel,
-                        record,
-                        map,
-                        query_index,
-                        func_index,
-                        require_hints,
-                    )
+                    f.execute(toplevel, record, map, query_index, func_index, requires)
                 } else {
-                    t.execute(
-                        toplevel,
-                        record,
-                        map,
-                        query_index,
-                        func_index,
-                        require_hints,
-                    )
+                    t.execute(toplevel, record, map, query_index, func_index, requires)
                 }
             }
             Ctrl::IfMany(bs, t, f) => {
                 if bs.iter().any(|b| !map[*b].is_zero()) {
-                    t.execute(
-                        toplevel,
-                        record,
-                        map,
-                        query_index,
-                        func_index,
-                        require_hints,
-                    )
+                    t.execute(toplevel, record, map, query_index, func_index, requires)
                 } else {
-                    f.execute(
-                        toplevel,
-                        record,
-                        map,
-                        query_index,
-                        func_index,
-                        require_hints,
-                    )
+                    f.execute(toplevel, record, map, query_index, func_index, requires)
                 }
             }
             Ctrl::Match(v, cases) => {
                 let block = cases.match_case(&map[*v]).expect("No match");
-                block.execute(
-                    toplevel,
-                    record,
-                    map,
-                    query_index,
-                    func_index,
-                    require_hints,
-                )
+                block.execute(toplevel, record, map, query_index, func_index, requires)
             }
             Ctrl::MatchMany(vs, cases) => {
                 let vs = vs.iter().map(|v| map[*v]).collect();
                 let block = cases.match_case(&vs).expect("No match");
-                block.execute(
-                    toplevel,
-                    record,
-                    map,
-                    query_index,
-                    func_index,
-                    require_hints,
-                )
+                block.execute(toplevel, record, map, query_index, func_index, requires)
             }
         }
     }
