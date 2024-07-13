@@ -101,7 +101,6 @@ fn use_var<'a>(var: &Var, ctx: &'a mut CheckCtx<'_>) -> &'a [usize] {
 struct CheckCtx<'a> {
     var_index: usize,
     block_ident: usize,
-    call_ident: usize,
     return_ident: usize,
     return_idents: Vec<usize>,
     return_size: usize,
@@ -133,7 +132,6 @@ impl<F: Clone + Ord> FuncE<F> {
         let ctx = &mut CheckCtx {
             var_index: 0,
             block_ident: 0,
-            call_ident: 0,
             return_ident: 0,
             return_idents: vec![],
             return_size: self.output_size,
@@ -262,8 +260,7 @@ impl<F: Clone + Ord> BlockE<F> {
                     assert_eq!(inp.total_size(), input_size);
                     assert_eq!(out.total_size(), output_size);
                     let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
-                    ops.push(Op::Call(name_idx, inp, ctx.call_ident));
-                    ctx.call_ident += 1;
+                    ops.push(Op::Call(name_idx, inp));
                     out.iter().for_each(|t| bind_new(t, ctx));
                 }
                 OpE::PreImg(out, name, inp) => {
@@ -278,22 +275,19 @@ impl<F: Clone + Ord> BlockE<F> {
                     assert_eq!(out.total_size(), input_size);
                     assert_eq!(inp.total_size(), output_size);
                     let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
-                    ops.push(Op::PreImg(name_idx, inp, ctx.call_ident));
-                    ctx.call_ident += 1;
+                    ops.push(Op::PreImg(name_idx, inp));
                     out.iter().for_each(|t| bind_new(t, ctx));
                 }
                 OpE::Store(ptr, vals) => {
                     assert_eq!(ptr.size, 1);
                     let vals = vals.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
-                    ops.push(Op::Store(vals, ctx.call_ident));
-                    ctx.call_ident += 1;
+                    ops.push(Op::Store(vals));
                     bind_new(ptr, ctx);
                 }
                 OpE::Load(vals, ptr) => {
                     assert_eq!(ptr.size, 1);
                     let ptr = use_var(ptr, ctx)[0];
-                    ops.push(Op::Load(vals.total_size(), ptr, ctx.call_ident));
-                    ctx.call_ident += 1;
+                    ops.push(Op::Load(vals.total_size(), ptr));
                     vals.iter().for_each(|val| bind_new(val, ctx));
                 }
                 OpE::Debug(s) => ops.push(Op::Debug(s)),

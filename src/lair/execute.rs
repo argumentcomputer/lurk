@@ -399,7 +399,7 @@ impl<F: PrimeField32> Block<F> {
     ) -> &'a mut QueryResult<F> {
         for op in self.ops.iter() {
             match op {
-                Op::Call(callee_index, inp, _) => {
+                Op::Call(callee_index, inp) => {
                     let inp = inp.iter().map(|v| map[*v]).collect::<List<_>>();
                     let result =
                         if let Some(result) = record.func_queries[*callee_index].get_mut(&inp) {
@@ -417,7 +417,7 @@ impl<F: PrimeField32> Block<F> {
                     let out = result.output.as_ref().expect("Loop detected");
                     map.extend(out);
                 }
-                Op::PreImg(callee_index, out, _) => {
+                Op::PreImg(callee_index, out) => {
                     let out = out.iter().map(|v| map[*v]).collect::<List<_>>();
                     let inp = record.inv_func_queries[*callee_index]
                         .as_ref()
@@ -442,7 +442,7 @@ impl<F: PrimeField32> Block<F> {
                     assert_eq!(&out, result_out);
                     map.extend(inp);
                 }
-                Op::Store(args, _) => {
+                Op::Store(args) => {
                     let args: List<_> = args.iter().map(|a| map[*a]).collect();
                     let mem_idx = mem_index_from_len(args.len());
                     let mem_map = &mut record.mem_queries[mem_idx];
@@ -461,7 +461,7 @@ impl<F: PrimeField32> Block<F> {
                     };
                     map.push(F::from_canonical_usize(i + 1));
                 }
-                Op::Load(len, ptr, _) => {
+                Op::Load(len, ptr) => {
                     let ptr = map[*ptr];
                     let ptr_f = ptr.as_canonical_u32() as usize;
                     let mem_idx = mem_index_from_len(*len);

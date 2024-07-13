@@ -147,6 +147,7 @@ impl<F: PrimeField32> Ctrl<F> {
         let record = ctx.shard.record();
         match self {
             Ctrl::Return(ident, _) => {
+                assert!(ctx.require_hints.next().is_none());
                 slice.sel[*ident] = F::one();
                 let query_map = &record.func_queries()[ctx.func_idx];
                 let result = query_map
@@ -277,7 +278,7 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, f);
                 }
             }
-            Op::Call(idx, inp, ..) => {
+            Op::Call(idx, inp) => {
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let query_map = &record.func_queries()[*idx];
                 let result = query_map.get(&args).expect("Cannot find query result");
@@ -295,7 +296,7 @@ impl<F: PrimeField32> Op<F> {
                 slice.push_aux(index, f(*count));
                 slice.push_aux(index, next_count_inv);
             }
-            Op::PreImg(idx, out, ..) => {
+            Op::PreImg(idx, out) => {
                 let out = out.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let inv_map = record.inv_func_queries[*idx]
                     .as_ref()
@@ -315,7 +316,7 @@ impl<F: PrimeField32> Op<F> {
                 slice.push_aux(index, f(*count));
                 slice.push_aux(index, next_count_inv);
             }
-            Op::Store(args, ..) => {
+            Op::Store(args) => {
                 let mem_idx = mem_index_from_len(args.len());
                 let query_map = &record.mem_queries[mem_idx];
                 let args = args.iter().map(|a| map[*a].0).collect::<List<_>>();
@@ -335,7 +336,7 @@ impl<F: PrimeField32> Op<F> {
                 slice.push_aux(index, f(*count));
                 slice.push_aux(index, next_count_inv);
             }
-            Op::Load(len, ptr, ..) => {
+            Op::Load(len, ptr) => {
                 let mem_idx = mem_index_from_len(*len);
                 let query_map = &record.mem_queries[mem_idx];
                 let ptr = map[*ptr].0.as_canonical_u32() as usize;
