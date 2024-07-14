@@ -56,7 +56,6 @@ lazy_static = "1.4.0"
 hashbrown = "0.14.5"
 rand_chacha = "0.3.1"
 proptest = "1.5.0"
-stacker = "0.1.15"
 
 #
 ascent = "0.6.0"
@@ -104,7 +103,6 @@ hashbrown = { workspace = true }
 
 ascent = { workspace = true }
 loam-macros = { workspace = true }
-stacker = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

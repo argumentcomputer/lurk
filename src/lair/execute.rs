@@ -3,11 +3,10 @@ use indexmap::IndexMap;
 use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use sphinx_core::stark::{Indexed, MachineRecord};
-use stacker::maybe_grow;
 use std::ops::Range;
 
 use super::{
-    bytecode::{Block, Ctrl, Func, Op},
+    bytecode::{Ctrl, Func, Op},
     hasher::Hasher,
     toplevel::Toplevel,
     List,
@@ -365,9 +364,7 @@ impl<F: PrimeField32> QueryRecord<F> {
 
 impl<F: PrimeField32, H: Hasher<F>> Toplevel<F, H> {
     pub fn execute(&self, func: &Func<F>, args: &[F], record: &mut QueryRecord<F>) -> List<F> {
-        let result = func.execute(args, self, record);
-        result.provide.count = 1;
-        let out = result.output.clone().unwrap();
+        let out = func.execute(args, self, record);
         let mut public_values = Vec::with_capacity(args.len() + out.len());
         public_values.extend(args);
         public_values.extend(out.iter());
@@ -387,76 +384,120 @@ impl<F: PrimeField32, H: Hasher<F>> Toplevel<F, H> {
     }
 }
 
+enum ExecEntry<'a, F> {
+    Op(&'a Op<F>),
+    Ctrl(&'a Ctrl<F>),
+}
+
+struct CallerState<F> {
+    preimg: bool,
+    func_index: usize,
+    query_index: usize,
+    map: Vec<F>,
+    requires: Vec<LookupHint>,
+}
+
 impl<F: PrimeField32> Func<F> {
-    fn execute<'a, H: Hasher<F>>(
+    fn execute<H: Hasher<F>>(
         &self,
         args: &[F],
         toplevel: &Toplevel<F, H>,
-        record: &'a mut QueryRecord<F>,
-    ) -> &'a mut QueryResult<F> {
-        assert_eq!(args.len(), self.input_size);
-        let map = args.to_vec();
-        let requires = Vec::new();
-        let (query_index, _) =
-            record.func_queries[self.index].insert_full(args.into(), QueryResult::default());
-        self.body
-            .execute(toplevel, record, map, query_index, self.index, requires)
-    }
-}
+        record: &mut QueryRecord<F>,
+    ) -> List<F> {
+        let mut func_index = self.index;
+        let mut query_result = QueryResult::default();
+        query_result.provide.count = 1;
+        let (mut query_index, _) =
+            record.func_queries[func_index].insert_full(args.into(), query_result);
+        let mut map = args.to_vec();
+        let mut requires = Vec::new();
 
-const STACK_RED_ZONE: usize = 32 * 1024;
-const STACK_SIZE: usize = 32 * 1024 * 1024;
-
-impl<F: PrimeField32> Block<F> {
-    fn execute<'a, H: Hasher<F>>(
-        &self,
-        toplevel: &Toplevel<F, H>,
-        record: &'a mut QueryRecord<F>,
-        mut map: Vec<F>,
-        query_index: usize,
-        func_index: usize,
-        mut requires: Vec<LookupHint>,
-    ) -> &'a mut QueryResult<F> {
-        for op in self.ops.iter() {
-            match op {
-                Op::Call(callee_index, inp) => {
-                    let inp = inp.iter().map(|v| map[*v]).collect::<List<_>>();
-                    let result =
-                        if let Some(result) = record.func_queries[*callee_index].get_mut(&inp) {
-                            result
-                        } else {
-                            let callee = toplevel.get_by_index(*callee_index);
-                            maybe_grow(STACK_RED_ZONE, STACK_SIZE, || {
-                                callee.execute(&inp, toplevel, record)
-                            })
-                        };
-                    let out = result.output.as_ref().expect("Loop detected");
-                    map.extend(out);
-                    result.new_lookup(query_index, &mut requires);
+        let mut exec_entries_stack = vec![];
+        let mut callers_states_stack = vec![];
+        macro_rules! push_block_exec_entries {
+            ($block:expr) => {
+                exec_entries_stack.push(ExecEntry::Ctrl(&$block.ctrl));
+                exec_entries_stack.extend($block.ops.iter().rev().map(ExecEntry::Op));
+            };
+        }
+        push_block_exec_entries!(&self.body);
+        while let Some(exec_entry) = exec_entries_stack.pop() {
+            match exec_entry {
+                ExecEntry::Op(Op::Call(callee_index, inp)) => {
+                    let inp = inp.iter().map(|v| map[*v]).collect::<Vec<_>>();
+                    if let Some(result) = record.func_queries[*callee_index].get_mut(inp.as_slice())
+                    {
+                        let out = result.output.as_ref().expect("Loop detected");
+                        map.extend(out);
+                        result.new_lookup(query_index, &mut requires);
+                    } else {
+                        // insert dummy entry
+                        let (callee_query_index, _) = record.func_queries[*callee_index]
+                            .insert_full(inp.clone().into(), QueryResult::default());
+                        // `map_buffer` will become the map for the called function
+                        let mut map_buffer = inp;
+                        let mut requires_buffer = Vec::new();
+                        // swap so we can save the old map in `map_buffer` and move on
+                        // with `map` already set
+                        std::mem::swap(&mut map_buffer, &mut map);
+                        std::mem::swap(&mut requires_buffer, &mut requires);
+                        // save the current caller state
+                        callers_states_stack.push(CallerState {
+                            preimg: false,
+                            func_index,
+                            query_index,
+                            map: map_buffer,
+                            requires: requires_buffer,
+                        });
+                        // prepare outer variables to go into the new func scope
+                        func_index = *callee_index;
+                        query_index = callee_query_index;
+                        push_block_exec_entries!(&toplevel.get_by_index(func_index).body);
+                    }
                 }
-                Op::PreImg(callee_index, out) => {
+                ExecEntry::Op(Op::PreImg(callee_index, out)) => {
                     let out = out.iter().map(|v| map[*v]).collect::<List<_>>();
                     let inp = record.inv_func_queries[*callee_index]
                         .as_ref()
                         .expect("Missing inverse map")
                         .get(&out)
                         .expect("Preimg not found")
-                        .clone();
-                    let result =
-                        if let Some(result) = record.func_queries[*callee_index].get_mut(&inp) {
-                            result
-                        } else {
-                            let callee = toplevel.get_by_index(*callee_index);
-                            maybe_grow(STACK_RED_ZONE, STACK_SIZE, || {
-                                callee.execute(&inp, toplevel, record)
-                            })
-                        };
-                    let result_out = result.output.as_ref().expect("Loop detected");
-                    assert_eq!(&out, result_out);
-                    map.extend(inp);
-                    result.new_lookup(query_index, &mut requires);
+                        .to_vec();
+                    if let Some(result) = record.func_queries[*callee_index].get_mut(inp.as_slice())
+                    {
+                        assert_eq!(result.output.as_ref().expect("Loop detected"), &out);
+                        map.extend(inp);
+                        result.new_lookup(query_index, &mut requires);
+                    } else {
+                        let (callee_query_index, _) = record.func_queries[*callee_index]
+                            .insert_full(inp.clone().into(), QueryResult::default());
+                        let mut map_buffer = inp;
+                        let mut requires_buffer = Vec::new();
+                        std::mem::swap(&mut map_buffer, &mut map);
+                        std::mem::swap(&mut requires_buffer, &mut requires);
+                        callers_states_stack.push(CallerState {
+                            preimg: true,
+                            func_index,
+                            query_index,
+                            map: map_buffer,
+                            requires: requires_buffer,
+                        });
+                        func_index = *callee_index;
+                        query_index = callee_query_index;
+                        push_block_exec_entries!(&toplevel.get_by_index(func_index).body);
+                    }
                 }
-                Op::Store(args) => {
+                ExecEntry::Op(Op::Const(c)) => map.push(*c),
+                ExecEntry::Op(Op::Add(a, b)) => map.push(map[*a] + map[*b]),
+                ExecEntry::Op(Op::Sub(a, b)) => map.push(map[*a] - map[*b]),
+                ExecEntry::Op(Op::Mul(a, b)) => map.push(map[*a] * map[*b]),
+                ExecEntry::Op(Op::Inv(a)) => map.push(map[*a].inverse()),
+                ExecEntry::Op(Op::Not(a)) => map.push(if map[*a].is_zero() {
+                    F::one()
+                } else {
+                    F::zero()
+                }),
+                ExecEntry::Op(Op::Store(args)) => {
                     let args: List<_> = args.iter().map(|a| map[*a]).collect();
                     let mem_idx = mem_index_from_len(args.len());
                     let mem_map = &mut record.mem_queries[mem_idx];
@@ -470,7 +511,7 @@ impl<F: PrimeField32> Block<F> {
                     map.push(F::from_canonical_usize(i + 1));
                     result.new_lookup(query_index, &mut requires);
                 }
-                Op::Load(len, ptr) => {
+                ExecEntry::Op(Op::Load(len, ptr)) => {
                     let ptr = map[*ptr];
                     let ptr_f = ptr.as_canonical_u32() as usize;
                     let mem_idx = mem_index_from_len(*len);
@@ -480,61 +521,76 @@ impl<F: PrimeField32> Block<F> {
                     map.extend(args);
                     result.new_lookup(query_index, &mut requires);
                 }
-                Op::Const(c) => map.push(*c),
-                Op::Add(a, b) => map.push(map[*a] + map[*b]),
-                Op::Sub(a, b) => map.push(map[*a] - map[*b]),
-                Op::Mul(a, b) => map.push(map[*a] * map[*b]),
-                Op::Inv(a) => map.push(map[*a].inverse()),
-                Op::Not(a) => map.push(if map[*a].is_zero() {
-                    F::one()
-                } else {
-                    F::zero()
-                }),
-                Op::Debug(s) => println!("{}", s),
-                Op::Hash(preimg) => {
+                ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
+                ExecEntry::Op(Op::Hash(preimg)) => {
                     let preimg: List<_> = preimg.iter().map(|a| map[*a]).collect();
                     map.extend(toplevel.hasher.hash(&preimg));
                 }
-            }
-        }
+                ExecEntry::Ctrl(Ctrl::Return(_, out)) => {
+                    let out = out.iter().map(|v| map[*v]).collect::<Vec<_>>();
+                    let (inp, result) = record.func_queries[func_index]
+                        .get_index_mut(query_index)
+                        .unwrap();
+                    assert!(result.output.is_none());
+                    let out_list: List<_> = out.clone().into();
+                    if let Some(inv_map) = &mut record.inv_func_queries[func_index] {
+                        inv_map.insert(out_list.clone(), inp.clone());
+                    }
+                    result.output = Some(out_list);
+                    result.requires = requires;
+                    if let Some(CallerState {
+                        preimg,
+                        func_index: caller_func_index,
+                        query_index: caller_query_index,
+                        map: caller_map,
+                        requires: caller_requires,
+                    }) = callers_states_stack.pop()
+                    {
+                        // recover the state of the caller
+                        func_index = caller_func_index;
+                        query_index = caller_query_index;
+                        map = caller_map;
+                        requires = caller_requires;
 
-        match &self.ctrl {
-            Ctrl::Return(_, out) => {
-                let out = out.iter().map(|v| map[*v]).collect::<List<_>>();
-                let (args, result) = record.func_queries[func_index]
-                    .get_index_mut(query_index)
-                    .unwrap();
-                if let Some(inv_map) = &mut record.inv_func_queries[func_index] {
-                    inv_map.insert(out.clone(), args.clone());
+                        if preimg {
+                            map.extend(inp);
+                        } else {
+                            map.extend(out);
+                        }
+                        result.new_lookup(query_index, &mut requires);
+                    } else {
+                        // no outer caller... about to exit
+                        assert!(exec_entries_stack.is_empty());
+                        map = out;
+                        break;
+                    }
                 }
-                result.output = Some(out);
-                result.requires = requires;
-                result
-            }
-            Ctrl::If(b, t, f) => {
-                if map[*b].is_zero() {
-                    f.execute(toplevel, record, map, query_index, func_index, requires)
-                } else {
-                    t.execute(toplevel, record, map, query_index, func_index, requires)
+                ExecEntry::Ctrl(Ctrl::If(b, t, f)) => {
+                    if map[*b].is_zero() {
+                        push_block_exec_entries!(f);
+                    } else {
+                        push_block_exec_entries!(t);
+                    }
                 }
-            }
-            Ctrl::IfMany(bs, t, f) => {
-                if bs.iter().any(|b| !map[*b].is_zero()) {
-                    t.execute(toplevel, record, map, query_index, func_index, requires)
-                } else {
-                    f.execute(toplevel, record, map, query_index, func_index, requires)
+                ExecEntry::Ctrl(Ctrl::IfMany(bs, t, f)) => {
+                    if bs.iter().any(|b| !map[*b].is_zero()) {
+                        push_block_exec_entries!(t);
+                    } else {
+                        push_block_exec_entries!(f);
+                    }
                 }
-            }
-            Ctrl::Match(v, cases) => {
-                let block = cases.match_case(&map[*v]).expect("No match");
-                block.execute(toplevel, record, map, query_index, func_index, requires)
-            }
-            Ctrl::MatchMany(vs, cases) => {
-                let vs = vs.iter().map(|v| map[*v]).collect();
-                let block = cases.match_case(&vs).expect("No match");
-                block.execute(toplevel, record, map, query_index, func_index, requires)
+                ExecEntry::Ctrl(Ctrl::Match(v, cases)) => {
+                    let block = cases.match_case(&map[*v]).expect("No match");
+                    push_block_exec_entries!(block);
+                }
+                ExecEntry::Ctrl(Ctrl::MatchMany(vs, cases)) => {
+                    let vs = vs.iter().map(|v| map[*v]).collect();
+                    let block = cases.match_case(&vs).expect("No match");
+                    push_block_exec_entries!(block);
+                }
             }
         }
+        map.into()
     }
 }
 
