@@ -483,18 +483,17 @@ mod tests {
         let mut queries = QueryRecord::new(&toplevel);
         toplevel.execute_by_name("test", args, &mut queries);
         let trace = test_chip.generate_trace(&Shard::new(&queries));
+        #[rustfmt::skip]
         let expected_trace = [
             // The big numbers in the trace are the inverted elements, the witnesses of
             // the inequalities that appear on the default case. Note that the branch
             // that does not follow the default will reuse the slots for the inverted
             // elements to minimize the number of columns
-            0, 5, 2, 1610612737, 1509949441, 1342177281, 1006632961, 16, 0, 0, 1, 0, 1, 0, 0, 0,
-            0, //
-            1, 1, 4, 2, 1509949441, 1342177281, 1006632961, 1, 16, 0, 0, 1, 0, 1, 0, 0, 0, 0,
-            1, //
-            2, 3, 2, 4, 16, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, //
+            0, 5, 2, 1610612737, 1509949441, 1342177281, 1006632961, 16, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1,
+            1, 4, 2, 1509949441, 1342177281, 1006632961,          1, 16, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1,
+            2, 3, 2,          4,         16,          1,          1,  0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
             // dummy
-            3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+            3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ]
         .into_iter()
         .map(field_from_u32)
