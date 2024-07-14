@@ -25,7 +25,7 @@ pub(crate) struct LookupHint {
 }
 
 impl LookupHint {
-    /// This function returns the values for `last_count` and `last_nonce`
+    /// This function returns the values for `last_nonce` and `last_count`
     pub(crate) fn get_provide_hints<F: PrimeField32>(self, config: ShardingConfig) -> [F; 2] {
         let LookupHint {
             query_index, count, ..
@@ -36,7 +36,7 @@ impl LookupHint {
         [f(nonce), f(count)]
     }
 
-    /// This function returns the values for `last_count` and `last_nonce`
+    /// This function returns the values for `prev_nonce`, `prev_count` and `count_inv`
     pub(crate) fn get_require_hints<F: PrimeField32>(self, config: ShardingConfig) -> [F; 3] {
         let LookupHint {
             query_index, count, ..
