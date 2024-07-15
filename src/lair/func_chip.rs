@@ -264,10 +264,10 @@ impl<F> Op<F> {
                 *aux += *ptr_size + 3;
                 degrees.extend(vec![1; *ptr_size]);
             }
-            Op::ExternCall(chip_idx, input) => {
+            Op::ExternCall(chip_idx, _) => {
                 let chip = toplevel.get_chip_by_index(*chip_idx);
                 let output_size = chip.output_size();
-                let witness_size = chip.witness_size(input.len());
+                let witness_size = chip.witness_size();
                 let aux_size = output_size + witness_size;
                 *aux += aux_size;
                 degrees.extend(vec![1; aux_size]);

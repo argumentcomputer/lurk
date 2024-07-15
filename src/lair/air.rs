@@ -372,7 +372,7 @@ impl<F: Field> Op<F> {
                 let chip = toplevel.get_chip_by_index(*chip_idx);
                 let output_size = chip.output_size();
                 let output_vars = local.next_n_aux(index, output_size);
-                let witness_size = chip.witness_size(input.len());
+                let witness_size = chip.witness_size();
                 let witness = local.next_n_aux(index, witness_size);
                 chip.eval(builder, input, output_vars, witness, sel.clone());
                 for &img_var in output_vars {

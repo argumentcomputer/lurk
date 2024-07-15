@@ -339,7 +339,7 @@ impl<F: PrimeField32> Op<F> {
             Op::ExternCall(chip_idx, input) => {
                 let chip = ctx.toplevel.get_chip_by_index(*chip_idx);
                 let input = input.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let witness_size = chip.witness_size(input.len());
+                let witness_size = chip.witness_size();
                 let mut witness = vec![F::zero(); witness_size];
                 let img = chip.populate_witness(&input, &mut witness);
                 for f in img {

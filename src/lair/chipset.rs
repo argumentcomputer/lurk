@@ -17,11 +17,11 @@ pub trait Chipset<F>: Sync {
 
     fn output_size(&self) -> usize;
 
+    fn witness_size(&self) -> usize;
+
     fn execute(&self, input: &[F]) -> Vec<F>;
 
     fn populate_witness(&self, input: &[F], witness: &mut [F]) -> Vec<F>;
-
-    fn witness_size(&self, input_size: usize) -> usize;
 
     fn eval<AB: AirBuilder<F = F>>(
         &self,
@@ -43,15 +43,15 @@ impl<F> Chipset<F> for Nochip {
         unimplemented!()
     }
 
+    fn witness_size(&self) -> usize {
+        unimplemented!()
+    }
+
     fn execute(&self, _: &[F]) -> Vec<F> {
         unimplemented!()
     }
 
     fn populate_witness(&self, _: &[F], _: &mut [F]) -> Vec<F> {
-        unimplemented!()
-    }
-
-    fn witness_size(&self, _: usize) -> usize {
         unimplemented!()
     }
 
@@ -138,6 +138,14 @@ impl Chipset<BabyBear> for LurkChip {
         }
     }
 
+    fn witness_size(&self) -> usize {
+        match self {
+            LurkChip::Hasher24_8(..) => Poseidon2Cols::<BabyBear, BabyBearConfig24, 24>::num_cols(),
+            LurkChip::Hasher32_8(..) => Poseidon2Cols::<BabyBear, BabyBearConfig32, 32>::num_cols(),
+            LurkChip::Hasher48_8(..) => Poseidon2Cols::<BabyBear, BabyBearConfig48, 48>::num_cols(),
+        }
+    }
+
     fn populate_witness(&self, preimg: &[BabyBear], witness: &mut [BabyBear]) -> Vec<BabyBear> {
         let mut out: Vec<_> = match self {
             LurkChip::Hasher24_8(..) => {
@@ -152,14 +160,6 @@ impl Chipset<BabyBear> for LurkChip {
         };
         out.truncate(8);
         out
-    }
-
-    fn witness_size(&self, _preimg_size: usize) -> usize {
-        match self {
-            LurkChip::Hasher24_8(..) => Poseidon2Cols::<BabyBear, BabyBearConfig24, 24>::num_cols(),
-            LurkChip::Hasher32_8(..) => Poseidon2Cols::<BabyBear, BabyBearConfig32, 32>::num_cols(),
-            LurkChip::Hasher48_8(..) => Poseidon2Cols::<BabyBear, BabyBearConfig48, 48>::num_cols(),
-        }
     }
 
     fn eval<AB: AirBuilder<F = BabyBear>>(
@@ -196,6 +196,7 @@ impl Chipset<BabyBear> for LurkChip {
     }
 }
 
+// `LurkHasher` is only used in the `ZStore`. Maybe deprecate it?
 #[derive(Clone)]
 pub struct LurkHasher {
     hasher_24_8: Poseidon2<
@@ -259,57 +260,22 @@ impl Chipset<BabyBear> for LurkHasher {
         }
     }
 
-    fn populate_witness(&self, preimg: &[BabyBear], witness: &mut [BabyBear]) -> Vec<BabyBear> {
-        let mut out: Vec<_> = match preimg.len() {
-            24 => populate_witness::<BabyBearConfig24, 24>(sized!(preimg), witness).into(),
-            32 => populate_witness::<BabyBearConfig32, 32>(sized!(preimg), witness).into(),
-            48 => populate_witness::<BabyBearConfig48, 48>(sized!(preimg), witness).into(),
-            _ => unimplemented!(),
-        };
-        out.truncate(8);
-        out
+    fn witness_size(&self) -> usize {
+        unimplemented!()
     }
 
-    fn witness_size(&self, preimg_size: usize) -> usize {
-        match preimg_size {
-            24 => Poseidon2Cols::<BabyBear, BabyBearConfig24, 24>::num_cols(),
-            32 => Poseidon2Cols::<BabyBear, BabyBearConfig32, 32>::num_cols(),
-            48 => Poseidon2Cols::<BabyBear, BabyBearConfig48, 48>::num_cols(),
-            _ => unimplemented!(),
-        }
+    fn populate_witness(&self, _preimg: &[BabyBear], _witness: &mut [BabyBear]) -> Vec<BabyBear> {
+        unimplemented!()
     }
 
     fn eval<AB: AirBuilder<F = BabyBear>>(
         &self,
-        builder: &mut AB,
-        preimg: Vec<AB::Expr>,
-        img: &[AB::Var],
-        witness: &[AB::Var],
-        is_real: AB::Expr,
+        _builder: &mut AB,
+        _preimg: Vec<AB::Expr>,
+        _img: &[AB::Var],
+        _witness: &[AB::Var],
+        _is_real: AB::Expr,
     ) {
-        match preimg.len() {
-            24 => eval_input::<AB, BabyBearConfig24, 24>(
-                builder,
-                sized!(preimg),
-                img,
-                witness,
-                is_real,
-            ),
-            32 => eval_input::<AB, BabyBearConfig32, 32>(
-                builder,
-                sized!(preimg),
-                img,
-                witness,
-                is_real,
-            ),
-            48 => eval_input::<AB, BabyBearConfig48, 48>(
-                builder,
-                sized!(preimg),
-                img,
-                witness,
-                is_real,
-            ),
-            _ => unimplemented!(),
-        }
+        unimplemented!()
     }
 }
