@@ -1,11 +1,13 @@
 use hybrid_array::sizes::{U4, U8};
 use hybrid_array::{Array, ArraySize};
 use p3_field::AbstractField;
+use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter, Pointer};
 use std::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign};
 
 pub mod add;
 pub mod is_zero;
+mod less_than;
 pub mod mul;
 
 #[derive(Clone, Default)]
@@ -251,3 +253,20 @@ impl<T: PartialEq, W: ArraySize> PartialEq for Word<T, W> {
 }
 
 impl<T: Eq, W: ArraySize> Eq for Word<T, W> {}
+
+impl<W: ArraySize> PartialOrd for Word<u8, W> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<W: ArraySize> Ord for Word<u8, W> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        for i in (0..W::USIZE).rev() {
+            match u8::cmp(&self[i], &other[i]) {
+                Ordering::Equal => continue,
+                ord => return ord,
+            }
+        }
+        Ordering::Equal
+    }
+}
