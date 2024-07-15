@@ -72,6 +72,8 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkHasher>, ZStore<BabyBear
     let toplevel = Toplevel::new(&[
         lurk_main(),
         eval(&builtins),
+        eval_comm_unop(&builtins),
+        eval_hide(),
         eval_unop(&builtins),
         eval_binop_num(&builtins),
         eval_binop_misc(&builtins),
@@ -86,6 +88,7 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkHasher>, ZStore<BabyBear
         ingress_builtin(&builtins),
         egress(nil),
         egress_builtin(&builtins),
+        hash_24_8(),
         hash_32_8(),
         hash_48_8(),
     ]);
@@ -375,6 +378,15 @@ fn egress_builtin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Func
     }
 }
 
+pub fn hash_24_8<F>() -> FuncE<F> {
+    func!(
+        invertible fn hash_24_8(preimg: [24]): [8] {
+            let img: [8] = hash(preimg);
+            return img
+        }
+    )
+}
+
 pub fn hash_32_8<F>() -> FuncE<F> {
     func!(
         invertible fn hash_32_8(preimg: [32]): [8] {
@@ -643,8 +655,12 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                     let res: [2] = call(equal, rest_tag, rest, env);
                                     return res
                                 }
-                                "cons", "strcons", "hide" => {
+                                "cons", "strcons" => {
                                     let (res_tag, res) = call(eval_binop_misc, head, rest_tag, rest, env);
+                                    return (res_tag, res)
+                                }
+                                "hide" => {
+                                    let (res_tag, res) = call(eval_hide, rest_tag, rest, env);
                                     return (res_tag, res)
                                 }
                                 "car" => {
@@ -655,8 +671,12 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                     let (_car_tag, _car, cdr_tag, cdr) = call(car_cdr, rest_tag, rest, env);
                                     return (cdr_tag, cdr)
                                 }
-                                "commit", "num", "u64", "comm", "char", "open", "secret", "atom", "emit" => {
+                                "num", "u64", "char", "atom", "emit" => {
                                     let (res_tag, res) = call(eval_unop, head, rest_tag, rest, env);
+                                    return (res_tag, res)
+                                }
+                                "commit", "comm", "open", "secret" => {
+                                    let (res_tag, res) = call(eval_comm_unop, head, rest_tag, rest, env);
                                     return (res_tag, res)
                                 }
                                 // TODO: other builtins
@@ -979,16 +999,6 @@ pub fn eval_binop_misc<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) ->
                     }
                     return (str_tag, strcons)
                 }
-                "hide" => {
-                    match val1_tag {
-                        Tag::Num => {
-                            let comm_tag = Tag::Comm;
-                            let comm = store(val1, val2_tag, val2);
-                            return (comm_tag, comm)
-                        }
-                    };
-                    return (err_tag, invalid_form)
-                }
             };
             return (err_tag, invalid_form)
         }
@@ -1001,6 +1011,72 @@ pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let num_tag = Tag::Num;
+            let nil_tag = Tag::Nil;
+            let invalid_form = EvalErr::InvalidForm;
+            let todo = EvalErr::Todo;
+            let rest_not_cons = sub(rest_tag, cons_tag);
+            if rest_not_cons {
+                return (err_tag, invalid_form)
+            }
+            let (expr_tag, expr, rest_tag, _rest) = load(rest);
+            let rest_not_nil = sub(rest_tag, nil_tag);
+            if rest_not_nil {
+                return (err_tag, invalid_form)
+            }
+            let (val_tag, val) = call(eval, expr_tag, expr, env);
+            match val_tag {
+                Tag::Err => {
+                    return (val_tag, val)
+                }
+            };
+
+            match head [|sym| builtins.index(sym).to_field()] {
+                "num" => {
+                    let char_tag = Tag::Char;
+                    let u64_tag = Tag::U64;
+                    let val_not_char = sub(val_tag, char_tag);
+                    let val_not_u64 = sub(val_tag, u64_tag);
+                    let val_not_num = sub(val_tag, num_tag);
+
+                    // Commitments cannot be cast to numbers anymore
+                    let acc = mul(val_not_char, val_not_num);
+                    let cannot_cast = mul(acc, val_not_u64);
+                    if cannot_cast {
+                        let err = EvalErr::CannotCastToNum;
+                        return(err_tag, err)
+                    }
+                    return(num_tag, val)
+                }
+                "atom" => {
+                    let val_not_cons = sub(val_tag, cons_tag);
+                    if val_not_cons {
+                        let builtin_tag = Tag::Builtin;
+                        let t = builtins.index("t");
+                        return (builtin_tag, t)
+                    }
+                    let nil = 0;
+                    return (nil_tag, nil)
+                }
+                "emit" => {
+                    // TODO emit
+                    return (val_tag, val)
+                }
+                "u64" => {
+                    return(err_tag, todo)
+                }
+                "char" => {
+                    return (err_tag, todo)
+                }
+             }
+        }
+    )
+}
+
+pub fn eval_comm_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
+    func!(
+        fn eval_comm_unop(head, rest_tag, rest, env): [2] {
+            let err_tag = Tag::Err;
+            let cons_tag = Tag::Cons;
             let comm_tag = Tag::Comm;
             let nil_tag = Tag::Nil;
             let invalid_form = EvalErr::InvalidForm;
@@ -1023,25 +1099,12 @@ pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE
 
             match head [|sym| builtins.index(sym).to_field()] {
                 "commit" => {
+                    let val_digest: [8] = call(egress, val_tag, val);
+                    let padding = [0; 7];
                     let zero = 0;
-                    let comm = store(zero, val_tag, val);
-                    return (comm_tag, comm)
-                }
-                "num" => {
-                    let char_tag = Tag::Char;
-                    let u64_tag = Tag::U64;
-                    let val_not_char = sub(val_tag, char_tag);
-                    let val_not_u64 = sub(val_tag, u64_tag);
-                    let val_not_num = sub(val_tag, num_tag);
-
-                    // Commitments cannot be cast to numbers anymore
-                    let acc = mul(val_not_char, val_not_num);
-                    let cannot_cast = mul(acc, val_not_u64);
-                    if cannot_cast {
-                        let err = EvalErr::CannotCastToNum;
-                        return(err_tag, err)
-                    }
-                    return(num_tag, val)
+                    let comm_hash: [8] = call(hash_24_8, zero, padding, val_tag, padding, val_digest);
+                    let comm_ptr = store(comm_hash);
+                    return (comm_tag, comm_ptr)
                 }
                 "open" => {
                     let val_not_comm = sub(val_tag, comm_tag);
@@ -1049,8 +1112,10 @@ pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE
                         let not_comm = EvalErr::NotComm;
                         return (err_tag, not_comm)
                     }
-                    let (_secret, res_tag, res) = load(val);
-                    return (res_tag, res)
+                    let comm_hash: [8] = load(val);
+                    let (_secret: [8], tag, padding: [7], val_digest: [8]) = preimg(hash_24_8, comm_hash);
+                    let ptr = call(ingress, tag, padding, val_digest);
+                    return (tag, ptr)
                 }
                 "secret" => {
                     let val_not_comm = sub(val_tag, comm_tag);
@@ -1058,34 +1123,65 @@ pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE
                         let not_comm = EvalErr::NotComm;
                         return (err_tag, not_comm)
                     }
-                    let (secret, _res_tag, _res) = load(val);
-                    return (num_tag, secret)
-                }
-                "atom" => {
-                    let val_not_cons = sub(val_tag, cons_tag);
-                    if val_not_cons {
-                        let builtin_tag = Tag::Builtin;
-                        let t = builtins.index("t");
-                        return (builtin_tag, t)
-                    }
-                    let nil = 0;
-                    return (nil_tag, nil)
-                }
-                "emit" => {
-                    // TODO emit
-                    return (val_tag, val)
-                }
-                "u64" => {
-                    return(err_tag, todo)
+                    let comm_hash: [8] = load(val);
+                    let (secret: [8], _payload: [16]) = preimg(hash_24_8, comm_hash);
+                    let ptr = store(secret);
+                    return (comm_tag, ptr)
                 }
                 "comm" => {
                     // Can you really cast field elements to commitments?
                     return (err_tag, todo)
                 }
-                "char" => {
-                    return (err_tag, todo)
-                }
              }
+        }
+    )
+}
+
+pub fn eval_hide<F: AbstractField + Ord>() -> FuncE<F> {
+    func!(
+        fn eval_hide(rest_tag, rest, env): [2] {
+            let err_tag = Tag::Err;
+            let cons_tag = Tag::Cons;
+            let nil_tag = Tag::Nil;
+            let invalid_form = EvalErr::InvalidForm;
+            let rest_not_cons = sub(rest_tag, cons_tag);
+            if rest_not_cons {
+                return (err_tag, invalid_form)
+            }
+            let (exp1_tag, exp1, rest_tag, rest) = load(rest);
+            let rest_not_cons = sub(rest_tag, cons_tag);
+            if rest_not_cons {
+                return (err_tag, invalid_form)
+            }
+            let (exp2_tag, exp2, rest_tag, _rest) = load(rest);
+            let rest_not_nil = sub(rest_tag, nil_tag);
+            if rest_not_nil {
+                return (err_tag, invalid_form)
+            }
+            let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
+            match val1_tag {
+                Tag::Err => {
+                    return (val1_tag, val1)
+                }
+            };
+            let (val2_tag, val2) = call(eval, exp2_tag, exp2, env);
+            match val2_tag {
+                Tag::Err => {
+                    return (val2_tag, val2)
+                }
+            };
+            match val1_tag {
+                Tag::Comm => {
+                    let secret: [8] = load(val1);
+                    let val2_digest: [8] = call(egress, val2_tag, val2);
+                    let padding = [0; 7];
+                    let comm_hash: [8] = call(hash_24_8, secret, val2_tag, padding, val2_digest);
+                    let comm_ptr = store(comm_hash);
+                    return (val1_tag, comm_ptr) // `val1_tag` is `Tag::Comm`
+                }
+            };
+            let not_comm = EvalErr::NotComm;
+            return (err_tag, not_comm)
         }
     )
 }
@@ -1326,12 +1422,12 @@ mod test {
 
     #[test]
     fn test_widths() {
-        let (toplevel, _) = build_lurk_toplevel();
-        let toplevel = &toplevel;
+        let (toplevel, _) = &build_lurk_toplevel();
 
-        // Chips
         let lurk_main = FuncChip::from_name("lurk_main", toplevel);
         let eval = FuncChip::from_name("eval", toplevel);
+        let eval_comm_unop = FuncChip::from_name("eval_comm_unop", toplevel);
+        let eval_hide = FuncChip::from_name("eval_hide", toplevel);
         let eval_unop = FuncChip::from_name("eval_unop", toplevel);
         let eval_binop_num = FuncChip::from_name("eval_binop_num", toplevel);
         let eval_binop_misc = FuncChip::from_name("eval_binop_misc", toplevel);
@@ -1346,18 +1442,20 @@ mod test {
         let ingress_builtin = FuncChip::from_name("ingress_builtin", toplevel);
         let egress = FuncChip::from_name("egress", toplevel);
         let egress_builtin = FuncChip::from_name("egress_builtin", toplevel);
+        let hash_24_8 = FuncChip::from_name("hash_24_8", toplevel);
         let hash_32_8 = FuncChip::from_name("hash_32_8", toplevel);
         let hash_48_8 = FuncChip::from_name("hash_48_8", toplevel);
 
-        // Widths
         let expect_eq = |computed: usize, expected: Expect| {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["52"]);
         expect_eq(eval.width(), expect!["119"]);
-        expect_eq(eval_unop.width(), expect!["42"]);
+        expect_eq(eval_comm_unop.width(), expect!["71"]);
+        expect_eq(eval_hide.width(), expect!["76"]);
+        expect_eq(eval_unop.width(), expect!["33"]);
         expect_eq(eval_binop_num.width(), expect!["50"]);
-        expect_eq(eval_binop_misc.width(), expect!["50"]);
+        expect_eq(eval_binop_misc.width(), expect!["48"]);
         expect_eq(eval_let.width(), expect!["54"]);
         expect_eq(eval_letrec.width(), expect!["58"]);
         expect_eq(equal.width(), expect!["44"]);
@@ -1369,14 +1467,14 @@ mod test {
         expect_eq(ingress_builtin.width(), expect!["46"]);
         expect_eq(egress.width(), expect!["75"]);
         expect_eq(egress_builtin.width(), expect!["39"]);
+        expect_eq(hash_24_8.width(), expect!["485"]);
         expect_eq(hash_32_8.width(), expect!["647"]);
         expect_eq(hash_48_8.width(), expect!["967"]);
     }
 
     #[test]
     fn test_ingress_egress() {
-        let (toplevel, zstore) = build_lurk_toplevel();
-        let toplevel = &toplevel;
+        let (toplevel, zstore) = &build_lurk_toplevel();
 
         let ingress = toplevel.get_by_name("ingress");
         let egress = toplevel.get_by_name("egress");

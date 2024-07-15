@@ -12,7 +12,7 @@ use crate::{
     lair::{
         execute::{QueryRecord, Shard, ShardingConfig},
         func_chip::FuncChip,
-        hasher::LurkHasher,
+        hasher::{Hasher, LurkHasher},
         lair_chip::{
             build_chip_vector_from_lair_chips, build_lair_chip_vector, LairMachineProgram,
         },
@@ -239,6 +239,28 @@ test!(
         (fib 10))",
     |_| num(55)
 );
+
+// commitments
+test!(test_commit, "(commit 123)", |_| {
+    let mut preimg = Vec::with_capacity(24);
+    preimg.extend([F::zero(); 8]);
+    preimg.extend(num(123).flatten());
+    ZPtr::comm(LurkHasher::default().hash(&preimg).try_into().unwrap())
+});
+test!(test_hide, "(hide (commit 321) 123)", |_| {
+    let mut secret_preimg = Vec::with_capacity(24);
+    secret_preimg.extend([F::zero(); 8]);
+    secret_preimg.extend(num(321).flatten());
+    let hasher = LurkHasher::default();
+    let mut preimg = Vec::with_capacity(24);
+    preimg.extend(hasher.hash(&secret_preimg));
+    preimg.extend(num(123).flatten());
+    ZPtr::comm(hasher.hash(&preimg).try_into().unwrap())
+});
+test!(test_open_roundtrip, "(open (commit 123))", |_| num(123));
+test!(test_secret, "(secret (commit 123))", |_| ZPtr::comm(
+    [F::zero(); 8]
+));
 
 // errors
 test!(test_unbound_var, "a", |_| ZPtr::err(EvalErr::UnboundVar));
