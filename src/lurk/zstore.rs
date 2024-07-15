@@ -129,6 +129,14 @@ impl<F: AbstractField + Copy> ZPtr<F> {
             digest: digest_from_field(err.to_field()),
         }
     }
+
+    #[inline]
+    pub fn comm(digest: [F; DIGEST_SIZE]) -> Self {
+        Self {
+            tag: Tag::Comm,
+            digest,
+        }
+    }
 }
 
 impl<F: AbstractField + Copy> ZPtr<F> {
