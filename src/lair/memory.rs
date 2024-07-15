@@ -50,7 +50,8 @@ impl<F: PrimeField32> MemChip<F> {
             // .skip(range.start)
             // .take(non_dummy_height)
             .for_each(|(i, (row, (args, mem_result)))| {
-                let (last_count, last_nonce) = mem_result.get_provide_hints(&shard.shard_config);
+                let [last_nonce, last_count] =
+                    mem_result.provide.get_provide_hints(shard.shard_config);
 
                 // is_real
                 row[0] = F::one();

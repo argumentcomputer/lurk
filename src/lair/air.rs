@@ -274,7 +274,7 @@ impl<F: Field> Op<F> {
                 };
                 map.push(x);
             }
-            Op::Call(idx, inp, _) => {
+            Op::Call(idx, inp) => {
                 let func = toplevel.get_by_index(*idx);
                 let mut out = Vec::with_capacity(func.output_size);
                 for _ in 0..func.output_size {
@@ -298,7 +298,7 @@ impl<F: Field> Op<F> {
                     sel.clone(),
                 );
             }
-            Op::PreImg(idx, out, _) => {
+            Op::PreImg(idx, out) => {
                 let func = toplevel.get_by_index(*idx);
                 let mut inp = Vec::with_capacity(func.input_size);
                 for _ in 0..func.input_size {
@@ -322,7 +322,7 @@ impl<F: Field> Op<F> {
                     sel.clone(),
                 );
             }
-            Op::Store(values, _) => {
+            Op::Store(values) => {
                 let ptr = local.next_aux(index);
                 map.push(Val::Expr(ptr.into()));
                 let values = values.iter().map(|&idx| map[idx].to_expr());
@@ -343,7 +343,7 @@ impl<F: Field> Op<F> {
                     sel.clone(),
                 );
             }
-            Op::Load(len, ptr, _) => {
+            Op::Load(len, ptr) => {
                 let ptr = map[*ptr].to_expr();
                 // This must be collected to ensure the side effects take place
                 let values = (0..*len)

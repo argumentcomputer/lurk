@@ -6,8 +6,6 @@
 
 use super::{map::Map, List, Name};
 
-type Ident = usize;
-
 /// The type for Lair operations
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Op<F> {
@@ -25,18 +23,16 @@ pub enum Op<F> {
     Not(usize),
     /// `Call(i, [a, b, ...])` extends the stack with the output of the function
     /// at index `i` in the toplevel when applied to the arguments at positions
-    /// `[a, b, ...]` in the stack. The last `usize` is an unique identifier within
-    /// a `Func`
-    Call(usize, List<usize>, Ident),
+    /// `[a, b, ...]` in the stack
+    Call(usize, List<usize>),
     /// `PreImg(i, [a, b, ...])` extends the stack with the latest preimage
     /// (beware of non-injectivity) of the function of index `i` when called with
-    /// arguments at positions `[a, b, ...]` in the stack. The last `usize` is an
-    /// unique identifier within a `Func`
-    PreImg(usize, List<usize>, Ident),
+    /// arguments at positions `[a, b, ...]` in the stack
+    PreImg(usize, List<usize>),
     /// `Store([y, ...])` pushes to the stack the pointer to `[y, ...]`
-    Store(List<usize>, Ident),
+    Store(List<usize>),
     /// `Load(len, y)` extends the stack with the `len` values that is pointed by `y`
-    Load(usize, usize, Ident),
+    Load(usize, usize),
     /// `Hash([x, ...])` extends the stack with the hash of `x, ...`
     Hash(List<usize>),
     /// `Debug(s)` emits debug message `s`
