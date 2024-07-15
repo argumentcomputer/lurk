@@ -2,7 +2,7 @@ use p3_air::BaseAir;
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
-    hasher::Chipset,
+    chipset::Chipset,
     toplevel::Toplevel,
 };
 

@@ -7,7 +7,7 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    lair::{hasher::Chipset, List},
+    lair::{chipset::Chipset, List},
     lurk::{
         parser::{
             syntax::{parse_maybe_meta, parse_space},
@@ -777,8 +777,8 @@ mod test {
 
     use crate::{
         lair::{
+            chipset::{Chipset, LurkHasher},
             execute::QueryRecord,
-            hasher::{Chipset, LurkHasher},
         },
         lurk::{
             eval::build_lurk_toplevel,

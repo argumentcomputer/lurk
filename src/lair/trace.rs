@@ -11,9 +11,9 @@ use crate::{air::builder::Record, lair::execute::mem_index_from_len};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
+    chipset::Chipset,
     execute::{QueryRecord, Shard},
     func_chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
-    hasher::Chipset,
     toplevel::Toplevel,
     List,
 };
@@ -361,10 +361,10 @@ mod tests {
         air::debug::{debug_constraints_collecting_queries, TraceQueries},
         func,
         lair::{
+            chipset::Nochip,
             demo_toplevel,
             execute::{QueryRecord, Shard, ShardingConfig},
             field_from_u32,
-            hasher::Nochip,
             lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
             toplevel::Toplevel,
             trace::LayoutSizes,

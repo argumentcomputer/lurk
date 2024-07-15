@@ -10,9 +10,9 @@ use sphinx_core::{
 use crate::{
     air::debug::{debug_constraints_collecting_queries, TraceQueries},
     lair::{
+        chipset::{Chipset, LurkChip, LurkHasher},
         execute::{QueryRecord, Shard, ShardingConfig},
         func_chip::FuncChip,
-        hasher::{Chipset, LurkChip, LurkHasher},
         lair_chip::{
             build_chip_vector_from_lair_chips, build_lair_chip_vector, LairMachineProgram,
         },

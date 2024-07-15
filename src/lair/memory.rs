@@ -121,7 +121,7 @@ mod tests {
     use crate::lair::execute::QueryRecord;
     use crate::{
         func,
-        lair::{func_chip::FuncChip, hasher::Nochip, toplevel::Toplevel},
+        lair::{chipset::Nochip, func_chip::FuncChip, toplevel::Toplevel},
     };
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;

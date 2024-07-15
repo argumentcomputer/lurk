@@ -1,6 +1,6 @@
 use rustc_hash::FxHashMap;
 
-use super::{bytecode::*, expr::*, hasher::Chipset, map::Map, List, Name};
+use super::{bytecode::*, chipset::Chipset, expr::*, map::Map, List, Name};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Toplevel<F, H: Chipset<F>> {

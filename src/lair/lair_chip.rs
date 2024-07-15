@@ -10,9 +10,9 @@ use crate::air::builder::{LookupBuilder, RequireRecord};
 
 use super::{
     bytecode::Func,
+    chipset::Chipset,
     execute::{Shard, MEM_TABLE_SIZES},
     func_chip::FuncChip,
-    hasher::Chipset,
     memory::MemChip,
     relations::OuterCallRelation,
 };

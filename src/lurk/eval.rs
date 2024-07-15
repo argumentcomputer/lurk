@@ -8,8 +8,8 @@ use rustc_hash::FxBuildHasher;
 use crate::{
     func,
     lair::{
+        chipset::{lurk_chip_map, LurkChip, LurkHasher},
         expr::{BlockE, CasesE, CtrlE, FuncE, OpE, Var},
-        hasher::{lurk_chip_map, LurkChip, LurkHasher},
         map::Map,
         toplevel::Toplevel,
         List, Name,

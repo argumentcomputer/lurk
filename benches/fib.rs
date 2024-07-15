@@ -11,9 +11,9 @@ use std::time::Duration;
 
 use loam::{
     lair::{
+        chipset::{Chipset, LurkHasher},
         execute::{QueryRecord, Shard},
         func_chip::FuncChip,
-        hasher::{Chipset, LurkHasher},
         lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
         toplevel::Toplevel,
         List,

@@ -9,7 +9,7 @@ use crate::air::builder::Record;
 
 use super::{
     bytecode::{Ctrl, Func, Op},
-    hasher::Chipset,
+    chipset::Chipset,
     toplevel::Toplevel,
     List,
 };
@@ -562,11 +562,11 @@ mod tests {
     use crate::{
         func,
         lair::{
+            chipset::Nochip,
             demo_toplevel,
             execute::{QueryRecord, Shard},
             field_from_u32,
             func_chip::FuncChip,
-            hasher::Nochip,
             toplevel::Toplevel,
             List,
         },

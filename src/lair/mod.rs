@@ -2,14 +2,14 @@ use p3_field::Field;
 
 use crate::func;
 
-use self::{hasher::Nochip, toplevel::Toplevel};
+use self::{chipset::Nochip, toplevel::Toplevel};
 
 pub mod air;
 pub mod bytecode;
+pub mod chipset;
 pub mod execute;
 pub mod expr;
 pub mod func_chip;
-pub mod hasher;
 pub mod lair_chip;
 mod macros;
 pub mod map;

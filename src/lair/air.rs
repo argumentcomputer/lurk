@@ -7,8 +7,8 @@ use crate::air::builder::{LookupBuilder, ProvideRecord, RequireRecord};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
+    chipset::Chipset,
     func_chip::{ColumnLayout, FuncChip, LayoutSizes},
-    hasher::Chipset,
     relations::{CallRelation, MemoryRelation},
     toplevel::Toplevel,
     trace::ColumnIndex,
@@ -547,7 +547,7 @@ mod tests {
     use crate::{
         air::debug::debug_constraints_collecting_queries,
         func,
-        lair::{execute::Shard, hasher::Nochip},
+        lair::{chipset::Nochip, execute::Shard},
     };
     use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
