@@ -36,50 +36,53 @@ impl<F: PrimeField, W: ArraySize> LessThanWitness<F, W> {
         byte_record.less_than(0, 0)
     }
 
-    const fn num_requires() -> usize {
+    pub const fn num_requires() -> usize {
         1
     }
 }
 
+/// Asserts that `is_less_than = (lhs < rhs)` and returns `is_equal = (lhs == rhs)`
 pub fn eval_less_than<AB: AirBuilder, W: ArraySize>(
     builder: &mut AB,
     (lhs, rhs): (Word<impl Into<AB::Expr>, W>, Word<impl Into<AB::Expr>, W>),
-    out: impl Into<AB::Expr>,
+    is_less_than: impl Into<AB::Expr>,
     witness: &LessThanWitness<AB::Var, W>,
     record: &mut impl ByteAirRecord<AB::Expr>,
     is_real: impl Into<AB::Expr>,
-) {
+) -> AB::Expr {
     let lhs = lhs.into();
     let rhs = rhs.into();
-    let out = out.into();
+    let is_less_than = is_less_than.into();
     let is_real = is_real.into();
     let builder = &mut builder.when(is_real.clone());
 
+    // Stores the most significant non-equal limbs
     let mut lhs_comp = AB::Expr::zero();
     let mut rhs_comp = AB::Expr::zero();
 
-    let mut comp_set = AB::Expr::zero();
+    // We start by assuming all limbs are equal.
+    let mut is_equal = AB::Expr::one();
 
+    // Iterate over the limbs in reverse order
     for i in (0..W::USIZE).rev() {
+        // `is_comp` indicates whether this is the most significant non-equal limb pair
         let is_comp = witness.is_comp[i];
         builder.assert_bool(is_comp);
 
-        // Select the current limbs is the comparison flag is set
+        // Select the current limbs for comparison
         lhs_comp += lhs[i].clone() * is_comp;
         rhs_comp += rhs[i].clone() * is_comp;
 
-        // If the comparison happened, set the equality flag for next limbs
-        comp_set += is_comp.into();
+        // Unset the equality checking flag if this is the first non-equal limb pair
+        is_equal -= is_comp.into();
 
-        // If the word is equal, or if the comparison happened in any previous limb,
-        // then the i-th limbs must be equal.
-        let is_equal = AB::Expr::one() - comp_set.clone();
+        // If we have not yet encountered the non-equal limb pair, then the limbs should be equal
         builder
             .when(is_equal.clone())
             .assert_eq(lhs[i].clone(), rhs[i].clone());
     }
-    // Either the words are equal, or exactly one limb is used for comparison
-    builder.assert_bool(comp_set.clone());
+    // At most one limb pair is different
+    builder.assert_bool(is_equal.clone());
 
     // Ensure the limbs used for comparison are the ones selected by `is_comp`
     builder.assert_eq(lhs_comp, witness.lhs_comp_limb);
@@ -88,10 +91,24 @@ pub fn eval_less_than<AB: AirBuilder, W: ArraySize>(
     // If the words are not equal, then the comparison limbs must be different,
     // so their difference must have an inverse.
     let diff_comp = witness.lhs_comp_limb - witness.rhs_comp_limb;
-    builder.assert_eq(diff_comp * witness.diff_comp_inv, comp_set);
+    // Active if all the comparison flags were off
+    let is_comp = AB::Expr::one() - is_equal.clone();
+    // Is a comparison happened, the difference should be non-zero and we check the inverse.
+    // Otherwise, the inverse is unconstrained and may be set to 0.
+    builder.assert_eq(diff_comp * witness.diff_comp_inv, is_comp);
 
-    // Check the comparison
-    record.less_than(witness.lhs_comp_limb, witness.rhs_comp_limb, out, is_real);
+    // Check the comparison of the `less_than` flag
+    record.less_than(
+        witness.lhs_comp_limb,
+        witness.rhs_comp_limb,
+        is_less_than,
+        is_real,
+    );
+
+    // Return the `is_equal` flag, so we can compute `is_less_or_equal = is_less_than + is_equal.
+    // If is_equal == 1, then both comparison limbs will be 0, so is_less_than will be 0
+    // If is_less_than = 1, then is_equal will have been set by one of the comparison flags
+    is_equal
 }
 
 #[cfg(test)]

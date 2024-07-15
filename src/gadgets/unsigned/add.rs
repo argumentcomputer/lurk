@@ -31,7 +31,7 @@ pub const fn num_requires<W: ArraySize>() -> usize {
     W::USIZE / 2
 }
 
-fn eval_sum<AB: AirBuilder, W: ArraySize>(
+pub fn eval_sum<AB: AirBuilder, W: ArraySize>(
     builder: &mut AB,
     (in1, in2): (Word<AB::Expr, W>, Word<AB::Expr, W>),
     out: Word<AB::Expr, W>,

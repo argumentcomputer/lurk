@@ -45,7 +45,7 @@ impl<F: AbstractField, W: ArraySize> MulWitness<F, W> {
         result
     }
 
-    const fn num_requires() -> usize {
+    pub const fn num_requires() -> usize {
         W::USIZE // u16 carry checks
         + W::USIZE / 2 // range check output
     }

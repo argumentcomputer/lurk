@@ -6,8 +6,9 @@ use std::fmt::{Debug, Formatter, Pointer};
 use std::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign};
 
 pub mod add;
+pub mod div_rem;
 pub mod is_zero;
-mod less_than;
+pub mod less_than;
 pub mod mul;
 
 #[derive(Clone, Default)]
@@ -209,6 +210,12 @@ impl<'a, T, W: ArraySize> IntoIterator for &'a Word<T, W> {
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
+    }
+}
+
+impl<T, W: ArraySize> FromIterator<T> for Word<T, W> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        Self(Array::from_iter(iter))
     }
 }
 
