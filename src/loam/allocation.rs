@@ -241,7 +241,7 @@ ascent! {
 
     // Populate input_ptr and mark for ingress.
     ingress(ptr),
-    input_ptr(ptr) <-- input_expr(wide_ptr), ptr_tag(ptr, wide_ptr.0), ptr_value(ptr, wide_ptr.1);
+    input_ptr(ptr) <-- input_expr(wide_ptr), ptr_value(ptr, wide_ptr.1), ptr_tag(ptr, wide_ptr.0);
 
     // mark ingress conses for unhashing.
     unhash4(Tag::Cons.elt(), digest) <--
@@ -319,7 +319,7 @@ ascent! {
 
     map_double_input(ptr) <-- input_ptr(ptr);
 
-    ingress(ptr) <-- map_double_input(ptr), if ptr.is_cons();
+    ingress(ptr) <-- map_double_input(ptr);
 
     map_double_input(car), map_double_input(cdr) <-- map_double_input(cons), cons_rel(car, cdr, cons);
 
@@ -327,7 +327,7 @@ ascent! {
 
     map_double_cont(ptr, double_car, double_cdr),
     cons(double_car, double_cdr) <--
-        map_double_input(ptr), if ptr.is_cons(),
+        map_double_input(ptr),
         cons_rel(car, cdr, ptr),
         map_double(car, double_car),
         map_double(cdr, double_cdr);
