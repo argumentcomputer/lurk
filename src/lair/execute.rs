@@ -34,12 +34,9 @@ impl<F: PrimeField32> QueryResult<F> {
     }
 
     pub(crate) fn new_lookup(&mut self, nonce: usize, caller_requires: &mut Vec<Record>) {
-        let count = self.provide.count;
         caller_requires.push(self.provide);
-        self.provide = Record {
-            nonce: nonce as u32,
-            count: count + 1,
-        };
+        self.provide.nonce = nonce as u32;
+        self.provide.count += 1;
     }
 }
 
