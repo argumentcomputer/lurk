@@ -25,9 +25,10 @@ ascent! {
 }
 
 loam! {
-    struct LoamProgram;
+    struct FibProgram;
 
     // Facts:
+    // #[distill(preserve)]
     relation number(isize);
 
     // Rules:
@@ -48,11 +49,11 @@ fn main() {
 
     let AscentProgram { mut fib_table, .. } = ascent_prog;
 
-    let mut loam_prog = LoamProgram::default();
+    let mut loam_prog = FibProgram::default();
     loam_prog.number = (0..6).map(|n| (n,)).collect();
     loam_prog.run();
 
-    let LoamProgram {
+    let FibProgram {
         mut fib_table_2, ..
     } = loam_prog;
 
@@ -63,5 +64,14 @@ fn main() {
     println!("{:?}", fib_table_2);
 
     assert_eq!(fib_table, fib_table_2);
-    println!("success!")
+    println!("success!");
+
+    let mut distilled_program = DistilledFibProgram::default();
+    distilled_program.number = (0..6).map(|n| (n,)).collect();
+    distilled_program.fib = vec![(0, 1), (1, 1)];
+    distilled_program.run();
+
+    let DistilledFibProgram { fib, .. } = distilled_program;
+
+    println!("fib: {:?}", fib);
 }
