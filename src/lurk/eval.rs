@@ -1,6 +1,8 @@
 use indexmap::{map::Iter, IndexMap};
+use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
 use p3_baby_bear::BabyBear;
-use p3_field::AbstractField;
+use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::FxBuildHasher;
 
 use crate::{
@@ -95,7 +97,7 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkHasher>, ZStore<BabyBear
     (toplevel, zstore)
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, FromPrimitive, Debug)]
 #[repr(u32)]
 pub enum EvalErr {
     UnboundVar = 0,
@@ -119,6 +121,10 @@ pub enum EvalErr {
 impl EvalErr {
     pub(crate) fn to_field<F: AbstractField>(self) -> F {
         F::from_canonical_u32(self as u32)
+    }
+
+    pub(crate) fn from_field<F: PrimeField32>(f: &F) -> Self {
+        Self::from_u32(f.as_canonical_u32()).expect("Field element doesn't map to a EvalErr")
     }
 }
 
