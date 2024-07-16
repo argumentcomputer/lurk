@@ -218,9 +218,8 @@ pub fn build_chip_vector<'a, F: PrimeField32, H: Hasher<F>>(
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        func,
-        lair::{execute::QueryRecord, func_chip::FuncChip, hasher::LurkHasher, toplevel::Toplevel},
+    use crate::lair::{
+        demo_toplevel, execute::QueryRecord, func_chip::FuncChip, hasher::LurkHasher,
     };
 
     use super::*;
@@ -237,26 +236,16 @@ mod tests {
         sphinx_core::utils::setup_logger();
         type F = BabyBear;
         type H = LurkHasher;
-        let func_e = func!(
-        fn test(): [2] {
-            let one = 1;
-            let two = 2;
-            let three = 3;
-            let ptr1 = store(one, two, three);
-            let ptr2 = store(one, one, one);
-            let (_x, y, _z) = load(ptr1);
-            return (ptr2, y)
-        });
-        let toplevel = Toplevel::<F, H>::new(&[func_e]);
-        let test_chip = FuncChip::from_name("test", &toplevel);
+        let toplevel = demo_toplevel::<F, H>();
+        let chip = FuncChip::from_name("factorial", &toplevel);
         let mut record = QueryRecord::new(&toplevel);
 
-        toplevel.execute_by_name("test", &[], &mut record);
+        toplevel.execute_by_name("factorial", &[F::from_canonical_u8(5)], &mut record);
 
         let config = BabyBearPoseidon2::new();
         let machine = StarkMachine::new(
             config,
-            build_chip_vector(&test_chip),
+            build_chip_vector(&chip),
             record.expect_public_values().len(),
         );
 

@@ -50,8 +50,7 @@ impl<F: PrimeField32> MemChip<F> {
             // .skip(range.start)
             // .take(non_dummy_height)
             .for_each(|(i, (row, (args, mem_result)))| {
-                let [last_nonce, last_count] =
-                    mem_result.provide.get_provide_hints(shard.shard_config);
+                let provide = mem_result.provide.into_provide();
 
                 // is_real
                 row[0] = F::one();
@@ -60,9 +59,9 @@ impl<F: PrimeField32> MemChip<F> {
                 // TODO: the ptr can be "duplicated" when sharding is involved: how do we deal with this?
 
                 // last_nonce
-                row[2] = last_nonce;
+                row[2] = provide.last_nonce;
                 // last_count
-                row[3] = last_count;
+                row[3] = provide.last_count;
                 row[4..].copy_from_slice(args)
             });
         trace
