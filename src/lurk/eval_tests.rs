@@ -247,6 +247,16 @@ test!(test_commit, "(commit 123)", |_| {
     preimg.extend(num(123).flatten());
     ZPtr::comm(LurkHasher::default().hash(&preimg).try_into().unwrap())
 });
+test!(
+    test_raw_commit,
+    "#0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3",
+    |_| {
+        let mut preimg = Vec::with_capacity(24);
+        preimg.extend([F::zero(); 8]);
+        preimg.extend(num(123).flatten());
+        ZPtr::comm(LurkHasher::default().hash(&preimg).try_into().unwrap())
+    }
+);
 test!(test_hide, "(hide (commit 321) 123)", |_| {
     let mut secret_preimg = Vec::with_capacity(24);
     secret_preimg.extend([F::zero(); 8]);
@@ -258,6 +268,7 @@ test!(test_hide, "(hide (commit 321) 123)", |_| {
     ZPtr::comm(hasher.hash(&preimg).try_into().unwrap())
 });
 test!(test_open_roundtrip, "(open (commit 123))", |_| num(123));
+test!(test_open_raw_roundtrip, "(cdr (cons (commit 123) (open #0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3)))", |_| num(123));
 test!(test_secret, "(secret (commit 123))", |_| ZPtr::comm(
     [F::zero(); 8]
 ));

@@ -20,9 +20,9 @@ use crate::{
     },
 };
 
-use super::eval::EvalErr;
+use super::{eval::EvalErr, syntax::digest_to_biguint};
 
-const DIGEST_SIZE: usize = 8;
+pub const DIGEST_SIZE: usize = 8;
 
 const ZPTR_SIZE: usize = 2 * DIGEST_SIZE;
 // const COMM_PREIMG_SIZE: usize = DIGEST_SIZE + ZPTR_SIZE;
@@ -278,6 +278,11 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
     }
 
     #[inline]
+    pub fn intern_comm(&mut self, c: [F; 8]) -> ZPtr<F> {
+        self.memoize_atom_dag(ZPtr::comm(c))
+    }
+
+    #[inline]
     pub fn intern_error(&mut self, err: EvalErr) -> ZPtr<F> {
         self.memoize_atom_dag(ZPtr::err(err))
     }
@@ -384,6 +389,7 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
             Syntax::Num(_, f) => self.intern_num(*f),
             Syntax::Char(_, c) => self.intern_char(*c),
             Syntax::U64(_, u) => self.intern_u64(*u),
+            Syntax::Comm(_, c) => self.intern_comm(*c),
             Syntax::String(_, s) => self.intern_string(s),
             Syntax::Symbol(_, s) => self.intern_symbol(s),
             Syntax::List(_, xs) => {
@@ -693,7 +699,7 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
                 "'{}'",
                 char::from_u32(zptr.digest[0].as_canonical_u32()).expect("invalid char")
             ),
-            Tag::Comm => todo!(),
+            Tag::Comm => format!("#0x{:x}", digest_to_biguint(&zptr.digest)),
             Tag::Str => format!("\"{}\"", self.fetch_string(zptr)),
             Tag::Builtin | Tag::Sym | Tag::Key | Tag::Nil => {
                 state.borrow().fmt_to_string(&self.fetch_symbol(zptr))
@@ -757,7 +763,10 @@ mod test {
     use p3_field::AbstractField;
 
     use crate::{
-        lair::{execute::QueryRecord, hasher::LurkHasher},
+        lair::{
+            execute::QueryRecord,
+            hasher::{Hasher, LurkHasher},
+        },
         lurk::{
             eval::build_lurk_toplevel,
             state::{lurk_sym, user_sym, State},
@@ -834,6 +843,18 @@ mod test {
 
         let one_u64 = ZPtr::u64(1);
         assert_eq!(zstore.fmt_with_state(state, &one_u64), "1u64");
+
+        let zero_comm = ZPtr::comm([BabyBear::zero(); 8]);
+        assert_eq!(zstore.fmt_with_state(state, &zero_comm), "#0x0");
+
+        let mut preimg = Vec::with_capacity(24);
+        preimg.extend([BabyBear::zero(); 8]);
+        preimg.extend(ZPtr::num(BabyBear::from_canonical_u32(123)).flatten());
+        let simple_comm = ZPtr::comm(LurkHasher::default().hash(&preimg).try_into().unwrap());
+        assert_eq!(
+            zstore.fmt_with_state(state, &simple_comm),
+            "#0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3"
+        );
 
         let empty_str = zstore.intern_string("");
         assert_eq!(zstore.fmt_with_state(state, &empty_str), "\"\"");
