@@ -51,7 +51,7 @@ impl Ptr {
 
     fn t() -> Self {
         let addr = lurk_sym_index("t").unwrap();
-        Self(Tag::Sym.elt(), LE::from_canonical_u32(addr as u32))
+        Self(Tag::Builtin.elt(), LE::from_canonical_u32(addr as u32))
     }
 
     fn f(val: LE) -> Self {
@@ -70,6 +70,11 @@ impl Ptr {
     fn is_sym(&self) -> bool {
         self.0 == Tag::Sym.elt()
     }
+
+    fn is_builtin(&self) -> bool {
+        self.0 == Tag::Builtin.elt()
+    }
+
     fn is_fun(&self) -> bool {
         self.0 == Tag::Fun.elt()
     }
@@ -121,7 +126,7 @@ impl WidePtr {
     fn nil() -> Self {
         // FIXME: cache, don't do expensive read repeatedly.
         let zstore = &mut ZStore::<_, LurkHasher>::default();
-        let ZPtr { tag, digest } = zstore.intern_symbol(zstore::nil());
+        let ZPtr { tag, digest } = zstore.intern_nil();
         Self(Wide::widen(tag.elt()), Wide(digest))
     }
 

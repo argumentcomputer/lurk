@@ -1,3 +1,5 @@
+use num_traits::FromPrimitive;
+
 use anyhow::{bail, Result};
 use itertools::Itertools;
 use nom::{sequence::preceded, Parser};
@@ -185,7 +187,7 @@ pub struct ZStore<F, H: Hasher<F>> {
 }
 
 static NIL: OnceCell<Symbol> = OnceCell::new();
-pub(crate) fn nil() -> &'static Symbol {
+fn nil() -> &'static Symbol {
     NIL.get_or_init(|| lurk_sym("nil"))
 }
 
@@ -759,6 +761,8 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
 
 #[cfg(test)]
 mod test {
+    use num_traits::FromPrimitive;
+
     use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
 
@@ -898,7 +902,7 @@ mod test {
         let test = |tag: Tag| {
             let f = tag.to_field::<BabyBear>();
             let u = f.as_canonical_u32();
-            let new_tag = Tag::try_from(u as usize).unwrap();
+            let new_tag = Tag::from_u32(u.try_into().unwrap()).unwrap();
             assert_eq!(tag, new_tag);
         };
 

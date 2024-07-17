@@ -1,13 +1,16 @@
 // TODO: appease clippy for now
 #![allow(clippy::all)]
 #![allow(warnings)]
+
+use num_traits::FromPrimitive;
+
 use crate::lair::hasher::LurkHasher;
 use crate::loam::allocation::allocator;
 use crate::loam::lurk_sym_index;
 use crate::loam::{LEWrap, Num, Ptr, Wide, WidePtr, LE};
 use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
 use crate::lurk::tag::Tag;
-use crate::lurk::zstore::{builtin_vec, nil, ZPtr, ZStore};
+use crate::lurk::zstore::{builtin_vec, ZPtr, ZStore};
 
 use p3_field::{AbstractField, PrimeField32};
 
@@ -16,25 +19,26 @@ use ascent::{ascent, Dual};
 pub struct Memory {}
 
 impl Memory {
-    fn initial_sym_relation() -> Vec<(Wide, Dual<LEWrap>)> {
+    fn initial_builtin_relation() -> Vec<(Wide, Dual<LEWrap>)> {
         let zstore = &mut ZStore::<_, LurkHasher>::default();
         builtin_vec()
             .iter()
             .enumerate()
             .map(|(i, name)| {
-                let ZPtr { tag: _, digest } = zstore.intern_symbol(name);
+                let ZPtr { tag: tag, digest } = zstore.intern_symbol(name);
+
                 (Wide(digest), Dual(LEWrap(LE::from_canonical_u64(i as u64))))
             })
             .collect()
     }
 
-    fn initial_sym_addr() -> LE {
+    fn initial_builtin_addr() -> LE {
         LE::from_canonical_u64(LURK_PACKAGE_SYMBOLS_NAMES.len() as u64)
     }
 
     fn initial_nil_relation() -> Vec<(Wide, Dual<LEWrap>)> {
         let zstore = &mut ZStore::<_, LurkHasher>::default();
-        let ZPtr { tag: _, digest } = zstore.intern_symbol(nil());
+        let ZPtr { tag: _, digest } = zstore.intern_nil();
         vec![(Wide(digest), Dual(LEWrap(LE::from_canonical_u64(0u64))))]
     }
 
@@ -49,7 +53,7 @@ impl Memory {
 
 impl Ptr {
     fn is_built_in_named(&self, name: &str) -> bool {
-        if !self.is_sym() {
+        if !self.is_builtin() {
             return false;
         }
 
@@ -85,19 +89,15 @@ impl Ptr {
     }
 
     fn is_built_in(&self) -> bool {
-        if !self.is_sym() {
+        if !self.is_builtin() {
             return false;
         }
 
-        self.1 < Memory::initial_sym_addr()
+        self.1 < Memory::initial_builtin_addr()
     }
 
     fn is_non_built_in(&self) -> bool {
-        if !self.is_sym() {
-            return false;
-        }
-
-        self.1 >= Memory::initial_sym_addr()
+        self.is_sym()
     }
 
     fn is_relational(&self) -> bool {
@@ -178,7 +178,7 @@ impl Tag {
     pub fn wide_relation() -> Vec<(LE, Wide)> {
         (0..Self::count())
             .map(|i| {
-                let tag = Tag::try_from(i).unwrap();
+                let tag = Tag::from_u32(i.try_into().unwrap()).unwrap();
                 (tag.elt(), tag.value())
             })
             .collect()
@@ -361,14 +361,28 @@ ascent! {
     // Sym
 
     // Final
-    lattice sym_digest_mem(Wide, Dual<LEWrap>) = Memory::initial_sym_relation(); // (digest, addr)
+    lattice sym_digest_mem(Wide, Dual<LEWrap>); // (digest, addr)
 
     // Populating alloc(...) triggers allocation in sym_digest_mem.
-    sym_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Sym.elt(), Memory::initial_sym_addr())))) <-- alloc(tag, value), if *tag == Tag::Sym.elt();
+    sym_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Sym.elt(), LE::zero())))) <-- alloc(tag, value), if *tag == Tag::Sym.elt();
 
     // // Convert addr to ptr and register ptr relations.
     ptr(ptr), ptr_tag(ptr, Tag::Sym.value()), ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), addr.0.0);
     // todo: sym_value
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // Builtin
+
+    // Final
+    lattice builtin_digest_mem(Wide, Dual<LEWrap>) = Memory::initial_builtin_relation(); // (digest, addr)
+
+    // Populating alloc(...) triggers allocation in sym_digest_mem.
+    builtin_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Sym.elt(), Memory::initial_builtin_addr())))) <-- alloc(tag, value), if *tag == Tag::Builtin.elt();
+
+    // // Convert addr to ptr and register ptr relations.
+    ptr(ptr), ptr_tag(ptr, Tag::Builtin.value()), ptr_value(ptr, value) <-- builtin_digest_mem(value, addr), let ptr = Ptr(Tag::Builtin.elt(), addr.0.0);
+    // todo: builtin_value
+
 
     ////////////////////////////////////////////////////////////////////////////////
     // Nil
@@ -524,7 +538,7 @@ ascent! {
     relation lookup(Ptr, Ptr, Ptr); // (var, outer-env, val)
 
     // If expr is a sym but not a built-in, look it up.
-    ingress(env), lookup0(env, expr, env) <-- eval_input(expr, env), if expr.is_non_built_in(); // FIXME: this should just check for Sym tag; built-ins will have own tag.
+    ingress(env), lookup0(env, expr, env) <-- eval_input(expr, env), if expr.is_sym();
 
     // Unbound variable: If env is nil during lookup0, var is unbound. Return an an error.
     eval(var, outer_env, Ptr(Tag::Err.elt(), LE::zero())) <-- lookup0(outer_env, var, env), if env.is_nil();
