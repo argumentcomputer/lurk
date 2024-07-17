@@ -7,11 +7,11 @@ use rayon::{
     slice::ParallelSliceMut,
 };
 
-use crate::lair::execute::mem_index_from_len;
+use crate::{air::builder::Record, lair::execute::mem_index_from_len};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
-    execute::{LookupHint, Shard},
+    execute::{QueryRecord, Shard},
     func_chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
     hasher::Hasher,
     List,
@@ -62,7 +62,7 @@ impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
         // initializing nonces
         rows.chunks_mut(width)
             .enumerate()
-            .for_each(|(i, row)| row[0] = F::from_canonical_usize(i));
+            .for_each(|(i, row)| row[0] = F::from_canonical_usize(range.start + i));
         let non_dummies = &mut rows[0..non_dummy_height * width];
         non_dummies
             .par_chunks_mut(width)
@@ -72,8 +72,10 @@ impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 let requires = result.requires.iter();
+                let queries = shard.record();
+                let hasher = &self.toplevel.hasher;
                 self.func
-                    .populate_row(args, index, slice, shard, requires, &self.toplevel.hasher);
+                    .populate_row(args, index, slice, queries, requires, hasher);
             });
         RowMajorMatrix::new(rows, width)
     }
@@ -81,11 +83,11 @@ impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
 
 #[derive(Clone)]
 struct TraceCtx<'a, F: PrimeField32, H> {
-    shard: &'a Shard<'a, F>,
+    queries: &'a QueryRecord<F>,
     hasher: &'a H,
     func_idx: usize,
     call_inp: List<F>,
-    require_hints: Iter<'a, LookupHint>,
+    requires: Iter<'a, Record>,
 }
 
 impl<F: PrimeField32> Func<F> {
@@ -94,8 +96,8 @@ impl<F: PrimeField32> Func<F> {
         args: &[F],
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
-        shard: &Shard<'_, F>,
-        require_hints: Iter<'_, LookupHint>,
+        queries: &QueryRecord<F>,
+        requires: Iter<'_, Record>,
         hasher: &H,
     ) {
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
@@ -105,9 +107,9 @@ impl<F: PrimeField32> Func<F> {
         let ctx = &mut TraceCtx {
             func_idx: self.index,
             call_inp: args.into(),
-            shard,
+            queries,
             hasher,
-            require_hints,
+            requires,
         };
         // One column per input
         args.iter().for_each(|arg| slice.push_input(index, *arg));
@@ -138,19 +140,18 @@ impl<F: PrimeField32> Ctrl<F> {
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
     ) {
-        let record = ctx.shard.record();
         match self {
             Ctrl::Return(ident, _) => {
-                assert!(ctx.require_hints.next().is_none());
+                assert!(ctx.requires.next().is_none());
                 slice.sel[*ident] = F::one();
-                let query_map = &record.func_queries()[ctx.func_idx];
+                let query_map = &ctx.queries.func_queries()[ctx.func_idx];
                 let lookup = query_map
                     .get(&ctx.call_inp)
                     .expect("Cannot find query result")
                     .provide;
-                for f in lookup.get_provide_hints(ctx.shard.shard_config) {
-                    slice.push_aux(index, f);
-                }
+                let provide = lookup.into_provide();
+                slice.push_aux(index, provide.last_nonce);
+                slice.push_aux(index, provide.last_count);
             }
             Ctrl::Match(t, cases) => {
                 let (t, _) = map[*t];
@@ -224,7 +225,6 @@ impl<F: PrimeField32> Op<F> {
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
     ) {
-        let record = ctx.shard.record();
         match self {
             Op::Const(f) => map.push((*f, 0)),
             Op::Add(a, b) => {
@@ -275,20 +275,21 @@ impl<F: PrimeField32> Op<F> {
             }
             Op::Call(idx, inp) => {
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let query_map = &record.func_queries()[*idx];
+                let query_map = &ctx.queries.func_queries()[*idx];
                 let result = query_map.get(&args).expect("Cannot find query result");
                 for f in result.expect_output().iter() {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let lookup = ctx.require_hints.next().expect("Not enough require hints");
-                for f in lookup.get_require_hints(ctx.shard.shard_config) {
-                    slice.push_aux(index, f);
-                }
+                let lookup = ctx.requires.next().expect("Not enough require hints");
+                let require = lookup.into_require();
+                slice.push_aux(index, require.prev_nonce);
+                slice.push_aux(index, require.prev_count);
+                slice.push_aux(index, require.count_inv);
             }
             Op::PreImg(idx, out) => {
                 let out = out.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let inv_map = record.inv_func_queries[*idx]
+                let inv_map = ctx.queries.inv_func_queries[*idx]
                     .as_ref()
                     .expect("Function not invertible");
                 let inp = inv_map.get(&out).expect("Cannot find preimage");
@@ -296,14 +297,15 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let lookup = ctx.require_hints.next().expect("Not enough require hints");
-                for f in lookup.get_require_hints(ctx.shard.shard_config) {
-                    slice.push_aux(index, f);
-                }
+                let lookup = ctx.requires.next().expect("Not enough require hints");
+                let require = lookup.into_require();
+                slice.push_aux(index, require.prev_nonce);
+                slice.push_aux(index, require.prev_count);
+                slice.push_aux(index, require.count_inv);
             }
             Op::Store(args) => {
                 let mem_idx = mem_index_from_len(args.len());
-                let query_map = &record.mem_queries[mem_idx];
+                let query_map = &ctx.queries.mem_queries[mem_idx];
                 let args = args.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let i = query_map
                     .get_index_of(&args)
@@ -311,14 +313,15 @@ impl<F: PrimeField32> Op<F> {
                 let f = F::from_canonical_usize(i + 1);
                 map.push((f, 1));
                 slice.push_aux(index, f);
-                let lookup = ctx.require_hints.next().expect("Not enough require hints");
-                for f in lookup.get_require_hints(ctx.shard.shard_config) {
-                    slice.push_aux(index, f);
-                }
+                let lookup = ctx.requires.next().expect("Not enough require hints");
+                let require = lookup.into_require();
+                slice.push_aux(index, require.prev_nonce);
+                slice.push_aux(index, require.prev_count);
+                slice.push_aux(index, require.count_inv);
             }
             Op::Load(len, ptr) => {
                 let mem_idx = mem_index_from_len(*len);
-                let query_map = &record.mem_queries[mem_idx];
+                let query_map = &ctx.queries.mem_queries[mem_idx];
                 let ptr = map[*ptr].0.as_canonical_u32() as usize;
                 let (args, _) = query_map
                     .get_index(ptr - 1)
@@ -327,10 +330,11 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let lookup = ctx.require_hints.next().expect("Not enough require hints");
-                for f in lookup.get_require_hints(ctx.shard.shard_config) {
-                    slice.push_aux(index, f);
-                }
+                let lookup = ctx.requires.next().expect("Not enough require hints");
+                let require = lookup.into_require();
+                slice.push_aux(index, require.prev_nonce);
+                slice.push_aux(index, require.prev_count);
+                slice.push_aux(index, require.count_inv);
             }
             Op::Hash(preimg) => {
                 let preimg = preimg.iter().map(|a| map[*a].0).collect::<List<_>>();

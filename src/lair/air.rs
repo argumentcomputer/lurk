@@ -120,9 +120,6 @@ impl<F: Field> Func<F> {
         let nonce = *local.nonce;
         let next_nonce = *next.nonce;
 
-        // nonce counting starts from zero
-        builder.when_first_row().assert_zero(nonce);
-
         // nonces are unique, even for dummy rows
         builder
             .when_transition()
