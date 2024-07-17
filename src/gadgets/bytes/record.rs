@@ -43,9 +43,9 @@ where
 }
 
 pub struct BytesRecordWithContext<'a> {
-    nonce: u32,
-    requires: &'a mut Vec<Record>,
-    record: &'a mut BytesRecord,
+    pub nonce: u32,
+    pub requires: &'a mut Vec<Record>,
+    pub record: &'a mut BytesRecord,
 }
 
 /// For a given input byte pair, this structure records the nonce and count of the accesses to
