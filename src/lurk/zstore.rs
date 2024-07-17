@@ -138,6 +138,17 @@ impl<F: AbstractField + Copy> ZPtr<F> {
             digest,
         }
     }
+
+    #[inline]
+    pub fn from_flat_data(data: &[F]) -> Self
+    where
+        F: PrimeField32,
+    {
+        Self {
+            tag: Tag::from_field(&data[0]),
+            digest: into_sized(&data[8..]),
+        }
+    }
 }
 
 impl<F: AbstractField + Copy> ZPtr<F> {
