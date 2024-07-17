@@ -1,5 +1,6 @@
 use crate::gadgets::bytes::{ByteAirRecord, ByteRecord};
 use crate::gadgets::unsigned::add::Diff;
+use crate::gadgets::unsigned::is_zero::IsZeroWitness;
 use crate::gadgets::unsigned::less_than::{IsLessThan, LessThanWitness};
 use crate::gadgets::unsigned::mul::Product;
 use crate::gadgets::unsigned::{UncheckedWord, Word};
@@ -13,6 +14,7 @@ use std::ops::Div;
 #[derive(Clone, Default, AlignedBorrow)]
 #[repr(C)]
 pub struct DivRem<T, const W: usize> {
+    b_non_zero: IsZeroWitness<T, W>,
     /// q = a // b
     q: UncheckedWord<T, W>,
     /// qb = q * b
@@ -35,6 +37,10 @@ impl<F: PrimeField, const W: usize> DivRem<F, W> {
             + Copy
             + OverflowingSub,
     {
+        // b != 0
+        self.b_non_zero.populate_non_zero(b);
+
+        // q = a // b
         let q = a.div(*b);
         self.q.assign_bytes(&q.to_le_bytes(), byte_record);
 
@@ -66,6 +72,10 @@ impl<Var, const W: usize> DivRem<Var, W> {
         Var: Copy + Into<AB::Expr>,
     {
         let is_real = is_real.into();
+        // b != 0
+        self.b_non_zero
+            .assert_non_zero(builder, b.clone(), is_real.clone());
+
         // Following Jolt (https://eprint.iacr.org/2023/1217.pdf) 6.3
         // Assume a, b are range checked
         let q = self.q.into_checked(record, is_real.clone());
@@ -135,6 +145,9 @@ mod tests {
         a: U,
         b: U,
     ) {
+        if b.is_zero() {
+            return;
+        }
         let record = &mut ByteRecordTester::default();
 
         let mut witness = DivRem::<F, W>::default();

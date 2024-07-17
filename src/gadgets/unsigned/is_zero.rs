@@ -14,18 +14,56 @@ pub struct IsZeroWitness<T, const W: usize> {
 }
 
 impl<F: Field, const W: usize> IsZeroWitness<F, W> {
-    pub fn populate_non_zero(&mut self, input: [F; W]) {
-        for (i, limb) in enumerate(input) {
+    pub fn populate_non_zero<U>(&mut self, input: &U)
+    where
+        U: ToBytes<Bytes = [u8; W]> + Zero,
+    {
+        for (i, limb) in enumerate(input.to_le_bytes()) {
             if !limb.is_zero() {
-                self.inverses[i] = limb.inverse();
+                self.inverses[i] = F::from_canonical_u8(limb).inverse();
                 return;
             }
         }
         panic!("expected input to be non-zero")
     }
+
+    pub fn populate_not_equal<U>(&mut self, lhs: &U, rhs: &U)
+    where
+        U: ToBytes<Bytes = [u8; W]> + PartialEq,
+    {
+        for (i, (lhs, rhs)) in enumerate(zip(lhs.to_le_bytes(), rhs.to_le_bytes())) {
+            if lhs != rhs {
+                self.inverses[i] =
+                    (F::from_canonical_u8(lhs) - F::from_canonical_u8(rhs)).inverse();
+                return;
+            }
+        }
+        panic!("expected inputs to be different")
+    }
 }
 
 impl<Var, const W: usize> IsZeroWitness<Var, W> {
+    /// Constraints for checking that input != 0, where the operands are assumed to be
+    /// range checked little-endian unsigned integers, or boolean.
+    pub fn assert_non_zero<AB: AirBuilder<Var = Var>>(
+        &self,
+        builder: &mut AB,
+        input: Word<AB::Expr, W>,
+        is_real: impl Into<AB::Expr>,
+    ) where
+        Var: Copy + Into<AB::Expr>,
+    {
+        let builder = &mut builder.when(is_real);
+
+        let mut lc = AB::Expr::zero();
+        for (input, inverse) in zip(input, self.inverses) {
+            lc += input * inverse;
+        }
+
+        // Otherwise, there exist w such that 1 = ∑ w[i]*limb[i]
+        builder.assert_one(lc);
+    }
+
     /// Constraints for checking that is_zero = (lhs == rhs), where the operands are assumed to be
     /// range checked little-endian unsigned integers, or boolean.
     pub fn assert_is_zero<AB: AirBuilder<Var = Var>>(
@@ -73,7 +111,7 @@ pub type IsZero<T, const W: usize> = IsZeroOrEqual<T, W>;
 pub type IsEqual<T, const W: usize> = IsZeroOrEqual<T, W>;
 
 impl<F: Field, const W: usize> IsZeroOrEqual<F, W> {
-    fn populate_is_zero<U>(&mut self, input: &U) -> bool
+    pub fn populate_is_zero<U>(&mut self, input: &U) -> bool
     where
         U: ToBytes<Bytes = [u8; W]> + Zero,
     {
@@ -81,13 +119,12 @@ impl<F: Field, const W: usize> IsZeroOrEqual<F, W> {
             self.result = F::one();
             true
         } else {
-            let input = input.to_le_bytes().map(F::from_canonical_u8);
             self.witness.populate_non_zero(input);
             false
         }
     }
 
-    fn populate_is_equal<U>(&mut self, lhs: &U, rhs: &U) -> bool
+    pub fn populate_is_equal<U>(&mut self, lhs: &U, rhs: &U) -> bool
     where
         U: ToBytes<Bytes = [u8; W]> + PartialEq,
     {
@@ -95,10 +132,7 @@ impl<F: Field, const W: usize> IsZeroOrEqual<F, W> {
             self.result = F::one();
             true
         } else {
-            let lhs = lhs.to_le_bytes().map(F::from_canonical_u8);
-            let rhs = rhs.to_le_bytes().map(F::from_canonical_u8);
-            let diff = array::from_fn(|i| lhs[i] - rhs[i]);
-            self.witness.populate_non_zero(diff);
+            self.witness.populate_not_equal(lhs, rhs);
             false
         }
     }
