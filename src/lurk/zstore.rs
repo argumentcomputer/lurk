@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use itertools::Itertools;
 use nom::{sequence::preceded, Parser};
 use once_cell::sync::OnceCell;
 use p3_field::{AbstractField, Field, PrimeField32};
@@ -369,6 +370,12 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
         self.intern_tuple3(Tag::Fun, args, body, env)
     }
 
+    #[inline]
+    pub fn intern_env(&mut self, sym: ZPtr<F>, val: ZPtr<F>, env: ZPtr<F>) -> ZPtr<F> {
+        let pair = self.intern_cons(sym, val);
+        self.intern_tuple2(Tag::Env, pair, env)
+    }
+
     fn intern_syntax(&mut self, syn: &Syntax<F>) -> ZPtr<F> {
         if let Some(zptr) = self.syn_cache.get(syn).copied() {
             return zptr;
@@ -587,6 +594,7 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
         }
     }
 
+    #[inline]
     pub fn fetch_tuple2(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>) {
         let Some(ZPtrType::Tuple2(a, b)) = self.dag.get(zptr) else {
             panic!("Tuple2 data not found on DAG")
@@ -594,11 +602,152 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
         (a, b)
     }
 
+    #[inline]
     pub fn fetch_tuple3(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>, &ZPtr<F>) {
         let Some(ZPtrType::Tuple3(a, b, c)) = self.dag.get(zptr) else {
             panic!("Tuple3 data not found on DAG")
         };
         (a, b, c)
+    }
+
+    pub fn fetch_string<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> String
+    where
+        F: PrimeField32,
+    {
+        assert_eq!(zptr.tag, Tag::Str);
+        let mut string = String::new();
+        let zeros = [F::zero(); DIGEST_SIZE];
+        while zptr.digest != zeros {
+            let (car, cdr) = self.fetch_tuple2(zptr);
+            string.push(char::from_u32(car.digest[0].as_canonical_u32()).expect("invalid char"));
+            zptr = cdr;
+        }
+        string
+    }
+
+    fn fetch_symbol_path<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> Vec<String>
+    where
+        F: PrimeField32,
+    {
+        let mut path = vec![];
+        let zeros = [F::zero(); DIGEST_SIZE];
+        while zptr.digest != zeros {
+            let (car, cdr) = self.fetch_tuple2(zptr);
+            path.push(self.fetch_string(car));
+            zptr = cdr;
+        }
+        path.reverse();
+        path
+    }
+
+    #[inline]
+    pub fn fetch_symbol(&self, zptr: &ZPtr<F>) -> Symbol
+    where
+        F: PrimeField32,
+    {
+        assert!(matches!(
+            zptr.tag,
+            Tag::Sym | Tag::Nil | Tag::Builtin | Tag::Key
+        ));
+        Symbol::new_from_vec(self.fetch_symbol_path(zptr), zptr.tag == Tag::Key)
+    }
+
+    pub fn fetch_list<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> (Vec<&ZPtr<F>>, Option<&'a ZPtr<F>>) {
+        assert!(matches!(zptr.tag, Tag::Cons | Tag::Nil));
+        let mut elts = vec![];
+        while zptr.tag == Tag::Cons {
+            let (car, cdr) = self.fetch_tuple2(zptr);
+            elts.push(car);
+            zptr = cdr;
+        }
+        if zptr.tag == Tag::Nil {
+            (elts, None)
+        } else {
+            (elts, Some(zptr))
+        }
+    }
+
+    fn fetch_env<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> Vec<(&ZPtr<F>, &ZPtr<F>)>
+    where
+        F: PrimeField32,
+    {
+        assert_eq!(zptr.tag, Tag::Env);
+        let mut env = vec![];
+        let zeros = [F::zero(); DIGEST_SIZE];
+        while zptr.digest != zeros {
+            let (head, tail) = self.fetch_tuple2(zptr);
+            env.push(self.fetch_tuple2(head));
+            zptr = tail;
+        }
+        env
+    }
+
+    pub fn fmt_with_state(&self, state: &StateRcCell, zptr: &ZPtr<F>) -> String
+    where
+        F: PrimeField32,
+    {
+        match zptr.tag {
+            Tag::Num => zptr.digest[0].to_string(),
+            Tag::U64 => format!("{}u64", zptr.digest[0]),
+            Tag::Char => format!(
+                "'{}'",
+                char::from_u32(zptr.digest[0].as_canonical_u32()).expect("invalid char")
+            ),
+            Tag::Comm => todo!(),
+            Tag::Str => format!("\"{}\"", self.fetch_string(zptr)),
+            Tag::Builtin | Tag::Sym | Tag::Key | Tag::Nil => {
+                state.borrow().fmt_to_string(&self.fetch_symbol(zptr))
+            }
+            Tag::Cons => {
+                let (elts, last) = self.fetch_list(zptr);
+                let elts_str = elts.iter().map(|z| self.fmt_with_state(state, z)).join(" ");
+                if let Some(last) = last {
+                    format!("({elts_str} . {})", self.fmt_with_state(state, last))
+                } else {
+                    format!("({elts_str})")
+                }
+            }
+            Tag::Fun => {
+                let (args, body, _) = self.fetch_tuple3(zptr);
+                if args.tag == Tag::Nil {
+                    format!("<Fun () {}>", self.fmt_with_state(state, body))
+                } else {
+                    format!(
+                        "<Fun {} {}>",
+                        self.fmt_with_state(state, args),
+                        self.fmt_with_state(state, body)
+                    )
+                }
+            }
+            Tag::Env => {
+                let pairs_str = self
+                    .fetch_env(zptr)
+                    .iter()
+                    .map(|(sym, val)| {
+                        format!(
+                            "({} . {})",
+                            self.fmt_with_state(state, sym),
+                            self.fmt_with_state(state, val)
+                        )
+                    })
+                    .join(" ");
+                format!("<Env ({})>", pairs_str)
+            }
+            Tag::Thunk => {
+                let (body, _) = self.fetch_tuple2(zptr);
+                format!("<Thunk {}>", self.fmt_with_state(state, body))
+            }
+            Tag::Err => format!("<Err {:?}>", EvalErr::from_field(&zptr.digest[0])),
+        }
+    }
+
+    #[inline]
+    pub fn fmt(&self, zptr: &ZPtr<F>) -> String
+    where
+        F: PrimeField32,
+    {
+        let state = State::init_lurk_state().rccell();
+        self.fmt_with_state(&state, zptr)
     }
 }
 
@@ -608,11 +757,16 @@ mod test {
     use p3_field::AbstractField;
 
     use crate::{
-        lair::execute::QueryRecord,
-        lurk::{eval::build_lurk_toplevel, state::user_sym, tag::Tag},
+        lair::{execute::QueryRecord, hasher::LurkHasher},
+        lurk::{
+            eval::build_lurk_toplevel,
+            state::{lurk_sym, user_sym, State},
+            symbol::Symbol,
+            tag::Tag,
+        },
     };
 
-    use super::{into_sized, ZPtr};
+    use super::{into_sized, ZPtr, ZStore};
 
     #[test]
     fn test_dag_memoization() {
@@ -651,16 +805,64 @@ mod test {
         };
 
         let hi = zstore.intern_string("hi");
-        let x_sym = zstore.intern_symbol(&user_sym("x"));
-        let expected_args = zstore.intern_list([x_sym]);
-        let expected_env = zstore.intern_null(Tag::Env);
+        let x = zstore.intern_symbol(&user_sym("x"));
+        let expected_args = zstore.intern_list([x]);
+        let expected_env = zstore.intern_empty_env();
 
         let (car, cdr) = zstore.fetch_tuple2(&zptr);
         let (args, body, env) = zstore.fetch_tuple3(cdr);
 
         assert_eq!(car, &hi);
         assert_eq!(args, &expected_args);
-        assert_eq!(body, &x_sym);
+        assert_eq!(body, &x);
         assert_eq!(env, &expected_env);
+    }
+
+    #[test]
+    fn test_fmt() {
+        let mut zstore = ZStore::<BabyBear, LurkHasher>::default();
+        let state = &State::init_lurk_state().rccell();
+
+        let nil = zstore.intern_nil();
+        assert_eq!(zstore.fmt_with_state(state, &nil), "nil");
+
+        let a_char = ZPtr::char('a');
+        assert_eq!(zstore.fmt_with_state(state, &a_char), "'a'");
+
+        let one = ZPtr::num(BabyBear::one());
+        assert_eq!(zstore.fmt_with_state(state, &one), "1");
+
+        let one_u64 = ZPtr::u64(1);
+        assert_eq!(zstore.fmt_with_state(state, &one_u64), "1u64");
+
+        let empty_str = zstore.intern_string("");
+        assert_eq!(zstore.fmt_with_state(state, &empty_str), "\"\"");
+
+        let abc_str = zstore.intern_string("abc");
+        assert_eq!(zstore.fmt_with_state(state, &abc_str), "\"abc\"");
+
+        let x = zstore.intern_symbol(&state.borrow_mut().intern("x"));
+        assert_eq!(zstore.fmt_with_state(state, &x), "x");
+
+        let lambda = zstore.intern_symbol(&lurk_sym("lambda"));
+        assert_eq!(zstore.fmt_with_state(state, &lambda), "lambda");
+
+        let hi = zstore.intern_symbol(&Symbol::key(&["hi"]));
+        assert_eq!(zstore.fmt_with_state(state, &hi), ":hi");
+
+        let pair = zstore.intern_cons(x, hi);
+        assert_eq!(zstore.fmt_with_state(state, &pair), "(x . :hi)");
+
+        let list = zstore.intern_list([x, hi]);
+        assert_eq!(zstore.fmt_with_state(state, &list), "(x :hi)");
+
+        let args = zstore.intern_list([x]);
+        let empty_env = zstore.intern_empty_env();
+        let fun = zstore.intern_fun(args, x, empty_env);
+        assert_eq!(zstore.fmt_with_state(state, &fun), "<Fun (x) x>");
+
+        assert_eq!(zstore.fmt_with_state(state, &empty_env), "<Env ()>");
+        let env = zstore.intern_env(x, one, empty_env);
+        assert_eq!(zstore.fmt_with_state(state, &env), "<Env ((x . 1))>");
     }
 }
