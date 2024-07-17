@@ -847,6 +847,10 @@ mod test {
         let zero_comm = ZPtr::comm([BabyBear::zero(); 8]);
         assert_eq!(zstore.fmt_with_state(state, &zero_comm), "#0x0");
 
+        let mut one_comm = ZPtr::comm([BabyBear::zero(); 8]);
+        one_comm.digest[0] = BabyBear::one();
+        assert_eq!(zstore.fmt_with_state(state, &one_comm), "#0x1");
+
         let mut preimg = Vec::with_capacity(24);
         preimg.extend([BabyBear::zero(); 8]);
         preimg.extend(ZPtr::num(BabyBear::from_canonical_u32(123)).flatten());

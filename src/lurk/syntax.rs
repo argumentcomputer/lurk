@@ -106,9 +106,9 @@ mod test {
     use crate::lurk::{parser::syntax::parse_syntax, state::State};
 
     #[test]
-    fn test_digest_roundtrip() {
+    fn test_digest() {
         let state = State::init_lurk_state().rccell();
-        let (rest, syn) = parse_syntax::<BabyBear>(state, false, false)(
+        let (rest, syn) = parse_syntax::<BabyBear>(state.clone(), false, false)(
             "#0x123456789ABCDEFEDCBA98765432123456789ABCDEFEDCBA98765432123456".into(),
         )
         .unwrap();
@@ -117,5 +117,11 @@ mod test {
             format!("{syn}"),
             "#0x123456789abcdefedcba98765432123456789abcdefedcba98765432123456"
         );
+
+        let (rest, syn) =
+            parse_syntax::<BabyBear>(state, false, false)("#0x000000000000000000123456789".into())
+                .unwrap();
+        assert!(rest.is_empty());
+        assert_eq!(format!("{syn}"), "#0x123456789");
     }
 }
