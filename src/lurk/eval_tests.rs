@@ -268,7 +268,11 @@ test!(test_hide, "(hide (commit 321) 123)", |_| {
     ZPtr::comm(hasher.hash(&preimg).try_into().unwrap())
 });
 test!(test_open_roundtrip, "(open (commit 123))", |_| num(123));
-test!(test_open_raw_roundtrip, "(cdr (cons (commit 123) (open #0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3)))", |_| num(123));
+test!(
+    test_open_raw_roundtrip,
+    "(begin (commit 123) (open #0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3))",
+    |_| num(123)
+);
 test!(test_secret, "(secret (commit 123))", |_| ZPtr::comm(
     [F::zero(); 8]
 ));

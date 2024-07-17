@@ -22,7 +22,7 @@ use crate::{
 
 use super::{eval::EvalErr, syntax::digest_to_biguint};
 
-pub const DIGEST_SIZE: usize = 8;
+pub(crate) const DIGEST_SIZE: usize = 8;
 
 const ZPTR_SIZE: usize = 2 * DIGEST_SIZE;
 // const COMM_PREIMG_SIZE: usize = DIGEST_SIZE + ZPTR_SIZE;
