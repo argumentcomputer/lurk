@@ -1,3 +1,4 @@
+// Usage: `cargo nextest run -E 'test(lurk_toplevel)' --nocapture --run-ignored all`
 use std::time::Instant;
 
 use loam::lurk::eval::build_lurk_toplevel;

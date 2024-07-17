@@ -1,5 +1,6 @@
-// `LOAM_DEFAULT_FIB_ARG=<ARG> cargo nextest run -E 'test(<test-name>)' --nocapture --run-ignored all` to benchmark fib of <ARG>
-// If `LOAM_DEFAULT_FIB_ARG` is unset, the tests will run with `DEFAULT_FIB_ARG=500`
+// Usage: `LOAM_FIB_ARG=<ARG> cargo nextest run -E 'test(<test-name>)' --nocapture --run-ignored all`
+// where <ARG> is the fibonacci input
+// If `LOAM_FIB_ARG` is unset, the tests will run with `DEFAULT_FIB_ARG=500`
 use p3_baby_bear::BabyBear;
 use p3_field::AbstractField;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -28,7 +29,7 @@ use loam::{
 const DEFAULT_FIB_ARG: usize = 500;
 
 fn get_fib_arg() -> usize {
-    std::env::var("LOAM_DEFAULT_FIB_ARG")
+    std::env::var("LOAM_FIB_ARG")
         .unwrap_or(DEFAULT_FIB_ARG.to_string())
         .parse::<usize>()
         .expect("Expected a number")

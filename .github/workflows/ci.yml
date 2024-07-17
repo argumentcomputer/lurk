@@ -60,7 +60,7 @@ jobs:
       #   uses: EmbarkStudios/cargo-deny-action@v1
   
   bench-regression:
-    runs-on: warp-ubuntu-latest-x64-16x
+    runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - name: Set up git private repo access
         run: |
@@ -74,64 +74,73 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
       - name: Set env
         run: |
-          TESTS=$(grep -r --include='*.rs' -A 1 '#\[test\]' tests | grep 'fn ' | awk '{print $2}' | sed 's/()//')
+          #TESTS=$(grep -r --include='*.rs' -A 1 '#\[test\]' tests | grep 'fn ' | awk '{print $2}' | sed 's/()//')
+          TESTS="fib_e2e"
           echo "TESTS<<EOF" >> $GITHUB_ENV
           echo -e "$TESTS" | tee -a $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-      - name: Get cycle counts for PR
-        id: get_cycles_pr
+          echo "LOAM_FIB_ARG=50000" | tee -a $GITHUB_ENV
+      - name: Get benchmark for PR
+        id: bench_pr
         run: |
           BENCH_RESULTS='[]'
-          #set -o pipefail
 
           for test_name in ${{ env.TESTS }}; do
             cargo nextest run -E "test($test_name)" --release --nocapture --run-ignored all | tee out.txt 2>&1
-            BENCH=$(grep 'Total time' out.txt | awk -F'=' '{ print $2 }')
+            BENCH=$(grep 'Total time' out.txt | awk -F'= ' '{ print $2 }')
             BENCH_RESULTS=$(echo $BENCH_RESULTS | jq -c ". += [{\"${test_name}\": \"$BENCH\"}]")
           done
 
-          #set +o pipefail
           echo "BENCH_RESULTS=$BENCH_RESULTS" | tee -a "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.base_ref }}
-      - name: Get cycle counts for base branch
+      - name: Get bench for base branch
         id: regression-check
+        continue-on-error: false
         run: |
           counter=0
           BENCH_RESULTS='${{ steps.bench_pr.outputs.BENCH_RESULTS }}'
           echo "$BENCH_RESULTS"
           SLOW_TESTS=""
           REGRESSION="false"
-          #set -o pipefail
 
           for test_name in ${{ env.TESTS }}; do
             cargo nextest run -E "test($test_name)" --release --nocapture --run-ignored all | tee out.txt 2>&1
-            BENCH_BASE=$(grep 'Total time' out.txt | awk -F'=' '{ print $2 }')
-            BENCH_PR=$(echo "$BENCH_RESULTS" | jq ".[$counter] | to_entries | .[0].value")
-            # 10% slowdown
-            REGRESSION_THRESHOLD=$(echo "${BENCH_BASE%% *} * 1.10" | bc)
+            BENCH_BASE=$(grep 'Total time' out.txt | awk -F'= ' '{ print $2 }')
+            BENCH_PR=$(echo "$BENCH_RESULTS" | jq ".[$counter] | to_entries | .[0].value" | sed 's/"//g')
+
             echo "$test_name summary"
             echo "Base = $BENCH_BASE, PR = $BENCH_PR"
-            if (( $(echo "${BENCH_PR%% *} >= $REGRESSION_THRESHOLD" | bc -l) )); then
+
+            if [[ -z $BENCH_BASE || ! -z $BENCH_PR ]]; then
+              exit 1
+            fi
+
+            BENCH_BASE_NUM=${BENCH_BASE%% *}
+            BENCH_PR_NUM=${BENCH_PR%% *}
+
+            # 10% slowdown threshold
+            REGRESSION_THRESHOLD=$(echo "$BENCH_BASE_NUM * 1.10" | bc)
+
+            if (( $(echo "$BENCH_PR_NUM >= $REGRESSION_THRESHOLD" | bc -l) )); then
               echo "Performance regression for test ${test_name}"
               REGRESSION="true"
               SLOW_TESTS+="\`${test_name}\`\n"
-              SLOW_TESTS+="Bench result before: ${BENCH_BASE//\"/}\n"
-              SLOW_TESTS+="Bench result after: ${BENCH_PR//\"/}\n"
+              SLOW_TESTS+="Bench result before: $BENCH_BASE\n"
+              SLOW_TESTS+="Bench result after: $BENCH_PR\n"
             fi
             counter=$((counter + 1))
           done
 
-          #set +o pipefail
           echo "regression=$REGRESSION" | tee -a $GITHUB_OUTPUT
           echo "slow-tests<<EOF" >> $GITHUB_OUTPUT
           echo -e "$SLOW_TESTS" | tee -a $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           echo "WORKFLOW_URL=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" | tee -a $GITHUB_ENV
-        working-directory: ${{ github.workspace }}/${{ matrix.package }}/light-client
       - uses: actions/checkout@v4
       - name: Comment on failing run
         if: steps.regression-check.outputs.regression == 'true' && github.event_name == 'pull_request'
@@ -139,9 +148,9 @@ jobs:
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
-            Benchmark cycle count regression check failed :x:
+            Benchmark regression check failed :x:
 
-            ${{ steps.regression-check.outputs.failing-tests }}
+            ${{ steps.regression-check.outputs.slow-tests }}
 
             ${{ env.WORKFLOW_URL }}
       - uses: JasonEtco/create-an-issue@v2
@@ -152,6 +161,6 @@ jobs:
           SLOW_TESTS: ${{ steps.regression-check.outputs.slow-tests }}
         with:
           update_existing: true
-          filename: .github/BENCH_CYCLE_REGRESSION.md
+          filename: .github/BENCH_REGRESSION.md
  
 
