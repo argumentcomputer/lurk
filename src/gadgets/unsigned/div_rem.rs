@@ -1,23 +1,24 @@
 use crate::gadgets::bytes::{ByteAirRecord, ByteRecord};
-use crate::gadgets::unsigned::add::AddWitness;
+use crate::gadgets::unsigned::add::Diff;
 use crate::gadgets::unsigned::less_than::{IsLessThan, LessThanWitness};
 use crate::gadgets::unsigned::mul::Product;
 use crate::gadgets::unsigned::{UncheckedWord, Word};
+use num_traits::ops::overflowing::OverflowingSub;
 use num_traits::{FromBytes, ToBytes, Unsigned};
 use p3_air::AirBuilder;
 use p3_field::{AbstractField, PrimeField};
 use sphinx_derive::AlignedBorrow;
-use std::ops::{Div, Rem};
+use std::ops::Div;
 
 #[derive(Clone, Default, AlignedBorrow)]
 #[repr(C)]
 pub struct DivRem<T, const W: usize> {
     /// q = a // b
     q: UncheckedWord<T, W>,
-    /// r = a % b
-    r: UncheckedWord<T, W>,
     /// qb = q * b
     qb: Product<T, W>,
+    /// r = a % b = a - q * b
+    r: Diff<T, W>,
     /// is_r_lt_b = r < b
     is_r_lt_b: LessThanWitness<T, W>,
     /// is_qb_lte_a = qb <= a
@@ -27,16 +28,23 @@ pub struct DivRem<T, const W: usize> {
 impl<F: PrimeField, const W: usize> DivRem<F, W> {
     pub fn populate<U>(&mut self, a: &U, b: &U, byte_record: &mut impl ByteRecord) -> (U, U)
     where
-        U: ToBytes<Bytes = [u8; W]> + FromBytes<Bytes = [u8; W]> + Unsigned + Div + Rem + Copy,
+        U: ToBytes<Bytes = [u8; W]>
+            + FromBytes<Bytes = [u8; W]>
+            + Unsigned
+            + Div
+            + Copy
+            + OverflowingSub,
     {
         let q = a.div(*b);
-        let r = a.rem(*b);
         self.q.assign_bytes(&q.to_le_bytes(), byte_record);
-        self.r.assign_bytes(&r.to_le_bytes(), byte_record);
 
         let qb = self.qb.populate(&q, b, byte_record);
+        // r = a - qb
+        let r = self.r.populate(a, &qb, byte_record);
+        // r < b
         let is_r_lt_b = self.is_r_lt_b.populate(&r, b, byte_record);
         debug_assert!(is_r_lt_b);
+        // qb <= a
         let is_qb_lte_a = self
             .is_qb_lte_a
             .populate_less_than_or_equal(&qb, a, byte_record);
@@ -61,14 +69,14 @@ impl<Var, const W: usize> DivRem<Var, W> {
         // Following Jolt (https://eprint.iacr.org/2023/1217.pdf) 6.3
         // Assume a, b are range checked
         let q = self.q.into_checked(record, is_real.clone());
-        let r = self.r.into_checked(record, is_real.clone());
 
         // q * b
         let qb = self.qb.eval(builder, &q.into(), b, record, is_real.clone());
 
-        // a = q * b + r
-        // we use sum to avoid the range check of a
-        AddWitness::<Var, W>::assert_add(builder, qb.into(), r.into(), a.clone(), is_real.clone());
+        // r = a - q * b
+        let r = self
+            .r
+            .eval(builder, a.clone(), qb.into(), record, is_real.clone());
 
         // r < b
         let is_r_lt_b = AB::F::one();
@@ -95,7 +103,8 @@ impl<Var, const W: usize> DivRem<Var, W> {
 }
 impl<T, const W: usize> DivRem<T, W> {
     pub const fn num_requires() -> usize {
-        2 * (W / 2)
+        W / 2
+            + Diff::<T, W>::num_requires()
             + Product::<T, W>::num_requires()
             + LessThanWitness::<T, W>::num_requires()
             + IsLessThan::<T, W>::num_requires()
@@ -118,7 +127,7 @@ mod tests {
             + FromBytes<Bytes = [u8; W]>
             + Unsigned
             + Div
-            + Rem
+            + OverflowingSub
             + Copy
             + Debug
             + Ord,
