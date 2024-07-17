@@ -55,7 +55,103 @@ jobs:
         run: cargo xclippy -D warnings
       - name: Doctests
         run: cargo test --doc --workspace
-      # https://github.com/EmbarkStudios/cargo-deny-action/issues/67
+      # TODO: Uncomment once https://github.com/EmbarkStudios/cargo-deny-action/issues/67 is released
       # - name: Cargo-deny
       #   uses: EmbarkStudios/cargo-deny-action@v1
+  
+  bench-regression:
+    runs-on: warp-ubuntu-latest-x64-16x
+    steps:
+      - name: Set up git private repo access
+        run: |
+          git config --global url."https://${{ secrets.REPO_TOKEN }}@github.com/".insteadOf ssh://git@github.com
+          git config --global url."https://${{ secrets.REPO_TOKEN }}@github.com".insteadOf https://github.com
+          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" | tee -a $GITHUB_ENV
+      - uses: actions/checkout@v4
+        with:
+          repository: lurk-lab/ci-workflows
+      - uses: ./.github/actions/ci-env
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Set env
+        run: |
+          TESTS=$(grep -r --include='*.rs' -A 1 '#\[test\]' tests | grep 'fn ' | awk '{print $2}' | sed 's/()//')
+          echo "TESTS<<EOF" >> $GITHUB_ENV
+          echo -e "$TESTS" | tee -a $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+      - name: Get cycle counts for PR
+        id: get_cycles_pr
+        run: |
+          BENCH_RESULTS='[]'
+          #set -o pipefail
+
+          for test_name in ${{ env.TESTS }}; do
+            cargo nextest run -E "test($test_name)" --release --nocapture --run-ignored all | tee out.txt 2>&1
+            BENCH=$(grep 'Total time' out.txt | awk -F'=' '{ print $2 }')
+            BENCH_RESULTS=$(echo $BENCH_RESULTS | jq -c ". += [{\"${test_name}\": \"$BENCH\"}]")
+          done
+
+          #set +o pipefail
+          echo "BENCH_RESULTS=$BENCH_RESULTS" | tee -a "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+      - name: Get cycle counts for base branch
+        id: regression-check
+        run: |
+          counter=0
+          BENCH_RESULTS='${{ steps.bench_pr.outputs.BENCH_RESULTS }}'
+          echo "$BENCH_RESULTS"
+          SLOW_TESTS=""
+          REGRESSION="false"
+          #set -o pipefail
+
+          for test_name in ${{ env.TESTS }}; do
+            cargo nextest run -E "test($test_name)" --release --nocapture --run-ignored all | tee out.txt 2>&1
+            BENCH_BASE=$(grep 'Total time' out.txt | awk -F'=' '{ print $2 }')
+            BENCH_PR=$(echo "$BENCH_RESULTS" | jq ".[$counter] | to_entries | .[0].value")
+            # 10% slowdown
+            REGRESSION_THRESHOLD=$(echo "${BENCH_BASE%% *} * 1.10" | bc)
+            echo "$test_name summary"
+            echo "Base = $BENCH_BASE, PR = $BENCH_PR"
+            if (( $(echo "${BENCH_PR%% *} >= $REGRESSION_THRESHOLD" | bc -l) )); then
+              echo "Performance regression for test ${test_name}"
+              REGRESSION="true"
+              SLOW_TESTS+="\`${test_name}\`\n"
+              SLOW_TESTS+="Bench result before: ${BENCH_BASE//\"/}\n"
+              SLOW_TESTS+="Bench result after: ${BENCH_PR//\"/}\n"
+            fi
+            counter=$((counter + 1))
+          done
+
+          #set +o pipefail
+          echo "regression=$REGRESSION" | tee -a $GITHUB_OUTPUT
+          echo "slow-tests<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$SLOW_TESTS" | tee -a $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "WORKFLOW_URL=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" | tee -a $GITHUB_ENV
+        working-directory: ${{ github.workspace }}/${{ matrix.package }}/light-client
+      - uses: actions/checkout@v4
+      - name: Comment on failing run
+        if: steps.regression-check.outputs.regression == 'true' && github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            Benchmark cycle count regression check failed :x:
+
+            ${{ steps.regression-check.outputs.failing-tests }}
+
+            ${{ env.WORKFLOW_URL }}
+      - uses: JasonEtco/create-an-issue@v2
+        if: steps.regression-check.outputs.regression == 'true' && github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORKFLOW_URL: ${{ env.WORKFLOW_URL }}
+          SLOW_TESTS: ${{ steps.regression-check.outputs.slow-tests }}
+        with:
+          update_existing: true
+          filename: .github/BENCH_CYCLE_REGRESSION.md
+ 
 
