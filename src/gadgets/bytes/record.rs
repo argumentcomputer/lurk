@@ -42,6 +42,12 @@ where
     requires: I,
 }
 
+pub struct BytesRecordWithContext<'a> {
+    nonce: u32,
+    requires: &'a mut Vec<Record>,
+    record: &'a mut BytesRecord,
+}
+
 /// For a given input byte pair, this structure records the nonce and count of the accesses to
 /// the specific operations.
 ///
@@ -60,7 +66,7 @@ where
 pub struct BytesInputRecord {
     pub(crate) range_u8: Record,
     pub(crate) range_u16: Record,
-    pub(crate) less_then: Record,
+    pub(crate) less_than: Record,
     pub(crate) and: Record,
     pub(crate) xor: Record,
     pub(crate) or: Record,
@@ -73,7 +79,7 @@ impl BytesInputRecord {
         [
             self.range_u8,
             self.range_u16,
-            self.less_then,
+            self.less_than,
             self.and,
             self.xor,
             self.or,
@@ -101,6 +107,18 @@ impl BytesRecord {
         }
     }
 
+    pub fn context<'a>(
+        &'a mut self,
+        nonce: u32,
+        requires: &'a mut Vec<Record>,
+    ) -> BytesRecordWithContext<'a> {
+        BytesRecordWithContext {
+            nonce,
+            record: self,
+            requires,
+        }
+    }
+
     fn get_mut(&mut self, input: ByteInput) -> &mut BytesInputRecord {
         self.records.entry(input).or_default()
     }
@@ -111,6 +129,62 @@ impl BytesRecord {
 
     pub fn is_empty(&self) -> bool {
         self.records.is_empty()
+    }
+}
+
+impl<'a> ByteRecord for BytesRecordWithContext<'a> {
+    fn range_check_u8_pair(&mut self, i1: u8, i2: u8) {
+        let input = ByteInput::from_u8_pair(i1, i2);
+        let range_u8 = &mut self.record.get_mut(input).range_u8;
+        let require = range_u8.new_lookup(self.nonce);
+        self.requires.push(require);
+    }
+
+    fn range_check_u16(&mut self, i: u16) {
+        let input = ByteInput::from_u16(i);
+        let range_u8 = &mut self.record.get_mut(input).range_u8;
+        let require = range_u8.new_lookup(self.nonce);
+        self.requires.push(require);
+    }
+
+    fn less_than(&mut self, i1: u8, i2: u8) -> bool {
+        let input = ByteInput::from_u8_pair(i1, i2);
+        let less_than = &mut self.record.get_mut(input).less_than;
+        let require = less_than.new_lookup(self.nonce);
+        self.requires.push(require);
+        input.less_than()
+    }
+
+    fn and(&mut self, i1: u8, i2: u8) -> u8 {
+        let input = ByteInput::from_u8_pair(i1, i2);
+        let and = &mut self.record.get_mut(input).and;
+        let require = and.new_lookup(self.nonce);
+        self.requires.push(require);
+        input.and()
+    }
+
+    fn xor(&mut self, i1: u8, i2: u8) -> u8 {
+        let input = ByteInput::from_u8_pair(i1, i2);
+        let xor = &mut self.record.get_mut(input).xor;
+        let require = xor.new_lookup(self.nonce);
+        self.requires.push(require);
+        input.xor()
+    }
+
+    fn or(&mut self, i1: u8, i2: u8) -> u8 {
+        let input = ByteInput::from_u8_pair(i1, i2);
+        let or = &mut self.record.get_mut(input).or;
+        let require = or.new_lookup(self.nonce);
+        self.requires.push(require);
+        input.or()
+    }
+
+    fn msb(&mut self, i: u8) -> bool {
+        let input = ByteInput::from_u8(i);
+        let msb = &mut self.record.get_mut(input).msb;
+        let require = msb.new_lookup(self.nonce);
+        self.requires.push(require);
+        input.msb()
     }
 }
 
@@ -146,7 +220,7 @@ where
     fn less_than(&mut self, i1: u8, i2: u8) -> bool {
         let input = ByteInput::from_u8_pair(i1, i2);
         let records = self.record.get_mut(input);
-        let record = &mut records.less_then;
+        let record = &mut records.less_than;
         let require = self.requires.next().expect("not enough requires records");
         require.populate_and_update(self.nonce, record);
         input.less_than()
