@@ -334,6 +334,17 @@ impl<F: PrimeField32, H: Hasher<F>> Toplevel<F, H> {
         let func = self.get_by_name(name);
         self.execute(func, args, record)
     }
+
+    #[inline]
+    pub fn execute_by_index(
+        &self,
+        func_idx: usize,
+        args: &[F],
+        record: &mut QueryRecord<F>,
+    ) -> List<F> {
+        let func = self.get_by_index(func_idx);
+        self.execute(func, args, record)
+    }
 }
 
 enum ExecEntry<'a, F> {
