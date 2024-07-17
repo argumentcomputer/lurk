@@ -125,8 +125,8 @@ impl<Var, const W: usize> IsZeroOrEqual<Var, W> {
     pub fn eval_is_equal<AB: AirBuilder<Var = Var>>(
         &self,
         builder: &mut AB,
-        lhs: Word<AB::Expr, W>,
-        rhs: Word<AB::Expr, W>,
+        lhs: &Word<AB::Expr, W>,
+        rhs: &Word<AB::Expr, W>,
         is_real: impl Into<AB::Expr>,
     ) -> AB::Var
     where
@@ -181,8 +181,8 @@ mod tests {
 
         let is_equal_f = witness.eval_is_equal(
             &mut GadgetTester::passing(),
-            Word::<F, W>::from_unsigned(lhs),
-            Word::<F, W>::from_unsigned(rhs),
+            &Word::<F, W>::from_unsigned(lhs),
+            &Word::<F, W>::from_unsigned(rhs),
             F::one(),
         );
         assert_eq!(is_equal_f, F::from_bool(is_equal));
@@ -190,8 +190,8 @@ mod tests {
         if !is_equal {
             witness.eval_is_equal(
                 &mut GadgetTester::passing(),
-                Word::<F, W>::zero(),
-                Word::<F, W>::zero(),
+                &Word::<F, W>::zero(),
+                &Word::<F, W>::zero(),
                 F::zero(),
             );
         }

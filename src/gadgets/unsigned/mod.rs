@@ -4,6 +4,7 @@ use num_traits::{ToBytes, Unsigned};
 use p3_field::AbstractField;
 use std::array;
 use std::fmt::Debug;
+use std::iter::zip;
 use std::ops::{Index, IndexMut};
 
 pub mod add;
@@ -106,8 +107,8 @@ impl<F: Default, const W: usize> Default for UncheckedWord<F, W> {
 impl<F: AbstractField, const W: usize> UncheckedWord<F, W> {
     pub fn assign_bytes(&mut self, bytes: &[u8], record: &mut impl ByteRecord) {
         assert_eq!(bytes.len(), W);
-        for i in 0..W {
-            self.0[i] = F::from_canonical_u8(bytes[i]);
+        for (limb, &byte) in zip(self.0.iter_mut(), bytes) {
+            *limb = F::from_canonical_u8(byte);
         }
         record.range_check_u8_iter(bytes.iter().copied());
     }

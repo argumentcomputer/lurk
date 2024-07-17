@@ -56,17 +56,16 @@ impl<F: Field> AirBuilder for GadgetTester<F> {
         if !x.into().is_zero() {
             self.has_failed = true;
         }
-        if self.should_fail && self.has_failed {
-            panic!("invalid constraint")
-        }
+        assert!(self.should_fail && self.has_failed, "invalid constraint");
     }
 }
 
 impl<F> Drop for GadgetTester<F> {
     fn drop(&mut self) {
-        if self.should_fail && !self.has_failed {
-            panic!("expected failing condition")
-        }
+        assert!(
+            self.should_fail && !self.has_failed,
+            "expected failing condition"
+        )
     }
 }
 

@@ -153,32 +153,32 @@ mod tests {
         const W: usize,
         U: ToBytes<Bytes = [u8; W]> + Unsigned + OverflowingAdd + OverflowingSub + Debug,
     >(
-        lhs: U,
-        rhs: U,
+        lhs: &U,
+        rhs: &U,
     ) {
         let record = &mut ByteRecordTester::default();
 
         let mut add_witness = Sum::<F, W>::default();
-        let add = add_witness.populate(&lhs, &rhs, record);
-        let (add_expected, _) = lhs.overflowing_add(&rhs);
+        let add = add_witness.populate(lhs, rhs, record);
+        let (add_expected, _) = lhs.overflowing_add(rhs);
         assert_eq!(add, add_expected);
         let add_f = add_witness.eval(
             &mut GadgetTester::passing(),
-            Word::<F, W>::from_unsigned(&lhs),
-            Word::<F, W>::from_unsigned(&rhs),
+            Word::<F, W>::from_unsigned(lhs),
+            Word::<F, W>::from_unsigned(rhs),
             &mut record.passing(Sum::<F, W>::num_requires()),
             F::one(),
         );
         assert_eq!(add_f, Word::from_unsigned(&add));
 
         let mut sub_witness = Diff::<F, W>::default();
-        let sub = sub_witness.populate(&lhs, &rhs, record);
-        let (sub_expected, _) = lhs.overflowing_sub(&rhs);
+        let sub = sub_witness.populate(lhs, rhs, record);
+        let (sub_expected, _) = lhs.overflowing_sub(rhs);
         assert_eq!(sub, sub_expected);
         let sub_f = sub_witness.eval(
             &mut GadgetTester::passing(),
-            Word::<F, W>::from_unsigned(&lhs),
-            Word::<F, W>::from_unsigned(&rhs),
+            Word::<F, W>::from_unsigned(lhs),
+            Word::<F, W>::from_unsigned(rhs),
             &mut record.passing(Diff::<F, W>::num_requires()),
             F::one(),
         );
@@ -189,12 +189,12 @@ mod tests {
 
     #[test]
     fn test_add_sub_32(a: u32, b: u32) {
-        test_add_sub(a, b)
+        test_add_sub(&a, &b)
     }
 
     #[test]
     fn test_add_sub_64(a: u64, b: u64) {
-        test_add_sub(a, b)
+        test_add_sub(&a, &b)
     }
 
     }

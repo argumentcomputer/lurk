@@ -50,8 +50,8 @@ impl<Var, const W: usize> LessThanWitness<Var, W> {
     pub fn assert_is_less_than<AB: AirBuilder<Var = Var>>(
         &self,
         builder: &mut AB,
-        lhs: Word<AB::Expr, W>,
-        rhs: Word<AB::Expr, W>,
+        lhs: &Word<AB::Expr, W>,
+        rhs: &Word<AB::Expr, W>,
         is_less_than: impl Into<AB::Expr>,
         record: &mut impl ByteAirRecord<AB::Expr>,
         is_real: impl Into<AB::Expr>,
@@ -167,8 +167,8 @@ impl<Var, const W: usize> IsLessThan<Var, W> {
     pub fn eval_less_than<AB>(
         &self,
         builder: &mut AB,
-        lhs: Word<AB::Expr, W>,
-        rhs: Word<AB::Expr, W>,
+        lhs: &Word<AB::Expr, W>,
+        rhs: &Word<AB::Expr, W>,
         record: &mut impl ByteAirRecord<AB::Expr>,
         is_real: impl Into<AB::Expr>,
     ) -> AB::Expr
@@ -184,8 +184,8 @@ impl<Var, const W: usize> IsLessThan<Var, W> {
     pub fn eval_less_than_or_equal<AB>(
         &self,
         builder: &mut AB,
-        lhs: Word<AB::Expr, W>,
-        rhs: Word<AB::Expr, W>,
+        lhs: &Word<AB::Expr, W>,
+        rhs: &Word<AB::Expr, W>,
         record: &mut impl ByteAirRecord<AB::Expr>,
         is_real: impl Into<AB::Expr>,
     ) -> AB::Expr
@@ -240,8 +240,8 @@ mod tests {
         assert!(is_lt);
         let is_lt_f = is_lt_witness.eval_less_than(
             &mut GadgetTester::passing(),
-            Word::<F, W>::from_unsigned(&lhs),
-            Word::<F, W>::from_unsigned(&rhs),
+            &Word::<F, W>::from_unsigned(&lhs),
+            &Word::<F, W>::from_unsigned(&rhs),
             &mut record.passing(IsLessThan::<F, W>::num_requires()),
             F::one(),
         );
@@ -255,8 +255,8 @@ mod tests {
         let is_not_real = F::zero();
         is_lt_witness.witness.assert_is_less_than(
             &mut GadgetTester::failing(),
-            Word::<F, W>::from_unsigned(&lhs),
-            Word::<F, W>::from_unsigned(&rhs),
+            &Word::<F, W>::from_unsigned(&lhs),
+            &Word::<F, W>::from_unsigned(&rhs),
             is_gt,
             &mut record.ignoring(),
             is_real,
@@ -264,8 +264,8 @@ mod tests {
 
         is_lt_witness.witness.assert_is_less_than(
             &mut GadgetTester::passing(),
-            Word::<F, W>::from_unsigned(&lhs),
-            Word::<F, W>::from_unsigned(&rhs),
+            &Word::<F, W>::from_unsigned(&lhs),
+            &Word::<F, W>::from_unsigned(&rhs),
             is_gt,
             &mut record.ignoring(),
             is_not_real,

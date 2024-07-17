@@ -71,8 +71,8 @@ impl<Var, const W: usize> MulWitness<Var, W> {
     fn assert_mul<const W_L: usize, const W_R: usize, AB: AirBuilder<Var = Var>>(
         &self,
         builder: &mut AB,
-        lhs: Word<AB::Expr, W_L>,
-        rhs: Word<AB::Expr, W_R>,
+        lhs: &Word<AB::Expr, W_L>,
+        rhs: &Word<AB::Expr, W_R>,
         out: Word<AB::Expr, W>,
         record: &mut impl ByteAirRecord<AB::Expr>,
         is_real: impl Into<AB::Expr>,
@@ -84,8 +84,8 @@ impl<Var, const W: usize> MulWitness<Var, W> {
         let base = AB::F::from_canonical_u16(256);
 
         let mut products: [AB::Expr; W] = array::from_fn(|_| AB::Expr::zero());
-        for (i, lhs) in enumerate(&lhs) {
-            for (j, rhs) in enumerate(&rhs) {
+        for (i, lhs) in enumerate(lhs) {
+            for (j, rhs) in enumerate(rhs) {
                 let k = i + j;
                 if k < W {
                     products[k] += lhs.clone() * rhs.clone();
@@ -142,8 +142,8 @@ impl<Var, const W: usize> Product<Var, W> {
     pub fn eval<AB: AirBuilder<Var = Var>>(
         &self,
         builder: &mut AB,
-        lhs: Word<AB::Expr, W>,
-        rhs: Word<AB::Expr, W>,
+        lhs: &Word<AB::Expr, W>,
+        rhs: &Word<AB::Expr, W>,
         record: &mut impl ByteAirRecord<AB::Expr>,
         is_real: impl Into<AB::Expr>,
     ) -> Word<AB::Var, W>
@@ -209,8 +209,8 @@ mod tests {
 
         witness.assert_mul(
             builder,
-            Word::<F, W_L>::from_unsigned(&lhs),
-            Word::<F, W_R>::from_unsigned(&rhs),
+            &Word::<F, W_L>::from_unsigned(&lhs),
+            &Word::<F, W_R>::from_unsigned(&rhs),
             Word::<F, W_O>::from_unsigned(&result),
             &mut record.passing(MulWitness::<F, W_O>::num_requires()),
             F::one(),
@@ -223,27 +223,27 @@ mod tests {
         const W: usize,
         U: ToBytes<Bytes = [u8; W]> + FromBytes<Bytes = [u8; W]> + Unsigned + OverflowingMul + Debug,
     >(
-        lhs: U,
-        rhs: U,
+        lhs: &U,
+        rhs: &U,
     ) {
         let record = &mut ByteRecordTester::default();
         let builder = &mut GadgetTester::<F>::passing();
 
         let mut witness = Product::<F, W>::default();
 
-        let result: U = witness.populate(&lhs, &rhs, record);
+        let result: U = witness.populate(lhs, rhs, record);
 
-        let lhs_f = Word::<F, W>::from_unsigned(&lhs);
-        let rhs_f = Word::<F, W>::from_unsigned(&rhs);
+        let lhs_f = Word::<F, W>::from_unsigned(lhs);
+        let rhs_f = Word::<F, W>::from_unsigned(rhs);
         let result_f = witness.eval(
             builder,
-            lhs_f,
-            rhs_f,
+            &lhs_f,
+            &rhs_f,
             &mut record.passing(Product::<F, W>::num_requires()),
             F::one(),
         );
 
-        let (expected, _) = lhs.overflowing_mul(&rhs);
+        let (expected, _) = lhs.overflowing_mul(rhs);
         assert_eq!(result, expected);
         for (r, e) in zip(result_f, expected.to_le_bytes()) {
             assert_eq!(r, F::from_canonical_u8(e));
@@ -266,8 +266,8 @@ mod tests {
         // u64 x u32 -> u32
         test_mul::<8, 4, 4, u64, u32, u32>(a_u64, b_u32);
 
-        test_product::<8, u64>(a_u64, b_u64);
-        test_product::<4, u32>(a_u32, b_u32);
+        test_product::<8, u64>(&a_u64, &b_u64);
+        test_product::<4, u32>(&a_u32, &b_u32);
     }
     }
 
@@ -289,8 +289,8 @@ mod tests {
         let one = Word::<F, 8>::from_unsigned(&1u64);
         empty_witness.assert_mul(
             builder,
-            zero,
-            zero,
+            &zero,
+            &zero,
             one,
             &mut record.passing(MulWitness::<F, 8>::num_requires()),
             F::zero(),
@@ -298,8 +298,8 @@ mod tests {
         let product = Product::<F, 8>::default();
         product.eval(
             builder,
-            zero,
-            one,
+            &zero,
+            &one,
             &mut record.passing(Product::<F, 8>::num_requires()),
             F::zero(),
         );

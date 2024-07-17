@@ -49,8 +49,8 @@ impl<Var, const W: usize> DivRem<Var, W> {
     pub fn eval<AB: AirBuilder<Var = Var>>(
         &self,
         builder: &mut AB,
-        a: Word<AB::Expr, W>,
-        b: Word<AB::Expr, W>,
+        a: &Word<AB::Expr, W>,
+        b: &Word<AB::Expr, W>,
         record: &mut impl ByteAirRecord<AB::Expr>,
         is_real: impl Into<AB::Expr>,
     ) -> (Word<AB::Var, W>, Word<AB::Var, W>)
@@ -64,9 +64,7 @@ impl<Var, const W: usize> DivRem<Var, W> {
         let r = self.r.into_checked(record, is_real.clone());
 
         // q * b
-        let qb = self
-            .qb
-            .eval(builder, q.into(), b.clone(), record, is_real.clone());
+        let qb = self.qb.eval(builder, &q.into(), b, record, is_real.clone());
 
         // a = q * b + r
         // we use sum to avoid the range check of a
@@ -76,7 +74,7 @@ impl<Var, const W: usize> DivRem<Var, W> {
         let is_r_lt_b = AB::F::one();
         self.is_r_lt_b.assert_is_less_than(
             builder,
-            r.into(),
+            &r.into(),
             b,
             is_r_lt_b,
             record,
@@ -86,7 +84,7 @@ impl<Var, const W: usize> DivRem<Var, W> {
         // q * b <= a
         let is_qb_lte_a = self.is_qb_lte_a.eval_less_than_or_equal(
             builder,
-            qb.into(),
+            &qb.into(),
             a,
             record,
             is_real.clone(),
@@ -137,8 +135,8 @@ mod tests {
         assert!(q * b <= a);
         let (q_f, r_f) = witness.eval(
             &mut GadgetTester::passing(),
-            Word::<F, W>::from_unsigned(&a),
-            Word::<F, W>::from_unsigned(&b),
+            &Word::<F, W>::from_unsigned(&a),
+            &Word::<F, W>::from_unsigned(&b),
             &mut record.passing(DivRem::<F, W>::num_requires()),
             F::one(),
         );
