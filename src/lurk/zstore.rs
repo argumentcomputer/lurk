@@ -26,7 +26,7 @@ pub(crate) const DIGEST_SIZE: usize = 8;
 
 const ZPTR_SIZE: usize = 2 * DIGEST_SIZE;
 // const COMM_PREIMG_SIZE: usize = DIGEST_SIZE + ZPTR_SIZE;
-const TUPLE2_SIZE: usize = 2 * ZPTR_SIZE;
+pub(crate) const TUPLE2_SIZE: usize = 2 * ZPTR_SIZE;
 const TUPLE3_SIZE: usize = 3 * ZPTR_SIZE;
 
 fn digest_from_field<F: AbstractField + Copy>(f: F) -> [F; DIGEST_SIZE] {
@@ -185,7 +185,7 @@ pub struct ZStore<F, H: Hasher<F>> {
 }
 
 static NIL: OnceCell<Symbol> = OnceCell::new();
-fn nil() -> &'static Symbol {
+pub(crate) fn nil() -> &'static Symbol {
     NIL.get_or_init(|| lurk_sym("nil"))
 }
 
@@ -195,7 +195,7 @@ fn quote() -> &'static Symbol {
 }
 
 static BUILTIN_VEC: OnceCell<Vec<Symbol>> = OnceCell::new();
-fn builtin_vec() -> &'static Vec<Symbol> {
+pub(crate) fn builtin_vec() -> &'static Vec<Symbol> {
     BUILTIN_VEC.get_or_init(|| {
         LURK_PACKAGE_SYMBOLS_NAMES
             .into_iter()
@@ -898,7 +898,7 @@ mod test {
         let test = |tag: Tag| {
             let f = tag.to_field::<BabyBear>();
             let u = f.as_canonical_u32();
-            let new_tag = Tag::from(u as usize);
+            let new_tag = Tag::try_from(u as usize).unwrap();
             assert_eq!(tag, new_tag);
         };
 

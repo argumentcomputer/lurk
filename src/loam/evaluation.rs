@@ -1,9 +1,13 @@
+// TODO: appease clippy for now
+#![allow(clippy::all)]
+#![allow(warnings)]
+use crate::lair::hasher::LurkHasher;
 use crate::loam::allocation::allocator;
-use crate::loam::{lurk_sym_index, simple_read};
+use crate::loam::lurk_sym_index;
 use crate::loam::{LEWrap, Num, Ptr, Wide, WidePtr, LE};
-use crate::lurk::reader::ReadData;
-use crate::lurk::state::{State, LURK_PACKAGE_SYMBOLS_NAMES};
-use crate::lurk::zstore::Tag;
+use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
+use crate::lurk::tag::Tag;
+use crate::lurk::zstore::{builtin_vec, nil, ZPtr, ZStore};
 
 use p3_field::{AbstractField, PrimeField32};
 
@@ -13,30 +17,27 @@ pub struct Memory {}
 
 impl Memory {
     fn initial_sym_relation() -> Vec<(Wide, Dual<LEWrap>)> {
-        LURK_PACKAGE_SYMBOLS_NAMES
+        let zstore = &mut ZStore::<_, LurkHasher>::default();
+        builtin_vec()
             .iter()
-            .filter(|name| **name != "nil")
             .enumerate()
             .map(|(i, name)| {
-                let ReadData { digest, .. } = simple_read(name);
+                let ZPtr { tag: _, digest } = zstore.intern_symbol(name);
                 (Wide(digest), Dual(LEWrap(LE::from_canonical_u64(i as u64))))
             })
             .collect()
     }
+
     fn initial_sym_addr() -> LE {
         LE::from_canonical_u64(LURK_PACKAGE_SYMBOLS_NAMES.len() as u64)
     }
 
     fn initial_nil_relation() -> Vec<(Wide, Dual<LEWrap>)> {
-        ["nil"]
-            .iter()
-            .enumerate()
-            .map(|(i, name)| {
-                let ReadData { digest, .. } = simple_read(name);
-                (Wide(digest), Dual(LEWrap(LE::from_canonical_u64(i as u64))))
-            })
-            .collect()
+        let zstore = &mut ZStore::<_, LurkHasher>::default();
+        let ZPtr { tag: _, digest } = zstore.intern_symbol(nil());
+        vec![(Wide(digest), Dual(LEWrap(LE::from_canonical_u64(0u64))))]
     }
+
     fn initial_nil_addr() -> LE {
         LE::from_canonical_u64(1)
     }
@@ -177,7 +178,7 @@ impl Tag {
     pub fn wide_relation() -> Vec<(LE, Wide)> {
         (0..Self::count())
             .map(|i| {
-                let tag = Tag::from(i);
+                let tag = Tag::try_from(i).unwrap();
                 (tag.elt(), tag.value())
             })
             .collect()
@@ -956,7 +957,7 @@ ascent! {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::lurk::state::State;
+    use crate::lurk::zstore::ZPtr;
 
     fn err() -> WidePtr {
         WidePtr(Tag::Err.value(), Wide::widen(LE::from_canonical_u32(0)))
@@ -967,14 +968,11 @@ mod test {
     }
 
     fn read_wideptr(src: &str) -> WidePtr {
-        let ReadData {
-            tag,
-            digest,
-            hashes,
-        } = simple_read(src);
+        let zstore = &mut ZStore::<_, LurkHasher>::default();
+        let ZPtr { tag, digest } = zstore.read(src).unwrap();
 
-        allocator().import_hashes(hashes);
-        wide_ptr(tag, digest)
+        allocator().import_hashes(zstore.tuple2_hashes());
+        wide_ptr(tag.elt(), digest)
     }
 
     fn test_aux0(

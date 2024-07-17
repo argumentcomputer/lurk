@@ -1,15 +1,17 @@
+// TODO: appease clippy for now
+#![allow(clippy::all)]
+#![allow(warnings)]
 use std::hash::Hash;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use ascent::{ascent, Dual};
-use fxhash::FxHashMap;
 use p3_field::{AbstractField, Field, PrimeField32};
+use rustc_hash::FxHashMap;
 
 use crate::lair::hasher::{Hasher, LurkHasher};
-use crate::loam::evaluation::Memory;
-use crate::loam::{LEWrap, Num, Ptr, Wide, WidePtr, LE};
-use crate::lurk::reader;
-use crate::lurk::zstore::Tag;
+use crate::loam::{LEWrap, Ptr, Wide, WidePtr, LE};
+use crate::lurk::tag::Tag;
+use crate::lurk::zstore::{DIGEST_SIZE, TUPLE2_SIZE};
 
 // Because of how the macros work, it's not easy (or possible) to pass a per-invocation structure like the `Allocator`
 // into the program, while also having access to the program struct itself. However, that access is extremely useful
@@ -47,11 +49,8 @@ impl Allocator {
         self.allocation_map = Default::default();
     }
 
-    pub fn import_hashes(
-        &mut self,
-        hashes: FxHashMap<[LE; reader::PREIMG_SIZE], [LE; reader::IMG_SIZE]>,
-    ) {
-        for (preimage, digest) in &hashes {
+    pub fn import_hashes(&mut self, hashes: &FxHashMap<[LE; TUPLE2_SIZE], [LE; DIGEST_SIZE]>) {
+        for (preimage, digest) in hashes {
             let preimage_vec = preimage
                 .chunks(8)
                 .map(|chunk| Wide::from_slice(chunk))

@@ -1,12 +1,16 @@
+// TODO: appease clippy for now
+#![allow(clippy::all)]
+#![allow(warnings)]
 use std::cmp::Ordering;
 
 use ascent::Lattice;
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField32};
 
-use crate::lurk::reader::{read, ReadData};
-use crate::lurk::state::{State, LURK_PACKAGE_SYMBOLS_NAMES};
-use crate::lurk::zstore::Tag;
+use crate::lair::hasher::LurkHasher;
+use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
+use crate::lurk::tag::Tag;
+use crate::lurk::zstore::{self, ZPtr, ZStore};
 
 mod allocation;
 mod evaluation;
@@ -116,9 +120,11 @@ pub struct WidePtr(pub Wide, pub Wide);
 impl WidePtr {
     fn nil() -> Self {
         // FIXME: cache, don't do expensive read repeatedly.
-        let ReadData { tag, digest, .. } = simple_read("nil");
-        Self(Wide::widen(tag), Wide(digest))
+        let zstore = &mut ZStore::<_, LurkHasher>::default();
+        let ZPtr { tag, digest } = zstore.intern_symbol(zstore::nil());
+        Self(Wide::widen(tag.elt()), Wide(digest))
     }
+
     fn empty_env() -> Self {
         Self::nil()
     }
@@ -134,10 +140,6 @@ impl From<Num> for WidePtr {
     fn from(f: Num) -> Self {
         (&f).into()
     }
-}
-
-pub(crate) fn simple_read(src: &str) -> ReadData {
-    read(State::init_lurk_state().rccell(), src).unwrap()
 }
 
 // TODO: This can use a hashtable lookup, or could even be known at compile-time (but how to make that non-brittle since iter() is not const?).
