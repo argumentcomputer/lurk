@@ -389,7 +389,7 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
             Syntax::Num(_, f) => self.intern_num(*f),
             Syntax::Char(_, c) => self.intern_char(*c),
             Syntax::U64(_, u) => self.intern_u64(*u),
-            Syntax::Comm(_, c) => self.intern_comm(*c),
+            Syntax::Digest(_, c) => self.intern_comm(*c),
             Syntax::String(_, s) => self.intern_string(s),
             Syntax::Symbol(_, s) => self.intern_symbol(s),
             Syntax::List(_, xs) => {

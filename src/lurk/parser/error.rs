@@ -16,7 +16,7 @@ pub enum ParseErrorKind<F> {
     InvalidBase16EscapeSequence(String, Option<ParseIntError>),
     InvalidBaseEncoding(base::LitBase),
     NumError(String),
-    CommLiteralTooBig {
+    DigestLiteralTooBig {
         literal: BigUint,
         _marker: PhantomData<F>,
     },

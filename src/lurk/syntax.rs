@@ -14,8 +14,8 @@ pub enum Syntax<F> {
     Num(Pos, F),
     /// A u64 integer: 1u64, 0xffu64
     U64(Pos, u64),
-    /// A raw hash digest commitment to some lurk data: #0xffff...ffff, stored in little-endian
-    Comm(Pos, [F; DIGEST_SIZE]),
+    /// A raw hash digest of some lurk data: #0xffff...ffff, stored in little-endian
+    Digest(Pos, [F; DIGEST_SIZE]),
     /// A hierarchical symbol: foo, foo.bar.baz or keyword :foo
     Symbol(Pos, SymbolRef),
     /// A string literal: "foobar", "foo\nbar"
@@ -36,7 +36,7 @@ impl<F> Syntax<F> {
         match self {
             Self::Num(pos, _)
             | Self::U64(pos, _)
-            | Self::Comm(pos, _)
+            | Self::Digest(pos, _)
             | Self::Symbol(pos, _)
             | Self::String(pos, _)
             | Self::Char(pos, _)
@@ -62,7 +62,7 @@ impl<F: fmt::Display + PrimeField> fmt::Display for Syntax<F> {
         match self {
             Self::Num(_, x) => write!(f, "{x}"),
             Self::U64(_, x) => write!(f, "{x}u64"),
-            Self::Comm(_, c) => write!(f, "#0x{:x}", digest_to_biguint(c)),
+            Self::Digest(_, c) => write!(f, "#0x{:x}", digest_to_biguint(c)),
             Self::Symbol(_, x) => write!(f, "{x}"),
             Self::String(_, x) => write!(f, "\"{}\"", x.escape_default()),
             Self::Char(_, x) => {
@@ -106,7 +106,7 @@ mod test {
     use crate::lurk::{parser::syntax::parse_syntax, state::State};
 
     #[test]
-    fn test_comm_roundtrip() {
+    fn test_digest_roundtrip() {
         let state = State::init_lurk_state().rccell();
         let (rest, syn) = parse_syntax::<BabyBear>(state, false, false)(
             "#0x123456789ABCDEFEDCBA98765432123456789ABCDEFEDCBA98765432123456".into(),
