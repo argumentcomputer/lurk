@@ -62,7 +62,7 @@ impl<F: fmt::Display + PrimeField> fmt::Display for Syntax<F> {
         match self {
             Self::Num(_, x) => write!(f, "{x}"),
             Self::U64(_, x) => write!(f, "{x}u64"),
-            Self::Digest(_, c) => write!(f, "#0x{:x}", digest_to_biguint(c)),
+            Self::Digest(_, c) => write!(f, "#{:#x}", digest_to_biguint(c)),
             Self::Symbol(_, x) => write!(f, "{x}"),
             Self::String(_, x) => write!(f, "\"{}\"", x.escape_default()),
             Self::Char(_, x) => {

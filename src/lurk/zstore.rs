@@ -699,7 +699,7 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
                 "'{}'",
                 char::from_u32(zptr.digest[0].as_canonical_u32()).expect("invalid char")
             ),
-            Tag::Comm => format!("#0x{:x}", digest_to_biguint(&zptr.digest)),
+            Tag::Comm => format!("#{:#x}", digest_to_biguint(&zptr.digest)),
             Tag::Str => format!("\"{}\"", self.fetch_string(zptr)),
             Tag::Builtin | Tag::Sym | Tag::Key | Tag::Nil => {
                 state.borrow().fmt_to_string(&self.fetch_symbol(zptr))
