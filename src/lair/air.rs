@@ -73,6 +73,20 @@ impl<'a, T> ColumnSlice<'a, T> {
         index.aux += n;
         slice
     }
+
+    pub fn next_require(&self, index: &mut ColumnIndex) -> RequireRecord<T>
+    where
+        T: Copy,
+    {
+        let prev_nonce = self.next_aux(index);
+        let prev_count = self.next_aux(index);
+        let count_inv = self.next_aux(index);
+        RequireRecord {
+            prev_nonce,
+            prev_count,
+            count_inv,
+        }
+    }
 }
 
 impl<'a, AB, H: Chipset<AB::F>> Air<AB> for FuncChip<'a, AB::F, H>
@@ -280,14 +294,7 @@ impl<F: Field> Op<F> {
                     out.push(o.into());
                 }
                 let inp = inp.iter().map(|i| map[*i].to_expr());
-                let prev_nonce = local.next_aux(index);
-                let prev_count = local.next_aux(index);
-                let count_inv = local.next_aux(index);
-                let record = RequireRecord {
-                    prev_nonce,
-                    prev_count,
-                    count_inv,
-                };
+                let record = local.next_require(index);
                 builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
                     *local.nonce,
@@ -304,14 +311,7 @@ impl<F: Field> Op<F> {
                     inp.push(i.into());
                 }
                 let out = out.iter().map(|o| map[*o].to_expr());
-                let prev_nonce = local.next_aux(index);
-                let prev_count = local.next_aux(index);
-                let count_inv = local.next_aux(index);
-                let record = RequireRecord {
-                    prev_nonce,
-                    prev_count,
-                    count_inv,
-                };
+                let record = local.next_require(index);
                 builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
                     *local.nonce,
@@ -323,16 +323,7 @@ impl<F: Field> Op<F> {
                 let ptr = local.next_aux(index);
                 map.push(Val::Expr(ptr.into()));
                 let values = values.iter().map(|&idx| map[idx].to_expr());
-
-                let prev_nonce = local.next_aux(index);
-                let prev_count = local.next_aux(index);
-                let count_inv = local.next_aux(index);
-                let record = RequireRecord {
-                    prev_nonce,
-                    prev_count,
-                    count_inv,
-                };
-
+                let record = local.next_require(index);
                 builder.require(
                     MemoryRelation(ptr, values),
                     *local.nonce,
@@ -350,16 +341,7 @@ impl<F: Field> Op<F> {
                         o
                     })
                     .collect::<Vec<_>>();
-
-                let prev_nonce = local.next_aux(index);
-                let prev_count = local.next_aux(index);
-                let count_inv = local.next_aux(index);
-                let record = RequireRecord {
-                    prev_nonce,
-                    prev_count,
-                    count_inv,
-                };
-
+                let record = local.next_require(index);
                 builder.require(
                     MemoryRelation(ptr, values),
                     *local.nonce,
