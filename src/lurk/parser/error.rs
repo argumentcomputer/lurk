@@ -1,6 +1,13 @@
-use std::{cmp::Ordering, fmt, fmt::Write, num::ParseIntError, string::String};
+use std::{
+    cmp::Ordering,
+    fmt::{self, Write},
+    marker::PhantomData,
+    num::ParseIntError,
+    string::String,
+};
 
 use nom::{error::ErrorKind, AsBytes, Err, IResult, InputLength};
+use num_bigint::BigUint;
 
 use crate::lurk::parser::{base, Span};
 
@@ -9,7 +16,10 @@ pub enum ParseErrorKind<F> {
     InvalidBase16EscapeSequence(String, Option<ParseIntError>),
     InvalidBaseEncoding(base::LitBase),
     NumError(String),
-    NumLiteralTooBig(F, num_bigint::BigUint),
+    DigestLiteralTooBig {
+        literal: BigUint,
+        _marker: PhantomData<F>,
+    },
     UnknownBaseCode,
     ParseIntErr(ParseIntError),
     InvalidChar(String),
