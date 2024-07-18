@@ -1,0 +1,48 @@
+# Opens an issue to update the nightly Rust version every two weeks
+name: Rust Version Check
+
+on:
+  push: # Remove once tested
+    branches:
+      - "ci-rust-version"
+  workflow_dispatch:
+  schedule:
+    - cron:  '0 0 1,15 * *'
+
+jobs:
+  rust-version-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Parse rust-toolchain.toml
+        run: echo "TOOLCHAIN_VERSION=$(rustup show | grep rustc | awk -F'[()]| ' '{ print $(NF-1) }')" | tee -a $GITHUB_ENV
+      - name: Get latest nightly Rust version
+        run: |
+          echo "RUST_VERSION=$(rustup check | grep nightly | awk -F'[()]| ' '{print $(NF-1)}')" | tee -a $GITHUB_ENV
+      - name: Compare Rust versions
+        id: compare-versions
+        run: |
+          if [[ $(printf '%s\n' "$TOOLCHAIN_VERSION" "$RUST_VERSION" | sort -V | head -n 1) != "$RUST_VERSION" ]]; then
+            echo "outdated=true" | tee -a $GITHUB_OUTPUT
+          fi
+      - name: Update Cargo.toml
+        if: steps.compare-versions.outputs.outdated == 'true'
+        run: |
+          sed -i 's/channel = .*/channel = "nightly-${{ env.RUST_VERSION }}"/' rust-toolchain.toml
+      # Open PR if Rust version is out of date with latest nightly
+      - name: Create Pull Request
+        if: steps.compare-versions.outputs.outdated == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: "ci-update-rust-version"
+          title: "chore: Update Rust version to nightly-${{ env.RUST_VERSION }}"
+          commit-message: "chore: Update Rust version to nightly-${{ env.RUST_VERSION }}"
+          labels: "automated-issue"
+          #reviewers: "arthurpaulino, wwared, huitseeker, samuelburnham"
+          body: |
+            Test PR
+
+            This is an automated PR updating the Rust version from `nightly-${{ env.TOOLCHAIN_VERSION }}` to `nightly-${{ env.RUST_VERSION }}`
+
+            Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
