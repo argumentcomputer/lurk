@@ -156,7 +156,9 @@ impl Chipset<BabyBear> for LurkChip {
     }
 }
 
-pub fn lurk_hasher() -> Hasher<BabyBear, LurkChip> {
+pub type LurkHasher = Hasher<BabyBear, LurkChip>;
+
+pub fn lurk_hasher() -> LurkHasher {
     let comm = LurkChip::Hasher24_8(BabyBearConfig24::hasher());
     let hash2 = LurkChip::Hasher32_8(BabyBearConfig32::hasher());
     let hash3 = LurkChip::Hasher48_8(BabyBearConfig48::hasher());

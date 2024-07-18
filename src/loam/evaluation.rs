@@ -4,13 +4,12 @@
 
 use num_traits::FromPrimitive;
 
-use crate::lair::hasher::LurkHasher;
 use crate::loam::allocation::allocator;
 use crate::loam::lurk_sym_index;
 use crate::loam::{LEWrap, Num, Ptr, Wide, WidePtr, LE};
 use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
 use crate::lurk::tag::Tag;
-use crate::lurk::zstore::{builtin_vec, ZPtr, ZStore};
+use crate::lurk::zstore::{builtin_vec, lurk_zstore, ZPtr, ZStore};
 
 use p3_field::{AbstractField, PrimeField32};
 
@@ -20,7 +19,7 @@ pub struct Memory {}
 
 impl Memory {
     fn initial_builtin_relation() -> Vec<(Wide, Dual<LEWrap>)> {
-        let zstore = &mut ZStore::<_, LurkHasher>::default();
+        let zstore = &mut lurk_zstore();
         builtin_vec()
             .iter()
             .enumerate()
@@ -37,7 +36,7 @@ impl Memory {
     }
 
     fn initial_nil_relation() -> Vec<(Wide, Dual<LEWrap>)> {
-        let zstore = &mut ZStore::<_, LurkHasher>::default();
+        let zstore = &mut lurk_zstore();
         let ZPtr { tag: _, digest } = zstore.intern_nil();
         vec![(Wide(digest), Dual(LEWrap(LE::from_canonical_u64(0u64))))]
     }
@@ -982,7 +981,7 @@ mod test {
     }
 
     fn read_wideptr(src: &str) -> WidePtr {
-        let zstore = &mut ZStore::<_, LurkHasher>::default();
+        let zstore = &mut lurk_zstore();
         let ZPtr { tag, digest } = zstore.read(src).unwrap();
 
         allocator().import_hashes(zstore.tuple2_hashes());

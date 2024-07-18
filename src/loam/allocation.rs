@@ -8,8 +8,8 @@ use ascent::{ascent, Dual};
 use p3_field::{AbstractField, Field, PrimeField32};
 use rustc_hash::FxHashMap;
 
-use crate::lair::hasher::{Hasher, LurkHasher};
 use crate::loam::{LEWrap, Ptr, Wide, WidePtr, LE};
+use crate::lurk::chipset::{lurk_hasher, LurkHasher};
 use crate::lurk::tag::Tag;
 use crate::lurk::zstore::{DIGEST_SIZE, TUPLE2_SIZE};
 
@@ -29,7 +29,6 @@ pub fn allocator() -> MutexGuard<'static, Allocator> {
         .expect("poisoned")
 }
 
-#[derive(Default)]
 pub struct Allocator {
     allocation_map: FxHashMap<LE, LE>,
     digest_cache: FxHashMap<Vec<Wide>, Wide>,
@@ -37,10 +36,21 @@ pub struct Allocator {
     hasher: LurkHasher,
 }
 
+impl Default for Allocator {
+    fn default() -> Self {
+        Self {
+            allocation_map: Default::default(),
+            digest_cache: Default::default(),
+            preimage_cache: Default::default(),
+            hasher: lurk_hasher(),
+        }
+    }
+}
+
 impl Allocator {
     pub fn init(&mut self) {
         self.allocation_map = Default::default();
-        self.hasher = Default::default();
+        self.hasher = lurk_hasher();
         self.digest_cache = Default::default();
         self.preimage_cache = Default::default();
     }
