@@ -487,7 +487,7 @@ impl<F: PrimeField32> Func<F> {
                 ExecEntry::Op(Op::ExternCall(chip_idx, input)) => {
                     let input: List<_> = input.iter().map(|a| map[*a]).collect();
                     let chip = toplevel.get_chip_by_index(*chip_idx);
-                    map.extend(chip.execute_full(&input, nonce as u32, queries, &mut requires));
+                    map.extend(chip.execute(&input, nonce as u32, queries, &mut requires));
                 }
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
                 ExecEntry::Ctrl(Ctrl::Return(_, out)) => {

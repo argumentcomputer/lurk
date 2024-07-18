@@ -19,9 +19,8 @@ use loam::{
         List,
     },
     lurk::{
-        chipset::LurkHasher,
         eval::build_lurk_toplevel,
-        zstore::{ZPtr, ZStore},
+        zstore::{lurk_zstore, ZPtr},
     },
 };
 
@@ -54,7 +53,7 @@ fn setup<H: Chipset<BabyBear>>(
     QueryRecord<BabyBear>,
 ) {
     let code = build_lurk_expr(arg);
-    let zstore = &mut ZStore::<_, LurkHasher>::default();
+    let zstore = &mut lurk_zstore();
     let ZPtr { tag, digest } = zstore.read(&code).unwrap();
 
     let mut record = QueryRecord::new(toplevel);

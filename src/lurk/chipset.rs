@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use p3_air::AirBuilder;
 use p3_baby_bear::BabyBear;
 use p3_poseidon2::{Poseidon2, Poseidon2ExternalMatrixGeneral};
@@ -16,6 +18,9 @@ use crate::{
 
 use crate::lair::{map::Map, Name};
 
+use super::zstore::Hasher;
+
+#[derive(Clone)]
 pub enum LurkChip {
     Hasher24_8(
         Poseidon2<
@@ -83,7 +88,7 @@ impl Chipset<BabyBear> for LurkChip {
         0
     }
 
-    fn execute(&self, preimg: &[BabyBear]) -> Vec<BabyBear> {
+    fn execute_simple(&self, preimg: &[BabyBear]) -> Vec<BabyBear> {
         match self {
             LurkChip::Hasher24_8(hash) => hash.permute(sized!(preimg))[..self.output_size()].into(),
             LurkChip::Hasher32_8(hash) => hash.permute(sized!(preimg))[..self.output_size()].into(),
@@ -151,92 +156,15 @@ impl Chipset<BabyBear> for LurkChip {
     }
 }
 
-// `LurkHasher` is only used in the `ZStore`. Maybe deprecate it?
-#[derive(Clone)]
-pub struct LurkHasher {
-    hasher_24_8: Poseidon2<
-        BabyBear,
-        Poseidon2ExternalMatrixGeneral,
-        InternalDiffusion<BabyBearConfig24>,
-        24,
-        7,
-    >,
-    hasher_32_8: Poseidon2<
-        BabyBear,
-        Poseidon2ExternalMatrixGeneral,
-        InternalDiffusion<BabyBearConfig32>,
-        32,
-        7,
-    >,
-    hasher_48_8: Poseidon2<
-        BabyBear,
-        Poseidon2ExternalMatrixGeneral,
-        InternalDiffusion<BabyBearConfig48>,
-        48,
-        7,
-    >,
-}
-
-impl Default for LurkHasher {
-    fn default() -> Self {
-        let hasher_24_8 = BabyBearConfig24::hasher();
-        let hasher_32_8 = BabyBearConfig32::hasher();
-        let hasher_48_8 = BabyBearConfig48::hasher();
-        Self {
-            hasher_24_8,
-            hasher_32_8,
-            hasher_48_8,
-        }
-    }
-}
-
-impl Chipset<BabyBear> for LurkHasher {
-    #[inline]
-    fn input_size(&self) -> usize {
-        unimplemented!()
-    }
-
-    #[inline]
-    fn output_size(&self) -> usize {
-        8
-    }
-
-    fn require_size(&self) -> usize {
-        unimplemented!()
-    }
-
-    fn execute(&self, preimg: &[BabyBear]) -> Vec<BabyBear> {
-        macro_rules! hash_with {
-            ($name:ident) => {
-                self.$name.permute(sized!(preimg))[..self.output_size()].into()
-            };
-        }
-        match preimg.len() {
-            24 => hash_with!(hasher_24_8),
-            32 => hash_with!(hasher_32_8),
-            48 => hash_with!(hasher_48_8),
-            _ => unimplemented!(),
-        }
-    }
-
-    fn witness_size(&self) -> usize {
-        unimplemented!()
-    }
-
-    fn populate_witness(&self, _preimg: &[BabyBear], _witness: &mut [BabyBear]) -> Vec<BabyBear> {
-        unimplemented!()
-    }
-
-    fn eval<AB: AirBuilder<F = BabyBear> + LookupBuilder>(
-        &self,
-        _: &mut AB,
-        _: AB::Expr,
-        _: Vec<AB::Expr>,
-        _: &[AB::Var],
-        _: &[AB::Var],
-        _: AB::Expr,
-        _: &[RequireRecord<AB::Var>],
-    ) {
-        unimplemented!()
+pub fn lurk_hasher() -> Hasher<BabyBear, LurkChip> {
+    let comm = LurkChip::Hasher24_8(BabyBearConfig24::hasher());
+    let hash2 = LurkChip::Hasher32_8(BabyBearConfig32::hasher());
+    let hash3 = LurkChip::Hasher48_8(BabyBearConfig48::hasher());
+    let _p = PhantomData;
+    Hasher {
+        comm,
+        hash2,
+        hash3,
+        _p,
     }
 }

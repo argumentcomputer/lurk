@@ -14,11 +14,11 @@ pub trait Chipset<F>: Sync {
 
     fn require_size(&self) -> usize;
 
-    fn execute(&self, _input: &[F]) -> Vec<F> {
-        unimplemented!("please use `execute_full`")
+    fn execute_simple(&self, _input: &[F]) -> Vec<F> {
+        unimplemented!("please use `execute`")
     }
 
-    fn execute_full(
+    fn execute(
         &self,
         input: &[F],
         _nonce: u32,
@@ -28,7 +28,7 @@ pub trait Chipset<F>: Sync {
     where
         F: PrimeField32,
     {
-        self.execute(input)
+        self.execute_simple(input)
     }
 
     fn populate_witness(&self, _input: &[F], _witness: &mut [F]) -> Vec<F>;
@@ -65,7 +65,7 @@ impl<F> Chipset<F> for Nochip {
         unimplemented!()
     }
 
-    fn execute(&self, _: &[F]) -> Vec<F> {
+    fn execute_simple(&self, _: &[F]) -> Vec<F> {
         unimplemented!()
     }
 

@@ -10,7 +10,6 @@ use sphinx_core::{
 use crate::{
     air::debug::{debug_constraints_collecting_queries, TraceQueries},
     lair::{
-        chipset::Chipset,
         execute::{QueryRecord, Shard, ShardingConfig},
         func_chip::FuncChip,
         lair_chip::{
@@ -21,7 +20,7 @@ use crate::{
 };
 
 use super::{
-    chipset::{LurkChip, LurkHasher},
+    chipset::{lurk_hasher, LurkChip},
     eval::{build_lurk_toplevel, EvalErr},
     state::{lurk_sym, user_sym},
     symbol::Symbol,
@@ -32,13 +31,13 @@ use super::{
 #[allow(clippy::type_complexity)]
 static TEST_SETUP_DATA: OnceCell<(
     Toplevel<F, LurkChip>,
-    ZStore<F, LurkHasher>,
+    ZStore<F, LurkChip>,
     BabyBearPoseidon2,
 )> = OnceCell::new();
 
 fn test_setup_data() -> &'static (
     Toplevel<F, LurkChip>,
-    ZStore<F, LurkHasher>,
+    ZStore<F, LurkChip>,
     BabyBearPoseidon2,
 ) {
     TEST_SETUP_DATA.get_or_init(|| {
@@ -51,8 +50,8 @@ fn test_setup_data() -> &'static (
 fn run_test(
     zptr: &ZPtr<F>,
     toplevel: &Toplevel<F, LurkChip>,
-    zstore: &mut ZStore<F, LurkHasher>,
-    expected_cloj: fn(&mut ZStore<F, LurkHasher>) -> ZPtr<F>,
+    zstore: &mut ZStore<F, LurkChip>,
+    expected_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>,
     config: BabyBearPoseidon2,
 ) {
     let mut record = QueryRecord::new(toplevel);
@@ -114,8 +113,8 @@ fn run_test(
 
 #[allow(clippy::type_complexity)]
 fn test_case_raw(
-    input_cloj: fn(&mut ZStore<F, LurkHasher>) -> ZPtr<F>,
-    expected_cloj: fn(&mut ZStore<F, LurkHasher>) -> ZPtr<F>,
+    input_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>,
+    expected_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>,
 ) {
     let (toplevel, zstore, config) = test_setup_data();
     let zstore = &mut zstore.clone();
@@ -123,7 +122,7 @@ fn test_case_raw(
     run_test(&zptr, toplevel, zstore, expected_cloj, config.clone());
 }
 
-fn test_case(input_code: &'static str, expected_cloj: fn(&mut ZStore<F, LurkHasher>) -> ZPtr<F>) {
+fn test_case(input_code: &'static str, expected_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>) {
     let (toplevel, zstore, config) = test_setup_data();
     let mut zstore = zstore.clone();
     let zptr = zstore.read(input_code).expect("Read failure");
@@ -148,7 +147,7 @@ macro_rules! test {
     };
 }
 
-fn trivial_id_fun(zstore: &mut ZStore<F, LurkHasher>) -> ZPtr<F> {
+fn trivial_id_fun(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
     let x = zstore.intern_symbol(&user_sym("x"));
     let args = zstore.intern_list([x]);
     let env = zstore.intern_empty_env();
@@ -246,7 +245,7 @@ test!(test_commit, "(commit 123)", |_| {
     let mut preimg = Vec::with_capacity(24);
     preimg.extend([F::zero(); 8]);
     preimg.extend(num(123).flatten());
-    ZPtr::comm(LurkHasher::default().execute(&preimg).try_into().unwrap())
+    ZPtr::comm(lurk_hasher().hash(&preimg).try_into().unwrap())
 });
 test!(
     test_raw_commit,
@@ -255,18 +254,18 @@ test!(
         let mut preimg = Vec::with_capacity(24);
         preimg.extend([F::zero(); 8]);
         preimg.extend(num(123).flatten());
-        ZPtr::comm(LurkHasher::default().execute(&preimg).try_into().unwrap())
+        ZPtr::comm(lurk_hasher().hash(&preimg).try_into().unwrap())
     }
 );
 test!(test_hide, "(hide (commit 321) 123)", |_| {
     let mut secret_preimg = Vec::with_capacity(24);
     secret_preimg.extend([F::zero(); 8]);
     secret_preimg.extend(num(321).flatten());
-    let hasher = LurkHasher::default();
+    let hasher = lurk_hasher();
     let mut preimg = Vec::with_capacity(24);
-    preimg.extend(hasher.execute(&secret_preimg));
+    preimg.extend(hasher.hash(&secret_preimg));
     preimg.extend(num(123).flatten());
-    ZPtr::comm(hasher.execute(&preimg).try_into().unwrap())
+    ZPtr::comm(hasher.hash(&preimg).try_into().unwrap())
 });
 test!(test_open_roundtrip, "(open (commit 123))", |_| num(123));
 test!(
