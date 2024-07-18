@@ -30,7 +30,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Linux Tests
         run: |
-          cargo nextest run --profile ci --cargo-profile dev-ci --workspace --run-ignored all
+          cargo nextest run --profile ci --cargo-profile dev-ci --workspace --run-ignored all --features loam
 
   clippy:
     runs-on: ubuntu-latest
@@ -50,7 +50,7 @@ jobs:
       - name: Check Rustfmt Code Style
         run: cargo fmt --all --check
       - name: check *everything* compiles
-        run: cargo check --all-targets --all-features --workspace --examples --tests --benches
+        run: cargo check --all-targets --all-features --workspace --examples --tests --benches --features loam
       # See '.cargo/config' for list of enabled/disabled clippy lints
       - name: Check clippy warnings
         run: cargo xclippy -D warnings

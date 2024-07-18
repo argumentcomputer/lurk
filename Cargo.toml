@@ -128,3 +128,7 @@ overflow-checks = true
 lto = "thin"
 incremental = false
 codegen-units = 16
+
+[features]
+default=[]
+loam=[]
