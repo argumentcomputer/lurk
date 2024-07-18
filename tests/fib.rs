@@ -78,7 +78,7 @@ fn fib_e2e() {
     let (toplevel, _) = build_lurk_toplevel();
     let (args, lurk_main, mut record) = setup(arg, &toplevel);
     let start_time = Instant::now();
-    std::thread::sleep(std::time::Duration::from_secs(10));
+
     toplevel.execute(lurk_main.func(), &args, &mut record);
     let config = BabyBearPoseidon2::new();
     let machine = StarkMachine::new(
