@@ -215,18 +215,14 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
                         return zero
                     }
                     let (sym_digest: [8],
-                         val_tag_full: [8],
+                         val_tag, padding: [7],
                          val_digest: [8],
                          env_digest: [8]) = preimg(hash_32_8, digest);
-                    let padding = [0; 7];
                     let sym_tag = Tag::Sym;
                     let env_tag = Tag::Env;
-                    let sym_tag_full: [8] = (sym_tag, padding);
-                    let env_tag_full: [8] = (env_tag, padding);
-                    let sym_ptr = call(ingress, sym_tag_full, sym_digest);
-                    let val_ptr = call(ingress, val_tag_full, val_digest);
-                    let env_ptr = call(ingress, env_tag_full, env_digest);
-                    let (val_tag, _rest: [7]) = val_tag_full;
+                    let sym_ptr = call(ingress, sym_tag, padding, sym_digest);
+                    let val_ptr = call(ingress, val_tag, padding, val_digest);
+                    let env_ptr = call(ingress, env_tag, padding, env_digest);
                     let ptr = store(sym_ptr, val_tag, val_ptr, env_ptr);
                     return ptr
                 }
