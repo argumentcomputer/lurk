@@ -7,7 +7,10 @@ use rayon::{
     slice::ParallelSliceMut,
 };
 
-use crate::{air::builder::Record, lair::execute::mem_index_from_len};
+use crate::{
+    air::builder::{Record, RequireRecord},
+    lair::execute::mem_index_from_len,
+};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
@@ -48,6 +51,12 @@ impl<'a, T> ColumnMutSlice<'a, T> {
     pub fn push_aux(&mut self, index: &mut ColumnIndex, t: T) {
         self.aux[index.aux] = t;
         index.aux += 1;
+    }
+
+    pub fn push_require(&mut self, index: &mut ColumnIndex, require: RequireRecord<T>) {
+        self.push_aux(index, require.prev_nonce);
+        self.push_aux(index, require.prev_count);
+        self.push_aux(index, require.count_inv);
     }
 }
 
@@ -282,10 +291,7 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, *f);
                 }
                 let lookup = ctx.requires.next().expect("Not enough require hints");
-                let require = lookup.into_require();
-                slice.push_aux(index, require.prev_nonce);
-                slice.push_aux(index, require.prev_count);
-                slice.push_aux(index, require.count_inv);
+                slice.push_require(index, lookup.into_require());
             }
             Op::PreImg(idx, out) => {
                 let out = out.iter().map(|a| map[*a].0).collect::<List<_>>();
@@ -298,10 +304,7 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, *f);
                 }
                 let lookup = ctx.requires.next().expect("Not enough require hints");
-                let require = lookup.into_require();
-                slice.push_aux(index, require.prev_nonce);
-                slice.push_aux(index, require.prev_count);
-                slice.push_aux(index, require.count_inv);
+                slice.push_require(index, lookup.into_require());
             }
             Op::Store(args) => {
                 let mem_idx = mem_index_from_len(args.len());
@@ -314,10 +317,7 @@ impl<F: PrimeField32> Op<F> {
                 map.push((f, 1));
                 slice.push_aux(index, f);
                 let lookup = ctx.requires.next().expect("Not enough require hints");
-                let require = lookup.into_require();
-                slice.push_aux(index, require.prev_nonce);
-                slice.push_aux(index, require.prev_count);
-                slice.push_aux(index, require.count_inv);
+                slice.push_require(index, lookup.into_require());
             }
             Op::Load(len, ptr) => {
                 let mem_idx = mem_index_from_len(*len);
@@ -331,23 +331,26 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, *f);
                 }
                 let lookup = ctx.requires.next().expect("Not enough require hints");
-                let require = lookup.into_require();
-                slice.push_aux(index, require.prev_nonce);
-                slice.push_aux(index, require.prev_count);
-                slice.push_aux(index, require.count_inv);
+                slice.push_require(index, lookup.into_require());
             }
             Op::ExternCall(chip_idx, input) => {
                 let chip = ctx.toplevel.get_chip_by_index(*chip_idx);
+
                 let input = input.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let witness_size = chip.witness_size();
-                let mut witness = vec![F::zero(); witness_size];
-                let img = chip.populate_witness(&input, &mut witness);
-                for f in img {
+                let mut witness = vec![F::zero(); chip.witness_size()];
+                let out = chip.populate_witness(&input, &mut witness);
+
+                // order: output, witness, requires
+                for f in out {
                     map.push((f, 1));
                     slice.push_aux(index, f);
                 }
                 for f in witness {
                     slice.push_aux(index, f);
+                }
+                for _ in 0..chip.require_size() {
+                    let lookup = ctx.requires.next().expect("Not enough require hints");
+                    slice.push_require(index, lookup.into_require());
                 }
             }
             Op::Debug(..) => (),
