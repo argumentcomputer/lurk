@@ -112,7 +112,7 @@ jobs:
             echo "$test_name summary"
             echo "Base = $BENCH_BASE, PR = $BENCH_PR"
 
-            if [[ -z $BENCH_BASE || ! -z $BENCH_PR ]]; then
+            if [[ -z $BENCH_BASE || -z $BENCH_PR ]]; then
               exit 1
             fi
 
