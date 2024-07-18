@@ -1,11 +1,11 @@
+// E2E Fibonacci test for one-shot benchmarking
+//
 // Usage: `LOAM_FIB_ARG=<ARG> cargo nextest run -E 'test(<test-name>)' --nocapture --run-ignored all`
 // where <ARG> is the fibonacci input
 // If `LOAM_FIB_ARG` is unset, the tests will run with `DEFAULT_FIB_ARG=500`
 use p3_baby_bear::BabyBear;
 use p3_field::AbstractField;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use sphinx_core::{
-    air::MachineAir,
     stark::{LocalProver, StarkGenericConfig, StarkMachine},
     utils::{BabyBearPoseidon2, SphinxCoreOpts},
 };
@@ -13,16 +13,16 @@ use std::time::Instant;
 
 use loam::{
     lair::{
+        chipset::Chipset,
         execute::{QueryRecord, Shard},
         func_chip::FuncChip,
-        hasher::{Hasher, LurkHasher},
-        lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
+        lair_chip::{build_chip_vector, LairMachineProgram},
         toplevel::Toplevel,
         List,
     },
     lurk::{
         eval::build_lurk_toplevel,
-        zstore::{ZPtr, ZStore},
+        zstore::{lurk_zstore, ZPtr},
     },
 };
 
@@ -46,7 +46,7 @@ fn build_lurk_expr(arg: usize) -> String {
     )
 }
 
-fn setup<H: Hasher<BabyBear>>(
+fn setup<H: Chipset<BabyBear>>(
     arg: usize,
     toplevel: &Toplevel<BabyBear, H>,
 ) -> (
@@ -55,7 +55,7 @@ fn setup<H: Hasher<BabyBear>>(
     QueryRecord<BabyBear>,
 ) {
     let code = build_lurk_expr(arg);
-    let zstore = &mut ZStore::<_, LurkHasher>::default();
+    let zstore = &mut lurk_zstore();
     let ZPtr { tag, digest } = zstore.read(&code).unwrap();
 
     let mut record = QueryRecord::new(toplevel);
@@ -69,42 +69,6 @@ fn setup<H: Hasher<BabyBear>>(
     let lurk_main = FuncChip::from_name("lurk_main", toplevel);
 
     (args, lurk_main, record)
-}
-
-#[ignore]
-#[test]
-fn fib_evaluation() {
-    let arg = get_fib_arg();
-    let (toplevel, _) = build_lurk_toplevel();
-    let (args, lurk_main, mut record) = setup(arg, &toplevel);
-    let start_time = Instant::now();
-
-    toplevel.execute(lurk_main.func(), &args, &mut record);
-
-    let elapsed_time = start_time.elapsed().as_millis();
-    println!("Total time for evaluation-{arg} = {:.2} ms", elapsed_time);
-}
-
-#[ignore]
-#[test]
-fn fib_trace_generation() {
-    let arg = get_fib_arg();
-    let (toplevel, _) = build_lurk_toplevel();
-    let (args, lurk_main, mut record) = setup(arg, &toplevel);
-    let start_time = Instant::now();
-
-    toplevel.execute(lurk_main.func(), &args, &mut record);
-    let lair_chips = build_lair_chip_vector(&lurk_main);
-    lair_chips.par_iter().for_each(|func_chip| {
-        let shard = Shard::new(&record);
-        func_chip.generate_trace(&shard, &mut Default::default());
-    });
-
-    let elapsed_time = start_time.elapsed().as_millis();
-    println!(
-        "Total time for trace-generation-{arg} = {:.2} ms",
-        elapsed_time
-    );
 }
 
 #[ignore]
