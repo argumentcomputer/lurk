@@ -8,7 +8,6 @@ use rustc_hash::FxBuildHasher;
 use crate::{
     func,
     lair::{
-        chipset::{lurk_chip_map, LurkChip, LurkHasher},
         expr::{BlockE, CasesE, CtrlE, FuncE, OpE, Var},
         map::Map,
         toplevel::Toplevel,
@@ -17,6 +16,7 @@ use crate::{
 };
 
 use super::{
+    chipset::{lurk_chip_map, LurkChip, LurkHasher},
     state::{State, StateRcCell, LURK_PACKAGE_SYMBOLS_NAMES},
     tag::Tag,
     zstore::ZStore,

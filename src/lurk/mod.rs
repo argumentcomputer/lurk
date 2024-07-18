@@ -1,5 +1,6 @@
 //! This module is an implementation of Lurk using Lair as the backend.
 
+pub mod chipset;
 pub mod cli;
 pub mod eval;
 #[cfg(test)]

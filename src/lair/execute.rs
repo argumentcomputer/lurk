@@ -616,7 +616,7 @@ mod tests {
                 return n
             }
         );
-        let toplevel = Toplevel::<F, Nochip>::new_no_extern(&[test_e]);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[test_e]);
         let test = toplevel.get_by_name("test");
         let args = &[F::from_canonical_u32(20), F::from_canonical_u32(4)];
         let queries = &mut QueryRecord::new(&toplevel);
@@ -634,7 +634,7 @@ mod tests {
                 return x
             }
         );
-        let toplevel = Toplevel::<F, Nochip>::new_no_extern(&[test_e]);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[test_e]);
         let test = toplevel.get_by_name("test");
         let args = &[F::from_canonical_u32(10)];
         let queries = &mut QueryRecord::new(&toplevel);
@@ -664,7 +664,7 @@ mod tests {
                 return (a0, a1, a2, a3, x)
             }
         );
-        let toplevel = Toplevel::<F, Nochip>::new_no_extern(&[polynomial_e, inverse_e]);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[polynomial_e, inverse_e]);
         let polynomial = toplevel.get_by_name("polynomial");
         let inverse = toplevel.get_by_name("inverse");
         let args = [1, 3, 5, 7, 20]
@@ -705,7 +705,7 @@ mod tests {
                 return res
             }
         );
-        let toplevel = Toplevel::<F, Nochip>::new_no_extern(&[test1_e, test2_e, test3_e]);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[test1_e, test2_e, test3_e]);
         let test = toplevel.get_by_name("test1");
         let f = F::from_canonical_u32;
         let args = &[f(1), f(2), f(3), f(4), f(5), f(6), f(7)];
@@ -736,7 +736,7 @@ mod tests {
             }
         );
 
-        let toplevel = Toplevel::<F, Nochip>::new_no_extern(&[half_e, double_e]);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[half_e, double_e]);
         let half = toplevel.get_by_name("half");
         let half_chip = FuncChip::from_name("half", &toplevel);
         let double_chip = FuncChip::from_name("double", &toplevel);

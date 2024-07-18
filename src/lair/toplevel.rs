@@ -37,7 +37,7 @@ impl<F: Clone + Ord, H: Chipset<F>> Toplevel<F, H> {
         Toplevel { map, chip_map }
     }
 
-    pub fn new_no_extern(funcs: &[FuncE<F>]) -> Self {
+    pub fn new_pure(funcs: &[FuncE<F>]) -> Self {
         let chip_map = Map::from_vec(vec![]);
         Toplevel::new(funcs, chip_map)
     }

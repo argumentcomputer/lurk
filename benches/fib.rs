@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use loam::{
     lair::{
-        chipset::{Chipset, LurkHasher},
+        chipset::Chipset,
         execute::{QueryRecord, Shard},
         func_chip::FuncChip,
         lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
@@ -19,6 +19,7 @@ use loam::{
         List,
     },
     lurk::{
+        chipset::LurkHasher,
         eval::build_lurk_toplevel,
         zstore::{ZPtr, ZStore},
     },

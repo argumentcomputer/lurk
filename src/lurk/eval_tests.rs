@@ -10,7 +10,7 @@ use sphinx_core::{
 use crate::{
     air::debug::{debug_constraints_collecting_queries, TraceQueries},
     lair::{
-        chipset::{Chipset, LurkChip, LurkHasher},
+        chipset::Chipset,
         execute::{QueryRecord, Shard, ShardingConfig},
         func_chip::FuncChip,
         lair_chip::{
@@ -21,6 +21,7 @@ use crate::{
 };
 
 use super::{
+    chipset::{LurkChip, LurkHasher},
     eval::{build_lurk_toplevel, EvalErr},
     state::{lurk_sym, user_sym},
     symbol::Symbol,

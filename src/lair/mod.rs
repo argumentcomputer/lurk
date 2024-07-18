@@ -103,5 +103,5 @@ pub(crate) fn demo_toplevel<F: Field + Ord>() -> Toplevel<F, Nochip> {
         return res
     });
 
-    Toplevel::new_no_extern(&[factorial_e, fib_e, even_e, odd_e])
+    Toplevel::new_pure(&[factorial_e, fib_e, even_e, odd_e])
 }

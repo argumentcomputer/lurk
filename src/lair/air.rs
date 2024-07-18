@@ -594,7 +594,7 @@ mod tests {
             let x = eq(a, b);
             return x
         });
-        let toplevel = Toplevel::<F, Nochip>::new_no_extern(&[eq_func, not_func]);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[eq_func, not_func]);
         let eq_chip = FuncChip::from_name("eq", &toplevel);
         let not_chip = FuncChip::from_name("not", &toplevel);
 
@@ -665,7 +665,7 @@ mod tests {
             let zero = 0;
             return zero
         });
-        let toplevel = Toplevel::<F, Nochip>::new_no_extern(&[if_many_func]);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[if_many_func]);
         let if_many_chip = FuncChip::from_name("if_many", &toplevel);
 
         let mut queries = QueryRecord::new(&toplevel);
@@ -725,7 +725,7 @@ mod tests {
             let fail = [0, 0];
             return fail
         });
-        let toplevel = Toplevel::<F, Nochip>::new_no_extern(&[match_many_func]);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[match_many_func]);
         let match_many_chip = FuncChip::from_name("match_many", &toplevel);
 
         let mut queries = QueryRecord::new(&toplevel);

@@ -776,11 +776,9 @@ mod test {
     use p3_field::AbstractField;
 
     use crate::{
-        lair::{
-            chipset::{Chipset, LurkHasher},
-            execute::QueryRecord,
-        },
+        lair::{chipset::Chipset, execute::QueryRecord},
         lurk::{
+            chipset::LurkHasher,
             eval::build_lurk_toplevel,
             state::{lurk_sym, user_sym, State},
             symbol::Symbol,
