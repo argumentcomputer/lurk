@@ -1537,4 +1537,25 @@ mod test {
         assert_ingress_egress_correctness("(+ 1 2)");
         assert_ingress_egress_correctness("(a 'b c)");
     }
+
+    #[test]
+    fn u32_add_test() {
+        let add_func = func!(
+        fn add(a: [4], b: [4]): [4] {
+            let c: [4] = extern_call(u32_add, a, b);
+            return c
+        });
+        let lurk_chip_map = lurk_chip_map();
+        let toplevel = Toplevel::new(&[add_func], lurk_chip_map);
+
+        let add_chip = FuncChip::from_name("add", &toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
+        let f = F::from_canonical_usize;
+        // Little endian
+        let args = &[f(200), f(0), f(0), f(0), f(56), f(0), f(0), f(0)];
+        let out = toplevel.execute_by_name("add", args, &mut queries);
+        assert_eq!(out.as_ref(), &[f(0), f(1), f(0), f(0)]);
+        let add_trace = add_chip.generate_trace(&Shard::new(&queries));
+        let _ = debug_constraints_collecting_queries(&add_chip, &[], None, &add_trace);
+    }
 }

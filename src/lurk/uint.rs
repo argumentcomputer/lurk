@@ -15,6 +15,7 @@ use crate::{
     lair::{chipset::Chipset, execute::QueryRecord},
 };
 
+#[derive(Clone)]
 pub enum U32 {
     Add,
     Sub,
