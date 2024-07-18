@@ -1,5 +1,3 @@
-use num_traits::FromPrimitive;
-
 use anyhow::{bail, Result};
 use itertools::Itertools;
 use nom::{sequence::preceded, Parser};
