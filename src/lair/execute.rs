@@ -34,9 +34,7 @@ impl<F: PrimeField32> QueryResult<F> {
     }
 
     pub(crate) fn new_lookup(&mut self, nonce: usize, caller_requires: &mut Vec<Record>) {
-        caller_requires.push(self.provide);
-        self.provide.nonce = nonce as u32;
-        self.provide.count += 1;
+        caller_requires.push(self.provide.new_lookup(nonce as u32));
     }
 }
 
@@ -489,7 +487,7 @@ impl<F: PrimeField32> Func<F> {
                 ExecEntry::Op(Op::ExternCall(chip_idx, input)) => {
                     let input: List<_> = input.iter().map(|a| map[*a]).collect();
                     let chip = toplevel.get_chip_by_index(*chip_idx);
-                    map.extend(chip.execute(&input));
+                    map.extend(chip.execute_full(&input, nonce as u32, queries, &mut requires));
                 }
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
                 ExecEntry::Ctrl(Ctrl::Return(_, out)) => {

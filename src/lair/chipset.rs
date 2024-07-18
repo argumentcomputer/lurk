@@ -1,16 +1,20 @@
 use p3_air::AirBuilder;
 use p3_baby_bear::BabyBear;
+use p3_field::PrimeField32;
 use p3_poseidon2::{Poseidon2, Poseidon2ExternalMatrixGeneral};
 use p3_symmetric::Permutation;
 
-use crate::poseidon::{
-    config::{
-        BabyBearConfig24, BabyBearConfig32, BabyBearConfig48, InternalDiffusion, PoseidonConfig,
+use crate::{
+    air::builder::{LookupBuilder, Record, RequireRecord},
+    poseidon::{
+        config::{
+            BabyBearConfig24, BabyBearConfig32, BabyBearConfig48, InternalDiffusion, PoseidonConfig,
+        },
+        wide::{air::eval_input, columns::Poseidon2Cols, trace::populate_witness},
     },
-    wide::{air::eval_input, columns::Poseidon2Cols, trace::populate_witness},
 };
 
-use super::{map::Map, Name};
+use super::{execute::QueryRecord, map::Map, Name};
 
 pub trait Chipset<F>: Sync {
     fn input_size(&self) -> usize;
@@ -19,17 +23,37 @@ pub trait Chipset<F>: Sync {
 
     fn witness_size(&self) -> usize;
 
-    fn execute(&self, input: &[F]) -> Vec<F>;
+    fn require_size(&self) -> usize;
 
-    fn populate_witness(&self, input: &[F], witness: &mut [F]) -> Vec<F>;
+    fn execute(&self, _input: &[F]) -> Vec<F> {
+        unimplemented!("please use `execute_full`")
+    }
 
-    fn eval<AB: AirBuilder<F = F>>(
+    fn execute_full(
+        &self,
+        input: &[F],
+        _nonce: u32,
+        _queries: &mut QueryRecord<F>,
+        _requires: &mut Vec<Record>,
+    ) -> Vec<F>
+    where
+        F: PrimeField32,
+    {
+        self.execute(input)
+    }
+
+    fn populate_witness(&self, _input: &[F], _witness: &mut [F]) -> Vec<F>;
+
+    #[allow(clippy::too_many_arguments)]
+    fn eval<AB: AirBuilder<F = F> + LookupBuilder>(
         &self,
         builder: &mut AB,
+        is_real: AB::Expr,
         input: Vec<AB::Expr>,
         output: &[AB::Var],
         witness: &[AB::Var],
-        is_real: AB::Expr,
+        _nonce: AB::Expr,
+        _requires: &[RequireRecord<AB::Var>],
     );
 }
 
@@ -40,6 +64,10 @@ impl<F> Chipset<F> for Nochip {
     }
 
     fn output_size(&self) -> usize {
+        unimplemented!()
+    }
+
+    fn require_size(&self) -> usize {
         unimplemented!()
     }
 
@@ -55,13 +83,15 @@ impl<F> Chipset<F> for Nochip {
         unimplemented!()
     }
 
-    fn eval<AB: AirBuilder<F = F>>(
+    fn eval<AB: AirBuilder<F = F> + LookupBuilder>(
         &self,
         _: &mut AB,
+        _: AB::Expr,
         _: Vec<AB::Expr>,
         _: &[AB::Var],
         _: &[AB::Var],
         _: AB::Expr,
+        _: &[RequireRecord<AB::Var>],
     ) {
         unimplemented!()
     }
@@ -130,6 +160,10 @@ impl Chipset<BabyBear> for LurkChip {
         8
     }
 
+    fn require_size(&self) -> usize {
+        0
+    }
+
     fn execute(&self, preimg: &[BabyBear]) -> Vec<BabyBear> {
         match self {
             LurkChip::Hasher24_8(hash) => hash.permute(sized!(preimg))[..self.output_size()].into(),
@@ -162,13 +196,15 @@ impl Chipset<BabyBear> for LurkChip {
         out
     }
 
-    fn eval<AB: AirBuilder<F = BabyBear>>(
+    fn eval<AB: AirBuilder<F = BabyBear> + LookupBuilder>(
         &self,
         builder: &mut AB,
+        is_real: AB::Expr,
         preimg: Vec<AB::Expr>,
         img: &[AB::Var],
         witness: &[AB::Var],
-        is_real: AB::Expr,
+        _: AB::Expr,
+        _: &[RequireRecord<AB::Var>],
     ) {
         match self {
             LurkChip::Hasher24_8(..) => eval_input::<AB, BabyBearConfig24, 24>(
@@ -238,12 +274,16 @@ impl Default for LurkHasher {
 impl Chipset<BabyBear> for LurkHasher {
     #[inline]
     fn input_size(&self) -> usize {
-        unreachable!()
+        unimplemented!()
     }
 
     #[inline]
     fn output_size(&self) -> usize {
         8
+    }
+
+    fn require_size(&self) -> usize {
+        unimplemented!()
     }
 
     fn execute(&self, preimg: &[BabyBear]) -> Vec<BabyBear> {
@@ -268,13 +308,15 @@ impl Chipset<BabyBear> for LurkHasher {
         unimplemented!()
     }
 
-    fn eval<AB: AirBuilder<F = BabyBear>>(
+    fn eval<AB: AirBuilder<F = BabyBear> + LookupBuilder>(
         &self,
-        _builder: &mut AB,
-        _preimg: Vec<AB::Expr>,
-        _img: &[AB::Var],
-        _witness: &[AB::Var],
-        _is_real: AB::Expr,
+        _: &mut AB,
+        _: AB::Expr,
+        _: Vec<AB::Expr>,
+        _: &[AB::Var],
+        _: &[AB::Var],
+        _: AB::Expr,
+        _: &[RequireRecord<AB::Var>],
     ) {
         unimplemented!()
     }

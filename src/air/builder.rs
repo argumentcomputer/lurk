@@ -139,6 +139,14 @@ pub struct Record {
 }
 
 impl Record {
+    /// Updates the provide record and returns the require record
+    pub fn new_lookup(&mut self, nonce: u32) -> Record {
+        let require = *self;
+        self.nonce = nonce;
+        self.count += 1;
+        require
+    }
+
     pub fn into_provide<F: PrimeField>(self) -> ProvideRecord<F> {
         let last_nonce = F::from_canonical_u32(self.nonce);
         let last_count = F::from_canonical_u32(self.count);
