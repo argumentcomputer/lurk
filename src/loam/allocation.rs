@@ -155,6 +155,7 @@ impl Allocator {
     }
 }
 
+#[cfg(feature = "loam")]
 ascent! {
     struct AllocationProgram;
 
@@ -353,6 +354,7 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
 }
 
+#[cfg(feature = "loam")]
 impl AllocationProgram {
     fn cons_mem_is_contiguous(&self) -> bool {
         let mut addrs1 = self
@@ -392,6 +394,7 @@ impl AllocationProgram {
 }
 
 #[cfg(test)]
+#[cfg(feature = "loam")]
 mod test {
     use super::*;
 
