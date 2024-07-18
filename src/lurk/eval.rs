@@ -214,16 +214,20 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
                         let zero = 0;
                         return zero
                     }
-                    let (fst_tag_full: [8], fst_digest: [8],
-                         snd_tag_full: [8], snd_digest: [8],
-                         trd_tag_full: [8], trd_digest: [8]) = preimg(hash_48_8, digest);
-                    let fst_ptr = call(ingress, fst_tag_full, fst_digest);
-                    let snd_ptr = call(ingress, snd_tag_full, snd_digest);
-                    let trd_ptr = call(ingress, trd_tag_full, trd_digest);
-                    let (fst_tag, _rest: [7]) = fst_tag_full;
-                    let (snd_tag, _rest: [7]) = snd_tag_full;
-                    let (trd_tag, _rest: [7]) = trd_tag_full;
-                    let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr, trd_tag, trd_ptr);
+                    let (sym_digest: [8],
+                         val_tag_full: [8],
+                         val_digest: [8],
+                         env_digest: [8]) = preimg(hash_32_8, digest);
+                    let padding = [0; 7];
+                    let sym_tag = Tag::Sym;
+                    let env_tag = Tag::Env;
+                    let sym_tag_full: [8] = (sym_tag, padding);
+                    let env_tag_full: [8] = (env_tag, padding);
+                    let sym_ptr = call(ingress, sym_tag_full, sym_digest);
+                    let val_ptr = call(ingress, val_tag_full, val_digest);
+                    let env_ptr = call(ingress, env_tag_full, env_digest);
+                    let (val_tag, _rest: [7]) = val_tag_full;
+                    let ptr = store(sym_ptr, val_tag, val_ptr, env_ptr);
                     return ptr
                 }
             }
@@ -333,16 +337,16 @@ pub fn egress<F: AbstractField + Ord>(nil: List<F>) -> FuncE<F> {
                         let digest = [0; 8];
                         return digest
                     }
-                    let (fst_tag, fst_ptr, snd_tag, snd_ptr, trd_tag, trd_ptr) = load(val);
-                    let fst_digest: [8] = call(egress, fst_tag, fst_ptr);
-                    let snd_digest: [8] = call(egress, snd_tag, snd_ptr);
-                    let trd_digest: [8] = call(egress, trd_tag, trd_ptr);
+                    let (sym_ptr, val_tag, val_ptr, env_ptr) = load(val);
+                    let sym_tag = Tag::Sym;
+                    let env_tag = Tag::Env;
+                    let sym_digest: [8] = call(egress, sym_tag, sym_ptr);
+                    let val_digest: [8] = call(egress, val_tag, val_ptr);
+                    let env_digest: [8] = call(egress, env_tag, env_ptr);
 
                     let padding = [0; 7];
-                    let fst_tag_full: [8] = (fst_tag, padding);
-                    let snd_tag_full: [8] = (snd_tag, padding);
-                    let trd_tag_full: [8] = (trd_tag, padding);
-                    let digest: [8] = call(hash_48_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest, trd_tag_full, trd_digest);
+                    let val_tag_full: [8] = (val_tag, padding);
+                    let digest: [8] = call(hash_32_8, sym_digest, val_tag_full, val_digest, env_digest);
                     return digest
                 }
             }
@@ -1473,9 +1477,9 @@ mod test {
         expect_eq(car_cdr.width(), expect!["34"]);
         expect_eq(apply.width(), expect!["60"]);
         expect_eq(env_lookup.width(), expect!["47"]);
-        expect_eq(ingress.width(), expect!["110"]);
+        expect_eq(ingress.width(), expect!["102"]);
         expect_eq(ingress_builtin.width(), expect!["46"]);
-        expect_eq(egress.width(), expect!["75"]);
+        expect_eq(egress.width(), expect!["73"]);
         expect_eq(egress_builtin.width(), expect!["39"]);
         expect_eq(hash_24_8.width(), expect!["485"]);
         expect_eq(hash_32_8.width(), expect!["647"]);
