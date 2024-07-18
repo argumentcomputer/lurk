@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use p3_air::AirBuilder;
 use p3_baby_bear::BabyBear;
 use p3_poseidon2::{Poseidon2, Poseidon2ExternalMatrixGeneral};
@@ -158,15 +156,11 @@ impl Chipset<BabyBear> for LurkChip {
 
 pub type LurkHasher = Hasher<BabyBear, LurkChip>;
 
+#[inline]
 pub fn lurk_hasher() -> LurkHasher {
-    let comm = LurkChip::Hasher24_8(BabyBearConfig24::hasher());
-    let hash2 = LurkChip::Hasher32_8(BabyBearConfig32::hasher());
-    let hash3 = LurkChip::Hasher48_8(BabyBearConfig48::hasher());
-    let _p = PhantomData;
-    Hasher {
-        comm,
-        hash2,
-        hash3,
-        _p,
-    }
+    Hasher::new(
+        LurkChip::Hasher24_8(BabyBearConfig24::hasher()),
+        LurkChip::Hasher32_8(BabyBearConfig32::hasher()),
+        LurkChip::Hasher48_8(BabyBearConfig48::hasher()),
+    )
 }
