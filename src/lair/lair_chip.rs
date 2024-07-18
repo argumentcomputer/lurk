@@ -235,21 +235,21 @@ mod tests {
         type F = BabyBear;
         let toplevel = demo_toplevel::<F>();
         let chip = FuncChip::from_name("factorial", &toplevel);
-        let mut record = QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
 
-        toplevel.execute_by_name("factorial", &[F::from_canonical_u8(5)], &mut record);
+        toplevel.execute_by_name("factorial", &[F::from_canonical_u8(5)], &mut queries);
 
         let config = BabyBearPoseidon2::new();
         let machine = StarkMachine::new(
             config,
             build_chip_vector(&chip),
-            record.expect_public_values().len(),
+            queries.expect_public_values().len(),
         );
 
         let (pk, vk) = machine.setup(&LairMachineProgram);
         let mut challenger_p = machine.config().challenger();
         let mut challenger_v = machine.config().challenger();
-        let shard = Shard::new(&record);
+        let shard = Shard::new(&queries);
 
         machine.debug_constraints(&pk, shard.clone());
         let opts = SphinxCoreOpts::default();

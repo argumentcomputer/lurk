@@ -52,7 +52,7 @@ pub struct QueryRecord<F: PrimeField32> {
 pub struct Shard<'a, F: PrimeField32> {
     pub(crate) index: u32,
     // TODO: remove this `Option` once Sphinx no longer requires `Default`
-    pub(crate) record: Option<&'a QueryRecord<F>>,
+    pub(crate) queries: Option<&'a QueryRecord<F>>,
     pub(crate) shard_config: ShardingConfig,
 }
 
@@ -64,28 +64,28 @@ impl<'a, F: PrimeField32> Shard<'a, F> {
     /// Make sure to call `.shard()` on a `Shard` created by `new` when generating
     /// the traces, otherwise you will only get the first shard's trace.
     #[inline]
-    pub fn new(record: &'a QueryRecord<F>) -> Self {
+    pub fn new(queries: &'a QueryRecord<F>) -> Self {
         Shard {
             index: 0,
-            record: record.into(),
+            queries: queries.into(),
             shard_config: ShardingConfig::default(),
         }
     }
 
     #[inline]
-    pub fn record(&self) -> &QueryRecord<F> {
-        self.record.expect("Missing query record reference")
+    pub fn queries(&self) -> &QueryRecord<F> {
+        self.queries.expect("Missing query record reference")
     }
 
     pub fn get_func_range(&self, func_index: usize) -> Range<usize> {
-        let num_func_queries = self.record().func_queries[func_index].len();
+        let num_func_queries = self.queries().func_queries[func_index].len();
         let shard_idx = self.index as usize;
         let max_shard_size = self.shard_config.max_shard_size as usize;
         shard_idx * max_shard_size..((shard_idx + 1) * max_shard_size).min(num_func_queries)
     }
 
     pub fn get_mem_range(&self, mem_chip_idx: usize) -> Range<usize> {
-        let num_mem_queries = self.record().mem_queries[mem_chip_idx].len();
+        let num_mem_queries = self.queries().mem_queries[mem_chip_idx].len();
         let shard_idx = self.index as usize;
         let max_shard_size = self.shard_config.max_shard_size as usize;
         shard_idx * max_shard_size..((shard_idx + 1) * max_shard_size).min(num_mem_queries)
@@ -93,7 +93,7 @@ impl<'a, F: PrimeField32> Shard<'a, F> {
 
     #[inline]
     pub(crate) fn expect_public_values(&self) -> &[F] {
-        self.record().expect_public_values()
+        self.queries().expect_public_values()
     }
 }
 
@@ -113,7 +113,7 @@ impl<'a, F: PrimeField32> MachineRecord for Shard<'a, F> {
     fn stats(&self) -> HashMap<String, usize> {
         // TODO: use `IndexMap` instead so the original insertion order is kept
         let mut map = HashMap::default();
-        let queries = self.record();
+        let queries = self.queries();
 
         map.insert("num_funcs".to_string(), queries.func_queries.len());
         map.insert(
@@ -158,16 +158,16 @@ impl<'a, F: PrimeField32> MachineRecord for Shard<'a, F> {
     }
 
     fn shard(self, config: &Self::Config) -> Vec<Self> {
-        let record = self.record();
+        let queries = self.queries();
         let shard_size = config.max_shard_size as usize;
-        let max_num_func_rows: usize = record
+        let max_num_func_rows: usize = queries
             .func_queries
             .iter()
             .map(|q| q.len())
             .max()
             .unwrap_or_default();
         // TODO: This snippet or equivalent is needed for memory sharding
-        // let max_num_mem_rows: usize = record
+        // let max_num_mem_rows: usize = queries
         //     .mem_queries
         //     .iter()
         //     .map(|q| q.len())
@@ -182,7 +182,7 @@ impl<'a, F: PrimeField32> MachineRecord for Shard<'a, F> {
         for shard_index in 0..num_shards {
             shards.push(Shard {
                 index: shard_index as u32,
-                record: self.record,
+                queries: self.queries,
                 shard_config: *config,
             });
         }
@@ -315,12 +315,12 @@ impl<F: PrimeField32> QueryRecord<F> {
 }
 
 impl<F: PrimeField32, H: Chipset<F>> Toplevel<F, H> {
-    pub fn execute(&self, func: &Func<F>, args: &[F], record: &mut QueryRecord<F>) -> List<F> {
-        let out = func.execute(args, self, record);
+    pub fn execute(&self, func: &Func<F>, args: &[F], queries: &mut QueryRecord<F>) -> List<F> {
+        let out = func.execute(args, self, queries);
         let mut public_values = Vec::with_capacity(args.len() + out.len());
         public_values.extend(args);
         public_values.extend(out.iter());
-        record.public_values = Some(public_values);
+        queries.public_values = Some(public_values);
         out
     }
 
@@ -329,10 +329,10 @@ impl<F: PrimeField32, H: Chipset<F>> Toplevel<F, H> {
         &self,
         name: &'static str,
         args: &[F],
-        record: &mut QueryRecord<F>,
+        queries: &mut QueryRecord<F>,
     ) -> List<F> {
         let func = self.get_by_name(name);
-        self.execute(func, args, record)
+        self.execute(func, args, queries)
     }
 
     #[inline]
@@ -365,12 +365,13 @@ impl<F: PrimeField32> Func<F> {
         &self,
         args: &[F],
         toplevel: &Toplevel<F, H>,
-        record: &mut QueryRecord<F>,
+        queries: &mut QueryRecord<F>,
     ) -> List<F> {
         let mut func_index = self.index;
         let mut query_result = QueryResult::default();
         query_result.provide.count = 1;
-        let (mut nonce, _) = record.func_queries[func_index].insert_full(args.into(), query_result);
+        let (mut nonce, _) =
+            queries.func_queries[func_index].insert_full(args.into(), query_result);
         let mut map = args.to_vec();
         let mut requires = Vec::new();
 
@@ -387,14 +388,15 @@ impl<F: PrimeField32> Func<F> {
             match exec_entry {
                 ExecEntry::Op(Op::Call(callee_index, inp)) => {
                     let inp = inp.iter().map(|v| map[*v]).collect::<Vec<_>>();
-                    if let Some(result) = record.func_queries[*callee_index].get_mut(inp.as_slice())
+                    if let Some(result) =
+                        queries.func_queries[*callee_index].get_mut(inp.as_slice())
                     {
                         let out = result.output.as_ref().expect("Loop detected");
                         map.extend(out);
                         result.new_lookup(nonce, &mut requires);
                     } else {
                         // insert dummy entry
-                        let (callee_nonce, _) = record.func_queries[*callee_index]
+                        let (callee_nonce, _) = queries.func_queries[*callee_index]
                             .insert_full(inp.clone().into(), QueryResult::default());
                         // `map_buffer` will become the map for the called function
                         let mut map_buffer = inp;
@@ -419,19 +421,20 @@ impl<F: PrimeField32> Func<F> {
                 }
                 ExecEntry::Op(Op::PreImg(callee_index, out)) => {
                     let out = out.iter().map(|v| map[*v]).collect::<List<_>>();
-                    let inp = record.inv_func_queries[*callee_index]
+                    let inp = queries.inv_func_queries[*callee_index]
                         .as_ref()
                         .expect("Missing inverse map")
                         .get(&out)
                         .expect("Preimg not found")
                         .to_vec();
-                    if let Some(result) = record.func_queries[*callee_index].get_mut(inp.as_slice())
+                    if let Some(result) =
+                        queries.func_queries[*callee_index].get_mut(inp.as_slice())
                     {
                         assert_eq!(result.output.as_ref().expect("Loop detected"), &out);
                         map.extend(inp);
                         result.new_lookup(nonce, &mut requires);
                     } else {
-                        let (callee_nonce, _) = record.func_queries[*callee_index]
+                        let (callee_nonce, _) = queries.func_queries[*callee_index]
                             .insert_full(inp.clone().into(), QueryResult::default());
                         let mut map_buffer = inp;
                         let mut requires_buffer = Vec::new();
@@ -462,7 +465,7 @@ impl<F: PrimeField32> Func<F> {
                 ExecEntry::Op(Op::Store(args)) => {
                     let args: List<_> = args.iter().map(|a| map[*a]).collect();
                     let mem_idx = mem_index_from_len(args.len());
-                    let mem_map = &mut record.mem_queries[mem_idx];
+                    let mem_map = &mut queries.mem_queries[mem_idx];
                     let (i, result) = if let Some((i, _, result)) = mem_map.get_full_mut(&args) {
                         (i, result)
                     } else {
@@ -477,7 +480,7 @@ impl<F: PrimeField32> Func<F> {
                     let ptr = map[*ptr];
                     let ptr_f = ptr.as_canonical_u32() as usize;
                     let mem_idx = mem_index_from_len(*len);
-                    let (args, result) = record.mem_queries[mem_idx]
+                    let (args, result) = queries.mem_queries[mem_idx]
                         .get_index_mut(ptr_f - 1)
                         .expect("Unbound pointer");
                     map.extend(args);
@@ -491,12 +494,12 @@ impl<F: PrimeField32> Func<F> {
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
                 ExecEntry::Ctrl(Ctrl::Return(_, out)) => {
                     let out = out.iter().map(|v| map[*v]).collect::<Vec<_>>();
-                    let (inp, result) = record.func_queries[func_index]
+                    let (inp, result) = queries.func_queries[func_index]
                         .get_index_mut(nonce)
                         .unwrap();
                     assert!(result.output.is_none());
                     let out_list: List<_> = out.clone().into();
-                    if let Some(inv_map) = &mut record.inv_func_queries[func_index] {
+                    if let Some(inv_map) = &mut queries.inv_func_queries[func_index] {
                         inv_map.insert(out_list.clone(), inp.clone());
                     }
                     result.output = Some(out_list);
@@ -581,18 +584,18 @@ mod tests {
 
         let factorial = toplevel.get_by_name("factorial");
         let args = &[F::from_canonical_u32(5)];
-        let record = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(factorial, args, record);
+        let queries = &mut QueryRecord::new(&toplevel);
+        let out = toplevel.execute(factorial, args, queries);
         assert_eq!(out.as_ref(), [F::from_canonical_u32(120)]);
 
         let even = toplevel.get_by_name("even");
         let args = &[F::from_canonical_u32(7)];
-        let out = toplevel.execute(even, args, record);
+        let out = toplevel.execute(even, args, queries);
         assert_eq!(out.as_ref(), [F::from_canonical_u32(0)]);
 
         let odd = toplevel.get_by_name("odd");
         let args = &[F::from_canonical_u32(4)];
-        let out = toplevel.execute(odd, args, record);
+        let out = toplevel.execute(odd, args, queries);
         assert_eq!(out.as_ref(), [F::from_canonical_u32(0)]);
     }
 
@@ -602,8 +605,8 @@ mod tests {
 
         let fib = toplevel.get_by_name("fib");
         let args = &[F::from_canonical_u32(100000)];
-        let record = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(fib, args, record);
+        let queries = &mut QueryRecord::new(&toplevel);
+        let out = toplevel.execute(fib, args, queries);
         assert_eq!(out.as_ref(), [F::from_canonical_u32(1123328132)]);
     }
 
@@ -618,8 +621,8 @@ mod tests {
         let toplevel = Toplevel::<F, Nochip>::new_no_extern(&[test_e]);
         let test = toplevel.get_by_name("test");
         let args = &[F::from_canonical_u32(20), F::from_canonical_u32(4)];
-        let record = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(test, args, record);
+        let queries = &mut QueryRecord::new(&toplevel);
+        let out = toplevel.execute(test, args, queries);
         assert_eq!(out.as_ref(), [F::from_canonical_u32(5)]);
     }
 
@@ -636,8 +639,8 @@ mod tests {
         let toplevel = Toplevel::<F, Nochip>::new_no_extern(&[test_e]);
         let test = toplevel.get_by_name("test");
         let args = &[F::from_canonical_u32(10)];
-        let record = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(test, args, record);
+        let queries = &mut QueryRecord::new(&toplevel);
+        let out = toplevel.execute(test, args, queries);
         assert_eq!(out.as_ref(), [F::from_canonical_u32(80)]);
     }
 
@@ -670,10 +673,10 @@ mod tests {
             .into_iter()
             .map(field_from_u32)
             .collect::<List<_>>();
-        let record = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(polynomial, &args, record);
+        let queries = &mut QueryRecord::new(&toplevel);
+        let out = toplevel.execute(polynomial, &args, queries);
         assert_eq!(out.as_ref(), [F::from_canonical_u32(58061)]);
-        let inp = toplevel.execute(inverse, &out, record);
+        let inp = toplevel.execute(inverse, &out, queries);
         assert_eq!(inp, args);
     }
 
@@ -708,15 +711,15 @@ mod tests {
         let test = toplevel.get_by_name("test1");
         let f = F::from_canonical_u32;
         let args = &[f(1), f(2), f(3), f(4), f(5), f(6), f(7)];
-        let record = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(test, args, record);
+        let queries = &mut QueryRecord::new(&toplevel);
+        let out = toplevel.execute(test, args, queries);
         assert_eq!(out.as_ref(), [f(5), f(7), f(9)]);
 
         let test = toplevel.get_by_name("test3");
         let f = F::from_canonical_u32;
         let args = &[f(4), f(9), f(21), f(10)];
-        let record = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(test, args, record);
+        let queries = &mut QueryRecord::new(&toplevel);
+        let out = toplevel.execute(test, args, queries);
         assert_eq!(out.as_ref(), [f(1), f(2), f(3), f(4)]);
     }
 

@@ -54,7 +54,7 @@ impl<'a, T> ColumnMutSlice<'a, T> {
 impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
     /// Per-row parallel trace generation
     pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
-        let func_queries = &shard.record().func_queries()[self.func.index];
+        let func_queries = &shard.queries().func_queries()[self.func.index];
         let range = shard.get_func_range(self.func.index);
         let width = self.width();
         let non_dummy_height = range.len();
@@ -73,7 +73,7 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 let requires = result.requires.iter();
-                let queries = shard.record();
+                let queries = shard.queries();
                 self.func
                     .populate_row(args, index, slice, queries, requires, self.toplevel);
             });

@@ -545,16 +545,16 @@ mod tests {
     fn lair_constraint_test() {
         let toplevel = demo_toplevel::<_>();
 
-        let mut record = QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
-        toplevel.execute_by_name("factorial", &[F::from_canonical_usize(5)], &mut record);
-        let factorial_trace = factorial_chip.generate_trace(&Shard::new(&record));
+        toplevel.execute_by_name("factorial", &[F::from_canonical_usize(5)], &mut queries);
+        let factorial_trace = factorial_chip.generate_trace(&Shard::new(&queries));
         let _ = debug_constraints_collecting_queries(&factorial_chip, &[], None, &factorial_trace);
 
         let fib_chip = FuncChip::from_name("fib", &toplevel);
-        let mut record = QueryRecord::new(&toplevel);
-        toplevel.execute_by_name("fib", &[F::from_canonical_usize(7)], &mut record);
-        let fib_trace = fib_chip.generate_trace(&Shard::new(&record));
+        let mut queries = QueryRecord::new(&toplevel);
+        toplevel.execute_by_name("fib", &[F::from_canonical_usize(7)], &mut queries);
+        let fib_trace = fib_chip.generate_trace(&Shard::new(&queries));
         let _ = debug_constraints_collecting_queries(&fib_chip, &[], None, &fib_trace);
     }
 
