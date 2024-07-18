@@ -900,7 +900,7 @@ mod test {
         let test = |tag: Tag| {
             let f = tag.to_field::<BabyBear>();
             let u = f.as_canonical_u32();
-            let new_tag = Tag::from_u32(u.try_into().unwrap()).unwrap();
+            let new_tag = Tag::from_u32(u).unwrap();
             assert_eq!(tag, new_tag);
         };
 
