@@ -5,7 +5,6 @@ pub mod lair;
 // #[allow(dead_code)]
 // pub mod logup;
 
-#[cfg(feature = "loam")]
 pub mod loam;
 
 #[allow(dead_code)]

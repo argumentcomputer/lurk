@@ -184,8 +184,9 @@ impl Tag {
     }
 }
 
-// Because it's hard to share code between ascent programs, this is a copy of `AllocationProgram`, replacing the `map_double` function
-// with evaluation.
+// Because it's hard to share code between ascent programs, this is a copy of `AllocationProgam`, replacing the `map_double` function
+// with evaluation
+#[cfg(feature = "loam")]
 ascent! {
     struct EvaluationProgram;
 
@@ -968,6 +969,7 @@ ascent! {
 }
 
 #[cfg(test)]
+#[cfg(feature = "loam")]
 mod test {
     use super::*;
     use crate::lurk::zstore::ZPtr;
