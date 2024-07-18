@@ -28,7 +28,7 @@ impl<F: PrimeField32> MemChip<F> {
     }
 
     pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
-        let record = &shard.record().mem_queries;
+        let record = &shard.queries().mem_queries;
         let mem_idx = mem_index_from_len(self.len);
         let mem = &record[mem_idx];
         let width = self.width();
@@ -121,7 +121,7 @@ mod tests {
     use crate::lair::execute::QueryRecord;
     use crate::{
         func,
-        lair::{func_chip::FuncChip, hasher::LurkHasher, toplevel::Toplevel},
+        lair::{chipset::Nochip, func_chip::FuncChip, toplevel::Toplevel},
     };
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
@@ -139,7 +139,7 @@ mod tests {
             let (_x, y, _z) = load(ptr1);
             return (ptr2, y)
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new(&[func_e]);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         toplevel.execute_by_name("test", &[], &mut queries);

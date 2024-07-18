@@ -9,7 +9,6 @@ use crate::{
     func,
     lair::{
         expr::{BlockE, CasesE, CtrlE, FuncE, OpE, Var},
-        hasher::LurkHasher,
         map::Map,
         toplevel::Toplevel,
         List, Name,
@@ -17,9 +16,10 @@ use crate::{
 };
 
 use super::{
+    chipset::{lurk_chip_map, LurkChip},
     state::{State, StateRcCell, LURK_PACKAGE_SYMBOLS_NAMES},
     tag::Tag,
-    zstore::ZStore,
+    zstore::{lurk_zstore, ZStore},
 };
 
 pub struct BuiltinIndex(usize);
@@ -33,7 +33,7 @@ impl BuiltinIndex {
 pub struct BuiltinMemo<'a, F>(IndexMap<&'a str, List<F>, FxBuildHasher>);
 
 impl<'a> BuiltinMemo<'a, BabyBear> {
-    fn new(state: &StateRcCell, zstore: &mut ZStore<BabyBear, LurkHasher>) -> Self {
+    fn new(state: &StateRcCell, zstore: &mut ZStore<BabyBear, LurkChip>) -> Self {
         Self(
             LURK_PACKAGE_SYMBOLS_NAMES
                 .into_iter()
@@ -66,12 +66,12 @@ impl<'a, F> BuiltinMemo<'a, F> {
 /// Creates a `Toplevel` with the functions used for Lurk evaluation, also returning
 /// a `ZStore` with the Lurk builtins already interned.
 #[inline]
-pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkHasher>, ZStore<BabyBear, LurkHasher>) {
+pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, LurkChip>) {
     let state = State::init_lurk_state().rccell();
-    let mut zstore = ZStore::default();
+    let mut zstore = lurk_zstore();
     let builtins = BuiltinMemo::new(&state, &mut zstore);
     let nil = zstore.read_with_state(state, "nil").unwrap().digest.into();
-    let toplevel = Toplevel::new(&[
+    let funcs = &[
         lurk_main(),
         eval(&builtins),
         eval_comm_unop(&builtins),
@@ -93,7 +93,9 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkHasher>, ZStore<BabyBear
         hash_24_8(),
         hash_32_8(),
         hash_48_8(),
-    ]);
+    ];
+    let lurk_chip_map = lurk_chip_map();
+    let toplevel = Toplevel::new(funcs, lurk_chip_map);
     (toplevel, zstore)
 }
 
@@ -387,7 +389,7 @@ fn egress_builtin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Func
 pub fn hash_24_8<F>() -> FuncE<F> {
     func!(
         invertible fn hash_24_8(preimg: [24]): [8] {
-            let img: [8] = hash(preimg);
+            let img: [8] = extern_call(hash_24_8, preimg);
             return img
         }
     )
@@ -396,7 +398,7 @@ pub fn hash_24_8<F>() -> FuncE<F> {
 pub fn hash_32_8<F>() -> FuncE<F> {
     func!(
         invertible fn hash_32_8(preimg: [32]): [8] {
-            let img: [8] = hash(preimg);
+            let img: [8] = extern_call(hash_32_8, preimg);
             return img
         }
     )
@@ -405,7 +407,7 @@ pub fn hash_32_8<F>() -> FuncE<F> {
 pub fn hash_48_8<F>() -> FuncE<F> {
     func!(
         invertible fn hash_48_8(preimg: [48]): [8] {
-            let (img: [8]) = hash(preimg);
+            let img: [8] = extern_call(hash_48_8, preimg);
             return img
         }
     )

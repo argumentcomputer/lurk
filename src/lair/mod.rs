@@ -1,16 +1,15 @@
-use hasher::Hasher;
 use p3_field::Field;
 
 use crate::func;
 
-use self::toplevel::Toplevel;
+use self::{chipset::Nochip, toplevel::Toplevel};
 
 pub mod air;
 pub mod bytecode;
+pub mod chipset;
 pub mod execute;
 pub mod expr;
 pub mod func_chip;
-pub mod hasher;
 pub mod lair_chip;
 mod macros;
 pub mod map;
@@ -19,7 +18,7 @@ pub mod relations;
 pub mod toplevel;
 pub mod trace;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Name(pub &'static str);
 
 impl std::fmt::Display for Name {
@@ -46,7 +45,7 @@ pub(crate) fn field_from_u32<F: p3_field::AbstractField>(i: u32) -> F {
 pub type List<T> = Box<[T]>;
 
 #[allow(dead_code)]
-pub(crate) fn demo_toplevel<F: Field + Ord, H: Hasher<F>>() -> Toplevel<F, H> {
+pub(crate) fn demo_toplevel<F: Field + Ord>() -> Toplevel<F, Nochip> {
     let factorial_e = func!(
     fn factorial(n): [1] {
         let one = 1;
@@ -104,5 +103,5 @@ pub(crate) fn demo_toplevel<F: Field + Ord, H: Hasher<F>>() -> Toplevel<F, H> {
         return res
     });
 
-    Toplevel::new(&[factorial_e, fib_e, even_e, odd_e])
+    Toplevel::new_pure(&[factorial_e, fib_e, even_e, odd_e])
 }

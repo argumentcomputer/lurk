@@ -11,16 +11,16 @@ use std::time::Duration;
 
 use loam::{
     lair::{
+        chipset::Chipset,
         execute::{QueryRecord, Shard},
         func_chip::FuncChip,
-        hasher::{Hasher, LurkHasher},
         lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
         toplevel::Toplevel,
         List,
     },
     lurk::{
         eval::build_lurk_toplevel,
-        zstore::{ZPtr, ZStore},
+        zstore::{lurk_zstore, ZPtr},
     },
 };
 
@@ -44,7 +44,7 @@ fn build_lurk_expr(arg: usize) -> String {
     )
 }
 
-fn setup<H: Hasher<BabyBear>>(
+fn setup<H: Chipset<BabyBear>>(
     arg: usize,
     toplevel: &Toplevel<BabyBear, H>,
 ) -> (
@@ -53,7 +53,7 @@ fn setup<H: Hasher<BabyBear>>(
     QueryRecord<BabyBear>,
 ) {
     let code = build_lurk_expr(arg);
-    let zstore = &mut ZStore::<_, LurkHasher>::default();
+    let zstore = &mut lurk_zstore();
     let ZPtr { tag, digest } = zstore.read(&code).unwrap();
 
     let mut record = QueryRecord::new(toplevel);

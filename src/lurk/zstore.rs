@@ -1,13 +1,16 @@
+use std::marker::PhantomData;
+
 use anyhow::{bail, Result};
 use itertools::Itertools;
 use nom::{sequence::preceded, Parser};
 use once_cell::sync::OnceCell;
+use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, Field, PrimeField32};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    lair::{hasher::Hasher, List},
+    lair::{chipset::Chipset, List},
     lurk::{
         parser::{
             syntax::{parse_maybe_meta, parse_space},
@@ -20,12 +23,16 @@ use crate::{
     },
 };
 
-use super::{eval::EvalErr, syntax::digest_to_biguint};
+use super::{
+    chipset::{lurk_hasher, LurkChip},
+    eval::EvalErr,
+    syntax::digest_to_biguint,
+};
 
 pub(crate) const DIGEST_SIZE: usize = 8;
 
 const ZPTR_SIZE: usize = 2 * DIGEST_SIZE;
-// const COMM_PREIMG_SIZE: usize = DIGEST_SIZE + ZPTR_SIZE;
+const COMM_PREIMG_SIZE: usize = DIGEST_SIZE + ZPTR_SIZE;
 pub(crate) const TUPLE2_SIZE: usize = 2 * ZPTR_SIZE;
 const TUPLE3_SIZE: usize = 3 * ZPTR_SIZE;
 
@@ -182,9 +189,29 @@ pub enum ZPtrType<F> {
     Tuple3(ZPtr<F>, ZPtr<F>, ZPtr<F>),
 }
 
-#[derive(Default, Clone)]
-pub struct ZStore<F, H: Hasher<F>> {
-    hasher: H,
+#[derive(Clone)]
+/// This struct selects what the hash functions are in a given chipset
+pub struct Hasher<F, H: Chipset<F>> {
+    pub comm: H,
+    pub hash2: H,
+    pub hash3: H,
+    pub _p: PhantomData<F>,
+}
+
+impl<F, H: Chipset<F>> Hasher<F, H> {
+    pub fn hash(&self, preimg: &[F]) -> Vec<F> {
+        match preimg.len() {
+            COMM_PREIMG_SIZE => self.comm.execute_simple(preimg),
+            TUPLE2_SIZE => self.hash2.execute_simple(preimg),
+            TUPLE3_SIZE => self.hash3.execute_simple(preimg),
+            _ => panic!("Preimage size not supported"),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ZStore<F, H: Chipset<F>> {
+    hasher: Hasher<F, H>,
     dag: FxHashMap<ZPtr<F>, ZPtrType<F>>,
     // comms: FxHashMap<[F; DIGEST_SIZE], ([F; DIGEST_SIZE], ZPtr<F>)>,
     // comm_hashes: FxHashMap<[F; COMM_PREIMG_SIZE], [F; DIGEST_SIZE]>,
@@ -216,12 +243,12 @@ pub(crate) fn builtin_vec() -> &'static Vec<Symbol> {
     })
 }
 
-impl<F: Field, H: Hasher<F>> ZStore<F, H> {
+impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     fn hash2(&mut self, preimg: [F; TUPLE2_SIZE]) -> [F; DIGEST_SIZE] {
         if let Some(img) = self.tuple2_hashes.get(&preimg) {
             return *img;
         }
-        let img = self.hasher.hash(&preimg);
+        let img = self.hasher.hash2.execute_simple(&preimg);
         let mut buffer = SizedBuffer::default();
         buffer.write_slice(&img);
         let digest = buffer.extract();
@@ -233,7 +260,7 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
         if let Some(limbs) = self.tuple3_hashes.get(&preimg) {
             return *limbs;
         }
-        let img = self.hasher.hash(&preimg);
+        let img = self.hasher.hash3.execute_simple(&preimg);
         let mut buffer = SizedBuffer::default();
         buffer.write_slice(&img);
         let digest = buffer.extract();
@@ -768,6 +795,18 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
     }
 }
 
+pub fn lurk_zstore() -> ZStore<BabyBear, LurkChip> {
+    ZStore {
+        hasher: lurk_hasher(),
+        dag: Default::default(),
+        tuple2_hashes: Default::default(),
+        tuple3_hashes: Default::default(),
+        str_cache: Default::default(),
+        sym_cache: Default::default(),
+        syn_cache: Default::default(),
+    }
+}
+
 #[cfg(test)]
 mod test {
     use num_traits::FromPrimitive;
@@ -776,19 +815,18 @@ mod test {
     use p3_field::AbstractField;
 
     use crate::{
-        lair::{
-            execute::QueryRecord,
-            hasher::{Hasher, LurkHasher},
-        },
+        lair::execute::QueryRecord,
         lurk::{
+            chipset::lurk_hasher,
             eval::build_lurk_toplevel,
             state::{lurk_sym, user_sym, State},
             symbol::Symbol,
             tag::Tag,
+            zstore::lurk_zstore,
         },
     };
 
-    use super::{into_sized, ZPtr, ZStore};
+    use super::{into_sized, ZPtr};
 
     #[test]
     fn test_dag_memoization() {
@@ -842,7 +880,7 @@ mod test {
 
     #[test]
     fn test_fmt() {
-        let mut zstore = ZStore::<BabyBear, LurkHasher>::default();
+        let mut zstore = lurk_zstore();
         let state = &State::init_lurk_state().rccell();
 
         let nil = zstore.intern_nil();
@@ -867,7 +905,7 @@ mod test {
         let mut preimg = Vec::with_capacity(24);
         preimg.extend([BabyBear::zero(); 8]);
         preimg.extend(ZPtr::num(BabyBear::from_canonical_u32(123)).flatten());
-        let simple_comm = ZPtr::comm(LurkHasher::default().hash(&preimg).try_into().unwrap());
+        let simple_comm = ZPtr::comm(lurk_hasher().hash(&preimg).try_into().unwrap());
         assert_eq!(
             zstore.fmt_with_state(state, &simple_comm),
             "#0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3"

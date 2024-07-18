@@ -10,14 +10,14 @@ use crate::air::builder::{LookupBuilder, RequireRecord};
 
 use super::{
     bytecode::Func,
+    chipset::Chipset,
     execute::{Shard, MEM_TABLE_SIZES},
     func_chip::FuncChip,
-    hasher::Hasher,
     memory::MemChip,
     relations::OuterCallRelation,
 };
 
-pub enum LairChip<'a, F, H: Hasher<F>> {
+pub enum LairChip<'a, F, H: Chipset<F>> {
     Func(FuncChip<'a, F, H>),
     Mem(MemChip<F>),
     Entrypoint {
@@ -27,7 +27,7 @@ pub enum LairChip<'a, F, H: Hasher<F>> {
     Preprocessed,
 }
 
-impl<'a, F, H: Hasher<F>> LairChip<'a, F, H> {
+impl<'a, F, H: Chipset<F>> LairChip<'a, F, H> {
     #[inline]
     pub fn entrypoint(func: &Func<F>) -> Self {
         Self::Entrypoint {
@@ -37,17 +37,17 @@ impl<'a, F, H: Hasher<F>> LairChip<'a, F, H> {
     }
 }
 
-impl<'a, F: PrimeField32, H: Hasher<F>> WithEvents<'a> for LairChip<'_, F, H> {
+impl<'a, F: PrimeField32, H: Chipset<F>> WithEvents<'a> for LairChip<'_, F, H> {
     type Events = &'a Shard<'a, F>;
 }
 
-impl<'a, F: PrimeField32, H: Hasher<F>> EventLens<LairChip<'a, F, H>> for Shard<'a, F> {
+impl<'a, F: PrimeField32, H: Chipset<F>> EventLens<LairChip<'a, F, H>> for Shard<'a, F> {
     fn events(&self) -> <LairChip<'a, F, H> as WithEvents<'_>>::Events {
         self
     }
 }
 
-impl<'a, F: Sync, H: Hasher<F>> BaseAir<F> for LairChip<'a, F, H> {
+impl<'a, F: Sync, H: Chipset<F>> BaseAir<F> for LairChip<'a, F, H> {
     fn width(&self) -> usize {
         match self {
             Self::Func(func_chip) => func_chip.width(),
@@ -68,7 +68,7 @@ impl<F: AbstractField> MachineProgram<F> for LairMachineProgram {
     }
 }
 
-impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
+impl<'a, F: PrimeField32, H: Chipset<F>> MachineAir<F> for LairChip<'a, F, H> {
     type Record = Shard<'a, F>;
     type Program = LairMachineProgram;
 
@@ -136,7 +136,7 @@ impl<'a, F: PrimeField32, H: Hasher<F>> MachineAir<F> for LairChip<'a, F, H> {
     }
 }
 
-impl<'a, AB, H: Hasher<AB::F>> Air<AB> for LairChip<'a, AB::F, H>
+impl<'a, AB, H: Chipset<AB::F>> Air<AB> for LairChip<'a, AB::F, H>
 where
     AB: AirBuilderWithPublicValues + LookupBuilder,
     <AB as AirBuilder>::Var: std::fmt::Debug,
@@ -180,7 +180,7 @@ where
     }
 }
 
-pub fn build_lair_chip_vector<'a, F: PrimeField32, H: Hasher<F>>(
+pub fn build_lair_chip_vector<'a, F: PrimeField32, H: Chipset<F>>(
     entry_func_chip: &FuncChip<'a, F, H>,
 ) -> Vec<LairChip<'a, F, H>> {
     let toplevel = &entry_func_chip.toplevel;
@@ -201,7 +201,7 @@ pub fn build_lair_chip_vector<'a, F: PrimeField32, H: Hasher<F>>(
 pub fn build_chip_vector_from_lair_chips<
     'a,
     F: PrimeField32,
-    H: Hasher<F>,
+    H: Chipset<F>,
     I: IntoIterator<Item = LairChip<'a, F, H>>,
 >(
     lair_chips: I,
@@ -210,7 +210,7 @@ pub fn build_chip_vector_from_lair_chips<
 }
 
 #[inline]
-pub fn build_chip_vector<'a, F: PrimeField32, H: Hasher<F>>(
+pub fn build_chip_vector<'a, F: PrimeField32, H: Chipset<F>>(
     entry_func_chip: &FuncChip<'a, F, H>,
 ) -> Vec<Chip<F, LairChip<'a, F, H>>> {
     build_chip_vector_from_lair_chips(build_lair_chip_vector(entry_func_chip))
@@ -218,9 +218,7 @@ pub fn build_chip_vector<'a, F: PrimeField32, H: Hasher<F>>(
 
 #[cfg(test)]
 mod tests {
-    use crate::lair::{
-        demo_toplevel, execute::QueryRecord, func_chip::FuncChip, hasher::LurkHasher,
-    };
+    use crate::lair::{demo_toplevel, execute::QueryRecord, func_chip::FuncChip};
 
     use super::*;
 
@@ -235,24 +233,23 @@ mod tests {
     fn test_prove_and_verify() {
         sphinx_core::utils::setup_logger();
         type F = BabyBear;
-        type H = LurkHasher;
-        let toplevel = demo_toplevel::<F, H>();
+        let toplevel = demo_toplevel::<F>();
         let chip = FuncChip::from_name("factorial", &toplevel);
-        let mut record = QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
 
-        toplevel.execute_by_name("factorial", &[F::from_canonical_u8(5)], &mut record);
+        toplevel.execute_by_name("factorial", &[F::from_canonical_u8(5)], &mut queries);
 
         let config = BabyBearPoseidon2::new();
         let machine = StarkMachine::new(
             config,
             build_chip_vector(&chip),
-            record.expect_public_values().len(),
+            queries.expect_public_values().len(),
         );
 
         let (pk, vk) = machine.setup(&LairMachineProgram);
         let mut challenger_p = machine.config().challenger();
         let mut challenger_v = machine.config().challenger();
-        let shard = Shard::new(&record);
+        let shard = Shard::new(&queries);
 
         machine.debug_constraints(&pk, shard.clone());
         let opts = SphinxCoreOpts::default();

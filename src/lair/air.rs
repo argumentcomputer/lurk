@@ -7,8 +7,8 @@ use crate::air::builder::{LookupBuilder, ProvideRecord, RequireRecord};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
+    chipset::Chipset,
     func_chip::{ColumnLayout, FuncChip, LayoutSizes},
-    hasher::Hasher,
     relations::{CallRelation, MemoryRelation},
     toplevel::Toplevel,
     trace::ColumnIndex,
@@ -73,9 +73,23 @@ impl<'a, T> ColumnSlice<'a, T> {
         index.aux += n;
         slice
     }
+
+    pub fn next_require(&self, index: &mut ColumnIndex) -> RequireRecord<T>
+    where
+        T: Copy,
+    {
+        let prev_nonce = self.next_aux(index);
+        let prev_count = self.next_aux(index);
+        let count_inv = self.next_aux(index);
+        RequireRecord {
+            prev_nonce,
+            prev_count,
+            count_inv,
+        }
+    }
 }
 
-impl<'a, AB, H: Hasher<AB::F>> Air<AB> for FuncChip<'a, AB::F, H>
+impl<'a, AB, H: Chipset<AB::F>> Air<AB> for FuncChip<'a, AB::F, H>
 where
     AB: AirBuilder + LookupBuilder,
     <AB as AirBuilder>::Var: Debug,
@@ -101,7 +115,7 @@ impl<AB: AirBuilder> Val<AB> {
 }
 
 impl<F: Field> Func<F> {
-    fn eval<AB, H: Hasher<F>>(
+    fn eval<AB, H: Chipset<F>>(
         &self,
         builder: &mut AB,
         toplevel: &Toplevel<F, H>,
@@ -168,7 +182,7 @@ impl<F: Field> Block<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn eval<AB, H: Hasher<F>>(
+    fn eval<AB, H: Chipset<F>>(
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
@@ -191,7 +205,7 @@ impl<F: Field> Block<F> {
 
 impl<F: Field> Op<F> {
     #[allow(clippy::too_many_arguments)]
-    fn eval<AB, H: Hasher<F>>(
+    fn eval<AB, H: Chipset<F>>(
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
@@ -280,14 +294,7 @@ impl<F: Field> Op<F> {
                     out.push(o.into());
                 }
                 let inp = inp.iter().map(|i| map[*i].to_expr());
-                let prev_nonce = local.next_aux(index);
-                let prev_count = local.next_aux(index);
-                let count_inv = local.next_aux(index);
-                let record = RequireRecord {
-                    prev_nonce,
-                    prev_count,
-                    count_inv,
-                };
+                let record = local.next_require(index);
                 builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
                     *local.nonce,
@@ -304,14 +311,7 @@ impl<F: Field> Op<F> {
                     inp.push(i.into());
                 }
                 let out = out.iter().map(|o| map[*o].to_expr());
-                let prev_nonce = local.next_aux(index);
-                let prev_count = local.next_aux(index);
-                let count_inv = local.next_aux(index);
-                let record = RequireRecord {
-                    prev_nonce,
-                    prev_count,
-                    count_inv,
-                };
+                let record = local.next_require(index);
                 builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
                     *local.nonce,
@@ -323,16 +323,7 @@ impl<F: Field> Op<F> {
                 let ptr = local.next_aux(index);
                 map.push(Val::Expr(ptr.into()));
                 let values = values.iter().map(|&idx| map[idx].to_expr());
-
-                let prev_nonce = local.next_aux(index);
-                let prev_count = local.next_aux(index);
-                let count_inv = local.next_aux(index);
-                let record = RequireRecord {
-                    prev_nonce,
-                    prev_count,
-                    count_inv,
-                };
-
+                let record = local.next_require(index);
                 builder.require(
                     MemoryRelation(ptr, values),
                     *local.nonce,
@@ -350,16 +341,7 @@ impl<F: Field> Op<F> {
                         o
                     })
                     .collect::<Vec<_>>();
-
-                let prev_nonce = local.next_aux(index);
-                let prev_count = local.next_aux(index);
-                let count_inv = local.next_aux(index);
-                let record = RequireRecord {
-                    prev_nonce,
-                    prev_count,
-                    count_inv,
-                };
-
+                let record = local.next_require(index);
                 builder.require(
                     MemoryRelation(ptr, values),
                     *local.nonce,
@@ -367,15 +349,27 @@ impl<F: Field> Op<F> {
                     sel.clone(),
                 );
             }
-            Op::Hash(preimg) => {
-                let preimg: Vec<_> = preimg.iter().map(|a| map[*a].to_expr()).collect();
-                let hasher = &toplevel.hasher;
-                let img_size = hasher.img_size();
-                let img_vars = local.next_n_aux(index, img_size);
-                let witness_size = hasher.witness_size(preimg.len());
+            Op::ExternCall(chip_idx, input) => {
+                let input: Vec<_> = input.iter().map(|a| map[*a].to_expr()).collect();
+                let chip = toplevel.get_chip_by_index(*chip_idx);
+                let output_size = chip.output_size();
+                let output_vars = local.next_n_aux(index, output_size);
+                let witness_size = chip.witness_size();
                 let witness = local.next_n_aux(index, witness_size);
-                hasher.eval_preimg(builder, preimg, img_vars, witness, sel.clone());
-                for &img_var in img_vars {
+                let require_size = chip.require_size();
+                let requires = (0..require_size)
+                    .map(|_| local.next_require(index))
+                    .collect::<Vec<_>>();
+                chip.eval(
+                    builder,
+                    sel.clone(),
+                    input,
+                    output_vars,
+                    witness,
+                    (*local.nonce).into(),
+                    &requires,
+                );
+                for &img_var in output_vars {
                     map.push(Val::Expr(img_var.into()))
                 }
             }
@@ -385,7 +379,7 @@ impl<F: Field> Op<F> {
 }
 
 impl<F: Field> Ctrl<F> {
-    fn eval<AB, H: Hasher<F>>(
+    fn eval<AB, H: Chipset<F>>(
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
@@ -547,7 +541,7 @@ mod tests {
     use crate::{
         air::debug::debug_constraints_collecting_queries,
         func,
-        lair::{execute::Shard, hasher::LurkHasher},
+        lair::{chipset::Nochip, execute::Shard},
     };
     use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
@@ -561,24 +555,24 @@ mod tests {
 
     #[test]
     fn lair_constraint_test() {
-        let toplevel = demo_toplevel::<_, LurkHasher>();
+        let toplevel = demo_toplevel::<_>();
 
-        let mut record = QueryRecord::new(&toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
-        toplevel.execute_by_name("factorial", &[F::from_canonical_usize(5)], &mut record);
-        let factorial_trace = factorial_chip.generate_trace(&Shard::new(&record));
+        toplevel.execute_by_name("factorial", &[F::from_canonical_usize(5)], &mut queries);
+        let factorial_trace = factorial_chip.generate_trace(&Shard::new(&queries));
         let _ = debug_constraints_collecting_queries(&factorial_chip, &[], None, &factorial_trace);
 
         let fib_chip = FuncChip::from_name("fib", &toplevel);
-        let mut record = QueryRecord::new(&toplevel);
-        toplevel.execute_by_name("fib", &[F::from_canonical_usize(7)], &mut record);
-        let fib_trace = fib_chip.generate_trace(&Shard::new(&record));
+        let mut queries = QueryRecord::new(&toplevel);
+        toplevel.execute_by_name("fib", &[F::from_canonical_usize(7)], &mut queries);
+        let fib_trace = fib_chip.generate_trace(&Shard::new(&queries));
         let _ = debug_constraints_collecting_queries(&fib_chip, &[], None, &fib_trace);
     }
 
     #[test]
     fn lair_long_constraint_test() {
-        let toplevel = demo_toplevel::<_, LurkHasher>();
+        let toplevel = demo_toplevel::<F>();
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         let args = &[field_from_u32(20000)];
         let mut queries = QueryRecord::new(&toplevel);
@@ -600,7 +594,7 @@ mod tests {
             let x = eq(a, b);
             return x
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new(&[eq_func, not_func]);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[eq_func, not_func]);
         let eq_chip = FuncChip::from_name("eq", &toplevel);
         let not_chip = FuncChip::from_name("not", &toplevel);
 
@@ -671,7 +665,7 @@ mod tests {
             let zero = 0;
             return zero
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new(&[if_many_func]);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[if_many_func]);
         let if_many_chip = FuncChip::from_name("if_many", &toplevel);
 
         let mut queries = QueryRecord::new(&toplevel);
@@ -731,7 +725,7 @@ mod tests {
             let fail = [0, 0];
             return fail
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new(&[match_many_func]);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[match_many_func]);
         let match_many_chip = FuncChip::from_name("match_many", &toplevel);
 
         let mut queries = QueryRecord::new(&toplevel);

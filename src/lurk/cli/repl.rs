@@ -9,12 +9,9 @@ use rustyline::{
 };
 
 use crate::{
-    lair::{
-        execute::QueryRecord,
-        hasher::{Hasher, LurkHasher},
-        toplevel::Toplevel,
-    },
+    lair::{chipset::Chipset, execute::QueryRecord, toplevel::Toplevel},
     lurk::{
+        chipset::LurkChip,
         cli::paths::repl_history,
         eval::build_lurk_toplevel,
         state::{State, StateRcCell},
@@ -33,7 +30,7 @@ impl Validator for InputValidator {
     }
 }
 
-pub(crate) struct Repl<F: PrimeField32, H: Hasher<F>> {
+pub(crate) struct Repl<F: PrimeField32, H: Chipset<F>> {
     zstore: ZStore<F, H>,
     record: QueryRecord<F>,
     toplevel: Toplevel<F, H>,
@@ -42,7 +39,7 @@ pub(crate) struct Repl<F: PrimeField32, H: Hasher<F>> {
     state: StateRcCell,
 }
 
-impl Repl<BabyBear, LurkHasher> {
+impl Repl<BabyBear, LurkChip> {
     pub(crate) fn new() -> Self {
         let (toplevel, zstore) = build_lurk_toplevel();
         let record = QueryRecord::new(&toplevel);
@@ -68,7 +65,7 @@ fn pretty_iterations_display(iterations: usize) -> String {
     }
 }
 
-impl<F: PrimeField32, H: Hasher<F>> Repl<F, H> {
+impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
     fn input_marker(&self) -> String {
         format!(
             "{}> ",

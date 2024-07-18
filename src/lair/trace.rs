@@ -11,9 +11,10 @@ use crate::{air::builder::Record, lair::execute::mem_index_from_len};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
+    chipset::Chipset,
     execute::{QueryRecord, Shard},
     func_chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
-    hasher::Hasher,
+    toplevel::Toplevel,
     List,
 };
 
@@ -50,10 +51,10 @@ impl<'a, T> ColumnMutSlice<'a, T> {
     }
 }
 
-impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
+impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
     /// Per-row parallel trace generation
     pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
-        let func_queries = &shard.record().func_queries()[self.func.index];
+        let func_queries = &shard.queries().func_queries()[self.func.index];
         let range = shard.get_func_range(self.func.index);
         let width = self.width();
         let non_dummy_height = range.len();
@@ -72,33 +73,32 @@ impl<'a, F: PrimeField32, H: Hasher<F>> FuncChip<'a, F, H> {
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 let requires = result.requires.iter();
-                let queries = shard.record();
-                let hasher = &self.toplevel.hasher;
+                let queries = shard.queries();
                 self.func
-                    .populate_row(args, index, slice, queries, requires, hasher);
+                    .populate_row(args, index, slice, queries, requires, self.toplevel);
             });
         RowMajorMatrix::new(rows, width)
     }
 }
 
 #[derive(Clone)]
-struct TraceCtx<'a, F: PrimeField32, H> {
+struct TraceCtx<'a, F: PrimeField32, H: Chipset<F>> {
     queries: &'a QueryRecord<F>,
-    hasher: &'a H,
+    toplevel: &'a Toplevel<F, H>,
     func_idx: usize,
     call_inp: List<F>,
     requires: Iter<'a, Record>,
 }
 
 impl<F: PrimeField32> Func<F> {
-    fn populate_row<H: Hasher<F>>(
+    fn populate_row<H: Chipset<F>>(
         &self,
         args: &[F],
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
         queries: &QueryRecord<F>,
         requires: Iter<'_, Record>,
-        hasher: &H,
+        toplevel: &Toplevel<F, H>,
     ) {
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
         // Variable to value map
@@ -108,8 +108,8 @@ impl<F: PrimeField32> Func<F> {
             func_idx: self.index,
             call_inp: args.into(),
             queries,
-            hasher,
             requires,
+            toplevel,
         };
         // One column per input
         args.iter().for_each(|arg| slice.push_input(index, *arg));
@@ -118,7 +118,7 @@ impl<F: PrimeField32> Func<F> {
 }
 
 impl<F: PrimeField32> Block<F> {
-    fn populate_row<H: Hasher<F>>(
+    fn populate_row<H: Chipset<F>>(
         &self,
         ctx: &mut TraceCtx<'_, F, H>,
         map: &mut Vec<(F, Degree)>,
@@ -133,7 +133,7 @@ impl<F: PrimeField32> Block<F> {
 }
 
 impl<F: PrimeField32> Ctrl<F> {
-    fn populate_row<H: Hasher<F>>(
+    fn populate_row<H: Chipset<F>>(
         &self,
         ctx: &mut TraceCtx<'_, F, H>,
         map: &mut Vec<(F, Degree)>,
@@ -218,7 +218,7 @@ fn push_inequality_witness<F: PrimeField, I: Iterator<Item = F>>(
 }
 
 impl<F: PrimeField32> Op<F> {
-    fn populate_row<H: Hasher<F>>(
+    fn populate_row<H: Chipset<F>>(
         &self,
         ctx: &mut TraceCtx<'_, F, H>,
         map: &mut Vec<(F, Degree)>,
@@ -336,11 +336,12 @@ impl<F: PrimeField32> Op<F> {
                 slice.push_aux(index, require.prev_count);
                 slice.push_aux(index, require.count_inv);
             }
-            Op::Hash(preimg) => {
-                let preimg = preimg.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let witness_size = ctx.hasher.witness_size(preimg.len());
+            Op::ExternCall(chip_idx, input) => {
+                let chip = ctx.toplevel.get_chip_by_index(*chip_idx);
+                let input = input.iter().map(|a| map[*a].0).collect::<List<_>>();
+                let witness_size = chip.witness_size();
                 let mut witness = vec![F::zero(); witness_size];
-                let img = ctx.hasher.populate_witness(&preimg, &mut witness);
+                let img = chip.populate_witness(&input, &mut witness);
                 for f in img {
                     map.push((f, 1));
                     slice.push_aux(index, f);
@@ -360,10 +361,10 @@ mod tests {
         air::debug::{debug_constraints_collecting_queries, TraceQueries},
         func,
         lair::{
+            chipset::Nochip,
             demo_toplevel,
             execute::{QueryRecord, Shard, ShardingConfig},
             field_from_u32,
-            hasher::LurkHasher,
             lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
             toplevel::Toplevel,
             trace::LayoutSizes,
@@ -382,7 +383,7 @@ mod tests {
 
     #[test]
     fn lair_layout_sizes_test() {
-        let toplevel = demo_toplevel::<_, LurkHasher>();
+        let toplevel = demo_toplevel::<F>();
 
         let factorial = toplevel.get_by_name("factorial");
         let out = factorial.compute_layout_sizes(&toplevel);
@@ -397,7 +398,7 @@ mod tests {
 
     #[test]
     fn lair_trace_test() {
-        let toplevel = demo_toplevel::<_, LurkHasher>();
+        let toplevel = demo_toplevel::<F>();
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
@@ -472,7 +473,7 @@ mod tests {
             let res = call(test, pred, m);
             return res
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new(&[func_e]);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {
@@ -536,7 +537,7 @@ mod tests {
                 }
             }
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new(&[func_e]);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {
@@ -575,7 +576,7 @@ mod tests {
     #[ignore]
     #[test]
     fn lair_shard_test() {
-        type H = LurkHasher;
+        type H = Nochip;
         let func_ack = func!(
         fn ackermann(m, n): [1] {
             let one = 1;
@@ -597,7 +598,7 @@ mod tests {
             let ret = call(ackermann, m_minus_one, inner);
             return ret
         });
-        let toplevel = Toplevel::<F, H>::new(&[func_ack]);
+        let toplevel = Toplevel::<F, H>::new_pure(&[func_ack]);
         let ack_chip = FuncChip::from_name("ackermann", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
 

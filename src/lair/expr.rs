@@ -77,8 +77,9 @@ pub enum OpE<F> {
     /// `Slice([x, ...], [y, ...])` matches the pattern `[x, ...]` against the values
     /// formed by `[y, ...]`
     Slice(VarList, VarList),
-    /// `Hash([x, ...], [y, ...])` binds `x, ...` to the hash of `y, ...`
-    Hash(VarList, VarList),
+    /// `ExternCall([x, ...], foo, [y, ...])` binds `x, ...` to the output of extern
+    /// chip `foo` when applied to the arguments `y, ...`
+    ExternCall(VarList, Name, VarList),
     /// `Debug(s)` emits debug message `s`
     Debug(&'static str),
 }

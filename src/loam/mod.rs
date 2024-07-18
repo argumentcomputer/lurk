@@ -7,10 +7,9 @@ use ascent::Lattice;
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField32};
 
-use crate::lair::hasher::LurkHasher;
 use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
 use crate::lurk::tag::Tag;
-use crate::lurk::zstore::{self, ZPtr, ZStore};
+use crate::lurk::zstore::{self, lurk_zstore, ZPtr, ZStore};
 
 mod allocation;
 mod evaluation;
@@ -125,7 +124,7 @@ pub struct WidePtr(pub Wide, pub Wide);
 impl WidePtr {
     fn nil() -> Self {
         // FIXME: cache, don't do expensive read repeatedly.
-        let zstore = &mut ZStore::<_, LurkHasher>::default();
+        let zstore = &mut lurk_zstore();
         let ZPtr { tag, digest } = zstore.intern_nil();
         Self(Wide::widen(tag.elt()), Wide(digest))
     }
