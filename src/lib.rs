@@ -4,6 +4,10 @@ pub mod lair;
 // TODO: unused
 // #[allow(dead_code)]
 // pub mod logup;
+
+#[cfg(feature = "loam")]
+pub mod loam;
+
 #[allow(dead_code)]
 pub mod gadgets;
 pub mod lurk;

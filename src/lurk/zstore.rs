@@ -26,7 +26,7 @@ pub(crate) const DIGEST_SIZE: usize = 8;
 
 const ZPTR_SIZE: usize = 2 * DIGEST_SIZE;
 // const COMM_PREIMG_SIZE: usize = DIGEST_SIZE + ZPTR_SIZE;
-const TUPLE2_SIZE: usize = 2 * ZPTR_SIZE;
+pub(crate) const TUPLE2_SIZE: usize = 2 * ZPTR_SIZE;
 const TUPLE3_SIZE: usize = 3 * ZPTR_SIZE;
 
 fn digest_from_field<F: AbstractField + Copy>(f: F) -> [F; DIGEST_SIZE] {
@@ -206,7 +206,7 @@ fn quote() -> &'static Symbol {
 }
 
 static BUILTIN_VEC: OnceCell<Vec<Symbol>> = OnceCell::new();
-fn builtin_vec() -> &'static Vec<Symbol> {
+pub(crate) fn builtin_vec() -> &'static Vec<Symbol> {
     BUILTIN_VEC.get_or_init(|| {
         LURK_PACKAGE_SYMBOLS_NAMES
             .into_iter()
@@ -770,6 +770,8 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
 
 #[cfg(test)]
 mod test {
+    use num_traits::FromPrimitive;
+
     use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
 
@@ -900,5 +902,19 @@ mod test {
         assert_eq!(zstore.fmt_with_state(state, &empty_env), "<Env ()>");
         let env = zstore.intern_env(x, one, empty_env);
         assert_eq!(zstore.fmt_with_state(state, &env), "<Env ((x . 1))>");
+    }
+
+    #[test]
+    fn test_tag_index_roundtrip() {
+        use p3_field::PrimeField32;
+
+        let test = |tag: Tag| {
+            let f = tag.to_field::<BabyBear>();
+            let u = f.as_canonical_u32();
+            let new_tag = Tag::from_u32(u).unwrap();
+            assert_eq!(tag, new_tag);
+        };
+
+        test(Tag::Nil);
     }
 }

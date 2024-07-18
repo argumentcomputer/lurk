@@ -30,7 +30,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Linux Tests
         run: |
-          cargo nextest run --profile ci --cargo-profile dev-ci --workspace --run-ignored all
+          cargo nextest run --profile ci --cargo-profile dev-ci --workspace --run-ignored all --features loam
 
   clippy:
     runs-on: ubuntu-latest
