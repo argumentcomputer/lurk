@@ -4,6 +4,12 @@ use std::path::Path;
 
 use super::config::get_config;
 
+#[inline]
+pub(crate) fn current_dir() -> Result<Utf8PathBuf> {
+    let path = Utf8PathBuf::try_from(std::env::current_dir()?)?;
+    Ok(path)
+}
+
 fn create_dir_all_and_return<P: AsRef<Path>>(path: P) -> Result<P> {
     std::fs::create_dir_all(path.as_ref())?;
     Ok(path)

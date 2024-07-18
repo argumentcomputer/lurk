@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use anyhow::{bail, Result};
 use itertools::Itertools;
 use nom::{sequence::preceded, Parser};
@@ -8,6 +6,7 @@ use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, Field, PrimeField32};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
+use std::marker::PhantomData;
 
 use crate::{
     lair::{chipset::Chipset, List},
