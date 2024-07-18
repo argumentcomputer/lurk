@@ -1,10 +1,7 @@
-# Opens an issue to update the nightly Rust version every two weeks
+# Opens a PR to update the nightly Rust version every two weeks
 name: Rust Version Check
 
 on:
-  push: # Remove once tested
-    branches:
-      - "ci-rust-version"
   workflow_dispatch:
   schedule:
     - cron:  '0 0 1,15 * *'
@@ -39,10 +36,8 @@ jobs:
           title: "chore: Update Rust version to nightly-${{ env.RUST_VERSION }}"
           commit-message: "chore: Update Rust version to nightly-${{ env.RUST_VERSION }}"
           labels: "automated-issue"
-          #reviewers: "arthurpaulino, wwared, huitseeker, samuelburnham"
+          reviewers: "arthurpaulino, wwared, huitseeker, samuelburnham"
           body: |
-            Test PR
-
             This is an automated PR updating the Rust version from `nightly-${{ env.TOOLCHAIN_VERSION }}` to `nightly-${{ env.RUST_VERSION }}`
 
             Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
