@@ -74,12 +74,15 @@ impl ByteInput {
 
     #[inline]
     pub fn msb(&self) -> bool {
-        let [i1, _i2] = self.0.to_le_bytes();
-        // Here we're ignoring `i2`, since in trace generation, this value is not zero.
-        // However, since `i2` is ignored, there are many repetitions in the bytes chip.
-        // Generally, the msb should always be used with the `i2` byte set to `0`, but it should be
-        // fine to use whatever value we want.
+        let [i1, i2] = self.0.to_le_bytes();
+        assert_eq!(i2, 0, "MSB only works on single bytes");
         (i1 >> 7) == 1
+    }
+
+    #[inline]
+    pub(crate) fn msb_trace_gen(&self) -> (bool, bool) {
+        let [i1, i2] = self.0.to_le_bytes();
+        ((i1 >> 7) == 1, i2 == 0)
     }
 }
 

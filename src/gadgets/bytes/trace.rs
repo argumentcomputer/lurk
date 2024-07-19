@@ -10,7 +10,6 @@ use p3_matrix::Matrix;
 use p3_maybe_rayon::prelude::*;
 use sphinx_derive::AlignedBorrow;
 use std::borrow::{Borrow, BorrowMut};
-use std::iter::zip;
 use std::marker::PhantomData;
 use std::mem::size_of;
 
@@ -28,6 +27,7 @@ pub struct PreprocessedBytesCols<T> {
     xor: T,
     or: T,
     msb: T,
+    input_is_u8: T,
 }
 
 const PREPROCESSED_BYTES_NUM_COLS: usize = size_of::<PreprocessedBytesCols<u8>>();
@@ -64,8 +64,11 @@ impl<F: Field> BaseAir<F> for BytesChip<F> {
             row.or = F::from_canonical_u8(input.or());
 
             // since msb only works over bytes, the result is duplicated 2^8 times.
-            // this is okay since we can ignore them
-            row.msb = F::from_bool(input.msb());
+            // so instead we additionally store whether the second byte of the input is 0
+            // and use that as `is_real` for the msb relation provide
+            let (msb, is_i2_zero) = input.msb_trace_gen();
+            row.msb = F::from_bool(msb);
+            row.input_is_u8 = F::from_bool(is_i2_zero);
         });
         Some(trace)
     }
@@ -129,12 +132,17 @@ impl<AB: LookupBuilder + PairBuilder> Air<AB> for BytesChip<AB::F> {
             ByteRelation::and(prep.input.0, prep.input.1, prep.and),
             ByteRelation::xor(prep.input.0, prep.input.1, prep.xor),
             ByteRelation::or(prep.input.0, prep.input.1, prep.or),
-            ByteRelation::msb(prep.input.0, prep.msb),
         ];
+        let relations_u8 = [ByteRelation::msb(prep.input.0, prep.msb)];
+        let mut provides = main.provides.into_iter();
 
         let is_real = AB::F::one();
-        for (relation, provide) in zip(relations, main.provides) {
-            builder.provide(relation, provide, is_real);
+        for relation in relations {
+            builder.provide(relation, provides.next().unwrap(), is_real);
+        }
+
+        for relation in relations_u8 {
+            builder.provide(relation, provides.next().unwrap(), prep.input_is_u8);
         }
     }
 }
