@@ -143,10 +143,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             &self.build_input(expr),
             &mut queries,
         ));
-        std::mem::swap(
-            &mut self.queries.inv_func_queries,
-            &mut queries.inv_func_queries,
-        );
+        self.queries.inv_func_queries = queries.inv_func_queries;
         output
     }
 
