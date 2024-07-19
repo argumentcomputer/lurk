@@ -47,7 +47,7 @@ impl<F: Field> BaseAir<F> for BytesChip<F> {
     }
 
     fn preprocessed_trace(&self) -> Option<RowMajorMatrix<F>> {
-        let height = u16::MAX as usize;
+        let height = 1 << 16;
         let width = PREPROCESSED_BYTES_NUM_COLS;
         let mut trace = RowMajorMatrix::new(vec![F::zero(); height * width], width);
 
@@ -77,7 +77,7 @@ impl<F: PrimeField32> BytesChip<F> {
     }
 
     pub fn generate_trace(&self, bytes_record: &BytesRecord) -> RowMajorMatrix<F> {
-        let height = u16::MAX as usize;
+        let height = 1 << 16;
         let width = MAIN_BYTES_NUM_COLS;
         let mut trace = RowMajorMatrix::new(vec![F::zero(); height * width], width);
 
