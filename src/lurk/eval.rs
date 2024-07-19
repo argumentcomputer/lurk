@@ -1417,12 +1417,19 @@ mod test {
     use expect_test::{expect, Expect};
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
-    use sphinx_core::{air::MachineAir, stark::{LocalProver, StarkGenericConfig, StarkMachine}, utils::{BabyBearPoseidon2, SphinxCoreOpts}};
+    use sphinx_core::{
+        air::MachineAir,
+        stark::{LocalProver, StarkGenericConfig, StarkMachine},
+        utils::{BabyBearPoseidon2, SphinxCoreOpts},
+    };
 
     use crate::{
         air::debug::{debug_constraints_collecting_queries, TraceQueries},
         lair::{
-            execute::{QueryRecord, Shard}, func_chip::FuncChip, lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram}, List
+            execute::{QueryRecord, Shard},
+            func_chip::FuncChip,
+            lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
+            List,
         },
         lurk::{state::State, zstore::ZPtr},
     };
