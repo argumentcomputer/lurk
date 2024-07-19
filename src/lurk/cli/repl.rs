@@ -1,4 +1,5 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
+use camino::{Utf8Path, Utf8PathBuf};
 use p3_baby_bear::BabyBear;
 use p3_field::PrimeField32;
 use rustyline::{
@@ -12,9 +13,13 @@ use crate::{
     lair::{chipset::Chipset, execute::QueryRecord, toplevel::Toplevel},
     lurk::{
         chipset::LurkChip,
-        cli::paths::repl_history,
+        cli::{
+            meta::{meta_cmds, MetaCmdsMap},
+            paths::{current_dir, repl_history},
+        },
         eval::build_lurk_toplevel,
         state::{State, StateRcCell},
+        tag::Tag,
         zstore::{ZPtr, ZStore},
     },
 };
@@ -31,28 +36,34 @@ impl Validator for InputValidator {
 }
 
 pub(crate) struct Repl<F: PrimeField32, H: Chipset<F>> {
-    zstore: ZStore<F, H>,
-    record: QueryRecord<F>,
+    pub(crate) zstore: ZStore<F, H>,
+    queries: QueryRecord<F>,
     toplevel: Toplevel<F, H>,
     lurk_main_idx: usize,
     eval_idx: usize,
+    pub(crate) env: ZPtr<F>,
     state: StateRcCell,
+    pwd_path: Utf8PathBuf,
+    meta_cmds: MetaCmdsMap<F, H>,
 }
 
 impl Repl<BabyBear, LurkChip> {
     pub(crate) fn new() -> Self {
-        let (toplevel, zstore) = build_lurk_toplevel();
-        let record = QueryRecord::new(&toplevel);
+        let (toplevel, mut zstore) = build_lurk_toplevel();
+        let queries = QueryRecord::new(&toplevel);
         let lurk_main_idx = toplevel.get_by_name("lurk_main").index;
         let eval_idx = toplevel.get_by_name("eval").index;
-        let state = State::init_lurk_state().rccell();
+        let env = zstore.intern_empty_env();
         Self {
             zstore,
-            record,
+            queries,
             toplevel,
             lurk_main_idx,
             eval_idx,
-            state,
+            env,
+            state: State::init_lurk_state().rccell(),
+            pwd_path: current_dir().expect("Couldn't get current directory"),
+            meta_cmds: meta_cmds(),
         }
     }
 }
@@ -66,6 +77,33 @@ fn pretty_iterations_display(iterations: usize) -> String {
 }
 
 impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
+    #[allow(dead_code)]
+    pub(crate) fn peek1(&self, args: &ZPtr<F>) -> Result<&ZPtr<F>> {
+        if args.tag != Tag::Cons {
+            bail!("Missing first argument")
+        }
+        let (arg, rst) = self.zstore.fetch_tuple2(args);
+        if rst.tag != Tag::Nil {
+            bail!("Only one argument is supported")
+        }
+        Ok(arg)
+    }
+
+    pub(crate) fn peek2(&self, args: &ZPtr<F>) -> Result<(&ZPtr<F>, &ZPtr<F>)> {
+        if args.tag != Tag::Cons {
+            bail!("Missing first argument")
+        }
+        let (arg1, rst) = self.zstore.fetch_tuple2(args);
+        if rst.tag != Tag::Cons {
+            bail!("Missing second argument")
+        }
+        let (arg2, rst) = self.zstore.fetch_tuple2(rst);
+        if rst.tag != Tag::Nil {
+            bail!("Only two arguments are supported")
+        }
+        Ok((arg1, arg2))
+    }
+
     fn input_marker(&self) -> String {
         format!(
             "{}> ",
@@ -75,34 +113,79 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         )
     }
 
-    fn handle_non_meta(&mut self, zptr: ZPtr<F>) {
-        self.record.clean();
-        self.record
+    pub(crate) fn fmt(&self, zptr: &ZPtr<F>) -> String {
+        self.zstore.fmt_with_state(&self.state, zptr)
+    }
+
+    fn prepare_queries(&mut self) {
+        self.queries.clean();
+        self.queries
             .inject_inv_queries("hash_32_8", &self.toplevel, self.zstore.tuple2_hashes());
-        self.record
+        self.queries
             .inject_inv_queries("hash_48_8", &self.toplevel, self.zstore.tuple3_hashes());
+    }
+
+    fn build_input(&self, expr: &ZPtr<F>) -> [F; 24] {
         let mut input = [F::zero(); 24];
-        input[..16].copy_from_slice(&zptr.flatten());
-        let output = self
-            .toplevel
-            .execute_by_index(self.lurk_main_idx, &input, &mut self.record);
-        let output_zptr = ZPtr::from_flat_data(&output);
-        self.zstore.memoize_dag(
-            output_zptr.tag,
-            &output_zptr.digest,
-            self.record.get_inv_queries("hash_32_8", &self.toplevel),
-            self.record.get_inv_queries("hash_48_8", &self.toplevel),
+        input[..16].copy_from_slice(&expr.flatten());
+        input[16..].copy_from_slice(&self.env.digest);
+        input
+    }
+
+    /// Reduces a Lurk expression with a clone of the REPL's queries so the latest
+    /// provable computation isn't affected. After the reduction is over, retrieve
+    /// the (potentially enriched) inverse query maps so commitments aren't lost.
+    pub(crate) fn reduce_aux(&mut self, expr: &ZPtr<F>) -> ZPtr<F> {
+        self.prepare_queries();
+        let mut queries = self.queries.clone();
+        let output = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
+            self.lurk_main_idx,
+            &self.build_input(expr),
+            &mut queries,
+        ));
+        std::mem::swap(
+            &mut self.queries.inv_func_queries,
+            &mut queries.inv_func_queries,
         );
-        let iterations = self.record.func_queries[self.eval_idx].len();
+        output
+    }
+
+    fn handle_non_meta(&mut self, expr: &ZPtr<F>) {
+        self.prepare_queries();
+        let output = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
+            self.lurk_main_idx,
+            &self.build_input(expr),
+            &mut self.queries,
+        ));
+        self.zstore.memoize_dag(
+            output.tag,
+            &output.digest,
+            self.queries.get_inv_queries("hash_32_8", &self.toplevel),
+            self.queries.get_inv_queries("hash_48_8", &self.toplevel),
+        );
+        let iterations = self.queries.func_queries[self.eval_idx].len();
         println!(
             "[{}] => {}",
             pretty_iterations_display(iterations),
-            self.zstore.fmt_with_state(&self.state, &output_zptr)
+            self.fmt(&output)
         );
     }
 
-    fn handle_meta(&mut self, _zptr: ZPtr<F>) {
-        todo!()
+    fn handle_meta(&mut self, expr: &ZPtr<F>, file_path: &Utf8Path) -> Result<()> {
+        if expr.tag != Tag::Cons {
+            bail!("Meta command calls must be written as cons lists");
+        }
+        let (cmd_sym, &args) = self.zstore.fetch_tuple2(expr);
+        if cmd_sym.tag != Tag::Sym {
+            bail!("The meta command must be a symbol");
+        }
+        let (cmd_sym_head, _) = self.zstore.fetch_tuple2(cmd_sym);
+        let cmd = self.zstore.fetch_string(cmd_sym_head);
+        if let Some(meta_cmd) = self.meta_cmds.get(cmd.as_str()) {
+            (meta_cmd.run)(self, &args, file_path)
+        } else {
+            bail!("Invalid meta command")
+        }
     }
 
     pub(crate) fn run(&mut self) -> Result<()> {
@@ -130,9 +213,11 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
                     {
                         Ok((is_meta, zptr)) => {
                             if is_meta {
-                                self.handle_meta(zptr)
+                                if let Err(e) = self.handle_meta(&zptr, &self.pwd_path.clone()) {
+                                    eprintln!("!Error: {e}");
+                                }
                             } else {
-                                self.handle_non_meta(zptr)
+                                self.handle_non_meta(&zptr)
                             }
                         }
                         Err(e) => eprintln!("Read error: {e}"),

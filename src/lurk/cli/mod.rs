@@ -1,4 +1,5 @@
 mod config;
+mod meta;
 mod paths;
 pub mod repl;
 
