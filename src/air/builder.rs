@@ -208,7 +208,7 @@ pub struct ProvideRecord<T> {
 
 impl<F: PrimeField> ProvideRecord<F> {
     pub fn populate(&mut self, record: Record) {
-        self.last_count = F::from_canonical_u32(record.nonce);
-        self.last_nonce = F::from_canonical_u32(record.count);
+        self.last_count = F::from_canonical_u32(record.count);
+        self.last_nonce = F::from_canonical_u32(record.nonce);
     }
 }
