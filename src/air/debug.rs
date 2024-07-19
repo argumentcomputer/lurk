@@ -43,7 +43,10 @@ impl<F: PrimeField32> TraceQueries<F> {
     }
 
     fn memoset(&mut self, query: Query<F>, count: u32, record: Record) {
+        println!("query: {:?}", query);
         let records = self.memoset.entry(query).or_default();
+        println!("count: {}", count);
+        println!("records: {:?}", records);
         assert!(
             records.insert(count, record).is_none(),
             "memoset record already accessed"

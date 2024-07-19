@@ -1417,13 +1417,12 @@ mod test {
     use expect_test::{expect, Expect};
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
+    use sphinx_core::{air::MachineAir, stark::{LocalProver, StarkGenericConfig, StarkMachine}, utils::{BabyBearPoseidon2, SphinxCoreOpts}};
 
     use crate::{
-        air::debug::debug_constraints_collecting_queries,
+        air::debug::{debug_constraints_collecting_queries, TraceQueries},
         lair::{
-            execute::{QueryRecord, Shard},
-            func_chip::FuncChip,
-            List,
+            execute::{QueryRecord, Shard}, func_chip::FuncChip, lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram}, List
         },
         lurk::{state::State, zstore::ZPtr},
     };
@@ -1540,6 +1539,8 @@ mod test {
 
     #[test]
     fn u32_add_test() {
+        sphinx_core::utils::setup_logger();
+
         let add_func = func!(
         fn add(a: [4], b: [4]): [4] {
             let c: [4] = extern_call(u32_add, a, b);
@@ -1557,5 +1558,36 @@ mod test {
         assert_eq!(out.as_ref(), &[f(0), f(1), f(0), f(0)]);
         let add_trace = add_chip.generate_trace(&Shard::new(&queries));
         let _ = debug_constraints_collecting_queries(&add_chip, &[], None, &add_trace);
+
+        let lair_chips = build_lair_chip_vector(&add_chip);
+        let full_shard = Shard::new(&queries);
+        let lookup_queries: Vec<_> = lair_chips
+            .iter()
+            .map(|chip| {
+                let trace = chip.generate_trace(&full_shard, &mut Default::default());
+                let preprocessed_trace = chip.generate_preprocessed_trace(&LairMachineProgram);
+                debug_constraints_collecting_queries(chip, &[], preprocessed_trace.as_ref(), &trace)
+            })
+            .collect();
+        TraceQueries::verify_many(lookup_queries);
+
+        let config = BabyBearPoseidon2::new();
+        let machine = StarkMachine::new(
+            config,
+            build_chip_vector(&add_chip),
+            queries.expect_public_values().len(),
+        );
+
+        let (pk, vk) = machine.setup(&LairMachineProgram);
+        let mut challenger_p = machine.config().challenger();
+        let mut challenger_v = machine.config().challenger();
+        let shard = Shard::new(&queries);
+
+        machine.debug_constraints(&pk, shard.clone());
+        let opts = SphinxCoreOpts::default();
+        let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
+        machine
+            .verify(&vk, &proof, &mut challenger_v)
+            .expect("proof verifies");
     }
 }
