@@ -14,7 +14,8 @@ use std::iter::zip;
 use std::marker::PhantomData;
 use std::mem::size_of;
 
-struct BytesChip<F> {
+#[derive(Default)]
+pub struct BytesChip<F> {
     _marker: PhantomData<F>,
 }
 
@@ -71,11 +72,11 @@ impl<F: Field> BaseAir<F> for BytesChip<F> {
 }
 
 impl<F: PrimeField32> BytesChip<F> {
-    fn name(&self) -> String {
+    pub fn name(&self) -> String {
         "Bytes".to_string()
     }
 
-    fn generate_trace(&self, bytes_record: &BytesRecord) -> RowMajorMatrix<F> {
+    pub fn generate_trace(&self, bytes_record: &BytesRecord) -> RowMajorMatrix<F> {
         let height = u16::MAX as usize;
         let width = MAIN_BYTES_NUM_COLS;
         let mut trace = RowMajorMatrix::new(vec![F::zero(); height * width], width);
@@ -96,15 +97,15 @@ impl<F: PrimeField32> BytesChip<F> {
         trace
     }
 
-    fn included(&self, byte_record: &BytesRecord) -> bool {
+    pub fn included(&self, byte_record: &BytesRecord) -> bool {
         !byte_record.is_empty()
     }
 
-    fn preprocessed_width(&self) -> usize {
+    pub fn preprocessed_width(&self) -> usize {
         PREPROCESSED_BYTES_NUM_COLS
     }
 
-    fn generate_preprocessed_trace(&self) -> Option<RowMajorMatrix<F>> {
+    pub fn generate_preprocessed_trace(&self) -> Option<RowMajorMatrix<F>> {
         self.preprocessed_trace()
     }
 }
