@@ -142,8 +142,8 @@ impl<'a> ByteRecord for BytesRecordWithContext<'a> {
 
     fn range_check_u16(&mut self, i: u16) {
         let input = ByteInput::from_u16(i);
-        let range_u8 = &mut self.record.get_mut(input).range_u8;
-        let require = range_u8.new_lookup(self.nonce);
+        let range_u16 = &mut self.record.get_mut(input).range_u16;
+        let require = range_u16.new_lookup(self.nonce);
         self.requires.push(require);
     }
 
