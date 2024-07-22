@@ -55,6 +55,7 @@ impl<F: AbstractField, const W: usize> MulWitness<F, W> {
             carry = u16::from_le_bytes([carry_lo, carry_hi]);
 
             byte_record.range_check_u16(carry);
+
             self.carry[k] = F::from_canonical_u16(carry);
 
             result[k] = limb;
