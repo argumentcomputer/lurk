@@ -1,10 +1,15 @@
 use crate::air::builder::{LairBuilder, LookupBuilder, ProvideRecord, Relation, RequireRecord};
+use crate::lair::chipset::Chipset;
+use crate::lair::execute::{QueryRecord, Shard, ShardingConfig};
+use crate::lair::lair_chip::{LairChip, LairMachineProgram};
 use hashbrown::HashMap;
 use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues, PairBuilder};
 use p3_field::PrimeField32;
 use p3_matrix::dense::{RowMajorMatrix, RowMajorMatrixView};
 use p3_matrix::stack::VerticalPair;
 use p3_matrix::Matrix;
+use sphinx_core::air::MachineAir;
+use sphinx_core::stark::MachineRecord;
 use std::collections::BTreeMap;
 
 type LocalRowView<'a, F> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatrixView<'a, F>>;
@@ -108,6 +113,42 @@ impl<F: PrimeField32> TraceQueries<F> {
         }
         merged.verify()
     }
+}
+
+/// Helper function to execute and test queries and constraints using `debug_constraints_collecting_queries`
+pub fn debug_chip_constraints_and_queries_with_sharding<F: PrimeField32, C: Chipset<F>>(
+    record: &QueryRecord<F>,
+    chips: &[LairChip<'_, F, C>],
+    config: Option<ShardingConfig>,
+) {
+    let full_shard = Shard::new(record);
+    let shards = if let Some(config) = config {
+        full_shard.shard(&config)
+    } else {
+        vec![full_shard]
+    };
+    let mut lookup_queries = vec![];
+    for shard in shards.iter() {
+        let queries: Vec<_> = chips
+            .iter()
+            .map(|chip| {
+                if chip.included(shard) {
+                    let trace = chip.generate_trace(shard, &mut Shard::default());
+                    let preprocessed_trace = chip.generate_preprocessed_trace(&LairMachineProgram);
+                    debug_constraints_collecting_queries(
+                        chip,
+                        &[],
+                        preprocessed_trace.as_ref(),
+                        &trace,
+                    )
+                } else {
+                    Default::default()
+                }
+            })
+            .collect();
+        lookup_queries.extend(queries.into_iter());
+    }
+    TraceQueries::verify_many(lookup_queries);
 }
 
 /// Check the `air` constraints over a given `main` trace.

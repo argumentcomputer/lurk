@@ -1,14 +1,10 @@
 use once_cell::sync::OnceCell;
 use p3_baby_bear::BabyBear as F;
 use p3_field::AbstractField;
-use sphinx_core::{
-    air::MachineAir,
-    stark::{MachineRecord, StarkMachine},
-    utils::BabyBearPoseidon2,
-};
+use sphinx_core::{stark::StarkMachine, utils::BabyBearPoseidon2};
 
 use crate::{
-    air::debug::{debug_constraints_collecting_queries, TraceQueries},
+    air::debug::debug_chip_constraints_and_queries_with_sharding,
     lair::{
         execute::{QueryRecord, Shard, ShardingConfig},
         func_chip::FuncChip,
@@ -70,40 +66,16 @@ fn run_test(
 
     let lair_chips = build_lair_chip_vector(&lurk_main);
 
-    // debug constraints and verify lookup queries without sharding
-    let full_shard = Shard::new(&record);
-    let lookup_queries: Vec<_> = lair_chips
-        .iter()
-        .map(|chip| {
-            let trace = chip.generate_trace(&full_shard, &mut Default::default());
-            debug_constraints_collecting_queries(chip, &[], None, &trace)
-        })
-        .collect();
-    let num_lookups = lookup_queries.len();
-    TraceQueries::verify_many(lookup_queries);
-
-    // debug constraints and verify lookup queries with aggressive sharding
-    let shards = full_shard
-        .clone()
-        .shard(&ShardingConfig { max_shard_size: 4 });
-    let mut lookup_queries = Vec::with_capacity(num_lookups);
-    for shard in shards.iter() {
-        let queries: Vec<_> = lair_chips
-            .iter()
-            .map(|chip| {
-                if chip.included(shard) {
-                    let trace = chip.generate_trace(shard, &mut Shard::default());
-                    debug_constraints_collecting_queries(chip, &[], None, &trace)
-                } else {
-                    Default::default()
-                }
-            })
-            .collect();
-        lookup_queries.extend(queries.into_iter());
-    }
-    TraceQueries::verify_many(lookup_queries);
+    // debug constraints and verify lookup queries with and without sharding
+    debug_chip_constraints_and_queries_with_sharding(&record, &lair_chips, None);
+    debug_chip_constraints_and_queries_with_sharding(
+        &record,
+        &lair_chips,
+        Some(ShardingConfig { max_shard_size: 4 }),
+    );
 
     // debug constraints with Sphinx
+    let full_shard = Shard::new(&record);
     let machine = StarkMachine::new(
         config,
         build_chip_vector_from_lair_chips(lair_chips),
