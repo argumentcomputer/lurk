@@ -18,6 +18,10 @@ pub struct MulWitness<T, const W: usize> {
 }
 
 impl<F: AbstractField, const W: usize> MulWitness<F, W> {
+    pub fn values(&self) -> Vec<F> {
+        self.carry.iter().cloned().collect()
+    }
+
     /// Populates a witness for checking the multiplication of two unsigned integers
     /// representable as arrays of little-endian bytes.
     /// The result is not range-constrained, as this allows the Air to reuse this witness

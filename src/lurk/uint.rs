@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::sync::{Arc, RwLock};
 
 use hybrid_array::sizes::U4;
@@ -106,8 +107,8 @@ impl<F: PrimeField32> Chipset<F> for U32<F> {
             }
             U32::Mul(mul_witness) => {
                 let mul = in1 * in2;
-                for (i, carry) in mul_witness.read().unwrap().carry.iter().enumerate() {
-                    witness[i] = *carry;
+                for (i, w) in mul_witness.read().unwrap().values().into_iter().enumerate() {
+                    witness[i] = w;
                 }
                 mul.into_field().into_iter().collect()
             }
@@ -132,14 +133,12 @@ impl<F: PrimeField32> Chipset<F> for U32<F> {
             U32::Add => eval_add(builder, (in1, in2), out, &mut air_record, is_real),
             U32::Sub => eval_sub(builder, (in1, in2), out, &mut air_record, is_real),
             U32::Mul(..) => {
-                let mul_witness = Mul32Witness {
-                    carry: witness.try_into().unwrap(),
-                };
+                let mul_witness: &Mul32Witness<AB::Var> = witness.borrow();
                 eval_mul(
                     builder,
                     (in1, in2),
                     out,
-                    &mul_witness,
+                    mul_witness,
                     &mut air_record,
                     is_real,
                 )
