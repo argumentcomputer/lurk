@@ -80,9 +80,9 @@ impl ByteInput {
     }
 
     #[inline]
-    pub(crate) fn msb_trace_gen(&self) -> (bool, bool) {
-        let [i1, i2] = self.0.to_le_bytes();
-        ((i1 >> 7) == 1, i2 == 0)
+    pub(crate) fn msb_unchecked(&self) -> bool {
+        let [i1, _i2] = self.0.to_le_bytes();
+        (i1 >> 7) == 1
     }
 }
 

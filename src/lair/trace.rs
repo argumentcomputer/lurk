@@ -368,7 +368,7 @@ mod tests {
             demo_toplevel,
             execute::{QueryRecord, Shard, ShardingConfig},
             field_from_u32,
-            lair_chip::build_lair_chip_vector,
+            lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
             toplevel::Toplevel,
             trace::LayoutSizes,
         },
@@ -376,7 +376,10 @@ mod tests {
 
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
-    use sphinx_core::stark::MachineRecord;
+    use sphinx_core::{
+        stark::{LocalProver, MachineRecord, StarkGenericConfig, StarkMachine},
+        utils::{BabyBearPoseidon2, SphinxCoreOpts},
+    };
 
     use super::FuncChip;
 
@@ -575,6 +578,7 @@ mod tests {
     #[ignore]
     #[test]
     fn lair_shard_test() {
+        sphinx_core::utils::setup_logger();
         type H = Nochip;
         let func_ack = func!(
         fn ackermann(m, n): [1] {
@@ -623,5 +627,24 @@ mod tests {
             &lair_chips,
             Some(ShardingConfig::default()),
         );
+
+        let config = BabyBearPoseidon2::new();
+        let machine = StarkMachine::new(
+            config,
+            build_chip_vector(&ack_chip),
+            queries.expect_public_values().len(),
+        );
+
+        let (pk, vk) = machine.setup(&LairMachineProgram);
+        let mut challenger_p = machine.config().challenger();
+        let mut challenger_v = machine.config().challenger();
+        let shard = Shard::new(&queries);
+
+        machine.debug_constraints(&pk, shard.clone());
+        let opts = SphinxCoreOpts::default();
+        let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
+        machine
+            .verify(&vk, &proof, &mut challenger_v)
+            .expect("proof verifies");
     }
 }

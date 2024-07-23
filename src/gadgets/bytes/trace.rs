@@ -27,7 +27,6 @@ pub struct PreprocessedBytesCols<T> {
     xor: T,
     or: T,
     msb: T,
-    input_is_u8: T,
 }
 
 const PREPROCESSED_BYTES_NUM_COLS: usize = size_of::<PreprocessedBytesCols<u8>>();
@@ -37,6 +36,7 @@ const NUM_PROVIDES: usize = 7;
 #[derive(Clone, Debug, Default, AlignedBorrow)]
 #[repr(C)]
 pub struct MainBytesCols<T> {
+    is_real: T,
     provides: [ProvideRecord<T>; NUM_PROVIDES],
 }
 const MAIN_BYTES_NUM_COLS: usize = size_of::<MainBytesCols<u8>>();
@@ -64,11 +64,8 @@ impl<F: Field> BaseAir<F> for BytesChip<F> {
             row.or = F::from_canonical_u8(input.or());
 
             // since msb only works over bytes, the result is duplicated 2^8 times.
-            // so instead we additionally store whether the second byte of the input is 0
-            // and use that as `is_real` for the msb relation provide
-            let (msb, is_i2_zero) = input.msb_trace_gen();
-            row.msb = F::from_bool(msb);
-            row.input_is_u8 = F::from_bool(is_i2_zero);
+            // so we use the upper byte of the input as a dummy in the ByteRelation being providedrelation.
+            row.msb = F::from_bool(input.msb_unchecked());
         });
         Some(trace)
     }
@@ -82,12 +79,15 @@ impl<F: PrimeField32> BytesChip<F> {
     pub fn generate_trace(&self, bytes_record: &BytesRecord) -> RowMajorMatrix<F> {
         let height = 1 << 16;
         let width = MAIN_BYTES_NUM_COLS;
+        let is_real = self.included(bytes_record);
         let mut trace = RowMajorMatrix::new(vec![F::zero(); height * width], width);
 
         trace.par_rows_mut().enumerate().for_each(|(index, row)| {
             let index = index as u16;
             let input = ByteInput::from_u16(index);
             let row: &mut MainBytesCols<F> = row.borrow_mut();
+
+            row.is_real = F::from_bool(is_real);
 
             if let Some(row_records) = bytes_record.get(input) {
                 for (record, provide) in zip_eq(row_records.iter_records(), row.provides.iter_mut())
@@ -123,6 +123,8 @@ impl<AB: LookupBuilder + PairBuilder> Air<AB> for BytesChip<AB::F> {
         let main = main.row_slice(0);
         let main: &MainBytesCols<AB::Var> = (*main).borrow();
 
+        builder.assert_bool(main.is_real);
+
         let input_u16 = prep.input.0 + prep.input.1 * AB::F::from_canonical_u16(1 << 8);
 
         let relations = [
@@ -132,17 +134,11 @@ impl<AB: LookupBuilder + PairBuilder> Air<AB> for BytesChip<AB::F> {
             ByteRelation::and(prep.input.0, prep.input.1, prep.and),
             ByteRelation::xor(prep.input.0, prep.input.1, prep.xor),
             ByteRelation::or(prep.input.0, prep.input.1, prep.or),
+            ByteRelation::msb(prep.input.0, prep.msb, prep.input.1),
         ];
-        let relations_u8 = [ByteRelation::msb(prep.input.0, prep.msb)];
-        let mut provides = main.provides.into_iter();
 
-        let is_real = AB::F::one();
-        for relation in relations {
-            builder.provide(relation, provides.next().unwrap(), is_real);
-        }
-
-        for relation in relations_u8 {
-            builder.provide(relation, provides.next().unwrap(), prep.input_is_u8);
+        for (relation, provide) in relations.into_iter().zip(main.provides.into_iter()) {
+            builder.provide(relation, provide, main.is_real);
         }
     }
 }
