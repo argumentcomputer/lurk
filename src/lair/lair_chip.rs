@@ -121,10 +121,7 @@ impl<'a, F: PrimeField32, H: Chipset<F>> MachineAir<F> for LairChip<'a, F, H> {
                 // let range = shard.get_mem_range(mem_index_from_len(mem_chip.len));
                 // !range.is_empty()
             }
-            Self::Bytes(bytes_chip) => {
-                shard.index == 0 && bytes_chip.included(&shard.queries().bytes)
-            }
-            Self::Entrypoint { .. } => shard.index == 0,
+            Self::Bytes(..) | Self::Entrypoint { .. } => shard.index == 0,
             Self::Preprocessed => true,
         }
     }
