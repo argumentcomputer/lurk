@@ -361,14 +361,14 @@ impl<F: PrimeField32> Op<F> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        air::debug::{debug_constraints_collecting_queries, TraceQueries},
+        air::debug::debug_chip_constraints_and_queries_with_sharding,
         func,
         lair::{
             chipset::Nochip,
             demo_toplevel,
             execute::{QueryRecord, Shard, ShardingConfig},
             field_from_u32,
-            lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
+            lair_chip::build_lair_chip_vector,
             toplevel::Toplevel,
             trace::LayoutSizes,
         },
@@ -376,11 +376,7 @@ mod tests {
 
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
-    use sphinx_core::{
-        air::MachineAir,
-        stark::{MachineRecord, StarkMachine},
-        utils::BabyBearPoseidon2,
-    };
+    use sphinx_core::stark::MachineRecord;
 
     use super::FuncChip;
 
@@ -615,10 +611,6 @@ mod tests {
 
         let lair_chips = build_lair_chip_vector(&ack_chip);
 
-        let config = BabyBearPoseidon2::new();
-        let machine = StarkMachine::new(config, build_chip_vector(&ack_chip), 0);
-
-        let (pk, _vk) = machine.setup(&LairMachineProgram);
         let shard = Shard::new(&queries);
         let shards = shard.clone().shard(&ShardingConfig::default());
         assert!(
@@ -626,23 +618,10 @@ mod tests {
             "lair_shard_test must have more than one shard"
         );
 
-        let mut lookup_queries = Vec::new();
-        for shard in shards.iter() {
-            let queries: Vec<_> = lair_chips
-                .iter()
-                .map(|chip| {
-                    if chip.included(shard) {
-                        let trace = chip.generate_trace(shard, &mut Shard::default());
-                        debug_constraints_collecting_queries(chip, &[], None, &trace)
-                    } else {
-                        Default::default()
-                    }
-                })
-                .collect();
-            lookup_queries.extend(queries.into_iter());
-        }
-        TraceQueries::verify_many(lookup_queries);
-
-        machine.debug_constraints(&pk, shard.clone());
+        debug_chip_constraints_and_queries_with_sharding(
+            &queries,
+            &lair_chips,
+            Some(ShardingConfig::default()),
+        );
     }
 }
