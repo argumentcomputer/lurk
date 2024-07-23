@@ -11,5 +11,5 @@ pub mod state;
 pub mod symbol;
 pub mod syntax;
 pub mod tag;
-pub mod uint;
+pub mod u64;
 pub mod zstore;

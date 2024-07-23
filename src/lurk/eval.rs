@@ -1417,18 +1417,12 @@ mod test {
     use expect_test::{expect, Expect};
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
-    use sphinx_core::{
-        air::MachineAir,
-        stark::{LocalProver, StarkGenericConfig, StarkMachine},
-        utils::{BabyBearPoseidon2, SphinxCoreOpts},
-    };
 
     use crate::{
-        air::debug::{debug_constraints_collecting_queries, TraceQueries},
+        air::debug::debug_constraints_collecting_queries,
         lair::{
             execute::{QueryRecord, Shard},
             func_chip::FuncChip,
-            lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
             List,
         },
         lurk::{state::State, zstore::ZPtr},
@@ -1542,167 +1536,5 @@ mod test {
         assert_ingress_egress_correctness(":keyword");
         assert_ingress_egress_correctness("(+ 1 2)");
         assert_ingress_egress_correctness("(a 'b c)");
-    }
-
-    #[test]
-    fn u32_add_test() {
-        sphinx_core::utils::setup_logger();
-
-        let add_func = func!(
-        fn add(a: [4], b: [4]): [4] {
-            let c: [4] = extern_call(u32_add, a, b);
-            return c
-        });
-        let lurk_chip_map = lurk_chip_map();
-        let toplevel = Toplevel::new(&[add_func], lurk_chip_map);
-
-        let add_chip = FuncChip::from_name("add", &toplevel);
-        let mut queries = QueryRecord::new(&toplevel);
-        let f = F::from_canonical_usize;
-        // Little endian
-        let args = &[f(200), f(0), f(0), f(0), f(56), f(0), f(0), f(0)];
-        let out = toplevel.execute_by_name("add", args, &mut queries);
-        assert_eq!(out.as_ref(), &[f(0), f(1), f(0), f(0)]);
-        let add_trace = add_chip.generate_trace(&Shard::new(&queries));
-        let _ = debug_constraints_collecting_queries(&add_chip, &[], None, &add_trace);
-
-        let lair_chips = build_lair_chip_vector(&add_chip);
-        let full_shard = Shard::new(&queries);
-        let lookup_queries: Vec<_> = lair_chips
-            .iter()
-            .map(|chip| {
-                let trace = chip.generate_trace(&full_shard, &mut Default::default());
-                let preprocessed_trace = chip.generate_preprocessed_trace(&LairMachineProgram);
-                debug_constraints_collecting_queries(chip, &[], preprocessed_trace.as_ref(), &trace)
-            })
-            .collect();
-        TraceQueries::verify_many(lookup_queries);
-
-        let config = BabyBearPoseidon2::new();
-        let machine = StarkMachine::new(
-            config,
-            build_chip_vector(&add_chip),
-            queries.expect_public_values().len(),
-        );
-
-        let (pk, vk) = machine.setup(&LairMachineProgram);
-        let mut challenger_p = machine.config().challenger();
-        let mut challenger_v = machine.config().challenger();
-        let shard = Shard::new(&queries);
-
-        machine.debug_constraints(&pk, shard.clone());
-        let opts = SphinxCoreOpts::default();
-        let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
-        machine
-            .verify(&vk, &proof, &mut challenger_v)
-            .expect("proof verifies");
-    }
-
-    #[test]
-    fn u32_sub_test() {
-        sphinx_core::utils::setup_logger();
-
-        let sub_func = func!(
-        fn sub(a: [4], b: [4]): [4] {
-            let c: [4] = extern_call(u32_sub, a, b);
-            return c
-        });
-        let lurk_chip_map = lurk_chip_map();
-        let toplevel = Toplevel::new(&[sub_func], lurk_chip_map);
-
-        let sub_chip = FuncChip::from_name("sub", &toplevel);
-        let mut queries = QueryRecord::new(&toplevel);
-        let f = F::from_canonical_usize;
-        // Little endian
-        let args = &[f(0), f(1), f(0), f(0), f(1), f(0), f(0), f(0)];
-        let out = toplevel.execute_by_name("sub", args, &mut queries);
-        assert_eq!(out.as_ref(), &[f(255), f(0), f(0), f(0)]);
-        let sub_trace = sub_chip.generate_trace(&Shard::new(&queries));
-        let _ = debug_constraints_collecting_queries(&sub_chip, &[], None, &sub_trace);
-
-        let lair_chips = build_lair_chip_vector(&sub_chip);
-        let full_shard = Shard::new(&queries);
-        let lookup_queries: Vec<_> = lair_chips
-            .iter()
-            .map(|chip| {
-                let trace = chip.generate_trace(&full_shard, &mut Default::default());
-                let preprocessed_trace = chip.generate_preprocessed_trace(&LairMachineProgram);
-                debug_constraints_collecting_queries(chip, &[], preprocessed_trace.as_ref(), &trace)
-            })
-            .collect();
-        TraceQueries::verify_many(lookup_queries);
-
-        let config = BabyBearPoseidon2::new();
-        let machine = StarkMachine::new(
-            config,
-            build_chip_vector(&sub_chip),
-            queries.expect_public_values().len(),
-        );
-
-        let (pk, vk) = machine.setup(&LairMachineProgram);
-        let mut challenger_p = machine.config().challenger();
-        let mut challenger_v = machine.config().challenger();
-        let shard = Shard::new(&queries);
-
-        machine.debug_constraints(&pk, shard.clone());
-        let opts = SphinxCoreOpts::default();
-        let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
-        machine
-            .verify(&vk, &proof, &mut challenger_v)
-            .expect("proof verifies");
-    }
-
-    #[test]
-    fn u32_mul_test() {
-        sphinx_core::utils::setup_logger();
-
-        let mul_func = func!(
-        fn mul(a: [4], b: [4]): [4] {
-            let c: [4] = extern_call(u32_mul, a, b);
-            return c
-        });
-        let lurk_chip_map = lurk_chip_map();
-        let toplevel = Toplevel::new(&[mul_func], lurk_chip_map);
-
-        let mul_chip = FuncChip::from_name("mul", &toplevel);
-        let mut queries = QueryRecord::new(&toplevel);
-        let f = F::from_canonical_usize;
-        // Little endian
-        let args = &[f(1), f(1), f(1), f(1), f(1), f(1), f(1), f(1)];
-        let out = toplevel.execute_by_name("mul", args, &mut queries);
-        assert_eq!(out.as_ref(), &[f(1), f(2), f(3), f(4)]);
-        let mul_trace = mul_chip.generate_trace(&Shard::new(&queries));
-        let _ = debug_constraints_collecting_queries(&mul_chip, &[], None, &mul_trace);
-
-        let lair_chips = build_lair_chip_vector(&mul_chip);
-        let full_shard = Shard::new(&queries);
-        let lookup_queries: Vec<_> = lair_chips
-            .iter()
-            .map(|chip| {
-                let trace = chip.generate_trace(&full_shard, &mut Default::default());
-                let preprocessed_trace = chip.generate_preprocessed_trace(&LairMachineProgram);
-                debug_constraints_collecting_queries(chip, &[], preprocessed_trace.as_ref(), &trace)
-            })
-            .collect();
-        TraceQueries::verify_many(lookup_queries);
-
-        let config = BabyBearPoseidon2::new();
-        let machine = StarkMachine::new(
-            config,
-            build_chip_vector(&mul_chip),
-            queries.expect_public_values().len(),
-        );
-
-        let (pk, vk) = machine.setup(&LairMachineProgram);
-        let mut challenger_p = machine.config().challenger();
-        let mut challenger_v = machine.config().challenger();
-        let shard = Shard::new(&queries);
-
-        machine.debug_constraints(&pk, shard.clone());
-        let opts = SphinxCoreOpts::default();
-        let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
-        machine
-            .verify(&vk, &proof, &mut challenger_v)
-            .expect("proof verifies");
     }
 }
