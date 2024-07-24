@@ -64,7 +64,7 @@ impl<F: Field> BaseAir<F> for BytesChip<F> {
             row.or = F::from_canonical_u8(input.or());
 
             // since msb only works over bytes, the result is duplicated 2^8 times.
-            // so we use the upper byte of the input as a dummy in the ByteRelation being providedrelation.
+            // so we use the upper byte of the input as a dummy in the ByteRelation being provided.
             row.msb = F::from_bool(input.msb_unchecked());
         });
         Some(trace)
