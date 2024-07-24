@@ -134,8 +134,38 @@ impl<AB: AirBuilder + MessageBuilder<AirInteraction<AB::Expr>>> LookupBuilder fo
 
 #[derive(Copy, Clone, Default, Debug, Eq, PartialEq)]
 pub struct Record {
-    nonce: u32,
-    count: u32,
+    pub nonce: u32,
+    pub count: u32,
+}
+
+impl Record {
+    /// Updates the provide record and returns the require record
+    pub fn new_lookup(&mut self, nonce: u32) -> Record {
+        let require = *self;
+        self.nonce = nonce;
+        self.count += 1;
+        require
+    }
+
+    pub fn into_provide<F: PrimeField>(self) -> ProvideRecord<F> {
+        let last_nonce = F::from_canonical_u32(self.nonce);
+        let last_count = F::from_canonical_u32(self.count);
+        ProvideRecord {
+            last_count,
+            last_nonce,
+        }
+    }
+
+    pub fn into_require<F: PrimeField>(self) -> RequireRecord<F> {
+        let prev_nonce = F::from_canonical_u32(self.nonce);
+        let prev_count = F::from_canonical_u32(self.count);
+        let count_inv = (prev_count + F::one()).inverse();
+        RequireRecord {
+            prev_nonce,
+            prev_count,
+            count_inv,
+        }
+    }
 }
 
 /// A [RequireRecord] contains witness values

@@ -1,12 +1,15 @@
 use anyhow::{bail, Result};
+use itertools::Itertools;
 use nom::{sequence::preceded, Parser};
 use once_cell::sync::OnceCell;
+use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, Field, PrimeField32};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
+use std::marker::PhantomData;
 
 use crate::{
-    lair::{hasher::Hasher, List},
+    lair::{chipset::Chipset, List},
     lurk::{
         parser::{
             syntax::{parse_maybe_meta, parse_space},
@@ -19,13 +22,17 @@ use crate::{
     },
 };
 
-use super::eval::EvalErr;
+use super::{
+    chipset::{lurk_hasher, LurkChip},
+    eval::EvalErr,
+    syntax::digest_to_biguint,
+};
 
-const DIGEST_SIZE: usize = 8;
+pub(crate) const DIGEST_SIZE: usize = 8;
 
 const ZPTR_SIZE: usize = 2 * DIGEST_SIZE;
-// const COMM_PREIMG_SIZE: usize = DIGEST_SIZE + ZPTR_SIZE;
-const TUPLE2_SIZE: usize = 2 * ZPTR_SIZE;
+const COMM_PREIMG_SIZE: usize = DIGEST_SIZE + ZPTR_SIZE;
+pub(crate) const TUPLE2_SIZE: usize = 2 * ZPTR_SIZE;
 const TUPLE3_SIZE: usize = 3 * ZPTR_SIZE;
 
 fn digest_from_field<F: AbstractField + Copy>(f: F) -> [F; DIGEST_SIZE] {
@@ -129,6 +136,25 @@ impl<F: AbstractField + Copy> ZPtr<F> {
             digest: digest_from_field(err.to_field()),
         }
     }
+
+    #[inline]
+    pub fn comm(digest: [F; DIGEST_SIZE]) -> Self {
+        Self {
+            tag: Tag::Comm,
+            digest,
+        }
+    }
+
+    #[inline]
+    pub fn from_flat_data(data: &[F]) -> Self
+    where
+        F: PrimeField32,
+    {
+        Self {
+            tag: Tag::from_field(&data[0]),
+            digest: into_sized(&data[8..]),
+        }
+    }
 }
 
 impl<F: AbstractField + Copy> ZPtr<F> {
@@ -160,11 +186,45 @@ pub enum ZPtrType<F> {
     Atom,
     Tuple2(ZPtr<F>, ZPtr<F>),
     Tuple3(ZPtr<F>, ZPtr<F>, ZPtr<F>),
+    /// Similar to `Tuple3` but hashes like `Tuple2` by ignoring the tags of the
+    /// first and third `ZPtr`s
+    Compact(ZPtr<F>, ZPtr<F>, ZPtr<F>),
 }
 
-#[derive(Default, Clone)]
-pub struct ZStore<F, H: Hasher<F>> {
-    hasher: H,
+/// This struct selects what the hash functions are in a given chipset
+#[derive(Clone)]
+pub struct Hasher<F, H: Chipset<F>> {
+    comm: H,
+    hash2: H,
+    hash3: H,
+    _p: PhantomData<F>,
+}
+
+impl<F, H: Chipset<F>> Hasher<F, H> {
+    #[inline]
+    pub fn new(comm: H, hash2: H, hash3: H) -> Self {
+        Self {
+            comm,
+            hash2,
+            hash3,
+            _p: PhantomData,
+        }
+    }
+
+    #[inline]
+    pub fn hash(&self, preimg: &[F]) -> Vec<F> {
+        match preimg.len() {
+            COMM_PREIMG_SIZE => self.comm.execute_simple(preimg),
+            TUPLE2_SIZE => self.hash2.execute_simple(preimg),
+            TUPLE3_SIZE => self.hash3.execute_simple(preimg),
+            _ => panic!("Preimage size not supported"),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ZStore<F, H: Chipset<F>> {
+    hasher: Hasher<F, H>,
     dag: FxHashMap<ZPtr<F>, ZPtrType<F>>,
     // comms: FxHashMap<[F; DIGEST_SIZE], ([F; DIGEST_SIZE], ZPtr<F>)>,
     // comm_hashes: FxHashMap<[F; COMM_PREIMG_SIZE], [F; DIGEST_SIZE]>,
@@ -186,7 +246,7 @@ fn quote() -> &'static Symbol {
 }
 
 static BUILTIN_VEC: OnceCell<Vec<Symbol>> = OnceCell::new();
-fn builtin_vec() -> &'static Vec<Symbol> {
+pub(crate) fn builtin_vec() -> &'static Vec<Symbol> {
     BUILTIN_VEC.get_or_init(|| {
         LURK_PACKAGE_SYMBOLS_NAMES
             .into_iter()
@@ -196,15 +256,12 @@ fn builtin_vec() -> &'static Vec<Symbol> {
     })
 }
 
-impl<F: Field, H: Hasher<F>> ZStore<F, H> {
+impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     fn hash2(&mut self, preimg: [F; TUPLE2_SIZE]) -> [F; DIGEST_SIZE] {
         if let Some(img) = self.tuple2_hashes.get(&preimg) {
             return *img;
         }
-        let img = self.hasher.hash(&preimg);
-        let mut buffer = SizedBuffer::default();
-        buffer.write_slice(&img);
-        let digest = buffer.extract();
+        let digest = into_sized(&self.hasher.hash2.execute_simple(&preimg));
         self.tuple2_hashes.insert(preimg, digest);
         digest
     }
@@ -213,10 +270,7 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
         if let Some(limbs) = self.tuple3_hashes.get(&preimg) {
             return *limbs;
         }
-        let img = self.hasher.hash(&preimg);
-        let mut buffer = SizedBuffer::default();
-        buffer.write_slice(&img);
-        let digest = buffer.extract();
+        let digest = into_sized(&self.hasher.hash3.execute_simple(&preimg));
         self.tuple3_hashes.insert(preimg, digest);
         digest
     }
@@ -237,8 +291,19 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
         zptr
     }
 
+    fn intern_compact(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>, c: ZPtr<F>) -> ZPtr<F> {
+        let mut buffer = SizedBuffer::default();
+        buffer.write_slice(&a.digest);
+        buffer.write_slice(&b.flatten());
+        buffer.write_slice(&c.digest);
+        let digest = self.hash2(buffer.extract());
+        let zptr = ZPtr { tag, digest };
+        self.dag.insert(zptr, ZPtrType::Compact(a, b, c));
+        zptr
+    }
+
     #[inline]
-    pub fn memoize_atom_dag(&mut self, zptr: ZPtr<F>) -> ZPtr<F> {
+    fn memoize_atom_dag(&mut self, zptr: ZPtr<F>) -> ZPtr<F> {
         self.dag.insert(zptr, ZPtrType::Atom);
         zptr
     }
@@ -266,6 +331,11 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
     #[inline]
     pub fn intern_u64(&mut self, u: u64) -> ZPtr<F> {
         self.memoize_atom_dag(ZPtr::u64(u))
+    }
+
+    #[inline]
+    pub fn intern_comm(&mut self, c: [F; 8]) -> ZPtr<F> {
+        self.memoize_atom_dag(ZPtr::comm(c))
     }
 
     #[inline]
@@ -361,6 +431,11 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
         self.intern_tuple3(Tag::Fun, args, body, env)
     }
 
+    #[inline]
+    pub fn intern_env(&mut self, sym: ZPtr<F>, val: ZPtr<F>, env: ZPtr<F>) -> ZPtr<F> {
+        self.intern_compact(Tag::Env, sym, val, env)
+    }
+
     fn intern_syntax(&mut self, syn: &Syntax<F>) -> ZPtr<F> {
         if let Some(zptr) = self.syn_cache.get(syn).copied() {
             return zptr;
@@ -369,6 +444,7 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
             Syntax::Num(_, f) => self.intern_num(*f),
             Syntax::Char(_, c) => self.intern_char(*c),
             Syntax::U64(_, u) => self.intern_u64(*u),
+            Syntax::Digest(_, c) => self.intern_comm(*c),
             Syntax::String(_, s) => self.intern_string(s),
             Syntax::Symbol(_, s) => self.intern_symbol(s),
             Syntax::List(_, xs) => {
@@ -466,8 +542,8 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
                 self.dag.insert(zptr, ZPtrType::Tuple2(fst, snd));
             };
         }
-        macro_rules! memoize_tuple3 {
-            ($fst_tag:expr, $fst_digest:expr, $snd_tag:expr, $snd_digest:expr, $trd_tag:expr, $trd_digest:expr) => {
+        macro_rules! memoize_tuple3_or_compact {
+            ($fst_tag:expr, $fst_digest:expr, $snd_tag:expr, $snd_digest:expr, $trd_tag:expr, $trd_digest:expr, $tuple3:expr) => {
                 let fst = ZPtr {
                     tag: $fst_tag,
                     digest: into_sized($fst_digest),
@@ -480,7 +556,37 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
                     tag: $trd_tag,
                     digest: into_sized($trd_digest),
                 };
-                self.dag.insert(zptr, ZPtrType::Tuple3(fst, snd, trd));
+                if $tuple3 {
+                    self.dag.insert(zptr, ZPtrType::Tuple3(fst, snd, trd));
+                } else {
+                    self.dag.insert(zptr, ZPtrType::Compact(fst, snd, trd));
+                }
+            };
+        }
+        macro_rules! memoize_tuple3 {
+            ($fst_tag:expr, $fst_digest:expr, $snd_tag:expr, $snd_digest:expr, $trd_tag:expr, $trd_digest:expr) => {
+                memoize_tuple3_or_compact!(
+                    $fst_tag,
+                    $fst_digest,
+                    $snd_tag,
+                    $snd_digest,
+                    $trd_tag,
+                    $trd_digest,
+                    true
+                );
+            };
+        }
+        macro_rules! memoize_compact {
+            ($fst_tag:expr, $fst_digest:expr, $snd_tag:expr, $snd_digest:expr, $trd_tag:expr, $trd_digest:expr) => {
+                memoize_tuple3_or_compact!(
+                    $fst_tag,
+                    $fst_digest,
+                    $snd_tag,
+                    $snd_digest,
+                    $trd_tag,
+                    $trd_digest,
+                    false
+                );
             };
         }
         match tag {
@@ -533,16 +639,14 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
                     self.memoize_atom_dag(ZPtr { tag, digest: zeros });
                     break;
                 }
-                let preimg = tuple3_hashes_inv
+                let preimg = tuple2_hashes_inv
                     .get(digest)
-                    .expect("Tuple3 preimg not found");
-                let (sym, rst) = preimg.split_at(ZPTR_SIZE);
-                let (val, env) = rst.split_at(ZPTR_SIZE);
-                let sym_digest = &sym[DIGEST_SIZE..];
+                    .expect("Tuple2 preimg not found");
+                let (sym_digest, rst) = preimg.split_at(DIGEST_SIZE);
+                let (val, env_digest) = rst.split_at(ZPTR_SIZE);
                 let (val_tag, val_digest) = val.split_at(DIGEST_SIZE);
                 let val_tag = Tag::from_field(&val_tag[0]);
-                let env_digest = &env[DIGEST_SIZE..];
-                memoize_tuple3!(
+                memoize_compact!(
                     Tag::Sym,
                     sym_digest,
                     val_tag,
@@ -579,6 +683,7 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
         }
     }
 
+    #[inline]
     pub fn fetch_tuple2(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>) {
         let Some(ZPtrType::Tuple2(a, b)) = self.dag.get(zptr) else {
             panic!("Tuple2 data not found on DAG")
@@ -586,22 +691,193 @@ impl<F: Field, H: Hasher<F>> ZStore<F, H> {
         (a, b)
     }
 
+    #[inline]
     pub fn fetch_tuple3(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>, &ZPtr<F>) {
         let Some(ZPtrType::Tuple3(a, b, c)) = self.dag.get(zptr) else {
             panic!("Tuple3 data not found on DAG")
         };
         (a, b, c)
     }
+
+    #[inline]
+    pub fn fetch_compact(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>, &ZPtr<F>) {
+        let Some(ZPtrType::Compact(a, b, c)) = self.dag.get(zptr) else {
+            panic!("Compact data not found on DAG")
+        };
+        (a, b, c)
+    }
+
+    pub fn fetch_string<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> String
+    where
+        F: PrimeField32,
+    {
+        assert_eq!(zptr.tag, Tag::Str);
+        let mut string = String::new();
+        let zeros = [F::zero(); DIGEST_SIZE];
+        while zptr.digest != zeros {
+            let (car, cdr) = self.fetch_tuple2(zptr);
+            string.push(char::from_u32(car.digest[0].as_canonical_u32()).expect("invalid char"));
+            zptr = cdr;
+        }
+        string
+    }
+
+    fn fetch_symbol_path<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> Vec<String>
+    where
+        F: PrimeField32,
+    {
+        let mut path = vec![];
+        let zeros = [F::zero(); DIGEST_SIZE];
+        while zptr.digest != zeros {
+            let (car, cdr) = self.fetch_tuple2(zptr);
+            path.push(self.fetch_string(car));
+            zptr = cdr;
+        }
+        path.reverse();
+        path
+    }
+
+    #[inline]
+    pub fn fetch_symbol(&self, zptr: &ZPtr<F>) -> Symbol
+    where
+        F: PrimeField32,
+    {
+        assert!(matches!(
+            zptr.tag,
+            Tag::Sym | Tag::Nil | Tag::Builtin | Tag::Key
+        ));
+        Symbol::new_from_vec(self.fetch_symbol_path(zptr), zptr.tag == Tag::Key)
+    }
+
+    pub fn fetch_list<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> (Vec<&ZPtr<F>>, Option<&'a ZPtr<F>>) {
+        assert!(matches!(zptr.tag, Tag::Cons | Tag::Nil));
+        let mut elts = vec![];
+        while zptr.tag == Tag::Cons {
+            let (car, cdr) = self.fetch_tuple2(zptr);
+            elts.push(car);
+            zptr = cdr;
+        }
+        if zptr.tag == Tag::Nil {
+            (elts, None)
+        } else {
+            (elts, Some(zptr))
+        }
+    }
+
+    fn fetch_env<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> Vec<(&ZPtr<F>, &ZPtr<F>)>
+    where
+        F: PrimeField32,
+    {
+        assert_eq!(zptr.tag, Tag::Env);
+        let mut env = vec![];
+        let zeros = [F::zero(); DIGEST_SIZE];
+        while zptr.digest != zeros {
+            let (sym, val, tail) = self.fetch_compact(zptr);
+            env.push((sym, val));
+            zptr = tail;
+        }
+        env
+    }
+
+    pub fn fmt_with_state(&self, state: &StateRcCell, zptr: &ZPtr<F>) -> String
+    where
+        F: PrimeField32,
+    {
+        match zptr.tag {
+            Tag::Num => zptr.digest[0].to_string(),
+            Tag::U64 => format!("{}u64", zptr.digest[0]),
+            Tag::Char => format!(
+                "'{}'",
+                char::from_u32(zptr.digest[0].as_canonical_u32()).expect("invalid char")
+            ),
+            Tag::Comm => format!("#{:#x}", digest_to_biguint(&zptr.digest)),
+            Tag::Str => format!("\"{}\"", self.fetch_string(zptr)),
+            Tag::Builtin | Tag::Sym | Tag::Key | Tag::Nil => {
+                state.borrow().fmt_to_string(&self.fetch_symbol(zptr))
+            }
+            Tag::Cons => {
+                let (elts, last) = self.fetch_list(zptr);
+                let elts_str = elts.iter().map(|z| self.fmt_with_state(state, z)).join(" ");
+                if let Some(last) = last {
+                    format!("({elts_str} . {})", self.fmt_with_state(state, last))
+                } else {
+                    format!("({elts_str})")
+                }
+            }
+            Tag::Fun => {
+                let (args, body, _) = self.fetch_tuple3(zptr);
+                if args.tag == Tag::Nil {
+                    format!("<Fun () {}>", self.fmt_with_state(state, body))
+                } else {
+                    format!(
+                        "<Fun {} {}>",
+                        self.fmt_with_state(state, args),
+                        self.fmt_with_state(state, body)
+                    )
+                }
+            }
+            Tag::Env => {
+                let pairs_str = self
+                    .fetch_env(zptr)
+                    .iter()
+                    .map(|(sym, val)| {
+                        format!(
+                            "({} . {})",
+                            self.fmt_with_state(state, sym),
+                            self.fmt_with_state(state, val)
+                        )
+                    })
+                    .join(" ");
+                format!("<Env ({})>", pairs_str)
+            }
+            Tag::Thunk => {
+                let (body, _) = self.fetch_tuple2(zptr);
+                format!("<Thunk {}>", self.fmt_with_state(state, body))
+            }
+            Tag::Err => format!("<Err {:?}>", EvalErr::from_field(&zptr.digest[0])),
+        }
+    }
+
+    #[inline]
+    pub fn fmt(&self, zptr: &ZPtr<F>) -> String
+    where
+        F: PrimeField32,
+    {
+        let state = State::init_lurk_state().rccell();
+        self.fmt_with_state(&state, zptr)
+    }
+}
+
+#[inline]
+pub fn lurk_zstore() -> ZStore<BabyBear, LurkChip> {
+    ZStore {
+        hasher: lurk_hasher(),
+        dag: Default::default(),
+        tuple2_hashes: Default::default(),
+        tuple3_hashes: Default::default(),
+        str_cache: Default::default(),
+        sym_cache: Default::default(),
+        syn_cache: Default::default(),
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use num_traits::FromPrimitive;
+
     use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
 
     use crate::{
         lair::execute::QueryRecord,
-        lurk::{eval::build_lurk_toplevel, state::user_sym, tag::Tag},
+        lurk::{
+            chipset::lurk_hasher,
+            eval::build_lurk_toplevel,
+            state::{lurk_sym, user_sym, State},
+            symbol::Symbol,
+            tag::Tag,
+            zstore::lurk_zstore,
+        },
     };
 
     use super::{into_sized, ZPtr};
@@ -643,16 +919,94 @@ mod test {
         };
 
         let hi = zstore.intern_string("hi");
-        let x_sym = zstore.intern_symbol(&user_sym("x"));
-        let expected_args = zstore.intern_list([x_sym]);
-        let expected_env = zstore.intern_null(Tag::Env);
+        let x = zstore.intern_symbol(&user_sym("x"));
+        let expected_args = zstore.intern_list([x]);
+        let expected_env = zstore.intern_empty_env();
 
         let (car, cdr) = zstore.fetch_tuple2(&zptr);
         let (args, body, env) = zstore.fetch_tuple3(cdr);
 
         assert_eq!(car, &hi);
         assert_eq!(args, &expected_args);
-        assert_eq!(body, &x_sym);
+        assert_eq!(body, &x);
         assert_eq!(env, &expected_env);
+    }
+
+    #[test]
+    fn test_fmt() {
+        let mut zstore = lurk_zstore();
+        let state = &State::init_lurk_state().rccell();
+
+        let nil = zstore.intern_nil();
+        assert_eq!(zstore.fmt_with_state(state, &nil), "nil");
+
+        let a_char = ZPtr::char('a');
+        assert_eq!(zstore.fmt_with_state(state, &a_char), "'a'");
+
+        let one = ZPtr::num(BabyBear::one());
+        assert_eq!(zstore.fmt_with_state(state, &one), "1");
+
+        let one_u64 = ZPtr::u64(1);
+        assert_eq!(zstore.fmt_with_state(state, &one_u64), "1u64");
+
+        let zero_comm = ZPtr::comm([BabyBear::zero(); 8]);
+        assert_eq!(zstore.fmt_with_state(state, &zero_comm), "#0x0");
+
+        let mut one_comm = ZPtr::comm([BabyBear::zero(); 8]);
+        one_comm.digest[0] = BabyBear::one();
+        assert_eq!(zstore.fmt_with_state(state, &one_comm), "#0x1");
+
+        let mut preimg = Vec::with_capacity(24);
+        preimg.extend([BabyBear::zero(); 8]);
+        preimg.extend(ZPtr::num(BabyBear::from_canonical_u32(123)).flatten());
+        let simple_comm = ZPtr::comm(lurk_hasher().hash(&preimg).try_into().unwrap());
+        assert_eq!(
+            zstore.fmt_with_state(state, &simple_comm),
+            "#0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3"
+        );
+
+        let empty_str = zstore.intern_string("");
+        assert_eq!(zstore.fmt_with_state(state, &empty_str), "\"\"");
+
+        let abc_str = zstore.intern_string("abc");
+        assert_eq!(zstore.fmt_with_state(state, &abc_str), "\"abc\"");
+
+        let x = zstore.intern_symbol(&state.borrow_mut().intern("x"));
+        assert_eq!(zstore.fmt_with_state(state, &x), "x");
+
+        let lambda = zstore.intern_symbol(&lurk_sym("lambda"));
+        assert_eq!(zstore.fmt_with_state(state, &lambda), "lambda");
+
+        let hi = zstore.intern_symbol(&Symbol::key(&["hi"]));
+        assert_eq!(zstore.fmt_with_state(state, &hi), ":hi");
+
+        let pair = zstore.intern_cons(x, hi);
+        assert_eq!(zstore.fmt_with_state(state, &pair), "(x . :hi)");
+
+        let list = zstore.intern_list([x, hi]);
+        assert_eq!(zstore.fmt_with_state(state, &list), "(x :hi)");
+
+        let args = zstore.intern_list([x]);
+        let empty_env = zstore.intern_empty_env();
+        let fun = zstore.intern_fun(args, x, empty_env);
+        assert_eq!(zstore.fmt_with_state(state, &fun), "<Fun (x) x>");
+
+        assert_eq!(zstore.fmt_with_state(state, &empty_env), "<Env ()>");
+        let env = zstore.intern_env(x, one, empty_env);
+        assert_eq!(zstore.fmt_with_state(state, &env), "<Env ((x . 1))>");
+    }
+
+    #[test]
+    fn test_tag_index_roundtrip() {
+        use p3_field::PrimeField32;
+
+        let test = |tag: Tag| {
+            let f = tag.to_field::<BabyBear>();
+            let u = f.as_canonical_u32();
+            let new_tag = Tag::from_u32(u).unwrap();
+            assert_eq!(tag, new_tag);
+        };
+
+        test(Tag::Nil);
     }
 }

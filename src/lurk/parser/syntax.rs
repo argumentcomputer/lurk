@@ -8,6 +8,7 @@ use nom::{
     sequence::{delimited, preceded, terminated},
 };
 use nom_locate::LocatedSpan;
+use num_bigint::BigUint;
 use p3_field::Field;
 
 use crate::lurk::{
@@ -21,6 +22,7 @@ use crate::lurk::{
     state::{meta_package_symbol, StateRcCell},
     symbol,
     syntax::Syntax,
+    zstore::DIGEST_SIZE,
 };
 
 pub fn parse_line_comment<F>(i: Span<'_>) -> ParseResult<'_, F, Span<'_>> {
@@ -274,6 +276,33 @@ pub fn parse_numeric<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Synt
     }
 }
 
+pub fn parse_digest<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
+    move |from: Span<'_>| {
+        let (i, _) = tag("#0x")(from)?;
+        let (i, digits) = base::parse_litbase_digits(base::LitBase::Hex)(i)?;
+        let (i, be_bytes) = be_bytes_from_digits(base::LitBase::Hex, &digits, i)?;
+        let mut num = BigUint::from_bytes_be(&be_bytes);
+        let mut res = Vec::with_capacity(DIGEST_SIZE); // This is stored in little-endian
+        for _ in 0..DIGEST_SIZE {
+            let rem = &num % F::order();
+            res.push(F::from_canonical_u32(rem.try_into().unwrap()));
+            num /= F::order();
+        }
+        if num != BigUint::ZERO {
+            ParseError::throw(
+                from,
+                ParseErrorKind::DigestLiteralTooBig {
+                    literal: BigUint::from_bytes_be(&be_bytes),
+                    _marker: Default::default(),
+                },
+            )
+        } else {
+            let pos = Pos::from_upto(from, i);
+            Ok((i, Syntax::Digest(pos, res.try_into().unwrap())))
+        }
+    }
+}
+
 fn be_bytes_from_digits<'a, F>(
     base: base::LitBase,
     digits: &str,
@@ -423,6 +452,7 @@ pub fn parse_syntax<F: Field>(
                 parse_list(state.clone(), meta, create_unknown_packages),
             ),
             parse_numeric(),
+            parse_digest(),
             context(
                 "symbol",
                 parse_symbol(state.clone(), create_unknown_packages),

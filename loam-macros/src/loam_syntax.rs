@@ -1,7 +1,7 @@
 //! This file is largely taken from https://github.com/s-arash/ascent/blob/master/ascent_macro/src/ascent_syntax.rs
 
 #![deny(warnings)]
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use proc_macro2::{Span, TokenStream};
@@ -123,7 +123,7 @@ fn parse_generics_with_where_clause(input: ParseStream<'_>) -> Result<Generics> 
     Ok(res)
 }
 
-// #[derive(Clone)]
+#[derive(Debug, Clone)]
 struct RelationNode {
     attrs: Vec<Attribute>,
     name: Ident,
@@ -131,6 +131,18 @@ struct RelationNode {
     _initialization: Option<Expr>,
     _semi_colon: Token![;],
     is_lattice: bool,
+}
+
+impl RelationNode {
+    fn process_distillation_attributes(&self) -> bool {
+        self.attrs.iter().any(|attr| {
+            attr.path().is_ident("distill")
+                && attr
+                    .parse_args::<Ident>()
+                    .map(|i| i == "preserve")
+                    .unwrap_or(false)
+        })
+    }
 }
 
 impl Parse for RelationNode {
@@ -185,7 +197,7 @@ impl ToTokens for RelationNode {
     }
 }
 
-#[derive(Parse, Clone)]
+#[derive(Debug, Parse, Clone)]
 enum BodyItemNode {
     #[peek(Token![for], name = "generative clause")]
     Generator(GeneratorNode),
@@ -244,7 +256,7 @@ impl ToTokens for BodyItemNode {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct DisjunctionNode {
     _paren: token::Paren,
     disjuncts: Punctuated<Punctuated<BodyItemNode, Token![,]>, Token![||]>,
@@ -275,7 +287,7 @@ impl ToTokens for DisjunctionNode {
     }
 }
 
-#[derive(Parse, Clone)]
+#[derive(Debug, Parse, Clone)]
 struct GeneratorNode {
     _for_keyword: Token![for],
     #[call(Pat::parse_multi)]
@@ -284,7 +296,7 @@ struct GeneratorNode {
     expr: Expr,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct BodyClauseNode {
     rel: Ident,
     args: Punctuated<BodyClauseArg, Token![,]>,
@@ -408,7 +420,7 @@ impl Parse for BodyClauseNode {
     }
 }
 
-#[derive(Parse, Clone)]
+#[derive(Debug, Parse, Clone)]
 struct NegationClauseNode {
     _neg_token: Token![!],
     rel: Ident,
@@ -419,7 +431,7 @@ struct NegationClauseNode {
     args: Punctuated<Expr, Token![,]>,
 }
 
-#[derive(Clone, Parse)]
+#[derive(Debug, Clone, Parse)]
 enum HeadItemNode {
     #[peek_with(peek_macro_invocation, name = "macro invocation")]
     MacroInvocation(ExprMacro),
@@ -445,7 +457,7 @@ impl ToTokens for HeadItemNode {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct HeadClauseNode {
     rel: Ident,
     args: Punctuated<Expr, Token![,]>,
@@ -469,7 +481,7 @@ impl ToTokens for HeadClauseNode {
     }
 }
 
-#[derive(Clone, Parse)]
+#[derive(Debug, Clone, Parse)]
 struct AggClauseNode {
     _agg_kw: kw::agg,
     #[call(Pat::parse_multi)]
@@ -490,7 +502,7 @@ struct AggClauseNode {
     rel_args: Punctuated<Expr, Token![,]>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 enum AggregatorNode {
     Path(Path),
     Expr(Expr),
@@ -517,10 +529,24 @@ impl ToTokens for AggregatorNode {
     }
 }
 
+#[derive(Debug, Clone)]
 struct RuleNode {
     attrs: Vec<Attribute>,
     head_clauses: Vec<HeadItemNode>, // Punctuated<HeadItemNode, Token![,]>,
     body_items: Vec<BodyItemNode>,   // Punctuated<BodyItemNode, Token![,]>,
+}
+
+impl RuleNode {
+    fn process_distillation_attributes(&self) -> bool {
+        self.attrs.iter().any(|attr| {
+            attr.path().is_ident("with_bindings")
+                || (attr.path().is_ident("distill")
+                    && attr
+                        .parse_args::<Ident>()
+                        .map(|i| i == "preserve")
+                        .unwrap_or(false))
+        })
+    }
 }
 
 impl Parse for RuleNode {
@@ -573,7 +599,7 @@ impl ToTokens for RuleNode {
     }
 }
 
-#[derive(Parse)]
+#[derive(Debug, Clone, Parse)]
 struct MacroDefParam {
     _dollar: Token![$],
     name: Ident,
@@ -592,7 +618,7 @@ impl ToTokens for MacroDefParam {
     }
 }
 
-#[derive(Parse)]
+#[derive(Debug, Clone, Parse)]
 #[allow(unused)]
 enum MacroParamKind {
     #[peek(kw::ident, name = "ident")]
@@ -609,7 +635,7 @@ impl ToTokens for MacroParamKind {
     }
 }
 
-#[derive(Parse)]
+#[derive(Debug, Clone, Parse)]
 struct MacroDefNode {
     _mac: Token![macro],
     name: Ident,
@@ -638,7 +664,7 @@ impl ToTokens for MacroDefNode {
     }
 }
 
-// #[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct LoamProgram {
     rules: Vec<RuleNode>,
     relations: Vec<RelationNode>,
@@ -710,6 +736,22 @@ impl ToTokens for LoamProgram {
             }
         });
     }
+}
+
+fn remove_distill_attributes(loam_program: &mut LoamProgram) {
+    // Remove distill attributes from rules
+    for rule in &mut loam_program.rules {
+        rule.attrs.retain(|attr| !is_distill_attribute(attr));
+    }
+
+    // Remove distill attributes from relations
+    for relation in &mut loam_program.relations {
+        relation.attrs.retain(|attr| !is_distill_attribute(attr));
+    }
+}
+
+fn is_distill_attribute(attr: &Attribute) -> bool {
+    attr.path().is_ident("distill")
 }
 
 fn rule_desugar_with_binding(
@@ -799,12 +841,79 @@ fn rules_desugar_with_binding(prog: &mut LoamProgram) {
     prog.relations.extend(new_relations);
 }
 
-pub(crate) fn compile_new_ascent_to_ascent(mut new_prog: LoamProgram) -> TokenStream {
-    rules_desugar_with_binding(&mut new_prog);
+fn collect_relation_names(rule: &RuleNode, relation_names: &mut HashSet<Ident>) {
+    for body_item in &rule.body_items {
+        if let BodyItemNode::Clause(clause) = body_item {
+            relation_names.insert(clause.rel.clone());
+        }
+    }
+    for head_item in &rule.head_clauses {
+        if let HeadItemNode::HeadClause(clause) = head_item {
+            relation_names.insert(clause.rel.clone());
+        }
+    }
+}
 
+fn modify_signatures(original_signatures: &mut Option<Signatures>) {
+    if let Some(signatures) = original_signatures.as_mut() {
+        let ident = &mut signatures.declaration.ident;
+        let new_name = format!("Distilled{}", ident);
+        *ident = Ident::new(&new_name, ident.span());
+
+        if let Some(impl_signature) = &mut signatures.implementation {
+            let ident = &mut impl_signature.ident;
+            let new_name = format!("Distilled{}", ident);
+            *ident = Ident::new(&new_name, ident.span());
+        }
+    }
+}
+
+/// Compiles a Loam program into two Ascent programs. It expands the original program,
+/// applying rule desugaring, and creates a distilled version containing only rules
+/// with the `with_bindings` attribute and their associated relations.
+pub(crate) fn compile_loam_to_ascent(loam_program: LoamProgram) -> TokenStream {
+    // Stage 1: Expand the original Loam program
+    let expanded_loam_program = expand_loam_program(loam_program.clone());
+
+    // Stage 2: Distill the original Loam program
+    let distilled_program = distill_loam_program(loam_program);
+
+    // Generate the output
     let mut output = TokenStream::new();
-    new_prog.to_tokens(&mut output);
+    expanded_loam_program.to_tokens(&mut output);
+    distilled_program.to_tokens(&mut output);
     output
+}
+
+fn expand_loam_program(mut loam_program: LoamProgram) -> LoamProgram {
+    remove_distill_attributes(&mut loam_program);
+    rules_desugar_with_binding(&mut loam_program);
+    loam_program
+}
+
+fn distill_loam_program(mut loam_program: LoamProgram) -> LoamProgram {
+    let mut relation_names = HashSet::new();
+
+    // Process rules and drop those that shouldn't be preserved
+    loam_program.rules.retain(|rule| {
+        let should_preserve = rule.process_distillation_attributes();
+        if should_preserve {
+            collect_relation_names(rule, &mut relation_names);
+        }
+        should_preserve
+    });
+
+    // Process relations and drop those that shouldn't be preserved
+    loam_program.relations.retain(|relation| {
+        let should_preserve = relation.process_distillation_attributes();
+        relation_names.contains(&relation.name) || should_preserve
+    });
+
+    // Modify the signatures for the distilled program
+    modify_signatures(&mut loam_program.signatures);
+
+    remove_distill_attributes(&mut loam_program);
+    loam_program
 }
 
 lazy_static! {

@@ -34,4 +34,8 @@ impl Tag {
     pub fn from_field<F: PrimeField32>(f: &F) -> Tag {
         Tag::from_u32(f.as_canonical_u32()).expect("Field element doesn't map to a Tag")
     }
+
+    pub fn count() -> usize {
+        14
+    }
 }

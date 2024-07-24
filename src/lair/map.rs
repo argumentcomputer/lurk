@@ -6,7 +6,7 @@ use std::slice::Iter;
 /// * O(1) by index
 /// * Linear up to `LINEAR_SEARCH_MAX`
 /// * O(log n) otherwise
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Map<K, V>(Box<[(K, V)]>);
 
 /// Maximum number of entries for which linear search is performed

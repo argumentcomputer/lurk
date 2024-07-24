@@ -12,7 +12,6 @@ use crate::{
     lair::{
         execute::{QueryRecord, Shard, ShardingConfig},
         func_chip::FuncChip,
-        hasher::LurkHasher,
         lair_chip::{
             build_chip_vector_from_lair_chips, build_lair_chip_vector, LairMachineProgram,
         },
@@ -21,6 +20,7 @@ use crate::{
 };
 
 use super::{
+    chipset::{lurk_hasher, LurkChip},
     eval::{build_lurk_toplevel, EvalErr},
     state::{lurk_sym, user_sym},
     symbol::Symbol,
@@ -30,14 +30,14 @@ use super::{
 
 #[allow(clippy::type_complexity)]
 static TEST_SETUP_DATA: OnceCell<(
-    Toplevel<F, LurkHasher>,
-    ZStore<F, LurkHasher>,
+    Toplevel<F, LurkChip>,
+    ZStore<F, LurkChip>,
     BabyBearPoseidon2,
 )> = OnceCell::new();
 
 fn test_setup_data() -> &'static (
-    Toplevel<F, LurkHasher>,
-    ZStore<F, LurkHasher>,
+    Toplevel<F, LurkChip>,
+    ZStore<F, LurkChip>,
     BabyBearPoseidon2,
 ) {
     TEST_SETUP_DATA.get_or_init(|| {
@@ -49,9 +49,10 @@ fn test_setup_data() -> &'static (
 
 fn run_test(
     zptr: &ZPtr<F>,
-    toplevel: &Toplevel<F, LurkHasher>,
-    zstore: &mut ZStore<F, LurkHasher>,
-    expected_cloj: fn(&mut ZStore<F, LurkHasher>) -> ZPtr<F>,
+    env: &ZPtr<F>,
+    toplevel: &Toplevel<F, LurkChip>,
+    zstore: &mut ZStore<F, LurkChip>,
+    expected_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>,
     config: BabyBearPoseidon2,
 ) {
     let mut record = QueryRecord::new(toplevel);
@@ -60,6 +61,7 @@ fn run_test(
 
     let mut input = [F::zero(); 24];
     input[..16].copy_from_slice(&zptr.flatten());
+    input[16..].copy_from_slice(&env.digest);
 
     let lurk_main = FuncChip::from_name("lurk_main", toplevel);
     let result = toplevel.execute(lurk_main.func, &input, &mut record);
@@ -113,20 +115,53 @@ fn run_test(
 
 #[allow(clippy::type_complexity)]
 fn test_case_raw(
-    input_cloj: fn(&mut ZStore<F, LurkHasher>) -> ZPtr<F>,
-    expected_cloj: fn(&mut ZStore<F, LurkHasher>) -> ZPtr<F>,
+    input_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>,
+    expected_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>,
 ) {
     let (toplevel, zstore, config) = test_setup_data();
     let zstore = &mut zstore.clone();
     let zptr = input_cloj(zstore);
-    run_test(&zptr, toplevel, zstore, expected_cloj, config.clone());
+    run_test(
+        &zptr,
+        &ZPtr::null(Tag::Env),
+        toplevel,
+        zstore,
+        expected_cloj,
+        config.clone(),
+    );
 }
 
-fn test_case(input_code: &'static str, expected_cloj: fn(&mut ZStore<F, LurkHasher>) -> ZPtr<F>) {
+fn test_case(input_code: &'static str, expected_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>) {
     let (toplevel, zstore, config) = test_setup_data();
     let mut zstore = zstore.clone();
     let zptr = zstore.read(input_code).expect("Read failure");
-    run_test(&zptr, toplevel, &mut zstore, expected_cloj, config.clone());
+    run_test(
+        &zptr,
+        &ZPtr::null(Tag::Env),
+        toplevel,
+        &mut zstore,
+        expected_cloj,
+        config.clone(),
+    );
+}
+
+fn test_case_env(
+    input_code: &'static str,
+    env_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>,
+    expected_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>,
+) {
+    let (toplevel, zstore, config) = test_setup_data();
+    let mut zstore = zstore.clone();
+    let zptr = zstore.read(input_code).expect("Read failure");
+    let env = env_cloj(&mut zstore);
+    run_test(
+        &zptr,
+        &env,
+        toplevel,
+        &mut zstore,
+        expected_cloj,
+        config.clone(),
+    );
 }
 
 macro_rules! test_raw {
@@ -147,11 +182,27 @@ macro_rules! test {
     };
 }
 
-fn trivial_id_fun(zstore: &mut ZStore<F, LurkHasher>) -> ZPtr<F> {
+macro_rules! test_env {
+    ($test_func:ident, $input_code:expr, $env_cloj:expr, $expected_cloj:expr) => {
+        #[test]
+        fn $test_func() {
+            test_case_env($input_code, $env_cloj, $expected_cloj)
+        }
+    };
+}
+
+fn trivial_id_fun(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
     let x = zstore.intern_symbol(&user_sym("x"));
     let args = zstore.intern_list([x]);
     let env = zstore.intern_empty_env();
     zstore.intern_fun(args, x, env)
+}
+
+fn trivial_a_1_env(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
+    let empty_env = zstore.intern_empty_env();
+    let a = zstore.intern_symbol(&user_sym("a"));
+    let one = ZPtr::num(F::one());
+    zstore.intern_env(a, one, empty_env)
 }
 
 fn num(u: u32) -> ZPtr<F> {
@@ -219,6 +270,16 @@ test!(
     |_| ZPtr::num(F::one())
 );
 
+// environment
+test!(
+    test_current_env,
+    "(let ((a 1)) (current-env))",
+    trivial_a_1_env
+);
+test_env!(test_manual_env, "a", trivial_a_1_env, |_| ZPtr::num(
+    F::one()
+));
+
 // heavier computations
 test!(
     test_fact,
@@ -239,6 +300,43 @@ test!(
         (fib 10))",
     |_| num(55)
 );
+
+// commitments
+test!(test_commit, "(commit 123)", |_| {
+    let mut preimg = Vec::with_capacity(24);
+    preimg.extend([F::zero(); 8]);
+    preimg.extend(num(123).flatten());
+    ZPtr::comm(lurk_hasher().hash(&preimg).try_into().unwrap())
+});
+test!(
+    test_raw_commit,
+    "#0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3",
+    |_| {
+        let mut preimg = Vec::with_capacity(24);
+        preimg.extend([F::zero(); 8]);
+        preimg.extend(num(123).flatten());
+        ZPtr::comm(lurk_hasher().hash(&preimg).try_into().unwrap())
+    }
+);
+test!(test_hide, "(hide (commit 321) 123)", |_| {
+    let mut secret_preimg = Vec::with_capacity(24);
+    secret_preimg.extend([F::zero(); 8]);
+    secret_preimg.extend(num(321).flatten());
+    let hasher = lurk_hasher();
+    let mut preimg = Vec::with_capacity(24);
+    preimg.extend(hasher.hash(&secret_preimg));
+    preimg.extend(num(123).flatten());
+    ZPtr::comm(hasher.hash(&preimg).try_into().unwrap())
+});
+test!(test_open_roundtrip, "(open (commit 123))", |_| num(123));
+test!(
+    test_open_raw_roundtrip,
+    "(begin (commit 123) (open #0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3))",
+    |_| num(123)
+);
+test!(test_secret, "(secret (commit 123))", |_| ZPtr::comm(
+    [F::zero(); 8]
+));
 
 // errors
 test!(test_unbound_var, "a", |_| ZPtr::err(EvalErr::UnboundVar));

@@ -28,7 +28,7 @@ impl<F: PrimeField32> MemChip<F> {
     }
 
     pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
-        let record = &shard.record().mem_queries;
+        let record = &shard.queries().mem_queries;
         let mem_idx = mem_index_from_len(self.len);
         let mem = &record[mem_idx];
         let width = self.width();
@@ -50,8 +50,7 @@ impl<F: PrimeField32> MemChip<F> {
             // .skip(range.start)
             // .take(non_dummy_height)
             .for_each(|(i, (row, (args, mem_result)))| {
-                let [last_nonce, last_count] =
-                    mem_result.provide.get_provide_hints(shard.shard_config);
+                let provide = mem_result.provide.into_provide();
 
                 // is_real
                 row[0] = F::one();
@@ -60,9 +59,9 @@ impl<F: PrimeField32> MemChip<F> {
                 // TODO: the ptr can be "duplicated" when sharding is involved: how do we deal with this?
 
                 // last_nonce
-                row[2] = last_nonce;
+                row[2] = provide.last_nonce;
                 // last_count
-                row[3] = last_count;
+                row[3] = provide.last_count;
                 row[4..].copy_from_slice(args)
             });
         trace
@@ -122,7 +121,7 @@ mod tests {
     use crate::lair::execute::QueryRecord;
     use crate::{
         func,
-        lair::{func_chip::FuncChip, hasher::LurkHasher, toplevel::Toplevel},
+        lair::{chipset::Nochip, func_chip::FuncChip, toplevel::Toplevel},
     };
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
@@ -140,7 +139,7 @@ mod tests {
             let (_x, y, _z) = load(ptr1);
             return (ptr2, y)
         });
-        let toplevel = Toplevel::<F, LurkHasher>::new(&[func_e]);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         toplevel.execute_by_name("test", &[], &mut queries);

@@ -1,7 +1,11 @@
 use std::fmt;
 
+use num_bigint::BigUint;
+use p3_field::PrimeField;
+
 use super::package::SymbolRef;
 use super::parser::position::Pos;
+use super::zstore::DIGEST_SIZE;
 
 /// Lurk's syntax for parsing
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -10,6 +14,8 @@ pub enum Syntax<F> {
     Num(Pos, F),
     /// A u64 integer: 1u64, 0xffu64
     U64(Pos, u64),
+    /// A raw hash digest of some lurk data: #0xffff...ffff, stored in little-endian
+    Digest(Pos, [F; DIGEST_SIZE]),
     /// A hierarchical symbol: foo, foo.bar.baz or keyword :foo
     Symbol(Pos, SymbolRef),
     /// A string literal: "foobar", "foo\nbar"
@@ -30,6 +36,7 @@ impl<F> Syntax<F> {
         match self {
             Self::Num(pos, _)
             | Self::U64(pos, _)
+            | Self::Digest(pos, _)
             | Self::Symbol(pos, _)
             | Self::String(pos, _)
             | Self::Char(pos, _)
@@ -40,11 +47,22 @@ impl<F> Syntax<F> {
     }
 }
 
-impl<F: fmt::Display> fmt::Display for Syntax<F> {
+/// Returns a `BigUint` from a digest of field elements stored in little-endian order.
+pub fn digest_to_biguint<F: PrimeField>(digest: &[F; DIGEST_SIZE]) -> BigUint {
+    let mut num = digest[DIGEST_SIZE - 1].as_canonical_biguint();
+    for l in digest[..DIGEST_SIZE - 1].iter().rev() {
+        num *= F::order();
+        num += l.as_canonical_biguint();
+    }
+    num
+}
+
+impl<F: fmt::Display + PrimeField> fmt::Display for Syntax<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Num(_, x) => write!(f, "{x}"),
             Self::U64(_, x) => write!(f, "{x}u64"),
+            Self::Digest(_, c) => write!(f, "#{:#x}", digest_to_biguint(c)),
             Self::Symbol(_, x) => write!(f, "{x}"),
             Self::String(_, x) => write!(f, "\"{}\"", x.escape_default()),
             Self::Char(_, x) => {
@@ -78,5 +96,32 @@ impl<F: fmt::Display> fmt::Display for Syntax<F> {
                 write!(f, ")")
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use p3_baby_bear::BabyBear;
+
+    use crate::lurk::{parser::syntax::parse_syntax, state::State};
+
+    #[test]
+    fn test_digest() {
+        let state = State::init_lurk_state().rccell();
+        let (rest, syn) = parse_syntax::<BabyBear>(state.clone(), false, false)(
+            "#0x123456789ABCDEFEDCBA98765432123456789ABCDEFEDCBA98765432123456".into(),
+        )
+        .unwrap();
+        assert!(rest.is_empty());
+        assert_eq!(
+            format!("{syn}"),
+            "#0x123456789abcdefedcba98765432123456789abcdefedcba98765432123456"
+        );
+
+        let (rest, syn) =
+            parse_syntax::<BabyBear>(state, false, false)("#0x000000000000000000123456789".into())
+                .unwrap();
+        assert!(rest.is_empty());
+        assert_eq!(format!("{syn}"), "#0x123456789");
     }
 }

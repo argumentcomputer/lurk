@@ -33,8 +33,10 @@ pub enum Op<F> {
     Store(List<usize>),
     /// `Load(len, y)` extends the stack with the `len` values that is pointed by `y`
     Load(usize, usize),
-    /// `Hash([x, ...])` extends the stack with the hash of `x, ...`
-    Hash(List<usize>),
+    /// `ExternCall(i, [a, b, ...])` extends the stack with the output of the extern
+    /// chip at index `i` in the toplevel when applied to the arguments at positions
+    /// `[a, b, ...]` in the stack
+    ExternCall(usize, List<usize>),
     /// `Debug(s)` emits debug message `s`
     Debug(&'static str),
 }

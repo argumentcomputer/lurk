@@ -84,7 +84,7 @@ impl Package {
         self.import(&package.local.iter().cloned().collect::<Vec<_>>())
     }
 
-    pub fn fmt_to_string(&self, symbol: &SymbolRef) -> String {
+    pub fn fmt_to_string(&self, symbol: &Symbol) -> String {
         match self.names.get(symbol) {
             None => symbol.fmt_to_string(),
             Some(name) => Symbol::fmt_path_component_to_string(name),
