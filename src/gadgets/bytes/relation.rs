@@ -7,7 +7,7 @@ use p3_field::{AbstractField, PrimeField32};
 const BYTE_TAG: u8 = 3;
 
 /// A byte relation which can be required by Air constraints.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ByteRelation<T> {
     RangeU8Pair { i1: T, i2: T },
     RangeU16 { i: T },
