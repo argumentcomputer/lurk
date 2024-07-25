@@ -63,11 +63,11 @@ impl<F: PrimeField32> Chipset<F> for U64 {
 
     fn witness_size(&self) -> usize {
         match self {
-            U64::Add => Sum64::<F>::num_values(),
-            U64::Sub => Diff64::<F>::num_values(),
-            U64::Mul => Product64::<F>::num_values(),
-            U64::DivRem => DivRem64::<F>::num_values(),
-            U64::LessThan => IsLessThan64::<F>::num_values(),
+            U64::Add => Sum64::<F>::witness_size(),
+            U64::Sub => Diff64::<F>::witness_size(),
+            U64::Mul => Product64::<F>::witness_size(),
+            U64::DivRem => DivRem64::<F>::witness_size(),
+            U64::LessThan => IsLessThan64::<F>::witness_size(),
         }
     }
 
@@ -161,7 +161,7 @@ impl<F: PrimeField32> Chipset<F> for U64 {
                     .collect()
             }
             U64::DivRem => {
-                let mut out = vec![F::zero(); DivRem64::<F>::num_values()];
+                let mut out = vec![F::zero(); DivRem64::<F>::witness_size()];
                 let div_witness: &mut DivRem64<F> = out.as_mut_slice().borrow_mut();
                 let (div, rem) = div_witness.populate(&in1, &in2, bytes);
                 witness.copy_from_slice(&out);
@@ -173,10 +173,10 @@ impl<F: PrimeField32> Chipset<F> for U64 {
             }
             U64::LessThan => {
                 // TODO: Clean up API, same as Mul case, but result is after the witness this time
-                let mut out = vec![F::zero(); IsLessThan64::<F>::num_values() + 1]; // + 1 for the output bool
+                let mut out = vec![F::zero(); IsLessThan64::<F>::witness_size() + 1]; // + 1 for the output bool
                 let lessthan_witness: &mut IsLessThan64<F> = out.as_mut_slice().borrow_mut();
                 let lessthan = lessthan_witness.populate_less_than(&in1, &in2, bytes);
-                witness.copy_from_slice(&out[0..IsLessThan64::<F>::num_values()]);
+                witness.copy_from_slice(&out[0..IsLessThan64::<F>::witness_size()]);
                 vec![F::from_bool(lessthan)]
             }
         }

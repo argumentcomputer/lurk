@@ -125,7 +125,7 @@ impl<T, const W: usize> LessThanWitness<T, W> {
         1
     }
 
-    pub const fn num_values() -> usize {
+    pub const fn witness_size() -> usize {
         size_of::<LessThanWitness<u8, W>>()
     }
 }
@@ -210,8 +210,8 @@ impl<T, const W: usize> IsLessThan<T, W> {
         1
     }
 
-    pub const fn num_values() -> usize {
-        LessThanWitness::<T, W>::num_values()
+    pub const fn witness_size() -> usize {
+        LessThanWitness::<T, W>::witness_size()
     }
 }
 

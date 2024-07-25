@@ -175,7 +175,7 @@ impl<T, const W: usize> Product<T, W> {
         MulWitness::<T, W>::num_requires() + W / 2
     }
 
-    pub const fn num_values() -> usize {
+    pub const fn witness_size() -> usize {
         W
     }
 }

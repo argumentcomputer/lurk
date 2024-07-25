@@ -122,7 +122,7 @@ impl<T, const W: usize> DivRem<T, W> {
             + IsLessThan::<T, W>::num_requires()
     }
 
-    pub const fn num_values() -> usize {
+    pub const fn witness_size() -> usize {
         size_of::<DivRem<u8, W>>()
     }
 }

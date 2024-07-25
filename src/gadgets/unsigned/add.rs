@@ -89,7 +89,7 @@ impl<T, const W: usize> Sum<T, W> {
         W / 2
     }
 
-    pub const fn num_values() -> usize {
+    pub const fn witness_size() -> usize {
         0
     }
 }
@@ -140,7 +140,7 @@ impl<T, const W: usize> Diff<T, W> {
         W / 2
     }
 
-    pub const fn num_values() -> usize {
+    pub const fn witness_size() -> usize {
         0
     }
 }
