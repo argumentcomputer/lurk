@@ -159,9 +159,7 @@ impl<F: PrimeField32> Chipset<F> for U64 {
             }
             U64::Mul => {
                 let mut vec = out.to_vec();
-                println!("vec: {}", vec.len());
                 vec.extend(witness);
-                println!("vec: {}", vec.len());
                 let mul: &Product64<AB::Var> = vec.as_slice().borrow();
                 mul.eval(builder, &in1, &in2, &mut air_record, is_real);
             }
