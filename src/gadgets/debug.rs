@@ -207,7 +207,7 @@ impl<'a, F: Field> ByteAirRecord<F> for ByteAirRecordPassingTester<'a, F> {
     }
 
     fn msb(&mut self, i: impl Into<F>, r: impl Into<F>, is_real: impl Into<F>) {
-        self.push_air_event(ByteRelation::msb(i, r), is_real);
+        self.push_air_event(ByteRelation::msb(i, r, F::zero()), is_real);
     }
 }
 

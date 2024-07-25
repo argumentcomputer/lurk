@@ -1,6 +1,5 @@
 use std::borrow::{Borrow, BorrowMut};
 
-use hybrid_array::sizes::U8;
 use p3_air::AirBuilder;
 use p3_field::PrimeField32;
 
@@ -14,21 +13,17 @@ use crate::{
         unsigned::{
             add::{Diff64, Sum64},
             mul::Product64,
-            Word, Word64,
+            Word64,
         },
     },
     lair::{chipset::Chipset, execute::QueryRecord},
 };
 
 #[derive(Clone)]
-pub enum U64<F> {
+pub enum U64 {
     Add,
     Sub,
-    Mul(Arc<RwLock<Mul64Witness<F>>>),
-}
-
-fn into_wrd<T: Clone + std::fmt::Debug>(iter: impl Iterator<Item = T>) -> Word64<T> {
-    <[T; 8]>::try_from(iter.collect::<Vec<_>>()).unwrap().into()
+    Mul,
 }
 
 fn into_u64<F: PrimeField32>(slice: &[F]) -> u64 {
@@ -39,7 +34,7 @@ fn into_u64<F: PrimeField32>(slice: &[F]) -> u64 {
     u64::from_le_bytes(buf)
 }
 
-impl<F: PrimeField32> Chipset<F> for U64<F> {
+impl<F: PrimeField32> Chipset<F> for U64 {
     fn input_size(&self) -> usize {
         16
     }
@@ -150,8 +145,8 @@ impl<F: PrimeField32> Chipset<F> for U64<F> {
         nonce: AB::Expr,
         requires: &[RequireRecord<AB::Var>],
     ) {
-        let in1 = into_wrd(ins[0..8].iter().cloned());
-        let in2 = into_wrd(ins[8..16].iter().cloned());
+        let in1 = ins[0..8].iter().cloned().collect::<Word64<_>>();
+        let in2 = ins[8..16].iter().cloned().collect::<Word64<_>>();
         let mut air_record = BytesAirRecordWithContext::default();
         match self {
             U64::Add => {

@@ -47,7 +47,7 @@ pub enum LurkChip {
             7,
         >,
     ),
-    U64(U64<BabyBear>),
+    U64(U64),
 }
 
 pub fn lurk_chip_map() -> Map<Name, LurkChip> {
@@ -56,7 +56,7 @@ pub fn lurk_chip_map() -> Map<Name, LurkChip> {
     let hash_48_8 = LurkChip::Hasher48_8(BabyBearConfig48::hasher());
     let u64_add = LurkChip::U64(U64::Add);
     let u64_sub = LurkChip::U64(U64::Sub);
-    let u64_mul = LurkChip::U64(U64::Mul::<BabyBear>(Default::default()));
+    let u64_mul = LurkChip::U64(U64::Mul);
     let vec = vec![
         (Name("hash_24_8"), hash_24_8),
         (Name("hash_32_8"), hash_32_8),
@@ -81,7 +81,7 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher24_8(..) => 24,
             LurkChip::Hasher32_8(..) => 32,
             LurkChip::Hasher48_8(..) => 48,
-            LurkChip::U64(op) => op.input_size(),
+            LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::input_size(op),
         }
     }
 
@@ -89,7 +89,7 @@ impl Chipset<BabyBear> for LurkChip {
     fn output_size(&self) -> usize {
         match self {
             LurkChip::Hasher24_8(..) | LurkChip::Hasher32_8(..) | LurkChip::Hasher48_8(..) => 8,
-            LurkChip::U64(op) => op.output_size(),
+            LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::output_size(op),
         }
     }
 
@@ -98,14 +98,14 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher24_8(..) => Poseidon2Cols::<BabyBear, BabyBearConfig24, 24>::num_cols(),
             LurkChip::Hasher32_8(..) => Poseidon2Cols::<BabyBear, BabyBearConfig32, 32>::num_cols(),
             LurkChip::Hasher48_8(..) => Poseidon2Cols::<BabyBear, BabyBearConfig48, 48>::num_cols(),
-            LurkChip::U64(op) => op.witness_size(),
+            LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::witness_size(op),
         }
     }
 
     fn require_size(&self) -> usize {
         match self {
             LurkChip::Hasher24_8(..) | LurkChip::Hasher32_8(..) | LurkChip::Hasher48_8(..) => 0,
-            LurkChip::U64(op) => op.require_size(),
+            LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::require_size(op),
         }
     }
 

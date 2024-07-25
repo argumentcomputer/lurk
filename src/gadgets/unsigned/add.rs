@@ -89,6 +89,10 @@ impl<T, const W: usize> Sum<T, W> {
     pub const fn num_requires() -> usize {
         W / 2
     }
+
+    pub const fn num_values() -> usize {
+        0
+    }
 }
 
 /// Wrapper type for subtraction, which contains the witness and output of the computation.
@@ -136,6 +140,10 @@ impl<Var, const W: usize> Diff<Var, W> {
 impl<T, const W: usize> Diff<T, W> {
     pub const fn num_requires() -> usize {
         W / 2
+    }
+
+    pub const fn num_values() -> usize {
+        0
     }
 }
 

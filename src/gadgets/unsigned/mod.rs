@@ -66,6 +66,13 @@ impl<T, const W: usize> Word<T, W> {
     }
 }
 
+impl<T: Debug, const W: usize> FromIterator<T> for Word<T, W> {
+    /// Note: This function panics if the iterator does not contain exactly `W` elements.
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        Self(iter.into_iter().collect::<Vec<_>>().try_into().unwrap())
+    }
+}
+
 //
 // Conversion
 //
