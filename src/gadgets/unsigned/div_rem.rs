@@ -27,6 +27,8 @@ pub struct DivRem<T, const W: usize> {
     is_qb_lte_a: IsLessThan<T, W>,
 }
 
+pub type DivRem64<T> = DivRem<T, 8>;
+
 impl<F: PrimeField, const W: usize> DivRem<F, W> {
     pub fn populate<U>(&mut self, a: &U, b: &U, byte_record: &mut impl ByteRecord) -> (U, U)
     where
@@ -118,6 +120,10 @@ impl<T, const W: usize> DivRem<T, W> {
             + Product::<T, W>::num_requires()
             + LessThanWitness::<T, W>::num_requires()
             + IsLessThan::<T, W>::num_requires()
+    }
+
+    pub const fn num_values() -> usize {
+        size_of::<DivRem<u8, W>>()
     }
 }
 

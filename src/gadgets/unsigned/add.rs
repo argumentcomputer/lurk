@@ -51,7 +51,6 @@ pub struct Sum<T, const W: usize> {
     result: UncheckedWord<T, W>,
 }
 pub type Sum64<T> = Sum<T, 8>;
-pub type Sum32<T> = Sum<T, 4>;
 
 impl<F: AbstractField, const W: usize> Sum<F, W> {
     pub fn populate<U>(&mut self, lhs: &U, rhs: &U, byte_record: &mut impl ByteRecord) -> U
@@ -103,7 +102,6 @@ pub struct Diff<T, const W: usize> {
 }
 
 pub type Diff64<T> = Diff<T, 8>;
-pub type Diff32<T> = Diff<T, 4>;
 
 impl<F: AbstractField, const W: usize> Diff<F, W> {
     pub fn populate<U>(&mut self, lhs: &U, rhs: &U, byte_record: &mut impl ByteRecord) -> U

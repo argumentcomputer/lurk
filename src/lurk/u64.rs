@@ -12,6 +12,7 @@ use crate::{
         },
         unsigned::{
             add::{Diff64, Sum64},
+            div_rem::DivRem64,
             mul::Product64,
             Word64,
         },
@@ -24,6 +25,7 @@ pub enum U64 {
     Add,
     Sub,
     Mul,
+    DivRem,
 }
 
 fn into_u64<F: PrimeField32>(slice: &[F]) -> u64 {
@@ -40,7 +42,10 @@ impl<F: PrimeField32> Chipset<F> for U64 {
     }
 
     fn output_size(&self) -> usize {
-        8
+        match self {
+            U64::DivRem => 16, // returns (quot, rem)
+            _ => 8,
+        }
     }
 
     fn require_size(&self) -> usize {
@@ -48,6 +53,7 @@ impl<F: PrimeField32> Chipset<F> for U64 {
             U64::Add => Sum64::<F>::num_requires(),
             U64::Sub => Diff64::<F>::num_requires(),
             U64::Mul => Product64::<F>::num_requires(),
+            U64::DivRem => DivRem64::<F>::num_requires(),
         }
     }
 
@@ -56,6 +62,7 @@ impl<F: PrimeField32> Chipset<F> for U64 {
             U64::Add => Sum64::<F>::num_values(),
             U64::Sub => Diff64::<F>::num_values(),
             U64::Mul => Product64::<F>::num_values(),
+            U64::DivRem => DivRem64::<F>::num_values(),
         }
     }
 
@@ -98,6 +105,15 @@ impl<F: PrimeField32> Chipset<F> for U64 {
                     .map(|b| F::from_canonical_u8(b))
                     .collect()
             }
+            U64::DivRem => {
+                let mut div_witness = DivRem64::<F>::default();
+                let (div, rem) = div_witness.populate(&in1, &in2, bytes);
+                div.to_le_bytes()
+                    .into_iter()
+                    .chain(rem.to_le_bytes())
+                    .map(|b| F::from_canonical_u8(b))
+                    .collect()
+            }
         }
     }
 
@@ -123,12 +139,25 @@ impl<F: PrimeField32> Chipset<F> for U64 {
                     .collect()
             }
             U64::Mul => {
+                // TODO: Clean up the API and remove these hardcoded 16/8 values?
+                //   This is here because Product64 containts the result, but the witness and output are separate
                 let mut out = vec![F::zero(); 16];
                 let mul_witness: &mut Product64<F> = out.as_mut_slice().borrow_mut();
                 let mul = mul_witness.populate(&in1, &in2, bytes);
-                witness.copy_from_slice(&mul_witness.witness.carry);
+                witness.copy_from_slice(&out[8..16]);
                 mul.to_le_bytes()
                     .into_iter()
+                    .map(|b| F::from_canonical_u8(b))
+                    .collect()
+            }
+            U64::DivRem => {
+                let mut out = vec![F::zero(); DivRem64::<F>::num_values()];
+                let div_witness: &mut DivRem64<F> = out.as_mut_slice().borrow_mut();
+                let (div, rem) = div_witness.populate(&in1, &in2, bytes);
+                witness.copy_from_slice(&out);
+                div.to_le_bytes()
+                    .into_iter()
+                    .chain(rem.to_le_bytes())
                     .map(|b| F::from_canonical_u8(b))
                     .collect()
             }
@@ -162,6 +191,17 @@ impl<F: PrimeField32> Chipset<F> for U64 {
                 vec.extend(witness);
                 let mul: &Product64<AB::Var> = vec.as_slice().borrow();
                 mul.eval(builder, &in1, &in2, &mut air_record, is_real);
+            }
+            U64::DivRem => {
+                let vec = witness.to_vec();
+                let divrem: &DivRem64<AB::Var> = vec.as_slice().borrow();
+                let (div, rem) = divrem.eval(builder, &in1, &in2, &mut air_record, is_real);
+                for (div_limb, out_limb) in div.iter().zip(out[0..8].iter()) {
+                    builder.assert_eq(*div_limb, *out_limb);
+                }
+                for (rem_limb, out_limb) in rem.iter().zip(out[8..16].iter()) {
+                    builder.assert_eq(*rem_limb, *out_limb);
+                }
             }
         }
         air_record.require_all(builder, nonce, requires.iter().cloned());
@@ -350,6 +390,80 @@ mod test {
         let machine = StarkMachine::new(
             config,
             build_chip_vector(&mul_chip),
+            queries.expect_public_values().len(),
+        );
+
+        let (pk, _vk) = machine.setup(&LairMachineProgram);
+        let shard = Shard::new(&queries);
+        machine.debug_constraints(&pk, shard.clone());
+    }
+
+    #[test]
+    fn u64_divrem_test() {
+        sphinx_core::utils::setup_logger();
+
+        let divrem_func = func!(
+        fn divrem(a: [8], b: [8]): [16] {
+            let (div: [8], rem: [8]) = extern_call(u64_divrem, a, b);
+            return (div, rem)
+        });
+        let lurk_chip_map = lurk_chip_map();
+        let toplevel = Toplevel::new(&[divrem_func], lurk_chip_map);
+
+        let divrem_chip = FuncChip::from_name("divrem", &toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
+        let f = F::from_canonical_usize;
+        // Little endian
+        let args = &[
+            f(0),
+            f(0),
+            f(1),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            //
+            f(7),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+        ];
+        let out = toplevel.execute_by_name("divrem", args, &mut queries);
+        assert_eq!(
+            out.as_ref(),
+            &[
+                f(146),
+                f(36),
+                f(0),
+                f(0),
+                f(0),
+                f(0),
+                f(0),
+                f(0),
+                //
+                f(2),
+                f(0),
+                f(0),
+                f(0),
+                f(0),
+                f(0),
+                f(0),
+                f(0)
+            ]
+        );
+
+        let lair_chips = build_lair_chip_vector(&divrem_chip);
+        debug_chip_constraints_and_queries_with_sharding(&queries, &lair_chips, None);
+
+        let config = BabyBearPoseidon2::new();
+        let machine = StarkMachine::new(
+            config,
+            build_chip_vector(&divrem_chip),
             queries.expect_public_values().len(),
         );
 
