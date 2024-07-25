@@ -5,15 +5,15 @@ use crate::gadgets::unsigned::less_than::{IsLessThan, LessThanWitness};
 use crate::gadgets::unsigned::mul::Product;
 use crate::gadgets::unsigned::{UncheckedWord, Word};
 use num_traits::ops::overflowing::OverflowingSub;
-use num_traits::{FromBytes, ToBytes, Unsigned};
+use num_traits::{Euclid, FromBytes, ToBytes, Unsigned};
 use p3_air::AirBuilder;
 use p3_field::{AbstractField, PrimeField};
 use sphinx_derive::AlignedBorrow;
-use std::ops::Div;
 
 #[derive(Clone, Default, AlignedBorrow)]
 #[repr(C)]
 pub struct DivRem<T, const W: usize> {
+    /// b != 0
     b_non_zero: IsZeroWitness<T, W>,
     /// q = a // b
     q: UncheckedWord<T, W>,
@@ -33,15 +33,14 @@ impl<F: PrimeField, const W: usize> DivRem<F, W> {
         U: ToBytes<Bytes = [u8; W]>
             + FromBytes<Bytes = [u8; W]>
             + Unsigned
-            + Div
-            + Copy
+            + Euclid
             + OverflowingSub,
     {
         // b != 0
         self.b_non_zero.populate_non_zero(b);
 
         // q = a // b
-        let q = a.div(*b);
+        let q = a.div_euclid(b);
         self.q.assign_bytes(&q.to_le_bytes(), byte_record);
 
         let qb = self.qb.populate(&q, b, byte_record);
@@ -136,11 +135,11 @@ mod tests {
         U: ToBytes<Bytes = [u8; W]>
             + FromBytes<Bytes = [u8; W]>
             + Unsigned
-            + Div
+            + Euclid
             + OverflowingSub
-            + Copy
             + Debug
-            + Ord,
+            + Ord
+            + Copy,
     >(
         a: U,
         b: U,
