@@ -307,7 +307,11 @@ mod test {
         let mul_func = func!(
         fn mul(a: [8], b: [8]): [8] {
             let c: [8] = extern_call(u64_mul, a, b);
-            return c
+            let d: [8] = extern_call(u64_mul, c, c);
+            let e: [8] = extern_call(u64_mul, d, d);
+            let f: [8] = extern_call(u64_mul, e, e);
+            let g: [8] = extern_call(u64_mul, f, f);
+            return g
         });
         let lurk_chip_map = lurk_chip_map();
         let toplevel = Toplevel::new(&[mul_func], lurk_chip_map);
@@ -317,27 +321,28 @@ mod test {
         let f = F::from_canonical_usize;
         // Little endian
         let args = &[
-            f(1),
-            f(1),
-            f(1),
-            f(1),
-            f(1),
-            f(1),
-            f(1),
-            f(1),
-            f(1),
-            f(1),
-            f(1),
-            f(1),
-            f(1),
-            f(1),
-            f(1),
-            f(1),
+            f(2),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            //
+            f(2),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
         ];
         let out = toplevel.execute_by_name("mul", args, &mut queries);
         assert_eq!(
             out.as_ref(),
-            &[f(1), f(2), f(3), f(4), f(5), f(6), f(7), f(8)]
+            &[f(0), f(0), f(0), f(0), f(1), f(0), f(0), f(0)]
         );
 
         let lair_chips = build_lair_chip_vector(&mul_chip);
