@@ -119,6 +119,10 @@ impl<T, const W: usize> DivRem<T, W> {
             + LessThanWitness::<T, W>::num_requires()
             + IsLessThan::<T, W>::num_requires()
     }
+
+    pub const fn size() -> usize {
+        size_of::<DivRem<u8, W>>()
+    }
 }
 
 #[cfg(test)]

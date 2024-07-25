@@ -100,6 +100,12 @@ impl<T: Default, const W: usize> Default for IsZeroWitness<T, W> {
     }
 }
 
+impl<T, const W: usize> IsZeroWitness<T, W> {
+    pub const fn size() -> usize {
+        size_of::<IsZeroWitness<u8, W>>()
+    }
+}
+
 #[derive(Clone, Debug, Default, AlignedBorrow)]
 #[repr(C)]
 pub struct IsZeroOrEqual<T, const W: usize> {
@@ -174,6 +180,12 @@ impl<Var, const W: usize> IsZeroOrEqual<Var, W> {
         self.witness
             .assert_is_zero(builder, input, is_equal, is_real);
         is_equal
+    }
+}
+
+impl<T, const W: usize> IsZeroOrEqual<T, W> {
+    pub const fn size() -> usize {
+        size_of::<IsZeroOrEqual<u8, W>>()
     }
 }
 

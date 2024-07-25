@@ -203,10 +203,13 @@ impl<T, const W: usize> IsLessThan<T, W> {
     pub const fn num_requires() -> usize {
         1
     }
+
+    pub const fn size() -> usize {
+        size_of::<IsLessThan<u8, W>>()
+    }
 }
 
 /// Asserts that `is_less_than = (lhs < rhs)` and returns `is_equal = (lhs == rhs)`
-
 impl<T: Default, const W: usize> Default for LessThanWitness<T, W> {
     fn default() -> Self {
         Self {

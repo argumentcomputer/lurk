@@ -50,8 +50,6 @@ impl<Var, const W: usize> AddWitness<Var, W> {
 pub struct Sum<T, const W: usize> {
     result: UncheckedWord<T, W>,
 }
-pub type Sum64<T> = Sum<T, 8>;
-pub type Sum32<T> = Sum<T, 4>;
 
 impl<F: AbstractField, const W: usize> Sum<F, W> {
     pub fn populate<U>(&mut self, lhs: &U, rhs: &U, byte_record: &mut impl ByteRecord) -> U
@@ -89,6 +87,10 @@ impl<T, const W: usize> Sum<T, W> {
     pub const fn num_requires() -> usize {
         W / 2
     }
+
+    pub const fn size() -> usize {
+        size_of::<Sum<u8, W>>()
+    }
 }
 
 /// Wrapper type for subtraction, which contains the witness and output of the computation.
@@ -97,9 +99,6 @@ impl<T, const W: usize> Sum<T, W> {
 pub struct Diff<T, const W: usize> {
     result: UncheckedWord<T, W>,
 }
-
-pub type Diff64<T> = Diff<T, 8>;
-pub type Diff32<T> = Diff<T, 4>;
 
 impl<F: AbstractField, const W: usize> Diff<F, W> {
     pub fn populate<U>(&mut self, lhs: &U, rhs: &U, byte_record: &mut impl ByteRecord) -> U
@@ -136,6 +135,10 @@ impl<Var, const W: usize> Diff<Var, W> {
 impl<T, const W: usize> Diff<T, W> {
     pub const fn num_requires() -> usize {
         W / 2
+    }
+
+    pub const fn size() -> usize {
+        size_of::<Diff<u8, W>>()
     }
 }
 

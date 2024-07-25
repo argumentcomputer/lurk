@@ -167,6 +167,10 @@ impl<T, const W: usize> Product<T, W> {
     pub const fn num_requires() -> usize {
         MulWitness::<T, W>::num_requires() + W / 2
     }
+
+    pub const fn size() -> usize {
+        size_of::<Product<u8, W>>()
+    }
 }
 
 #[cfg(test)]
