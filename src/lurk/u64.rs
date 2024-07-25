@@ -13,6 +13,7 @@ use crate::{
         unsigned::{
             add::{Diff64, Sum64},
             div_rem::DivRem64,
+            less_than::IsLessThan64,
             mul::Product64,
             Word64,
         },
@@ -26,6 +27,7 @@ pub enum U64 {
     Sub,
     Mul,
     DivRem,
+    LessThan,
 }
 
 fn into_u64<F: PrimeField32>(slice: &[F]) -> u64 {
@@ -43,7 +45,8 @@ impl<F: PrimeField32> Chipset<F> for U64 {
 
     fn output_size(&self) -> usize {
         match self {
-            U64::DivRem => 16, // returns (quot, rem)
+            U64::DivRem => 16,  // returns (quot, rem)
+            U64::LessThan => 1, // returns one bool
             _ => 8,
         }
     }
@@ -54,6 +57,7 @@ impl<F: PrimeField32> Chipset<F> for U64 {
             U64::Sub => Diff64::<F>::num_requires(),
             U64::Mul => Product64::<F>::num_requires(),
             U64::DivRem => DivRem64::<F>::num_requires(),
+            U64::LessThan => IsLessThan64::<F>::num_requires(),
         }
     }
 
@@ -63,6 +67,7 @@ impl<F: PrimeField32> Chipset<F> for U64 {
             U64::Sub => Diff64::<F>::num_values(),
             U64::Mul => Product64::<F>::num_values(),
             U64::DivRem => DivRem64::<F>::num_values(),
+            U64::LessThan => IsLessThan64::<F>::num_values(),
         }
     }
 
@@ -114,6 +119,11 @@ impl<F: PrimeField32> Chipset<F> for U64 {
                     .map(|b| F::from_canonical_u8(b))
                     .collect()
             }
+            U64::LessThan => {
+                let mut lessthan_witness = IsLessThan64::<F>::default();
+                let lessthan = lessthan_witness.populate_less_than(&in1, &in2, bytes);
+                vec![F::from_bool(lessthan)]
+            }
         }
     }
 
@@ -161,6 +171,14 @@ impl<F: PrimeField32> Chipset<F> for U64 {
                     .map(|b| F::from_canonical_u8(b))
                     .collect()
             }
+            U64::LessThan => {
+                // TODO: Clean up API, same as Mul case, but result is after the witness this time
+                let mut out = vec![F::zero(); IsLessThan64::<F>::num_values() + 1]; // + 1 for the output bool
+                let lessthan_witness: &mut IsLessThan64<F> = out.as_mut_slice().borrow_mut();
+                let lessthan = lessthan_witness.populate_less_than(&in1, &in2, bytes);
+                witness.copy_from_slice(&out[0..IsLessThan64::<F>::num_values()]);
+                vec![F::from_bool(lessthan)]
+            }
         }
     }
 
@@ -202,6 +220,13 @@ impl<F: PrimeField32> Chipset<F> for U64 {
                 for (rem_limb, out_limb) in rem.iter().zip(out[8..16].iter()) {
                     builder.assert_eq(*rem_limb, *out_limb);
                 }
+            }
+            U64::LessThan => {
+                let mut vec = witness.to_vec();
+                vec.extend(out);
+                let lessthan: &IsLessThan64<AB::Var> = vec.as_slice().borrow();
+                let res = lessthan.eval_less_than(builder, &in1, &in2, &mut air_record, is_real);
+                builder.assert_bool(res);
             }
         }
         air_record.require_all(builder, nonce, requires.iter().cloned());
@@ -464,6 +489,59 @@ mod test {
         let machine = StarkMachine::new(
             config,
             build_chip_vector(&divrem_chip),
+            queries.expect_public_values().len(),
+        );
+
+        let (pk, _vk) = machine.setup(&LairMachineProgram);
+        let shard = Shard::new(&queries);
+        machine.debug_constraints(&pk, shard.clone());
+    }
+
+    #[test]
+    fn u64_lessthan_test() {
+        sphinx_core::utils::setup_logger();
+
+        let lessthan_func = func!(
+        fn lessthan(a: [8], b: [8]): [1] {
+            let c = extern_call(u64_lessthan, a, b);
+            return c
+        });
+        let lurk_chip_map = lurk_chip_map();
+        let toplevel = Toplevel::new(&[lessthan_func], lurk_chip_map);
+
+        let lessthan_chip = FuncChip::from_name("lessthan", &toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
+        let f = F::from_canonical_usize;
+        // Little endian
+        let args = &[
+            f(200),
+            f(200),
+            f(200),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            //
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            f(0),
+            f(10),
+            f(0),
+            f(0),
+        ];
+        let out = toplevel.execute_by_name("lessthan", args, &mut queries);
+        assert_eq!(out.as_ref(), &[f(1)]);
+
+        let lair_chips = build_lair_chip_vector(&lessthan_chip);
+        debug_chip_constraints_and_queries_with_sharding(&queries, &lair_chips, None);
+
+        let config = BabyBearPoseidon2::new();
+        let machine = StarkMachine::new(
+            config,
+            build_chip_vector(&lessthan_chip),
             queries.expect_public_values().len(),
         );
 

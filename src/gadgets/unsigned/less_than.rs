@@ -124,6 +124,10 @@ impl<T, const W: usize> LessThanWitness<T, W> {
     pub const fn num_requires() -> usize {
         1
     }
+
+    pub const fn num_values() -> usize {
+        size_of::<LessThanWitness<u8, W>>()
+    }
 }
 
 #[derive(Clone, Debug, Default, AlignedBorrow)]
@@ -132,6 +136,8 @@ pub struct IsLessThan<T, const W: usize> {
     witness: LessThanWitness<T, W>,
     is_less_than: T,
 }
+
+pub type IsLessThan64<T> = IsLessThan<T, 8>;
 
 impl<F: PrimeField, const W: usize> IsLessThan<F, W> {
     pub fn populate_less_than<U>(
@@ -202,6 +208,10 @@ impl<Var, const W: usize> IsLessThan<Var, W> {
 impl<T, const W: usize> IsLessThan<T, W> {
     pub const fn num_requires() -> usize {
         1
+    }
+
+    pub const fn num_values() -> usize {
+        LessThanWitness::<T, W>::num_values()
     }
 }
 
