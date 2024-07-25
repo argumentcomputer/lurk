@@ -276,3 +276,37 @@ where
         )
     }
 }
+
+// Dummy record for when you do not want to record anything
+pub struct DummyBytesRecord;
+
+impl ByteRecord for DummyBytesRecord {
+    fn range_check_u8_pair(&mut self, _: u8, _: u8) {}
+
+    fn range_check_u16(&mut self, _: u16) {}
+
+    fn less_than(&mut self, i1: u8, i2: u8) -> bool {
+        let input = ByteInput::from_u8_pair(i1, i2);
+        input.less_than()
+    }
+
+    fn and(&mut self, i1: u8, i2: u8) -> u8 {
+        let input = ByteInput::from_u8_pair(i1, i2);
+        input.and()
+    }
+
+    fn xor(&mut self, i1: u8, i2: u8) -> u8 {
+        let input = ByteInput::from_u8_pair(i1, i2);
+        input.xor()
+    }
+
+    fn or(&mut self, i1: u8, i2: u8) -> u8 {
+        let input = ByteInput::from_u8_pair(i1, i2);
+        input.or()
+    }
+
+    fn msb(&mut self, i: u8) -> bool {
+        let input = ByteInput::from_u8(i);
+        input.msb()
+    }
+}

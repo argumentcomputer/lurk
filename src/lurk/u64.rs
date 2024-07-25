@@ -1,5 +1,4 @@
-use std::borrow::Borrow;
-use std::sync::{Arc, RwLock};
+use std::borrow::{Borrow, BorrowMut};
 
 use hybrid_array::sizes::U8;
 use p3_air::AirBuilder;
@@ -8,11 +7,14 @@ use p3_field::PrimeField32;
 use crate::{
     air::builder::{LookupBuilder, Record, RequireRecord},
     gadgets::{
-        bytes::{builder::BytesAirRecordWithContext, record::BytesRecordWithContext},
+        bytes::{
+            builder::BytesAirRecordWithContext,
+            record::{BytesRecordWithContext, DummyBytesRecord},
+        },
         unsigned::{
-            add::{eval_add, eval_sub, num_requires, populate_add, populate_sub},
-            mul::{eval_mul, Mul64Witness},
-            Word64,
+            add::{Diff64, Sum64},
+            mul::Product64,
+            Word, Word64,
         },
     },
     lair::{chipset::Chipset, execute::QueryRecord},
@@ -29,15 +31,12 @@ fn into_wrd<T: Clone + std::fmt::Debug>(iter: impl Iterator<Item = T>) -> Word64
     <[T; 8]>::try_from(iter.collect::<Vec<_>>()).unwrap().into()
 }
 
-fn into_u8_wrd<F: PrimeField32>(slice: &[F]) -> Word64<u8> {
-    <[u8; 8]>::try_from(
-        slice
-            .iter()
-            .map(|f| F::as_canonical_u32(f).try_into().unwrap())
-            .collect::<Vec<u8>>(),
-    )
-    .unwrap()
-    .into()
+fn into_u64<F: PrimeField32>(slice: &[F]) -> u64 {
+    assert_eq!(slice.len(), 8);
+    let bytes: Vec<_> = slice.iter().map(|f| F::as_canonical_u32(f) as u8).collect();
+    let mut buf = [0u8; 8];
+    buf.copy_from_slice(&bytes);
+    u64::from_le_bytes(buf)
 }
 
 impl<F: PrimeField32> Chipset<F> for U64<F> {
@@ -51,15 +50,17 @@ impl<F: PrimeField32> Chipset<F> for U64<F> {
 
     fn require_size(&self) -> usize {
         match self {
-            U64::Add | U64::Sub => num_requires::<U8>(),
-            U64::Mul(..) => Mul64Witness::<F>::num_requires(),
+            U64::Add => Sum64::<F>::num_requires(),
+            U64::Sub => Diff64::<F>::num_requires(),
+            U64::Mul => Product64::<F>::num_requires(),
         }
     }
 
     fn witness_size(&self) -> usize {
         match self {
-            U64::Add | U64::Sub => 0,
-            U64::Mul(..) => Mul64Witness::<F>::num_values(),
+            U64::Add => Sum64::<F>::num_values(),
+            U64::Sub => Diff64::<F>::num_values(),
+            U64::Mul => Product64::<F>::num_values(),
         }
     }
 
@@ -70,8 +71,8 @@ impl<F: PrimeField32> Chipset<F> for U64<F> {
         queries: &mut QueryRecord<F>,
         requires: &mut Vec<Record>,
     ) -> Vec<F> {
-        let in1 = into_u8_wrd(&input[0..8]);
-        let in2 = into_u8_wrd(&input[8..16]);
+        let in1 = into_u64(&input[0..8]);
+        let in2 = into_u64(&input[8..16]);
         let bytes = &mut BytesRecordWithContext {
             nonce,
             requires,
@@ -79,38 +80,62 @@ impl<F: PrimeField32> Chipset<F> for U64<F> {
         };
         match self {
             U64::Add => {
-                let add = populate_add(in1, in2, bytes);
-                add.into_field().into_iter().collect()
+                let mut add_witness = Sum64::<F>::default();
+                let add = add_witness.populate(&in1, &in2, bytes);
+                add.to_le_bytes()
+                    .into_iter()
+                    .map(|b| F::from_canonical_u8(b))
+                    .collect()
             }
             U64::Sub => {
-                let sub = populate_sub(in1, in2, bytes);
-                sub.into_field().into_iter().collect()
+                let mut sub_witness = Diff64::<F>::default();
+                let sub = sub_witness.populate(&in1, &in2, bytes);
+                sub.to_le_bytes()
+                    .into_iter()
+                    .map(|b| F::from_canonical_u8(b))
+                    .collect()
             }
-            U64::Mul(witness) => {
-                let mul = witness.write().unwrap().populate(&in1, &in2, bytes);
-                mul.into_field().into_iter().collect()
+            U64::Mul => {
+                let mut mul_witness = Product64::<F>::default();
+                let mul = mul_witness.populate(&in1, &in2, bytes);
+                mul.to_le_bytes()
+                    .into_iter()
+                    .map(|b| F::from_canonical_u8(b))
+                    .collect()
             }
         }
     }
 
     fn populate_witness(&self, input: &[F], witness: &mut [F]) -> Vec<F> {
-        let in1 = into_u8_wrd(&input[0..8]);
-        let in2 = into_u8_wrd(&input[8..16]);
+        let in1 = into_u64(&input[0..8]);
+        let in2 = into_u64(&input[8..16]);
+        let bytes = &mut DummyBytesRecord;
         match self {
             U64::Add => {
-                let add = in1 + in2;
-                add.into_field().into_iter().collect()
+                let mut add_witness = Sum64::<F>::default();
+                let add = add_witness.populate(&in1, &in2, bytes);
+                add.to_le_bytes()
+                    .into_iter()
+                    .map(|b| F::from_canonical_u8(b))
+                    .collect()
             }
             U64::Sub => {
-                let sub = in1 - in2;
-                sub.into_field().into_iter().collect()
+                let mut sub_witness = Diff64::<F>::default();
+                let sub = sub_witness.populate(&in1, &in2, bytes);
+                sub.to_le_bytes()
+                    .into_iter()
+                    .map(|b| F::from_canonical_u8(b))
+                    .collect()
             }
-            U64::Mul(mul_witness) => {
-                let mul = in1 * in2;
-                for (i, w) in mul_witness.read().unwrap().values().into_iter().enumerate() {
-                    witness[i] = w;
-                }
-                mul.into_field().into_iter().collect()
+            U64::Mul => {
+                let mut out = vec![F::zero(); 16];
+                let mul_witness: &mut Product64<F> = out.as_mut_slice().borrow_mut();
+                let mul = mul_witness.populate(&in1, &in2, bytes);
+                witness.copy_from_slice(&mul_witness.witness.carry);
+                mul.to_le_bytes()
+                    .into_iter()
+                    .map(|b| F::from_canonical_u8(b))
+                    .collect()
             }
         }
     }
@@ -127,21 +152,23 @@ impl<F: PrimeField32> Chipset<F> for U64<F> {
     ) {
         let in1 = into_wrd(ins[0..8].iter().cloned());
         let in2 = into_wrd(ins[8..16].iter().cloned());
-        let out = into_wrd(out.iter().map(|&o| o.into()));
         let mut air_record = BytesAirRecordWithContext::default();
         match self {
-            U64::Add => eval_add(builder, (in1, in2), out, &mut air_record, is_real),
-            U64::Sub => eval_sub(builder, (in1, in2), out, &mut air_record, is_real),
-            U64::Mul(..) => {
-                let mul_witness: &Mul64Witness<AB::Var> = witness.borrow();
-                eval_mul(
-                    builder,
-                    (in1, in2),
-                    out,
-                    mul_witness,
-                    &mut air_record,
-                    is_real,
-                )
+            U64::Add => {
+                let add: &Sum64<AB::Var> = out.borrow();
+                add.eval(builder, in1, in2, &mut air_record, is_real);
+            }
+            U64::Sub => {
+                let sub: &Diff64<AB::Var> = out.borrow();
+                sub.eval(builder, in1, in2, &mut air_record, is_real);
+            }
+            U64::Mul => {
+                let mut vec = out.to_vec();
+                println!("vec: {}", vec.len());
+                vec.extend(witness);
+                println!("vec: {}", vec.len());
+                let mul: &Product64<AB::Var> = vec.as_slice().borrow();
+                mul.eval(builder, &in1, &in2, &mut air_record, is_real);
             }
         }
         air_record.require_all(builder, nonce, requires.iter().cloned());

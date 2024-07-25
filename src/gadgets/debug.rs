@@ -125,8 +125,11 @@ impl<F: Field> ByteRecord for ByteRecordTester<F> {
     fn msb(&mut self, i: u8) -> bool {
         let input = ByteInput::from_u8(i);
         let r = input.msb();
-        self.populate_events
-            .push_back(ByteRelation::msb(F::from_canonical_u8(i), F::from_bool(r)));
+        self.populate_events.push_back(ByteRelation::msb(
+            F::from_canonical_u8(i),
+            F::from_bool(r),
+            F::zero(),
+        ));
         r
     }
 }

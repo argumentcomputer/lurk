@@ -14,7 +14,7 @@ use std::array;
 #[derive(Clone, Debug, AlignedBorrow)]
 #[repr(C)]
 pub struct MulWitness<T, const W: usize> {
-    carry: [T; W],
+    pub(crate) carry: [T; W],
 }
 
 impl<F: AbstractField, const W: usize> MulWitness<F, W> {
@@ -128,9 +128,11 @@ impl<T: Default, const W: usize> Default for MulWitness<T, W> {
 /// Wrapper type for multiplication, which contains the witness and output of the computation.
 #[derive(Clone, Debug, Default, AlignedBorrow)]
 pub struct Product<T, const W: usize> {
-    witness: MulWitness<T, W>,
-    result: UncheckedWord<T, W>,
+    pub(crate) result: UncheckedWord<T, W>,
+    pub(crate) witness: MulWitness<T, W>,
 }
+
+pub type Product64<T> = Product<T, 8>;
 
 impl<F: AbstractField, const W: usize> Product<F, W> {
     pub fn populate<U>(&mut self, lhs: &U, rhs: &U, byte_record: &mut impl ByteRecord) -> U
@@ -171,6 +173,10 @@ impl<Var, const W: usize> Product<Var, W> {
 impl<T, const W: usize> Product<T, W> {
     pub const fn num_requires() -> usize {
         MulWitness::<T, W>::num_requires() + W / 2
+    }
+
+    pub const fn num_values() -> usize {
+        W
     }
 }
 
