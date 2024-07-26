@@ -2,7 +2,7 @@ use crate::air::builder::{LookupBuilder, ProvideRecord};
 use crate::gadgets::bytes::record::BytesRecord;
 use crate::gadgets::bytes::relation::ByteRelation;
 use crate::gadgets::bytes::ByteInput;
-use itertools::zip_eq;
+use itertools::{zip_eq, Itertools};
 use p3_air::{Air, BaseAir, PairBuilder};
 use p3_field::{AbstractField, Field, PrimeField32};
 use p3_matrix::dense::RowMajorMatrix;
@@ -26,12 +26,11 @@ pub struct PreprocessedBytesCols<T> {
     and: T,
     xor: T,
     or: T,
-    msb: T,
 }
 
 const PREPROCESSED_BYTES_NUM_COLS: usize = size_of::<PreprocessedBytesCols<u8>>();
 
-const NUM_PROVIDES: usize = 7;
+const NUM_PROVIDES: usize = 6;
 
 #[derive(Clone, Debug, Default, AlignedBorrow)]
 #[repr(C)]
@@ -39,6 +38,7 @@ pub struct MainBytesCols<T> {
     is_real: T,
     provides: [ProvideRecord<T>; NUM_PROVIDES],
 }
+
 const MAIN_BYTES_NUM_COLS: usize = size_of::<MainBytesCols<u8>>();
 
 impl<F: Field> BaseAir<F> for BytesChip<F> {
@@ -136,7 +136,7 @@ impl<AB: LookupBuilder + PairBuilder> Air<AB> for BytesChip<AB::F> {
             ByteRelation::or(prep.input.0, prep.input.1, prep.or),
         ];
 
-        for (relation, provide) in relations.into_iter().zip(main.provides.into_iter()) {
+        for (relation, provide) in relations.into_iter().zip_eq(main.provides.into_iter()) {
             builder.provide(relation, provide, main.is_real);
         }
     }
