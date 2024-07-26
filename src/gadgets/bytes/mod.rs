@@ -71,19 +71,6 @@ impl ByteInput {
         let [i1, i2] = self.0.to_le_bytes();
         i1 | i2
     }
-
-    #[inline]
-    pub fn msb(&self) -> bool {
-        let [i1, i2] = self.0.to_le_bytes();
-        assert_eq!(i2, 0, "MSB only works on single bytes");
-        (i1 >> 7) == 1
-    }
-
-    #[inline]
-    pub(crate) fn msb_unchecked(&self) -> bool {
-        let [i1, _i2] = self.0.to_le_bytes();
-        (i1 >> 7) == 1
-    }
 }
 
 impl<F: PrimeField32> TryFrom<(F, F)> for ByteInput {
@@ -124,8 +111,6 @@ pub trait ByteRecord {
     fn xor(&mut self, i1: u8, i2: u8) -> u8;
 
     fn or(&mut self, i1: u8, i2: u8) -> u8;
-
-    fn msb(&mut self, i: u8) -> bool;
 }
 
 /// A ByteAirRecord is passed as mutable reference to a function that evaluates the Air constraints
@@ -167,6 +152,4 @@ pub trait ByteAirRecord<F: AbstractField> {
     fn xor(&mut self, i1: impl Into<F>, i2: impl Into<F>, r: impl Into<F>, is_real: impl Into<F>);
 
     fn or(&mut self, i1: impl Into<F>, i2: impl Into<F>, r: impl Into<F>, is_real: impl Into<F>);
-
-    fn msb(&mut self, i: impl Into<F>, r: impl Into<F>, is_real: impl Into<F>);
 }

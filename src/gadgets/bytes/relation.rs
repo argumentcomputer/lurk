@@ -15,7 +15,6 @@ pub enum ByteRelation<T> {
     And { i1: T, i2: T, and: T },
     Xor { i1: T, i2: T, xor: T },
     Or { i1: T, i2: T, or: T },
-    Msb { i: T, msb: T, dummy: T },
 }
 
 impl<T> ByteRelation<T> {
@@ -69,14 +68,6 @@ impl<T> ByteRelation<T> {
         }
     }
 
-    pub fn msb(i: impl Into<T>, r: impl Into<T>, d: impl Into<T>) -> Self {
-        Self::Msb {
-            i: i.into(),
-            msb: r.into(),
-            dummy: d.into(),
-        }
-    }
-
     /// Domain separation tag for differentiating different byte operations.
     pub fn tag(&self) -> u8 {
         match self {
@@ -86,7 +77,6 @@ impl<T> ByteRelation<T> {
             Self::And { .. } => 4,
             Self::Xor { .. } => 5,
             Self::Or { .. } => 6,
-            Self::Msb { .. } => 7,
         }
     }
 
@@ -123,12 +113,6 @@ impl<T> ByteRelation<T> {
                 let r = u8::try_from(or.as_canonical_u32()).expect("or should be u8");
                 assert_eq!(input.or(), r);
             }
-            ByteRelation::Msb { i, msb, .. } => {
-                let input = ByteInput::try_from((*i, T::zero())).expect("input is not byte");
-                let r = msb.as_canonical_u32();
-                assert!(r <= 1);
-                assert_eq!(input.msb(), r == 1);
-            }
         }
     }
 }
@@ -145,7 +129,6 @@ impl<F: AbstractField> Relation<F> for ByteRelation<F> {
             ByteRelation::And { i1, i2, and } => vec![i1, i2, and],
             ByteRelation::Xor { i1, i2, xor } => vec![i1, i2, xor],
             ByteRelation::Or { i1, i2, or } => vec![i1, i2, or],
-            ByteRelation::Msb { i, msb, dummy } => vec![i, msb, dummy],
         };
         chain([relation_tag, operation_tag], relation)
     }

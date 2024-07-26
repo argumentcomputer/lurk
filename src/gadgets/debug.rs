@@ -121,17 +121,6 @@ impl<F: Field> ByteRecord for ByteRecordTester<F> {
             .push_back(ByteRelation::or(i1, i2, F::from_canonical_u8(r)));
         r
     }
-
-    fn msb(&mut self, i: u8) -> bool {
-        let input = ByteInput::from_u8(i);
-        let r = input.msb();
-        self.populate_events.push_back(ByteRelation::msb(
-            F::from_canonical_u8(i),
-            F::from_bool(r),
-            F::zero(),
-        ));
-        r
-    }
 }
 
 impl<F: Field> ByteRecordTester<F> {
@@ -205,10 +194,6 @@ impl<'a, F: Field> ByteAirRecord<F> for ByteAirRecordPassingTester<'a, F> {
     fn or(&mut self, i1: impl Into<F>, i2: impl Into<F>, r: impl Into<F>, is_real: impl Into<F>) {
         self.push_air_event(ByteRelation::or(i1, i2, r), is_real);
     }
-
-    fn msb(&mut self, i: impl Into<F>, r: impl Into<F>, is_real: impl Into<F>) {
-        self.push_air_event(ByteRelation::msb(i, r, F::zero()), is_real);
-    }
 }
 
 #[derive(Debug)]
@@ -260,6 +245,4 @@ impl<F: AbstractField> ByteAirRecord<F> for ByteAirRecordIgnoringTester {
         _is_real: impl Into<F>,
     ) {
     }
-
-    fn msb(&mut self, _i: impl Into<F>, _r: impl Into<F>, _is_real: impl Into<F>) {}
 }

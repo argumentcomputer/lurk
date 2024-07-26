@@ -62,10 +62,6 @@ impl<F: Field> BaseAir<F> for BytesChip<F> {
             row.and = F::from_canonical_u8(input.and());
             row.xor = F::from_canonical_u8(input.xor());
             row.or = F::from_canonical_u8(input.or());
-
-            // since msb only works over bytes, the result is duplicated 2^8 times.
-            // so we use the upper byte of the input as a dummy in the ByteRelation being provided.
-            row.msb = F::from_bool(input.msb_unchecked());
         });
         Some(trace)
     }
@@ -82,6 +78,10 @@ impl<F: PrimeField32> BytesChip<F> {
         let is_real = self.included(bytes_record);
         let mut trace = RowMajorMatrix::new(vec![F::zero(); height * width], width);
 
+        // When not real, the empty trace is valid and will not provide any events
+        if !is_real {
+            return trace;
+        }
         trace.par_rows_mut().enumerate().for_each(|(index, row)| {
             let index = index as u16;
             let input = ByteInput::from_u16(index);
@@ -134,7 +134,6 @@ impl<AB: LookupBuilder + PairBuilder> Air<AB> for BytesChip<AB::F> {
             ByteRelation::and(prep.input.0, prep.input.1, prep.and),
             ByteRelation::xor(prep.input.0, prep.input.1, prep.xor),
             ByteRelation::or(prep.input.0, prep.input.1, prep.or),
-            ByteRelation::msb(prep.input.0, prep.msb, prep.input.1),
         ];
 
         for (relation, provide) in relations.into_iter().zip(main.provides.into_iter()) {

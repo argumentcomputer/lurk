@@ -66,13 +66,6 @@ impl<T, const W: usize> Word<T, W> {
     }
 }
 
-impl<T: Debug, const W: usize> FromIterator<T> for Word<T, W> {
-    /// Note: This function panics if the iterator does not contain exactly `W` elements.
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        Self(iter.into_iter().collect::<Vec<_>>().try_into().unwrap())
-    }
-}
-
 //
 // Conversion
 //
@@ -173,6 +166,22 @@ impl<'a, T, const W: usize> IntoIterator for &'a mut Word<T, W> {
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter_mut()
+    }
+}
+
+impl<T, const W: usize> FromIterator<T> for Word<T, W> {
+    /// Note: This function panics if the iterator does not contain exactly `W` elements.
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut iter = iter.into_iter();
+        let limbs = array::from_fn(|_| {
+            iter.next()
+                .expect("input iterator does not contain enough elements")
+        });
+        assert!(
+            iter.next().is_none(),
+            "input iterator contained too many elements"
+        );
+        Self(limbs)
     }
 }
 

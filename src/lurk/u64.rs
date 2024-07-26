@@ -1,3 +1,4 @@
+use std::array;
 use std::borrow::{Borrow, BorrowMut};
 
 use p3_air::AirBuilder;
@@ -6,10 +7,7 @@ use p3_field::PrimeField32;
 use crate::{
     air::builder::{LookupBuilder, Record, RequireRecord},
     gadgets::{
-        bytes::{
-            builder::BytesAirRecordWithContext,
-            record::{BytesRecordWithContext, DummyBytesRecord},
-        },
+        bytes::{builder::BytesAirRecordWithContext, record::DummyBytesRecord},
         unsigned::{
             add::{Diff64, Sum64},
             div_rem::DivRem64,
@@ -32,9 +30,7 @@ pub enum U64 {
 
 fn into_u64<F: PrimeField32>(slice: &[F]) -> u64 {
     assert_eq!(slice.len(), 8);
-    let bytes: Vec<_> = slice.iter().map(|f| F::as_canonical_u32(f) as u8).collect();
-    let mut buf = [0u8; 8];
-    buf.copy_from_slice(&bytes);
+    let buf: [u8; 8] = array::from_fn(|i| slice[i].as_canonical_u32().try_into().unwrap());
     u64::from_le_bytes(buf)
 }
 
@@ -51,16 +47,6 @@ impl<F: PrimeField32> Chipset<F> for U64 {
         }
     }
 
-    fn require_size(&self) -> usize {
-        match self {
-            U64::Add => Sum64::<F>::num_requires(),
-            U64::Sub => Diff64::<F>::num_requires(),
-            U64::Mul => Product64::<F>::num_requires(),
-            U64::DivRem => DivRem64::<F>::num_requires(),
-            U64::LessThan => IsLessThan64::<F>::num_requires(),
-        }
-    }
-
     fn witness_size(&self) -> usize {
         match self {
             U64::Add => Sum64::<F>::witness_size(),
@@ -68,6 +54,16 @@ impl<F: PrimeField32> Chipset<F> for U64 {
             U64::Mul => Product64::<F>::witness_size(),
             U64::DivRem => DivRem64::<F>::witness_size(),
             U64::LessThan => IsLessThan64::<F>::witness_size(),
+        }
+    }
+
+    fn require_size(&self) -> usize {
+        match self {
+            U64::Add => Sum64::<F>::num_requires(),
+            U64::Sub => Diff64::<F>::num_requires(),
+            U64::Mul => Product64::<F>::num_requires(),
+            U64::DivRem => DivRem64::<F>::num_requires(),
+            U64::LessThan => IsLessThan64::<F>::num_requires(),
         }
     }
 
@@ -80,35 +76,22 @@ impl<F: PrimeField32> Chipset<F> for U64 {
     ) -> Vec<F> {
         let in1 = into_u64(&input[0..8]);
         let in2 = into_u64(&input[8..16]);
-        let bytes = &mut BytesRecordWithContext {
-            nonce,
-            requires,
-            record: &mut queries.bytes,
-        };
+        let bytes = &mut queries.bytes.context(nonce, requires);
         match self {
             U64::Add => {
                 let mut add_witness = Sum64::<F>::default();
                 let add = add_witness.populate(&in1, &in2, bytes);
-                add.to_le_bytes()
-                    .into_iter()
-                    .map(|b| F::from_canonical_u8(b))
-                    .collect()
+                add.to_le_bytes().map(F::from_canonical_u8).to_vec()
             }
             U64::Sub => {
                 let mut sub_witness = Diff64::<F>::default();
                 let sub = sub_witness.populate(&in1, &in2, bytes);
-                sub.to_le_bytes()
-                    .into_iter()
-                    .map(|b| F::from_canonical_u8(b))
-                    .collect()
+                sub.to_le_bytes().map(F::from_canonical_u8).to_vec()
             }
             U64::Mul => {
                 let mut mul_witness = Product64::<F>::default();
                 let mul = mul_witness.populate(&in1, &in2, bytes);
-                mul.to_le_bytes()
-                    .into_iter()
-                    .map(|b| F::from_canonical_u8(b))
-                    .collect()
+                mul.to_le_bytes().map(F::from_canonical_u8).to_vec()
             }
             U64::DivRem => {
                 let mut div_witness = DivRem64::<F>::default();
@@ -116,7 +99,7 @@ impl<F: PrimeField32> Chipset<F> for U64 {
                 div.to_le_bytes()
                     .into_iter()
                     .chain(rem.to_le_bytes())
-                    .map(|b| F::from_canonical_u8(b))
+                    .map(F::from_canonical_u8)
                     .collect()
             }
             U64::LessThan => {
@@ -135,30 +118,21 @@ impl<F: PrimeField32> Chipset<F> for U64 {
             U64::Add => {
                 let mut add_witness = Sum64::<F>::default();
                 let add = add_witness.populate(&in1, &in2, bytes);
-                add.to_le_bytes()
-                    .into_iter()
-                    .map(|b| F::from_canonical_u8(b))
-                    .collect()
+                add.to_le_bytes().map(F::from_canonical_u8).to_vec()
             }
             U64::Sub => {
                 let mut sub_witness = Diff64::<F>::default();
                 let sub = sub_witness.populate(&in1, &in2, bytes);
-                sub.to_le_bytes()
-                    .into_iter()
-                    .map(|b| F::from_canonical_u8(b))
-                    .collect()
+                sub.to_le_bytes().map(F::from_canonical_u8).to_vec()
             }
             U64::Mul => {
                 // TODO: Clean up the API and remove these hardcoded 16/8 values?
-                //   This is here because Product64 containts the result, but the witness and output are separate
+                //   This is here because Product64 contains the result, but the witness and output are separate
                 let mut out = vec![F::zero(); 16];
                 let mul_witness: &mut Product64<F> = out.as_mut_slice().borrow_mut();
                 let mul = mul_witness.populate(&in1, &in2, bytes);
                 witness.copy_from_slice(&out[8..16]);
-                mul.to_le_bytes()
-                    .into_iter()
-                    .map(|b| F::from_canonical_u8(b))
-                    .collect()
+                mul.to_le_bytes().map(F::from_canonical_u8).to_vec()
             }
             U64::DivRem => {
                 let mut out = vec![F::zero(); DivRem64::<F>::witness_size()];
@@ -168,7 +142,7 @@ impl<F: PrimeField32> Chipset<F> for U64 {
                 div.to_le_bytes()
                     .into_iter()
                     .chain(rem.to_le_bytes())
-                    .map(|b| F::from_canonical_u8(b))
+                    .map(F::from_canonical_u8)
                     .collect()
             }
             U64::LessThan => {

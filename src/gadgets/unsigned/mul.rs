@@ -14,14 +14,10 @@ use std::array;
 #[derive(Clone, Debug, AlignedBorrow)]
 #[repr(C)]
 pub struct MulWitness<T, const W: usize> {
-    pub(crate) carry: [T; W],
+    carry: [T; W],
 }
 
 impl<F: AbstractField, const W: usize> MulWitness<F, W> {
-    pub fn values(&self) -> Vec<F> {
-        self.carry.iter().cloned().collect()
-    }
-
     /// Populates a witness for checking the multiplication of two unsigned integers
     /// representable as arrays of little-endian bytes.
     /// The result is not range-constrained, as this allows the Air to reuse this witness
@@ -59,7 +55,6 @@ impl<F: AbstractField, const W: usize> MulWitness<F, W> {
             carry = u16::from_le_bytes([carry_lo, carry_hi]);
 
             byte_record.range_check_u16(carry);
-
             self.carry[k] = F::from_canonical_u16(carry);
 
             result[k] = limb;
@@ -128,8 +123,8 @@ impl<T: Default, const W: usize> Default for MulWitness<T, W> {
 /// Wrapper type for multiplication, which contains the witness and output of the computation.
 #[derive(Clone, Debug, Default, AlignedBorrow)]
 pub struct Product<T, const W: usize> {
-    pub(crate) result: UncheckedWord<T, W>,
-    pub(crate) witness: MulWitness<T, W>,
+    result: UncheckedWord<T, W>,
+    witness: MulWitness<T, W>,
 }
 
 pub type Product64<T> = Product<T, 8>;

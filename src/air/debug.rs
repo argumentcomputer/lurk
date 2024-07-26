@@ -127,27 +127,29 @@ pub fn debug_chip_constraints_and_queries_with_sharding<F: PrimeField32, C: Chip
     } else {
         vec![full_shard]
     };
-    let mut lookup_queries = vec![];
-    for shard in shards.iter() {
-        let queries: Vec<_> = chips
-            .iter()
-            .map(|chip| {
-                if chip.included(shard) {
-                    let trace = chip.generate_trace(shard, &mut Shard::default());
+
+    let lookup_queries: Vec<_> = shards
+        .into_iter()
+        .flat_map(|shard| {
+            // For each shard, get the queries produced by all the chips in that shard.
+            chips.iter().filter_map(move |chip| {
+                if chip.included(&shard) {
+                    let trace = chip.generate_trace(&shard, &mut Shard::default());
                     let preprocessed_trace = chip.generate_preprocessed_trace(&LairMachineProgram);
-                    debug_constraints_collecting_queries(
+                    let queries = debug_constraints_collecting_queries(
                         chip,
                         &[],
                         preprocessed_trace.as_ref(),
                         &trace,
-                    )
+                    );
+                    Some(queries)
                 } else {
-                    Default::default()
+                    None
                 }
             })
-            .collect();
-        lookup_queries.extend(queries.into_iter());
-    }
+        })
+        .collect();
+
     TraceQueries::verify_many(lookup_queries);
 }
 

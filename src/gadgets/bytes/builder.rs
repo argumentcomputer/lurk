@@ -86,10 +86,4 @@ impl<F: AbstractField> ByteAirRecord<F> for BytesAirRecordWithContext<F> {
         self.records
             .push((ByteRelation::or(i1, i2, r), is_real.into()))
     }
-
-    fn msb(&mut self, i: impl Into<F>, r: impl Into<F>, is_real: impl Into<F>) {
-        // We always pass in the dummy as 0 when building the queries
-        self.records
-            .push((ByteRelation::msb(i, r, F::zero()), is_real.into()))
-    }
 }
