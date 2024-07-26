@@ -511,8 +511,9 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         &mut self,
         tag: Tag,
         mut digest: &'a [F],
-        tuple2_hashes_inv: &'a FxHashMap<List<F>, List<F>>,
-        tuple3_hashes_inv: &'a FxHashMap<List<F>, List<F>>,
+        hash3_inv: &'a FxHashMap<List<F>, List<F>>,
+        hash4_inv: &'a FxHashMap<List<F>, List<F>>,
+        hash6_inv: &'a FxHashMap<List<F>, List<F>>,
     ) where
         F: PrimeField32,
     {
@@ -526,7 +527,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         let zeros = [F::zero(); DIGEST_SIZE];
         macro_rules! recurse {
             ($tag:expr, $digest:expr) => {
-                self.memoize_dag($tag, $digest, tuple2_hashes_inv, tuple3_hashes_inv);
+                self.memoize_dag($tag, $digest, hash3_inv, hash4_inv, hash6_inv);
             };
         }
         macro_rules! memoize_tuple2 {
@@ -595,9 +596,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                     self.memoize_atom_dag(ZPtr { tag, digest: zeros });
                     break;
                 }
-                let preimg = tuple2_hashes_inv
-                    .get(digest)
-                    .expect("Tuple2 preimg not found");
+                let preimg = hash4_inv.get(digest).expect("Tuple4 preimg not found");
                 let (head, tail) = preimg.split_at(ZPTR_SIZE);
                 let head_digest = &head[DIGEST_SIZE..];
                 let tail_digest = &tail[DIGEST_SIZE..];
@@ -606,9 +605,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 zptr = ZPtr::from_flat_data(tail);
             },
             Tag::Cons => loop {
-                let preimg = tuple2_hashes_inv
-                    .get(digest)
-                    .expect("Tuple2 preimg not found");
+                let preimg = hash4_inv.get(digest).expect("Tuple4 preimg not found");
                 let (car, cdr) = preimg.split_at(ZPTR_SIZE);
                 let (car_tag, car_digest) = car.split_at(DIGEST_SIZE);
                 let (cdr_tag, cdr_digest) = cdr.split_at(DIGEST_SIZE);
@@ -624,14 +621,11 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 zptr = ZPtr::from_flat_data(cdr);
             },
             Tag::Thunk => {
-                let preimg = tuple2_hashes_inv
-                    .get(digest)
-                    .expect("Tuple2 preimg not found");
-                let (fst, snd) = preimg.split_at(ZPTR_SIZE);
+                let preimg = hash3_inv.get(digest).expect("Hash3 preimg not found");
+                let (fst, snd_digest) = preimg.split_at(ZPTR_SIZE);
                 let (fst_tag, fst_digest) = fst.split_at(DIGEST_SIZE);
-                let (snd_tag, snd_digest) = snd.split_at(DIGEST_SIZE);
                 let fst_tag = Tag::from_field(&fst_tag[0]);
-                let snd_tag = Tag::from_field(&snd_tag[0]);
+                let snd_tag = Tag::Env;
                 recurse!(fst_tag, fst_digest);
                 recurse!(snd_tag, snd_digest);
                 memoize_tuple2!(fst_tag, fst_digest, snd_tag, snd_digest);
@@ -641,21 +635,16 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                     self.memoize_atom_dag(ZPtr { tag, digest: zeros });
                     break;
                 }
-                let preimg = tuple2_hashes_inv
-                    .get(digest)
-                    .expect("Tuple2 preimg not found");
+                let preimg = hash4_inv.get(digest).expect("Hash4 preimg not found");
                 let (sym_digest, rst) = preimg.split_at(DIGEST_SIZE);
                 let (val, env_digest) = rst.split_at(ZPTR_SIZE);
                 let (val_tag, val_digest) = val.split_at(DIGEST_SIZE);
                 let val_tag = Tag::from_field(&val_tag[0]);
-                memoize_compact!(
-                    Tag::Sym,
-                    sym_digest,
-                    val_tag,
-                    val_digest,
-                    Tag::Env,
-                    env_digest
-                );
+                let sym_tag = Tag::Sym;
+                let env_tag = Tag::Env;
+                recurse!(sym_tag, sym_digest);
+                recurse!(val_tag, val_digest);
+                memoize_compact!(sym_tag, sym_digest, val_tag, val_digest, env_tag, env_digest);
                 digest = env_digest;
                 zptr = ZPtr {
                     tag: Tag::Env,
@@ -663,9 +652,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 };
             },
             Tag::Fun => {
-                let preimg = tuple3_hashes_inv
-                    .get(digest)
-                    .expect("Tuple3 preimg not found");
+                let preimg = hash6_inv.get(digest).expect("Hash6 preimg not found");
                 let (fst, rst) = preimg.split_at(ZPTR_SIZE);
                 let (snd, trd) = rst.split_at(ZPTR_SIZE);
                 let (fst_tag, fst_digest) = fst.split_at(DIGEST_SIZE);
@@ -915,6 +902,7 @@ mod test {
         zstore.memoize_dag(
             output_tag,
             output_digest,
+            record.get_inv_queries("hash_24_8", &toplevel),
             tuple2_hashes_inv,
             tuple3_hashes_inv,
         );
