@@ -338,13 +338,13 @@ impl<F: PrimeField32> Op<F> {
 
                 let input = input.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let mut witness = vec![F::zero(); chip.witness_size()];
-                let out = chip.populate_witness(&input, &mut witness);
 
-                // order: output, witness, requires
+                let out = chip.populate_witness(&input, &mut witness);
                 for f in out {
                     map.push((f, 1));
-                    slice.push_aux(index, f);
                 }
+
+                // order: witness, requires
                 for f in witness {
                     slice.push_aux(index, f);
                 }

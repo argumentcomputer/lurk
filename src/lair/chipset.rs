@@ -39,11 +39,10 @@ pub trait Chipset<F>: Sync {
         builder: &mut AB,
         is_real: AB::Expr,
         input: Vec<AB::Expr>,
-        output: &[AB::Var],
         witness: &[AB::Var],
-        _nonce: AB::Expr,
-        _requires: &[RequireRecord<AB::Var>],
-    );
+        nonce: AB::Expr,
+        requires: &[RequireRecord<AB::Var>],
+    ) -> Vec<AB::Expr>;
 }
 
 pub struct Nochip;
@@ -79,10 +78,9 @@ impl<F> Chipset<F> for Nochip {
         _: AB::Expr,
         _: Vec<AB::Expr>,
         _: &[AB::Var],
-        _: &[AB::Var],
         _: AB::Expr,
         _: &[RequireRecord<AB::Var>],
-    ) {
+    ) -> Vec<AB::Expr> {
         unimplemented!()
     }
 }

@@ -150,52 +150,43 @@ impl<F: PrimeField32> Chipset<F> for U64 {
         builder: &mut AB,
         is_real: AB::Expr,
         ins: Vec<AB::Expr>,
-        out: &[AB::Var],
         witness: &[AB::Var],
         nonce: AB::Expr,
         requires: &[RequireRecord<AB::Var>],
-    ) {
+    ) -> Vec<AB::Expr> {
         let in1 = ins[0..8].iter().cloned().collect::<Word64<_>>();
         let in2 = ins[8..16].iter().cloned().collect::<Word64<_>>();
         let mut air_record = BytesAirRecordWithContext::default();
-        match self {
+        let out = match self {
             U64::Add => {
                 let witness: &Sum64<AB::Var> = witness.borrow();
-                witness.eval(builder, in1, in2, &mut air_record, is_real.clone());
-                for (&out, expected) in out.iter().zip(witness.iter_result()) {
-                    builder.when(is_real.clone()).assert_eq(out, expected);
-                }
+                let out = witness.eval(builder, in1, in2, &mut air_record, is_real.clone());
+                out.map(Into::into).into_iter().collect()
             }
             U64::Sub => {
                 let witness: &Diff64<AB::Var> = witness.borrow();
-                witness.eval(builder, in1, in2, &mut air_record, is_real.clone());
-                for (&out, expected) in out.iter().zip(witness.iter_result()) {
-                    builder.when(is_real.clone()).assert_eq(out, expected);
-                }
+                let out = witness.eval(builder, in1, in2, &mut air_record, is_real.clone());
+                out.map(Into::into).into_iter().collect()
             }
             U64::Mul => {
                 let witness: &Product64<AB::Var> = witness.borrow();
-                witness.eval(builder, &in1, &in2, &mut air_record, is_real.clone());
-                for (&out, expected) in out.iter().zip(witness.iter_result()) {
-                    builder.when(is_real.clone()).assert_eq(out, expected);
-                }
+                let out = witness.eval(builder, &in1, &in2, &mut air_record, is_real.clone());
+                out.map(Into::into).into_iter().collect()
             }
             U64::DivRem => {
                 let witness: &DivRem64<AB::Var> = witness.borrow();
-                witness.eval(builder, &in1, &in2, &mut air_record, is_real.clone());
-                for (&out, expected) in out.iter().zip(witness.iter_result()) {
-                    builder.when(is_real.clone()).assert_eq(out, expected);
-                }
+                let (q, r) = witness.eval(builder, &in1, &in2, &mut air_record, is_real.clone());
+                [q, r].into_iter().flatten().map(Into::into).collect()
             }
             U64::LessThan => {
                 let witness: &IsLessThan64<AB::Var> = witness.borrow();
-                witness.eval_less_than(builder, &in1, &in2, &mut air_record, is_real.clone());
-                for (&out, expected) in out.iter().zip(witness.iter_result()) {
-                    builder.when(is_real.clone()).assert_eq(out, expected);
-                }
+                let out =
+                    witness.eval_less_than(builder, &in1, &in2, &mut air_record, is_real.clone());
+                vec![out]
             }
-        }
+        };
         air_record.require_all(builder, nonce, requires.iter().cloned());
+        out
     }
 }
 

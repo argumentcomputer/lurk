@@ -7,6 +7,7 @@ pub mod eval;
 mod eval_tests;
 pub mod package;
 pub mod parser;
+pub mod poseidon;
 pub mod state;
 pub mod symbol;
 pub mod syntax;
