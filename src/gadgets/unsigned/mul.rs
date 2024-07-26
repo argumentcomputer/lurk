@@ -123,8 +123,8 @@ impl<T: Default, const W: usize> Default for MulWitness<T, W> {
 /// Wrapper type for multiplication, which contains the witness and output of the computation.
 #[derive(Clone, Debug, Default, AlignedBorrow)]
 pub struct Product<T, const W: usize> {
-    result: UncheckedWord<T, W>,
     witness: MulWitness<T, W>,
+    result: UncheckedWord<T, W>,
 }
 
 impl<F: AbstractField, const W: usize> Product<F, W> {
