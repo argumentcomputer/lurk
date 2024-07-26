@@ -1,121 +1,117 @@
 use p3_air::AirBuilder;
 use p3_baby_bear::BabyBear;
-use p3_poseidon2::{Poseidon2, Poseidon2ExternalMatrixGeneral};
-use p3_symmetric::Permutation;
 
 use crate::{
-    air::builder::{LookupBuilder, RequireRecord},
-    lair::chipset::Chipset,
-    poseidon::{
-        config::{
-            BabyBearConfig24, BabyBearConfig32, BabyBearConfig48, InternalDiffusion, PoseidonConfig,
-        },
-        wide::{air::eval_input, columns::Poseidon2Cols, trace::populate_witness},
-    },
+    air::builder::{LookupBuilder, Record, RequireRecord},
+    lair::{chipset::Chipset, execute::QueryRecord},
+    poseidon::config::{BabyBearConfig24, BabyBearConfig32, BabyBearConfig48},
 };
 
 use crate::lair::{map::Map, Name};
+use crate::lurk::poseidon::PoseidonChipset;
 
-use super::zstore::Hasher;
+use super::{u64::U64, zstore::Hasher};
 
 #[derive(Clone)]
 pub enum LurkChip {
-    Hasher24_8(
-        Poseidon2<
-            BabyBear,
-            Poseidon2ExternalMatrixGeneral,
-            InternalDiffusion<BabyBearConfig24>,
-            24,
-            7,
-        >,
-    ),
-    Hasher32_8(
-        Poseidon2<
-            BabyBear,
-            Poseidon2ExternalMatrixGeneral,
-            InternalDiffusion<BabyBearConfig32>,
-            32,
-            7,
-        >,
-    ),
-    Hasher48_8(
-        Poseidon2<
-            BabyBear,
-            Poseidon2ExternalMatrixGeneral,
-            InternalDiffusion<BabyBearConfig48>,
-            48,
-            7,
-        >,
-    ),
+    Hasher24_8(PoseidonChipset<BabyBearConfig24, 24>),
+    Hasher32_8(PoseidonChipset<BabyBearConfig32, 32>),
+    Hasher48_8(PoseidonChipset<BabyBearConfig48, 48>),
+    U64(U64),
 }
 
 pub fn lurk_chip_map() -> Map<Name, LurkChip> {
-    let hash_24_8 = LurkChip::Hasher24_8(BabyBearConfig24::hasher());
-    let hash_32_8 = LurkChip::Hasher32_8(BabyBearConfig32::hasher());
-    let hash_48_8 = LurkChip::Hasher48_8(BabyBearConfig48::hasher());
+    let hash_24_8 = LurkChip::Hasher24_8(PoseidonChipset::default());
+    let hash_32_8 = LurkChip::Hasher32_8(PoseidonChipset::default());
+    let hash_48_8 = LurkChip::Hasher48_8(PoseidonChipset::default());
+    let u64_add = LurkChip::U64(U64::Add);
+    let u64_sub = LurkChip::U64(U64::Sub);
+    let u64_mul = LurkChip::U64(U64::Mul);
+    let u64_divrem = LurkChip::U64(U64::DivRem);
+    let u64_lessthan = LurkChip::U64(U64::LessThan);
     let vec = vec![
         (Name("hash_24_8"), hash_24_8),
         (Name("hash_32_8"), hash_32_8),
         (Name("hash_48_8"), hash_48_8),
+        (Name("u64_add"), u64_add),
+        (Name("u64_sub"), u64_sub),
+        (Name("u64_mul"), u64_mul),
+        (Name("u64_divrem"), u64_divrem),
+        (Name("u64_lessthan"), u64_lessthan),
     ];
     Map::from_vec(vec)
-}
-
-macro_rules! sized {
-    ($vector:ident) => {
-        $vector.try_into().unwrap()
-    };
 }
 
 impl Chipset<BabyBear> for LurkChip {
     #[inline]
     fn input_size(&self) -> usize {
         match self {
-            LurkChip::Hasher24_8(..) => 24,
-            LurkChip::Hasher32_8(..) => 32,
-            LurkChip::Hasher48_8(..) => 48,
+            LurkChip::Hasher24_8(op) => op.input_size(),
+            LurkChip::Hasher32_8(op) => op.input_size(),
+            LurkChip::Hasher48_8(op) => op.input_size(),
+            LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::input_size(op),
         }
     }
 
     #[inline]
     fn output_size(&self) -> usize {
-        8
-    }
-
-    fn require_size(&self) -> usize {
-        0
-    }
-
-    fn execute_simple(&self, preimg: &[BabyBear]) -> Vec<BabyBear> {
         match self {
-            LurkChip::Hasher24_8(hash) => hash.permute(sized!(preimg))[..self.output_size()].into(),
-            LurkChip::Hasher32_8(hash) => hash.permute(sized!(preimg))[..self.output_size()].into(),
-            LurkChip::Hasher48_8(hash) => hash.permute(sized!(preimg))[..self.output_size()].into(),
+            LurkChip::Hasher24_8(op) => op.output_size(),
+            LurkChip::Hasher32_8(op) => op.output_size(),
+            LurkChip::Hasher48_8(op) => op.output_size(),
+            LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::output_size(op),
         }
     }
 
     fn witness_size(&self) -> usize {
         match self {
-            LurkChip::Hasher24_8(..) => Poseidon2Cols::<BabyBear, BabyBearConfig24, 24>::num_cols(),
-            LurkChip::Hasher32_8(..) => Poseidon2Cols::<BabyBear, BabyBearConfig32, 32>::num_cols(),
-            LurkChip::Hasher48_8(..) => Poseidon2Cols::<BabyBear, BabyBearConfig48, 48>::num_cols(),
+            LurkChip::Hasher24_8(op) => op.witness_size(),
+            LurkChip::Hasher32_8(op) => op.witness_size(),
+            LurkChip::Hasher48_8(op) => op.witness_size(),
+            LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::witness_size(op),
         }
     }
 
-    fn populate_witness(&self, preimg: &[BabyBear], witness: &mut [BabyBear]) -> Vec<BabyBear> {
-        let mut out: Vec<_> = match self {
-            LurkChip::Hasher24_8(..) => {
-                populate_witness::<BabyBearConfig24, 24>(sized!(preimg), witness).into()
-            }
-            LurkChip::Hasher32_8(..) => {
-                populate_witness::<BabyBearConfig32, 32>(sized!(preimg), witness).into()
-            }
-            LurkChip::Hasher48_8(..) => {
-                populate_witness::<BabyBearConfig48, 48>(sized!(preimg), witness).into()
-            }
-        };
-        out.truncate(8);
-        out
+    fn require_size(&self) -> usize {
+        match self {
+            LurkChip::Hasher24_8(op) => op.require_size(),
+            LurkChip::Hasher32_8(op) => op.require_size(),
+            LurkChip::Hasher48_8(op) => op.require_size(),
+            LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::require_size(op),
+        }
+    }
+
+    fn execute_simple(&self, input: &[BabyBear]) -> Vec<BabyBear> {
+        match self {
+            LurkChip::Hasher24_8(hasher) => hasher.execute_simple(input),
+            LurkChip::Hasher32_8(hasher) => hasher.execute_simple(input),
+            LurkChip::Hasher48_8(hasher) => hasher.execute_simple(input),
+            LurkChip::U64(..) => panic!("use `execute`"),
+        }
+    }
+
+    fn execute(
+        &self,
+        input: &[BabyBear],
+        nonce: u32,
+        queries: &mut QueryRecord<BabyBear>,
+        requires: &mut Vec<Record>,
+    ) -> Vec<BabyBear> {
+        match self {
+            LurkChip::Hasher24_8(hasher) => hasher.execute(input, nonce, queries, requires),
+            LurkChip::Hasher32_8(hasher) => hasher.execute(input, nonce, queries, requires),
+            LurkChip::Hasher48_8(hasher) => hasher.execute(input, nonce, queries, requires),
+            LurkChip::U64(op) => op.execute(input, nonce, queries, requires),
+        }
+    }
+
+    fn populate_witness(&self, input: &[BabyBear], witness: &mut [BabyBear]) -> Vec<BabyBear> {
+        match self {
+            LurkChip::Hasher24_8(hasher) => hasher.populate_witness(input, witness),
+            LurkChip::Hasher32_8(hasher) => hasher.populate_witness(input, witness),
+            LurkChip::Hasher48_8(hasher) => hasher.populate_witness(input, witness),
+            LurkChip::U64(op) => op.populate_witness(input, witness),
+        }
     }
 
     fn eval<AB: AirBuilder<F = BabyBear> + LookupBuilder>(
@@ -123,33 +119,21 @@ impl Chipset<BabyBear> for LurkChip {
         builder: &mut AB,
         is_real: AB::Expr,
         preimg: Vec<AB::Expr>,
-        img: &[AB::Var],
         witness: &[AB::Var],
-        _: AB::Expr,
-        _: &[RequireRecord<AB::Var>],
-    ) {
+        nonce: AB::Expr,
+        requires: &[RequireRecord<AB::Var>],
+    ) -> Vec<AB::Expr> {
         match self {
-            LurkChip::Hasher24_8(..) => eval_input::<AB, BabyBearConfig24, 24>(
-                builder,
-                sized!(preimg),
-                img,
-                witness,
-                is_real,
-            ),
-            LurkChip::Hasher32_8(..) => eval_input::<AB, BabyBearConfig32, 32>(
-                builder,
-                sized!(preimg),
-                img,
-                witness,
-                is_real,
-            ),
-            LurkChip::Hasher48_8(..) => eval_input::<AB, BabyBearConfig48, 48>(
-                builder,
-                sized!(preimg),
-                img,
-                witness,
-                is_real,
-            ),
+            LurkChip::Hasher24_8(hasher) => {
+                hasher.eval(builder, is_real, preimg, witness, nonce, requires)
+            }
+            LurkChip::Hasher32_8(hasher) => {
+                hasher.eval(builder, is_real, preimg, witness, nonce, requires)
+            }
+            LurkChip::Hasher48_8(hasher) => {
+                hasher.eval(builder, is_real, preimg, witness, nonce, requires)
+            }
+            LurkChip::U64(op) => op.eval(builder, is_real, preimg, witness, nonce, requires),
         }
     }
 }
@@ -159,8 +143,8 @@ pub type LurkHasher = Hasher<BabyBear, LurkChip>;
 #[inline]
 pub fn lurk_hasher() -> LurkHasher {
     Hasher::new(
-        LurkChip::Hasher24_8(BabyBearConfig24::hasher()),
-        LurkChip::Hasher32_8(BabyBearConfig32::hasher()),
-        LurkChip::Hasher48_8(BabyBearConfig48::hasher()),
+        LurkChip::Hasher24_8(PoseidonChipset::default()),
+        LurkChip::Hasher32_8(PoseidonChipset::default()),
+        LurkChip::Hasher48_8(PoseidonChipset::default()),
     )
 }

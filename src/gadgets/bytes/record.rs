@@ -1,6 +1,5 @@
-use crate::air::builder::{Record, RequireRecord};
+use crate::air::builder::Record;
 use crate::gadgets::bytes::{ByteInput, ByteRecord};
-use p3_field::PrimeField;
 use std::collections::BTreeMap;
 
 /// Contains all Byte operation records that happened during an execution.
@@ -27,19 +26,10 @@ pub struct BytesRecord {
 ///
 /// It contains the nonce for the event, as well as a pre-allocated list of `RequireRecords` that
 /// will be populated with the correct witness data.
-///
-/// # Panics
-///
-/// This structure implements `Drop` and asserts that the list of `RequireRecords` was fully
-/// consumed. This ensures the correct number of records are populated.
-pub struct ByteRecordWithContext<'a, 'b, F, I>
-where
-    F: 'static,
-    I: Iterator<Item = &'b mut RequireRecord<F>>,
-{
-    nonce: u32,
-    record: &'a mut BytesRecord,
-    requires: I,
+pub struct ByteRecordWithContext<'a> {
+    pub nonce: u32,
+    pub requires: &'a mut Vec<Record>,
+    pub record: &'a mut BytesRecord,
 }
 
 /// For a given input byte pair, this structure records the nonce and count of the accesses to
@@ -60,11 +50,10 @@ where
 pub struct BytesInputRecord {
     pub(crate) range_u8: Record,
     pub(crate) range_u16: Record,
-    pub(crate) less_then: Record,
+    pub(crate) less_than: Record,
     pub(crate) and: Record,
     pub(crate) xor: Record,
     pub(crate) or: Record,
-    pub(crate) msb: Record,
 }
 
 impl BytesInputRecord {
@@ -73,11 +62,10 @@ impl BytesInputRecord {
         [
             self.range_u8,
             self.range_u16,
-            self.less_then,
+            self.less_than,
             self.and,
             self.xor,
             self.or,
-            self.msb,
         ]
     }
 }
@@ -85,19 +73,15 @@ impl BytesInputRecord {
 impl BytesRecord {
     /// Add context (nonce and `RequireRecords`) to a given `ByteInputRecord` to be passed along
     /// to a witness's `populate` function.
-    pub fn with_context<'a, 'b, F, II>(
+    pub fn context<'a>(
         &'a mut self,
         nonce: u32,
-        requires: II,
-    ) -> ByteRecordWithContext<'a, 'b, F, II::IntoIter>
-    where
-        F: 'b,
-        II: IntoIterator<Item = &'b mut RequireRecord<F>>,
-    {
+        requires: &'a mut Vec<Record>,
+    ) -> ByteRecordWithContext<'a> {
         ByteRecordWithContext {
             nonce,
             record: self,
-            requires: requires.into_iter(),
+            requires,
         }
     }
 
@@ -114,91 +98,86 @@ impl BytesRecord {
     }
 }
 
-/// Implement ByteRecord such that each operation will populate the `RequireRecords` with the
-/// appropriate nonce.
+/// Implement ByteRecord by recording all the required events
 ///
 /// # Detail
 /// For each type of event, we
 /// - Get the records for the index of the byte operation in the ByteChip, or default initialize it.
 /// - Populate the next available `RequireRecord` using the record we have stored.
 /// - Update the stored record with the nonce for this access.
-impl<'a, 'b, F, I> ByteRecord for ByteRecordWithContext<'a, 'b, F, I>
-where
-    F: 'static + PrimeField,
-    I: Iterator<Item = &'b mut RequireRecord<F>>,
-{
+impl<'a> ByteRecord for ByteRecordWithContext<'a> {
     fn range_check_u8_pair(&mut self, i1: u8, i2: u8) {
         let input = ByteInput::from_u8_pair(i1, i2);
-        let records = self.record.get_mut(input);
-        let record = &mut records.range_u8;
-        let require = self.requires.next().expect("not enough requires records");
-        require.populate_and_update(self.nonce, record);
+        let range_u8 = &mut self.record.get_mut(input).range_u8;
+        let require = range_u8.new_lookup(self.nonce);
+        self.requires.push(require);
     }
 
     fn range_check_u16(&mut self, i: u16) {
         let input = ByteInput::from_u16(i);
-        let records = self.record.get_mut(input);
-        let record = &mut records.range_u16;
-        let require = self.requires.next().expect("not enough requires records");
-        require.populate_and_update(self.nonce, record);
+        let range_u16 = &mut self.record.get_mut(input).range_u16;
+        let require = range_u16.new_lookup(self.nonce);
+        self.requires.push(require);
     }
 
     fn less_than(&mut self, i1: u8, i2: u8) -> bool {
         let input = ByteInput::from_u8_pair(i1, i2);
-        let records = self.record.get_mut(input);
-        let record = &mut records.less_then;
-        let require = self.requires.next().expect("not enough requires records");
-        require.populate_and_update(self.nonce, record);
+        let less_than = &mut self.record.get_mut(input).less_than;
+        let require = less_than.new_lookup(self.nonce);
+        self.requires.push(require);
         input.less_than()
     }
 
     fn and(&mut self, i1: u8, i2: u8) -> u8 {
         let input = ByteInput::from_u8_pair(i1, i2);
-        let records = self.record.get_mut(input);
-        let record = &mut records.and;
-        let require = self.requires.next().expect("not enough requires records");
-        require.populate_and_update(self.nonce, record);
+        let and = &mut self.record.get_mut(input).and;
+        let require = and.new_lookup(self.nonce);
+        self.requires.push(require);
         input.and()
     }
 
     fn xor(&mut self, i1: u8, i2: u8) -> u8 {
         let input = ByteInput::from_u8_pair(i1, i2);
-        let records = self.record.get_mut(input);
-        let record = &mut records.xor;
-        let require = self.requires.next().expect("not enough requires records");
-        require.populate_and_update(self.nonce, record);
+        let xor = &mut self.record.get_mut(input).xor;
+        let require = xor.new_lookup(self.nonce);
+        self.requires.push(require);
         input.xor()
     }
 
     fn or(&mut self, i1: u8, i2: u8) -> u8 {
         let input = ByteInput::from_u8_pair(i1, i2);
-        let records = self.record.get_mut(input);
-        let record = &mut records.or;
-        let require = self.requires.next().expect("not enough requires records");
-        require.populate_and_update(self.nonce, record);
+        let or = &mut self.record.get_mut(input).or;
+        let require = or.new_lookup(self.nonce);
+        self.requires.push(require);
         input.or()
-    }
-
-    fn msb(&mut self, i: u8) -> bool {
-        let input = ByteInput::from_u8(i);
-        let records = self.record.get_mut(input);
-        let record = &mut records.msb;
-        let require = self.requires.next().expect("not enough requires records");
-        require.populate_and_update(self.nonce, record);
-        input.msb()
     }
 }
 
-// Implement drop to ensure the witness generation always passes the right number of RequireRecord
-impl<'a, 'b, F, I> Drop for ByteRecordWithContext<'a, 'b, F, I>
-where
-    F: 'static,
-    I: Iterator<Item = &'b mut RequireRecord<F>>,
-{
-    fn drop(&mut self) {
-        assert!(
-            self.requires.next().is_none(),
-            "Too many `require` were given"
-        )
+// Dummy record for when you do not want to record anything
+pub struct DummyBytesRecord;
+
+impl ByteRecord for DummyBytesRecord {
+    fn range_check_u8_pair(&mut self, _: u8, _: u8) {}
+
+    fn range_check_u16(&mut self, _: u16) {}
+
+    fn less_than(&mut self, i1: u8, i2: u8) -> bool {
+        let input = ByteInput::from_u8_pair(i1, i2);
+        input.less_than()
+    }
+
+    fn and(&mut self, i1: u8, i2: u8) -> u8 {
+        let input = ByteInput::from_u8_pair(i1, i2);
+        input.and()
+    }
+
+    fn xor(&mut self, i1: u8, i2: u8) -> u8 {
+        let input = ByteInput::from_u8_pair(i1, i2);
+        input.xor()
+    }
+
+    fn or(&mut self, i1: u8, i2: u8) -> u8 {
+        let input = ByteInput::from_u8_pair(i1, i2);
+        input.or()
     }
 }

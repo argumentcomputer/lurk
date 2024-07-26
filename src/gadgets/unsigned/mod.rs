@@ -169,6 +169,22 @@ impl<'a, T, const W: usize> IntoIterator for &'a mut Word<T, W> {
     }
 }
 
+impl<T, const W: usize> FromIterator<T> for Word<T, W> {
+    /// Note: This function panics if the iterator does not contain exactly `W` elements.
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut iter = iter.into_iter();
+        let limbs = array::from_fn(|_| {
+            iter.next()
+                .expect("input iterator does not contain enough elements")
+        });
+        assert!(
+            iter.next().is_none(),
+            "input iterator contained too many elements"
+        );
+        Self(limbs)
+    }
+}
+
 impl<T, I, const W: usize> Index<I> for Word<T, W>
 where
     [T]: Index<I>,

@@ -7,7 +7,10 @@ use rayon::{
     slice::ParallelSliceMut,
 };
 
-use crate::{air::builder::Record, lair::execute::mem_index_from_len};
+use crate::{
+    air::builder::{Record, RequireRecord},
+    lair::execute::mem_index_from_len,
+};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
@@ -48,6 +51,12 @@ impl<'a, T> ColumnMutSlice<'a, T> {
     pub fn push_aux(&mut self, index: &mut ColumnIndex, t: T) {
         self.aux[index.aux] = t;
         index.aux += 1;
+    }
+
+    pub fn push_require(&mut self, index: &mut ColumnIndex, require: RequireRecord<T>) {
+        self.push_aux(index, require.prev_nonce);
+        self.push_aux(index, require.prev_count);
+        self.push_aux(index, require.count_inv);
     }
 }
 
@@ -282,10 +291,7 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, *f);
                 }
                 let lookup = ctx.requires.next().expect("Not enough require hints");
-                let require = lookup.into_require();
-                slice.push_aux(index, require.prev_nonce);
-                slice.push_aux(index, require.prev_count);
-                slice.push_aux(index, require.count_inv);
+                slice.push_require(index, lookup.into_require());
             }
             Op::PreImg(idx, out) => {
                 let out = out.iter().map(|a| map[*a].0).collect::<List<_>>();
@@ -298,10 +304,7 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, *f);
                 }
                 let lookup = ctx.requires.next().expect("Not enough require hints");
-                let require = lookup.into_require();
-                slice.push_aux(index, require.prev_nonce);
-                slice.push_aux(index, require.prev_count);
-                slice.push_aux(index, require.count_inv);
+                slice.push_require(index, lookup.into_require());
             }
             Op::Store(args) => {
                 let mem_idx = mem_index_from_len(args.len());
@@ -314,10 +317,7 @@ impl<F: PrimeField32> Op<F> {
                 map.push((f, 1));
                 slice.push_aux(index, f);
                 let lookup = ctx.requires.next().expect("Not enough require hints");
-                let require = lookup.into_require();
-                slice.push_aux(index, require.prev_nonce);
-                slice.push_aux(index, require.prev_count);
-                slice.push_aux(index, require.count_inv);
+                slice.push_require(index, lookup.into_require());
             }
             Op::Load(len, ptr) => {
                 let mem_idx = mem_index_from_len(*len);
@@ -331,23 +331,26 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, *f);
                 }
                 let lookup = ctx.requires.next().expect("Not enough require hints");
-                let require = lookup.into_require();
-                slice.push_aux(index, require.prev_nonce);
-                slice.push_aux(index, require.prev_count);
-                slice.push_aux(index, require.count_inv);
+                slice.push_require(index, lookup.into_require());
             }
             Op::ExternCall(chip_idx, input) => {
                 let chip = ctx.toplevel.get_chip_by_index(*chip_idx);
+
                 let input = input.iter().map(|a| map[*a].0).collect::<List<_>>();
-                let witness_size = chip.witness_size();
-                let mut witness = vec![F::zero(); witness_size];
-                let img = chip.populate_witness(&input, &mut witness);
-                for f in img {
+                let mut witness = vec![F::zero(); chip.witness_size()];
+
+                let out = chip.populate_witness(&input, &mut witness);
+                for f in out {
                     map.push((f, 1));
-                    slice.push_aux(index, f);
                 }
+
+                // order: witness, requires
                 for f in witness {
                     slice.push_aux(index, f);
+                }
+                for _ in 0..chip.require_size() {
+                    let lookup = ctx.requires.next().expect("Not enough require hints");
+                    slice.push_require(index, lookup.into_require());
                 }
             }
             Op::Debug(..) => (),
@@ -358,7 +361,7 @@ impl<F: PrimeField32> Op<F> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        air::debug::{debug_constraints_collecting_queries, TraceQueries},
+        air::debug::debug_chip_constraints_and_queries_with_sharding,
         func,
         lair::{
             chipset::Nochip,
@@ -374,9 +377,8 @@ mod tests {
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
     use sphinx_core::{
-        air::MachineAir,
-        stark::{MachineRecord, StarkMachine},
-        utils::BabyBearPoseidon2,
+        stark::{LocalProver, MachineRecord, StarkGenericConfig, StarkMachine},
+        utils::{BabyBearPoseidon2, SphinxCoreOpts},
     };
 
     use super::FuncChip;
@@ -576,6 +578,7 @@ mod tests {
     #[ignore]
     #[test]
     fn lair_shard_test() {
+        sphinx_core::utils::setup_logger();
         type H = Nochip;
         let func_ack = func!(
         fn ackermann(m, n): [1] {
@@ -612,10 +615,6 @@ mod tests {
 
         let lair_chips = build_lair_chip_vector(&ack_chip);
 
-        let config = BabyBearPoseidon2::new();
-        let machine = StarkMachine::new(config, build_chip_vector(&ack_chip), 0);
-
-        let (pk, _vk) = machine.setup(&LairMachineProgram);
         let shard = Shard::new(&queries);
         let shards = shard.clone().shard(&ShardingConfig::default());
         assert!(
@@ -623,23 +622,29 @@ mod tests {
             "lair_shard_test must have more than one shard"
         );
 
-        let mut lookup_queries = Vec::new();
-        for shard in shards.iter() {
-            let queries: Vec<_> = lair_chips
-                .iter()
-                .map(|chip| {
-                    if chip.included(shard) {
-                        let trace = chip.generate_trace(shard, &mut Shard::default());
-                        debug_constraints_collecting_queries(chip, &[], None, &trace)
-                    } else {
-                        Default::default()
-                    }
-                })
-                .collect();
-            lookup_queries.extend(queries.into_iter());
-        }
-        TraceQueries::verify_many(lookup_queries);
+        debug_chip_constraints_and_queries_with_sharding(
+            &queries,
+            &lair_chips,
+            Some(ShardingConfig::default()),
+        );
+
+        let config = BabyBearPoseidon2::new();
+        let machine = StarkMachine::new(
+            config,
+            build_chip_vector(&ack_chip),
+            queries.expect_public_values().len(),
+        );
+
+        let (pk, vk) = machine.setup(&LairMachineProgram);
+        let mut challenger_p = machine.config().challenger();
+        let mut challenger_v = machine.config().challenger();
+        let shard = Shard::new(&queries);
 
         machine.debug_constraints(&pk, shard.clone());
+        let opts = SphinxCoreOpts::default();
+        let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
+        machine
+            .verify(&vk, &proof, &mut challenger_v)
+            .expect("proof verifies");
     }
 }
