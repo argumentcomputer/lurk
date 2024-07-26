@@ -640,14 +640,11 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 let (val, env_digest) = rst.split_at(ZPTR_SIZE);
                 let (val_tag, val_digest) = val.split_at(DIGEST_SIZE);
                 let val_tag = Tag::from_field(&val_tag[0]);
-                memoize_compact!(
-                    Tag::Sym,
-                    sym_digest,
-                    val_tag,
-                    val_digest,
-                    Tag::Env,
-                    env_digest
-                );
+                let sym_tag = Tag::Sym;
+                let env_tag = Tag::Env;
+                recurse!(sym_tag, sym_digest);
+                recurse!(val_tag, val_digest);
+                memoize_compact!(sym_tag, sym_digest, val_tag, val_digest, env_tag, env_digest);
                 digest = env_digest;
                 zptr = ZPtr {
                     tag: Tag::Env,
