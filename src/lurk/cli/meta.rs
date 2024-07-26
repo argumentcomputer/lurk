@@ -78,11 +78,23 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             Ok(())
         },
     };
+
+    const CLEAR: Self = Self {
+        name: "clear",
+        summary: "Reset the current environment to be empty.",
+        format: "!(clear)",
+        description: &[],
+        example: &["!(def a 1)", "(current-env)", "!(clear)", "(current-env)"],
+        run: |repl, _args, _path| {
+            repl.env = repl.zstore.intern_empty_env();
+            Ok(())
+        },
+    };
 }
 
 #[inline]
 pub(crate) fn meta_cmds<F: PrimeField32, H: Chipset<F>>() -> MetaCmdsMap<F, H> {
-    [MetaCmd::DEF, MetaCmd::DEFREC]
+    [MetaCmd::DEF, MetaCmd::DEFREC, MetaCmd::CLEAR]
         .map(|mc| (mc.name, mc))
         .into_iter()
         .collect()
