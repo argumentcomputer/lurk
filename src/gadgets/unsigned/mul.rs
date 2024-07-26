@@ -127,8 +127,6 @@ pub struct Product<T, const W: usize> {
     witness: MulWitness<T, W>,
 }
 
-pub type Product64<T> = Product<T, 8>;
-
 impl<F: AbstractField, const W: usize> Product<F, W> {
     pub fn populate<U>(&mut self, lhs: &U, rhs: &U, byte_record: &mut impl ByteRecord) -> U
     where
@@ -171,7 +169,14 @@ impl<T, const W: usize> Product<T, W> {
     }
 
     pub const fn witness_size() -> usize {
-        W
+        size_of::<Product<u8, W>>()
+    }
+
+    pub fn iter_result(&self) -> impl IntoIterator<Item = T>
+    where
+        T: Clone,
+    {
+        self.result.0.clone()
     }
 }
 

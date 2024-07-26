@@ -137,8 +137,6 @@ pub struct IsLessThan<T, const W: usize> {
     is_less_than: T,
 }
 
-pub type IsLessThan64<T> = IsLessThan<T, 8>;
-
 impl<F: PrimeField, const W: usize> IsLessThan<F, W> {
     pub fn populate_less_than<U>(
         &mut self,
@@ -211,7 +209,14 @@ impl<T, const W: usize> IsLessThan<T, W> {
     }
 
     pub const fn witness_size() -> usize {
-        LessThanWitness::<T, W>::witness_size()
+        size_of::<IsLessThan<u8, W>>()
+    }
+
+    pub fn iter_result(&self) -> impl IntoIterator<Item = T>
+    where
+        T: Clone,
+    {
+        [self.is_less_than.clone()]
     }
 }
 

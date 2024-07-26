@@ -50,7 +50,6 @@ impl<Var, const W: usize> AddWitness<Var, W> {
 pub struct Sum<T, const W: usize> {
     result: UncheckedWord<T, W>,
 }
-pub type Sum64<T> = Sum<T, 8>;
 
 impl<F: AbstractField, const W: usize> Sum<F, W> {
     pub fn populate<U>(&mut self, lhs: &U, rhs: &U, byte_record: &mut impl ByteRecord) -> U
@@ -90,7 +89,14 @@ impl<T, const W: usize> Sum<T, W> {
     }
 
     pub const fn witness_size() -> usize {
-        0
+        size_of::<Sum<u8, W>>()
+    }
+
+    pub fn iter_result(&self) -> impl IntoIterator<Item = T>
+    where
+        T: Clone,
+    {
+        self.result.0.clone()
     }
 }
 
@@ -141,7 +147,14 @@ impl<T, const W: usize> Diff<T, W> {
     }
 
     pub const fn witness_size() -> usize {
-        0
+        size_of::<Diff<u8, W>>()
+    }
+
+    pub fn iter_result(&self) -> impl IntoIterator<Item = T>
+    where
+        T: Clone,
+    {
+        self.result.0.clone()
     }
 }
 

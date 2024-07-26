@@ -9,15 +9,21 @@ use crate::{
     gadgets::{
         bytes::{builder::BytesAirRecordWithContext, record::DummyBytesRecord},
         unsigned::{
-            add::{Diff64, Sum64},
-            div_rem::DivRem64,
-            less_than::IsLessThan64,
-            mul::Product64,
+            add::{Diff, Sum},
+            div_rem::DivRem,
+            less_than::IsLessThan,
+            mul::Product,
             Word64,
         },
     },
     lair::{chipset::Chipset, execute::QueryRecord},
 };
+
+pub type Sum64<T> = Sum<T, 8>;
+pub type Diff64<T> = Diff<T, 8>;
+pub type DivRem64<T> = DivRem<T, 8>;
+pub type IsLessThan64<T> = IsLessThan<T, 8>;
+pub type Product64<T> = Product<T, 8>;
 
 #[derive(Clone)]
 pub enum U64 {
@@ -79,33 +85,29 @@ impl<F: PrimeField32> Chipset<F> for U64 {
         let bytes = &mut queries.bytes.context(nonce, requires);
         match self {
             U64::Add => {
-                let mut add_witness = Sum64::<F>::default();
-                let add = add_witness.populate(&in1, &in2, bytes);
-                add.to_le_bytes().map(F::from_canonical_u8).to_vec()
+                let mut witness = Sum64::<F>::default();
+                witness.populate(&in1, &in2, bytes);
+                witness.iter_result().into_iter().collect()
             }
             U64::Sub => {
-                let mut sub_witness = Diff64::<F>::default();
-                let sub = sub_witness.populate(&in1, &in2, bytes);
-                sub.to_le_bytes().map(F::from_canonical_u8).to_vec()
+                let mut witness = Diff64::<F>::default();
+                witness.populate(&in1, &in2, bytes);
+                witness.iter_result().into_iter().collect()
             }
             U64::Mul => {
-                let mut mul_witness = Product64::<F>::default();
-                let mul = mul_witness.populate(&in1, &in2, bytes);
-                mul.to_le_bytes().map(F::from_canonical_u8).to_vec()
+                let mut witness = Product64::<F>::default();
+                witness.populate(&in1, &in2, bytes);
+                witness.iter_result().into_iter().collect()
             }
             U64::DivRem => {
-                let mut div_witness = DivRem64::<F>::default();
-                let (div, rem) = div_witness.populate(&in1, &in2, bytes);
-                div.to_le_bytes()
-                    .into_iter()
-                    .chain(rem.to_le_bytes())
-                    .map(F::from_canonical_u8)
-                    .collect()
+                let mut witness = DivRem64::<F>::default();
+                witness.populate(&in1, &in2, bytes);
+                witness.iter_result().into_iter().collect()
             }
             U64::LessThan => {
-                let mut lessthan_witness = IsLessThan64::<F>::default();
-                let lessthan = lessthan_witness.populate_less_than(&in1, &in2, bytes);
-                vec![F::from_bool(lessthan)]
+                let mut witness = IsLessThan64::<F>::default();
+                witness.populate_less_than(&in1, &in2, bytes);
+                witness.iter_result().into_iter().collect()
             }
         }
     }
@@ -116,42 +118,29 @@ impl<F: PrimeField32> Chipset<F> for U64 {
         let bytes = &mut DummyBytesRecord;
         match self {
             U64::Add => {
-                let mut add_witness = Sum64::<F>::default();
-                let add = add_witness.populate(&in1, &in2, bytes);
-                add.to_le_bytes().map(F::from_canonical_u8).to_vec()
+                let witness: &mut Sum64<F> = witness.borrow_mut();
+                witness.populate(&in1, &in2, bytes);
+                witness.iter_result().into_iter().collect()
             }
             U64::Sub => {
-                let mut sub_witness = Diff64::<F>::default();
-                let sub = sub_witness.populate(&in1, &in2, bytes);
-                sub.to_le_bytes().map(F::from_canonical_u8).to_vec()
+                let witness: &mut Diff64<F> = witness.borrow_mut();
+                witness.populate(&in1, &in2, bytes);
+                witness.iter_result().into_iter().collect()
             }
             U64::Mul => {
-                // TODO: Clean up the API and remove these hardcoded 16/8 values?
-                //   This is here because Product64 contains the result, but the witness and output are separate
-                let mut out = vec![F::zero(); 16];
-                let mul_witness: &mut Product64<F> = out.as_mut_slice().borrow_mut();
-                let mul = mul_witness.populate(&in1, &in2, bytes);
-                witness.copy_from_slice(&out[8..16]);
-                mul.to_le_bytes().map(F::from_canonical_u8).to_vec()
+                let witness: &mut Product64<F> = witness.borrow_mut();
+                witness.populate(&in1, &in2, bytes);
+                witness.iter_result().into_iter().collect()
             }
             U64::DivRem => {
-                let mut out = vec![F::zero(); DivRem64::<F>::witness_size()];
-                let div_witness: &mut DivRem64<F> = out.as_mut_slice().borrow_mut();
-                let (div, rem) = div_witness.populate(&in1, &in2, bytes);
-                witness.copy_from_slice(&out);
-                div.to_le_bytes()
-                    .into_iter()
-                    .chain(rem.to_le_bytes())
-                    .map(F::from_canonical_u8)
-                    .collect()
+                let witness: &mut DivRem64<F> = witness.borrow_mut();
+                witness.populate(&in1, &in2, bytes);
+                witness.iter_result().into_iter().collect()
             }
             U64::LessThan => {
-                // TODO: Clean up API, same as Mul case, but result is after the witness this time
-                let mut out = vec![F::zero(); IsLessThan64::<F>::witness_size() + 1]; // + 1 for the output bool
-                let lessthan_witness: &mut IsLessThan64<F> = out.as_mut_slice().borrow_mut();
-                let lessthan = lessthan_witness.populate_less_than(&in1, &in2, bytes);
-                witness.copy_from_slice(&out[0..IsLessThan64::<F>::witness_size()]);
-                vec![F::from_bool(lessthan)]
+                let witness: &mut IsLessThan64<F> = witness.borrow_mut();
+                witness.populate_less_than(&in1, &in2, bytes);
+                witness.iter_result().into_iter().collect()
             }
         }
     }
@@ -171,36 +160,39 @@ impl<F: PrimeField32> Chipset<F> for U64 {
         let mut air_record = BytesAirRecordWithContext::default();
         match self {
             U64::Add => {
-                let add: &Sum64<AB::Var> = out.borrow();
-                add.eval(builder, in1, in2, &mut air_record, is_real);
+                let witness: &Sum64<AB::Var> = witness.borrow();
+                witness.eval(builder, in1, in2, &mut air_record, is_real.clone());
+                for (&out, expected) in out.iter().zip(witness.iter_result()) {
+                    builder.when(is_real.clone()).assert_eq(out, expected);
+                }
             }
             U64::Sub => {
-                let sub: &Diff64<AB::Var> = out.borrow();
-                sub.eval(builder, in1, in2, &mut air_record, is_real);
+                let witness: &Diff64<AB::Var> = witness.borrow();
+                witness.eval(builder, in1, in2, &mut air_record, is_real.clone());
+                for (&out, expected) in out.iter().zip(witness.iter_result()) {
+                    builder.when(is_real.clone()).assert_eq(out, expected);
+                }
             }
             U64::Mul => {
-                let mut vec = out.to_vec();
-                vec.extend(witness);
-                let mul: &Product64<AB::Var> = vec.as_slice().borrow();
-                mul.eval(builder, &in1, &in2, &mut air_record, is_real);
+                let witness: &Product64<AB::Var> = witness.borrow();
+                witness.eval(builder, &in1, &in2, &mut air_record, is_real.clone());
+                for (&out, expected) in out.iter().zip(witness.iter_result()) {
+                    builder.when(is_real.clone()).assert_eq(out, expected);
+                }
             }
             U64::DivRem => {
-                let vec = witness.to_vec();
-                let divrem: &DivRem64<AB::Var> = vec.as_slice().borrow();
-                let (div, rem) = divrem.eval(builder, &in1, &in2, &mut air_record, is_real);
-                for (div_limb, out_limb) in div.iter().zip(out[0..8].iter()) {
-                    builder.assert_eq(*div_limb, *out_limb);
-                }
-                for (rem_limb, out_limb) in rem.iter().zip(out[8..16].iter()) {
-                    builder.assert_eq(*rem_limb, *out_limb);
+                let witness: &DivRem64<AB::Var> = witness.borrow();
+                witness.eval(builder, &in1, &in2, &mut air_record, is_real.clone());
+                for (&out, expected) in out.iter().zip(witness.iter_result()) {
+                    builder.when(is_real.clone()).assert_eq(out, expected);
                 }
             }
             U64::LessThan => {
-                let mut vec = witness.to_vec();
-                vec.extend(out);
-                let lessthan: &IsLessThan64<AB::Var> = vec.as_slice().borrow();
-                let res = lessthan.eval_less_than(builder, &in1, &in2, &mut air_record, is_real);
-                builder.assert_bool(res);
+                let witness: &IsLessThan64<AB::Var> = witness.borrow();
+                witness.eval_less_than(builder, &in1, &in2, &mut air_record, is_real.clone());
+                for (&out, expected) in out.iter().zip(witness.iter_result()) {
+                    builder.when(is_real.clone()).assert_eq(out, expected);
+                }
             }
         }
         air_record.require_all(builder, nonce, requires.iter().cloned());
