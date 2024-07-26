@@ -516,7 +516,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     ) where
         F: PrimeField32,
     {
-        let zptr = ZPtr {
+        let mut zptr = ZPtr {
             tag,
             digest: into_sized(digest),
         };
@@ -603,6 +603,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 let tail_digest = &tail[DIGEST_SIZE..];
                 memoize_tuple2!(Tag::Char, head_digest, Tag::Str, tail_digest);
                 digest = tail_digest;
+                zptr = ZPtr::from_flat_data(tail);
             },
             Tag::Cons => loop {
                 let preimg = tuple2_hashes_inv
@@ -620,6 +621,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                     break;
                 }
                 digest = cdr_digest;
+                zptr = ZPtr::from_flat_data(cdr);
             },
             Tag::Thunk => {
                 let preimg = tuple2_hashes_inv
@@ -655,6 +657,10 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                     env_digest
                 );
                 digest = env_digest;
+                zptr = ZPtr {
+                    tag: Tag::Env,
+                    digest: into_sized(env_digest),
+                };
             },
             Tag::Fun => {
                 let preimg = tuple3_hashes_inv
