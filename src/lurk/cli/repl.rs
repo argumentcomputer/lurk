@@ -157,6 +157,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         self.zstore.memoize_dag(
             output.tag,
             &output.digest,
+            self.queries.get_inv_queries("hash_24_8", &self.toplevel),
             self.queries.get_inv_queries("hash_32_8", &self.toplevel),
             self.queries.get_inv_queries("hash_48_8", &self.toplevel),
         );
