@@ -31,11 +31,19 @@ impl PartialOrd for LEWrap {
 }
 
 impl Lattice for LEWrap {
-    fn meet(self, other: Self) -> Self {
-        self.min(other)
+    fn meet_mut(&mut self, other: Self) -> bool {
+        let changed = *self > other;
+        if changed {
+            *self = other;
+        }
+        changed
     }
-    fn join(self, other: Self) -> Self {
-        self.max(other)
+    fn join_mut(&mut self, other: Self) -> bool {
+        let changed = *self < other;
+        if changed {
+            *self = other;
+        }
+        changed
     }
 }
 

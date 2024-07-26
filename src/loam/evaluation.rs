@@ -3,15 +3,17 @@
 #![allow(warnings)]
 
 use num_traits::FromPrimitive;
+use p3_baby_bear::BabyBear;
 
 use crate::loam::allocation::allocator;
 use crate::loam::lurk_sym_index;
 use crate::loam::{LEWrap, Num, Ptr, Wide, WidePtr, LE};
+use crate::lurk::chipset::LurkChip;
 use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
 use crate::lurk::tag::Tag;
 use crate::lurk::zstore::{builtin_vec, lurk_zstore, ZPtr, ZStore};
 
-use p3_field::{AbstractField, PrimeField32};
+use p3_field::{AbstractField, Field, PrimeField32};
 
 use ascent::{ascent, Dual};
 
@@ -186,9 +188,12 @@ impl Tag {
 
 // Because it's hard to share code between ascent programs, this is a copy of `AllocationProgam`, replacing the `map_double` function
 // with evaluation
-#[cfg(feature = "loam")]
+// #[cfg(feature = "loam")]
 ascent! {
-    struct EvaluationProgram;
+    // #![trace]
+    struct EvaluationProgram {
+        zstore: ZStore<BabyBear, LurkChip>,
+    }
 
     ////////////////////////////////////////////////////////////////////////////////
     // Relations
@@ -281,13 +286,13 @@ ascent! {
     lattice cons_mem(Ptr, Ptr, Dual<LEWrap>); // (car, cdr, addr)
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
-    cons_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::zero())))) <-- alloc(tag, value), if *tag == Tag::Cons.elt();
+    cons_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::zero(), "cons_digest_mem")))) <-- alloc(tag, value), if *tag == Tag::Cons.elt();
 
     // Convert addr to ptr and register ptr relations.
     ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0.0);
 
     // Populating cons(...) triggers allocation in cons mem.
-    cons_mem(car, cdr, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::zero())))) <-- cons(car, cdr);
+    cons_mem(car, cdr, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::zero(), "cons_mem")))) <-- cons(car, cdr);
 
     // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
     cons_digest_mem(digest, addr) <--
@@ -312,11 +317,11 @@ ascent! {
     // Final
     lattice fun_mem(Ptr, Ptr, Ptr, Dual<LEWrap>); // (args, body, closed-env, addr)
 
-    fun_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Fun.elt(), LE::zero())))) <-- alloc(tag, value), if *tag == Tag::Fun.elt();
+    fun_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Fun.elt(), LE::zero(), "fun_digest_mem")))) <-- alloc(tag, value), if *tag == Tag::Fun.elt();
 
     ptr(ptr), ptr_tag(ptr, Tag::Fun.value()), ptr_value(ptr, value) <-- fun_digest_mem(value, addr), let ptr = Ptr(Tag::Fun.elt(), addr.0.0);
 
-    fun_mem(args, body, closed_env, Dual(LEWrap(allocator().alloc_addr(Tag::Fun.elt(), LE::zero())))) <-- fun(args, body, closed_env);
+    fun_mem(args, body, closed_env, Dual(LEWrap(allocator().alloc_addr(Tag::Fun.elt(), LE::zero(), "fun_mem")))) <-- fun(args, body, closed_env);
 
     fun_digest_mem(digest, addr) <--
         fun_mem(args, body, closed_env, addr),
@@ -340,11 +345,11 @@ ascent! {
     // Final
     lattice thunk_mem(Ptr, Ptr, Dual<LEWrap>); // (body, closed-env, addr)
 
-    thunk_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Thunk.elt(), LE::zero())))) <-- alloc(tag, value), if *tag == Tag::Thunk.elt();
+    thunk_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Thunk.elt(), LE::zero(), "thunk_digest_mem")))) <-- alloc(tag, value), if *tag == Tag::Thunk.elt();
 
     ptr(ptr), ptr_tag(ptr, Tag::Thunk.value()), ptr_value(ptr, value) <-- thunk_digest_mem(value, addr), let ptr = Ptr(Tag::Thunk.elt(), addr.0.0);
 
-    thunk_mem(body, closed_env, Dual(LEWrap(allocator().alloc_addr(Tag::Thunk.elt(), LE::zero())))) <-- thunk(body, closed_env);
+    thunk_mem(body, closed_env, Dual(LEWrap(allocator().alloc_addr(Tag::Thunk.elt(), LE::zero(), "thunk_mem")))) <-- thunk(body, closed_env);
 
     thunk_digest_mem(digest, addr) <--
         thunk_mem(body, closed_env, addr),
@@ -364,7 +369,7 @@ ascent! {
     lattice sym_digest_mem(Wide, Dual<LEWrap>); // (digest, addr)
 
     // Populating alloc(...) triggers allocation in sym_digest_mem.
-    sym_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Sym.elt(), LE::zero())))) <-- alloc(tag, value), if *tag == Tag::Sym.elt();
+    sym_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Sym.elt(), LE::zero(), "sym_digest_mem")))) <-- alloc(tag, value), if *tag == Tag::Sym.elt();
 
     // // Convert addr to ptr and register ptr relations.
     ptr(ptr), ptr_tag(ptr, Tag::Sym.value()), ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), addr.0.0);
@@ -377,7 +382,7 @@ ascent! {
     lattice builtin_digest_mem(Wide, Dual<LEWrap>) = Memory::initial_builtin_relation(); // (digest, addr)
 
     // Populating alloc(...) triggers allocation in sym_digest_mem.
-    builtin_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Sym.elt(), Memory::initial_builtin_addr())))) <-- alloc(tag, value), if *tag == Tag::Builtin.elt();
+    builtin_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Sym.elt(), Memory::initial_builtin_addr(), "builtin_digest_mem")))) <-- alloc(tag, value), if *tag == Tag::Builtin.elt();
 
     // // Convert addr to ptr and register ptr relations.
     ptr(ptr), ptr_tag(ptr, Tag::Builtin.value()), ptr_value(ptr, value) <-- builtin_digest_mem(value, addr), let ptr = Ptr(Tag::Builtin.elt(), addr.0.0);
@@ -391,7 +396,7 @@ ascent! {
     // Can this be combined with sym_digest_mem? Can it be eliminated? (probably eventually).
     lattice nil_digest_mem(Wide, Dual<LEWrap>) = Memory::initial_nil_relation(); // (digest, addr)
 
-    nil_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Nil.elt(), Memory::initial_nil_addr())))) <-- alloc(tag, value), if *tag == Tag::Nil.elt();
+    nil_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Nil.elt(), Memory::initial_nil_addr(), "nil_digest_mem")))) <-- alloc(tag, value), if *tag == Tag::Nil.elt();
 
     ptr(ptr), ptr_tag(ptr, Tag::Nil.value()), ptr_value(ptr, value) <-- nil_digest_mem(value, addr), let ptr = Ptr(Tag::Nil.elt(), addr.0.0);
 
@@ -407,6 +412,7 @@ ascent! {
     // Ingress path
 
     // Ingress 1: mark input expression for allocation.
+    #[trace("toplevel alloc({:?}), alloc({:?})", _self.fmt(Tag::from_field(expr_tag), &expr.1), _self.fmt(Tag::from_field(env_tag), &env.1))]
     alloc(expr_tag, expr.1), alloc(env_tag, env.1) <-- toplevel_input(expr, env), tag(expr_tag, expr.0), tag(env_tag, env.0);
 
     ingress(expr_ptr),
@@ -426,6 +432,7 @@ ascent! {
 
     hash6_rel(a, b, c, d, e, f, digest) <-- unhash6(_, digest), let [a, b, c, d, e, f] = allocator().unhash6(digest).unwrap();
 
+    #[trace("HELLO alloc({:?}), alloc({:?})", _self.fmt(Tag::from_field(car_tag), car_value), _self.fmt(Tag::from_field(cdr_tag), cdr_value))]
     alloc(car_tag, car_value),
     alloc(cdr_tag, cdr_value) <--
         unhash4(&Tag::Cons.elt(), digest),
@@ -960,19 +967,77 @@ ascent! {
 
     ingress(cdr), bool_fold(expr, env, op, Num(evaled_car.1), cdr) <--
     bool_fold(expr, env, op, acc, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car),
-    if cdr.is_cons(),
-    let x = op.apply_relop(*acc, Num(evaled_car.1)),
-    if x.is_t();
+        if cdr.is_cons(),
+        let x = op.apply_relop(*acc, Num(evaled_car.1)),
+        if x.is_t();
 
     ////////////////////////////////////////////////////////////////////////////////
 
 }
 
+// #[cfg(feature = "loam")]
+impl EvaluationProgram {
+    fn cons_mem_is_contiguous(&self) -> bool {
+        let mut addrs1 = self
+            .cons_mem
+            .iter()
+            .map(|(_, _, addr)| addr.0)
+            .collect::<Vec<_>>();
+
+        let mut addrs2 = self
+            .cons_digest_mem
+            .iter()
+            .map(|(_, addr)| addr.0)
+            .collect::<Vec<_>>();
+
+        addrs1.sort();
+        addrs2.sort();
+
+        let len1 = addrs1.len();
+        let len2 = addrs2.len();
+        addrs1.dedup();
+        addrs2.dedup();
+
+        let no_duplicates = addrs1.len() == len1 && addrs2.len() == len2;
+
+        let mut addrs = Vec::with_capacity(addrs1.len() + addrs2.len());
+
+        addrs.extend(addrs1);
+        addrs.extend(addrs2);
+        addrs.sort();
+        addrs.dedup();
+
+        let len = addrs.len();
+        no_duplicates
+            && addrs[0].0.is_zero()
+            && LE::as_canonical_u32(&addrs[len - 1].0) as usize == len - 1
+    }
+
+    fn fmt(&self, tag: Tag, digest: &Wide) -> String {
+        let zptr = ZPtr {
+            tag,
+            digest: digest.0,
+        };
+        self.zstore.fmt(&zptr)
+    }
+
+    fn fmt2(&self, wide_ptr: &WidePtr) -> String {
+        let zptr = ZPtr {
+            tag: Tag::from_field(&wide_ptr.0.f()),
+            digest: wide_ptr.1.0,
+        };
+        self.zstore.fmt(&zptr)
+    }
+}
+
 #[cfg(test)]
-#[cfg(feature = "loam")]
+// #[cfg(feature = "loam")]
 mod test {
+    use p3_baby_bear::BabyBear;
+
     use super::*;
-    use crate::lurk::zstore::ZPtr;
+    use crate::lurk::zstore::{self, ZPtr};
+    use crate::lurk::chipset::LurkChip;
 
     fn err() -> WidePtr {
         WidePtr(Tag::Err.value(), Wide::widen(LE::from_canonical_u32(0)))
@@ -982,7 +1047,7 @@ mod test {
         WidePtr(Wide::widen(tag), Wide(digest))
     }
 
-    fn read_wideptr(src: &str) -> WidePtr {
+    fn read_wideptr(zstore: &mut ZStore<BabyBear, LurkChip>, src: &str) -> WidePtr {
         let zstore = &mut lurk_zstore();
         let ZPtr { tag, digest } = zstore.read(src).unwrap();
 
@@ -991,12 +1056,14 @@ mod test {
     }
 
     fn test_aux0(
+        zstore: ZStore<BabyBear, LurkChip>,
         input: WidePtr,
         expected_output: WidePtr,
         env: Option<WidePtr>,
     ) -> EvaluationProgram {
         let mut prog = EvaluationProgram::default();
 
+        prog.zstore = zstore;
         prog.toplevel_input = vec![(input, env.unwrap_or(WidePtr::empty_env()))];
         prog.run();
 
@@ -1013,23 +1080,28 @@ mod test {
         }
 
         assert_eq!(expected, output_expr);
+        println!("\ncons_mem:\n{:?}", prog.cons_mem);
+        assert!(prog.cons_mem_is_contiguous());
         prog
     }
 
     fn test_aux(input: &str, expected_output: &str, env: Option<&str>) -> EvaluationProgram {
         allocator().init();
 
-        test_aux0(
-            read_wideptr(input),
-            read_wideptr(expected_output),
-            env.map(read_wideptr),
-        )
+        let mut zstore = lurk_zstore();
+        let input = read_wideptr(&mut zstore, input);
+        let expected_output = read_wideptr(&mut zstore, expected_output);
+        let env = env.map(|s| read_wideptr(&mut zstore, s));
+        test_aux0(zstore, input, expected_output, env)
     }
 
     fn test_aux1(input: &str, expected_output: WidePtr, env: Option<&str>) -> EvaluationProgram {
         allocator().init();
 
-        test_aux0(read_wideptr(input), expected_output, env.map(read_wideptr))
+        let mut zstore = lurk_zstore();
+        let input = read_wideptr(&mut zstore, input);
+        let env = env.map(|s| read_wideptr(&mut zstore, s));
+        test_aux0(zstore, input, expected_output, env)
     }
 
     #[test]
@@ -1133,8 +1205,9 @@ mod test {
 
     #[test]
     fn test_deep_var_lookup() {
-        let env = read_wideptr("((y . 10n) (x . 9n))");
-        let expr = read_wideptr("x");
+        let mut zstore = lurk_zstore();
+        let env = read_wideptr(&mut zstore, "((y . 10n) (x . 9n))");
+        let expr = read_wideptr(&mut zstore, "x");
 
         test_aux("x", "9n", Some("((y . 10n) (x . 9n))"));
         test_aux("y", "10n", Some("((y . 10n) (x . 9n))"));
@@ -1152,8 +1225,9 @@ mod test {
 
     #[test]
     fn test_lambda() {
-        let args_wide_ptr = read_wideptr("(x)");
-        let body_wide_ptr = read_wideptr("(+ x 1n)");
+        let mut zstore = lurk_zstore();
+        let args_wide_ptr = read_wideptr(&mut zstore, "(x)");
+        let body_wide_ptr = read_wideptr(&mut zstore, "(+ x 1n)");
         let expected_fun_digest = allocator().hash6(
             args_wide_ptr.0,
             args_wide_ptr.1,
@@ -1264,9 +1338,10 @@ mod test {
 
     #[test]
     fn test_letrec_binding() {
+        let mut zstore = lurk_zstore();
         let thunk = "(letrec ((f 123n)) f)";
 
-        let expr_ptr = read_wideptr("123n");
+        let expr_ptr = read_wideptr(&mut zstore, "123n");
         let env_ptr = WidePtr::empty_env();
 
         let expected_thunk_digest = allocator().hash4(expr_ptr.0, expr_ptr.1, env_ptr.0, env_ptr.1);
@@ -1286,14 +1361,7 @@ mod test {
     }
 
     #[test]
-    fn test_letrec() {
-        let factorial = |n| {
-            format!(
-                "
-(letrec ((factorial (lambda (n) (if (= n 0n) 1n (* n (factorial (- n 1n)))))))
-   (factorial {n}n))"
-            )
-        };
+    fn test_letrec_complex() {
 
         let fibonacci = |n| {
             format!(
@@ -1313,6 +1381,20 @@ mod test {
         test_aux(&fibonacci(1), "1n", None);
         test_aux(&fibonacci(5), "8n", None);
         test_aux(&fibonacci(7), "21n", None);
+    }
+
+    #[test]
+    fn test_cons_mem() {
+
+        let fibonacci_twice = |n| {
+            format!(
+                "
+(letrec ((fibonacci (lambda (n) (if (< n 2) 1 (+ (fibonacci (- n 2)) (fibonacci (- n 1)))))))
+  (+ (fibonacci {n}) (fibonacci {n})))
+"
+            )
+        };
+        test_aux(&fibonacci_twice(7), "42", None);
     }
 
     #[test]

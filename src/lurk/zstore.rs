@@ -283,6 +283,20 @@ pub struct ZStore<F, H: Chipset<F>> {
     syn_cache: FxHashMap<Syntax<F>, ZPtr<F>>,
 }
 
+impl Default for ZStore<BabyBear, LurkChip> {
+    fn default() -> Self {
+        Self {
+            hasher: lurk_hasher(),
+            dag: Default::default(),
+            tuple2_hashes: Default::default(),
+            tuple3_hashes: Default::default(),
+            str_cache: Default::default(),
+            sym_cache: Default::default(),
+            syn_cache: Default::default(),
+        }
+    }
+}
+
 static NIL: OnceCell<Symbol> = OnceCell::new();
 fn nil() -> &'static Symbol {
     NIL.get_or_init(|| lurk_sym("nil"))

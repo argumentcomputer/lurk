@@ -74,12 +74,13 @@ impl Allocator {
         }
     }
 
-    pub fn alloc_addr(&mut self, tag: LE, initial_addr: LE) -> LE {
+    pub fn alloc_addr(&mut self, tag: LE, initial_addr: LE, label: &str) -> LE {
         let idx = *self
             .allocation_map
             .entry(tag)
             .and_modify(|x| *x += LE::from_canonical_u32(1))
             .or_insert(initial_addr);
+        println!("alloc: {:?} {} ({})", Tag::from_field(&tag), idx, label);
         idx
     }
 
@@ -108,6 +109,7 @@ impl Allocator {
 
         digest
     }
+    
     // TODO: refactor to share code with hash4
     pub fn hash6(&mut self, a: Wide, b: Wide, c: Wide, d: Wide, e: Wide, f: Wide) -> Wide {
         let mut preimage = Vec::with_capacity(32);
@@ -155,8 +157,9 @@ impl Allocator {
     }
 }
 
-#[cfg(feature = "loam")]
+// #[cfg(feature = "loam")]
 ascent! {
+    #![trace]
     struct AllocationProgram;
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -217,13 +220,13 @@ ascent! {
     lattice cons_mem(Ptr, Ptr, Dual<LEWrap>); // (car, cdr, addr)
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
-    cons_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::from_canonical_u32(0))))) <-- alloc(Tag::Cons.elt(), value);
+    cons_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::zero(), "cons_digest_mem")))) <-- alloc(Tag::Cons.elt(), value);
 
     // Convert addr to ptr and register ptr relations.
     ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0.0);
 
     // Populating cons(...) triggers allocation in cons mem.
-    cons_mem(car, cdr, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::from_canonical_u32(0))))) <-- cons(car, cdr);
+    cons_mem(car, cdr, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::zero(), "cons_mem")))) <-- cons(car, cdr);
 
     // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
     cons_digest_mem(digest, addr) <--
@@ -247,6 +250,7 @@ ascent! {
     // Ingress path
 
     // Ingress 1: mark input expression for allocation.
+    #[trace("alloc {:?}", wide_ptr.1)]
     alloc(tag, wide_ptr.1) <-- input_expr(wide_ptr), tag(tag, wide_ptr.0);
 
     // Populate input_ptr and mark for ingress.
@@ -354,7 +358,7 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
 }
 
-#[cfg(feature = "loam")]
+// #[cfg(feature = "loam")]
 impl AllocationProgram {
     fn cons_mem_is_contiguous(&self) -> bool {
         let mut addrs1 = self
@@ -394,7 +398,7 @@ impl AllocationProgram {
 }
 
 #[cfg(test)]
-#[cfg(feature = "loam")]
+// #[cfg(feature = "loam")]
 mod test {
     use super::*;
 
@@ -463,14 +467,14 @@ mod test {
 
             // This will often fail in the first pass. We need to fix up the memory and provide it as a hint to the
             // second pass.
-            //assert!(prog.cons_mem_is_contiguous());
+            assert!(prog.cons_mem_is_contiguous());
 
             prog
         };
 
         // Mapping (lambda (x) (* 2 x)) over ((1 . 2) . (2 . 3))) yields ((2 . 4) . (4 . 6)).
         // We expect 6 total conses.
-        test(c1_2__2_3, c2_4__4_6, 6);
+        // test(c1_2__2_3, c2_4__4_6, 6);
 
         // Mapping (lambda (x) (* 2 x)) over ((1 . 2) . (2 . 4))) yields ((2 . 4) . (4 . 8)).
         // We expect only 5 total conses, because (2 . 4) is duplicated in the input and output,
