@@ -119,6 +119,17 @@ impl<T, const W: usize> DivRem<T, W> {
             + LessThanWitness::<T, W>::num_requires()
             + IsLessThan::<T, W>::num_requires()
     }
+
+    pub const fn witness_size() -> usize {
+        size_of::<DivRem<u8, W>>()
+    }
+
+    pub fn iter_result(&self) -> impl IntoIterator<Item = T>
+    where
+        T: Clone,
+    {
+        self.q.0.clone().into_iter().chain(self.r.iter_result())
+    }
 }
 
 #[cfg(test)]

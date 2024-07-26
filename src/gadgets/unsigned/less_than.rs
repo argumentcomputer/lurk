@@ -124,6 +124,10 @@ impl<T, const W: usize> LessThanWitness<T, W> {
     pub const fn num_requires() -> usize {
         1
     }
+
+    pub const fn witness_size() -> usize {
+        size_of::<LessThanWitness<u8, W>>()
+    }
 }
 
 #[derive(Clone, Debug, Default, AlignedBorrow)]
@@ -202,6 +206,17 @@ impl<Var, const W: usize> IsLessThan<Var, W> {
 impl<T, const W: usize> IsLessThan<T, W> {
     pub const fn num_requires() -> usize {
         1
+    }
+
+    pub const fn witness_size() -> usize {
+        size_of::<IsLessThan<u8, W>>()
+    }
+
+    pub fn iter_result(&self) -> impl IntoIterator<Item = T>
+    where
+        T: Clone,
+    {
+        [self.is_less_than.clone()]
     }
 }
 

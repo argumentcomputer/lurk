@@ -5,7 +5,7 @@ use rustc_hash::{FxBuildHasher, FxHashMap};
 use sphinx_core::stark::{Indexed, MachineRecord};
 use std::ops::Range;
 
-use crate::air::builder::Record;
+use crate::{air::builder::Record, gadgets::bytes::record::BytesRecord};
 
 use super::{
     bytecode::{Ctrl, Func, Op},
@@ -44,6 +44,7 @@ pub struct QueryRecord<F: PrimeField32> {
     pub(crate) func_queries: Vec<QueryMap<F>>,
     pub(crate) inv_func_queries: Vec<Option<InvQueryMap<F>>>,
     pub(crate) mem_queries: Vec<MemMap<F>>,
+    pub(crate) bytes: BytesRecord,
 }
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
@@ -245,6 +246,7 @@ impl<F: PrimeField32> QueryRecord<F> {
             func_queries,
             inv_func_queries,
             mem_queries,
+            bytes: BytesRecord::default(),
         }
     }
 

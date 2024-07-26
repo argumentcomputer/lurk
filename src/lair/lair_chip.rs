@@ -1,5 +1,5 @@
-use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues, BaseAir};
-use p3_field::{AbstractField, PrimeField32};
+use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues, BaseAir, PairBuilder};
+use p3_field::{AbstractField, Field, PrimeField32};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use sphinx_core::{
     air::{EventLens, MachineAir, MachineProgram, WithEvents},
@@ -7,6 +7,7 @@ use sphinx_core::{
 };
 
 use crate::air::builder::{LookupBuilder, RequireRecord};
+use crate::gadgets::bytes::trace::BytesChip;
 
 use super::{
     bytecode::Func,
@@ -20,11 +21,11 @@ use super::{
 pub enum LairChip<'a, F, H: Chipset<F>> {
     Func(FuncChip<'a, F, H>),
     Mem(MemChip<F>),
+    Bytes(BytesChip<F>),
     Entrypoint {
         func_idx: usize,
         num_public_values: usize,
     },
-    Preprocessed,
 }
 
 impl<'a, F, H: Chipset<F>> LairChip<'a, F, H> {
@@ -47,15 +48,15 @@ impl<'a, F: PrimeField32, H: Chipset<F>> EventLens<LairChip<'a, F, H>> for Shard
     }
 }
 
-impl<'a, F: Sync, H: Chipset<F>> BaseAir<F> for LairChip<'a, F, H> {
+impl<'a, F: Field + Sync, H: Chipset<F>> BaseAir<F> for LairChip<'a, F, H> {
     fn width(&self) -> usize {
         match self {
             Self::Func(func_chip) => func_chip.width(),
             Self::Mem(mem_chip) => mem_chip.width(),
+            Self::Bytes(bytes_chip) => bytes_chip.width(),
             Self::Entrypoint {
                 num_public_values, ..
             } => *num_public_values,
-            Self::Preprocessed => 1,
         }
     }
 }
@@ -79,7 +80,7 @@ impl<'a, F: PrimeField32, H: Chipset<F>> MachineAir<F> for LairChip<'a, F, H> {
             Self::Entrypoint { func_idx, .. } => format!("Entrypoint[{func_idx}]"),
             // the following is required by sphinx
             // TODO: engineer our way out of such upstream check
-            Self::Preprocessed => "CPU".to_string(),
+            Self::Bytes(_bytes_chip) => "CPU".to_string(),
         }
     }
 
@@ -91,6 +92,14 @@ impl<'a, F: PrimeField32, H: Chipset<F>> MachineAir<F> for LairChip<'a, F, H> {
         match self {
             Self::Func(func_chip) => func_chip.generate_trace(shard.events()),
             Self::Mem(mem_chip) => mem_chip.generate_trace(shard.events()),
+            Self::Bytes(bytes_chip) => {
+                // TODO: Shard the byte events differently?
+                if shard.index() == 0 {
+                    bytes_chip.generate_trace(&shard.events().queries().bytes)
+                } else {
+                    bytes_chip.generate_trace(&Default::default())
+                }
+            }
             Self::Entrypoint {
                 num_public_values, ..
             } => {
@@ -98,7 +107,6 @@ impl<'a, F: PrimeField32, H: Chipset<F>> MachineAir<F> for LairChip<'a, F, H> {
                 assert_eq!(*num_public_values, public_values.len());
                 RowMajorMatrix::new(public_values.to_vec(), *num_public_values)
             }
-            Self::Preprocessed => RowMajorMatrix::new(vec![F::zero(); 1], 1),
         }
     }
 
@@ -117,20 +125,20 @@ impl<'a, F: PrimeField32, H: Chipset<F>> MachineAir<F> for LairChip<'a, F, H> {
                 // !range.is_empty()
             }
             Self::Entrypoint { .. } => shard.index == 0,
-            Self::Preprocessed => true,
+            Self::Bytes(..) => true,
         }
     }
 
     fn preprocessed_width(&self) -> usize {
         match self {
-            Self::Preprocessed => 1,
+            Self::Bytes(bytes_chip) => bytes_chip.preprocessed_width(),
             _ => 0,
         }
     }
 
     fn generate_preprocessed_trace(&self, _program: &Self::Program) -> Option<RowMajorMatrix<F>> {
         match self {
-            Self::Preprocessed => Some(RowMajorMatrix::new(vec![F::zero(); 1], 1)),
+            Self::Bytes(bytes_chip) => bytes_chip.generate_preprocessed_trace(),
             _ => None,
         }
     }
@@ -138,13 +146,14 @@ impl<'a, F: PrimeField32, H: Chipset<F>> MachineAir<F> for LairChip<'a, F, H> {
 
 impl<'a, AB, H: Chipset<AB::F>> Air<AB> for LairChip<'a, AB::F, H>
 where
-    AB: AirBuilderWithPublicValues + LookupBuilder,
+    AB: AirBuilderWithPublicValues + LookupBuilder + PairBuilder,
     <AB as AirBuilder>::Var: std::fmt::Debug,
 {
     fn eval(&self, builder: &mut AB) {
         match self {
             Self::Func(func_chip) => func_chip.eval(builder),
             Self::Mem(mem_chip) => mem_chip.eval(builder),
+            Self::Bytes(bytes_chip) => bytes_chip.eval(builder),
             Self::Entrypoint {
                 func_idx,
                 num_public_values,
@@ -171,11 +180,6 @@ where
                     AB::F::one(),
                 );
             }
-            Self::Preprocessed => {
-                // Dummy constraint of degree 3
-                let tmp = builder.main().get(0, 0).into();
-                builder.assert_zero(tmp.cube());
-            }
         }
     }
 }
@@ -187,13 +191,13 @@ pub fn build_lair_chip_vector<'a, F: PrimeField32, H: Chipset<F>>(
     let func = &entry_func_chip.func;
     let mut chip_vector = Vec::with_capacity(2 + toplevel.map.size() + MEM_TABLE_SIZES.len());
     chip_vector.push(LairChip::entrypoint(func));
-    chip_vector.push(LairChip::Preprocessed);
     for func_chip in FuncChip::from_toplevel(toplevel) {
         chip_vector.push(LairChip::Func(func_chip));
     }
     for mem_len in MEM_TABLE_SIZES {
         chip_vector.push(LairChip::Mem(MemChip::new(mem_len)));
     }
+    chip_vector.push(LairChip::Bytes(BytesChip::default()));
     chip_vector
 }
 

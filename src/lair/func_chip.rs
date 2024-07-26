@@ -267,8 +267,9 @@ impl<F> Op<F> {
             Op::ExternCall(chip_idx, _) => {
                 let chip = toplevel.get_chip_by_index(*chip_idx);
                 let output_size = chip.output_size();
+                let require_size = chip.require_size();
                 let witness_size = chip.witness_size();
-                let aux_size = output_size + witness_size;
+                let aux_size = output_size + witness_size + require_size * 3;
                 *aux += aux_size;
                 degrees.extend(vec![1; aux_size]);
             }

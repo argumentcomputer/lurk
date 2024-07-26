@@ -167,6 +167,17 @@ impl<T, const W: usize> Product<T, W> {
     pub const fn num_requires() -> usize {
         MulWitness::<T, W>::num_requires() + W / 2
     }
+
+    pub const fn witness_size() -> usize {
+        size_of::<Product<u8, W>>()
+    }
+
+    pub fn iter_result(&self) -> impl IntoIterator<Item = T>
+    where
+        T: Clone,
+    {
+        self.result.0.clone()
+    }
 }
 
 #[cfg(test)]
