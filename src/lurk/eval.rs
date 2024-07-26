@@ -186,7 +186,7 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
                     let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr);
                     return ptr
                 }
-                Tag::Cons, Tag::Thunk => {
+                Tag::Cons => {
                     let (fst_tag_full: [8], fst_digest: [8],
                          snd_tag_full: [8], snd_digest: [8]) = preimg(hash_32_8, digest);
                     let fst_ptr = call(ingress, fst_tag_full, fst_digest);
@@ -194,6 +194,14 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
                     let (fst_tag, _rest: [7]) = fst_tag_full;
                     let (snd_tag, _rest: [7]) = snd_tag_full;
                     let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr);
+                    return ptr
+                }
+                Tag::Thunk => {
+                    let (fst_tag, padding: [7], fst_digest: [8], snd_digest: [8]) = preimg(hash_24_8, digest);
+                    let snd_tag = Tag::Env;
+                    let fst_ptr = call(ingress, fst_tag, padding, fst_digest);
+                    let snd_ptr = call(ingress, snd_tag, padding, snd_digest);
+                    let ptr = store(fst_tag, fst_ptr, snd_ptr);
                     return ptr
                 }
                 Tag::Fun => {
@@ -303,7 +311,7 @@ pub fn egress<F: AbstractField + Ord>(nil: List<F>) -> FuncE<F> {
                     let digest: [8] = call(hash_32_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
                     return digest
                 }
-                Tag::Cons, Tag::Thunk => {
+                Tag::Cons => {
                     let (fst_tag, fst_ptr, snd_tag, snd_ptr) = load(val);
                     let fst_digest: [8] = call(egress, fst_tag, fst_ptr);
                     let snd_digest: [8] = call(egress, snd_tag, snd_ptr);
@@ -312,6 +320,17 @@ pub fn egress<F: AbstractField + Ord>(nil: List<F>) -> FuncE<F> {
                     let fst_tag_full: [8] = (fst_tag, padding);
                     let snd_tag_full: [8] = (snd_tag, padding);
                     let digest: [8] = call(hash_32_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
+                    return digest
+                }
+                Tag::Thunk => {
+                    let (fst_tag, fst_ptr, snd_ptr) = load(val);
+                    let snd_tag = Tag::Env;
+                    let fst_digest: [8] = call(egress, fst_tag, fst_ptr);
+                    let snd_digest: [8] = call(egress, snd_tag, snd_ptr);
+
+                    let padding = [0; 7];
+                    let fst_tag_full: [8] = (fst_tag, padding);
+                    let digest: [8] = call(hash_24_8, fst_tag_full, fst_digest, snd_digest);
                     return digest
                 }
                 Tag::Fun => {
