@@ -47,9 +47,55 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             Ok(())
         },
     };
+
+    const DEFREC: Self = Self {
+        name: "defrec",
+        summary: "Extends env with a recursive binding.",
+        format: "!(defrec <binding> <body>)",
+        description: &[
+            "Gets macroexpanded to (letrec ((foo (lambda () 123))) (current-env))",
+            "The REPL's env is set to the result.",
+        ],
+        example: &[
+            "!(defrec sum (lambda (l) (if (eq l nil) 0 (+ (car l) (sum (cdr l))))))",
+            "(sum '(1 2 3))",
+        ],
+        run: |repl, args, _path| {
+            let (&sym, _) = repl.peek2(args)?;
+            let letrec = repl.zstore.intern_symbol(&lurk_sym("letrec"));
+            let bindings = repl.zstore.intern_list([*args]);
+            let current_env = repl.zstore.intern_symbol(&lurk_sym("current-env"));
+            let current_env_call = repl.zstore.intern_list([current_env]);
+            let expr = repl
+                .zstore
+                .intern_list([letrec, bindings, current_env_call]);
+            let output = repl.reduce_aux(&expr);
+            if output.tag != Tag::Env {
+                bail!("Reduction resulted in {}", repl.fmt(&output));
+            }
+            repl.env = output;
+            println!("{}", repl.fmt(&sym));
+            Ok(())
+        },
+    };
+
+    const CLEAR: Self = Self {
+        name: "clear",
+        summary: "Reset the current environment to be empty.",
+        format: "!(clear)",
+        description: &[],
+        example: &["!(def a 1)", "(current-env)", "!(clear)", "(current-env)"],
+        run: |repl, _args, _path| {
+            repl.env = repl.zstore.intern_empty_env();
+            Ok(())
+        },
+    };
 }
 
 #[inline]
 pub(crate) fn meta_cmds<F: PrimeField32, H: Chipset<F>>() -> MetaCmdsMap<F, H> {
-    [MetaCmd::DEF].map(|mc| (mc.name, mc)).into_iter().collect()
+    [MetaCmd::DEF, MetaCmd::DEFREC, MetaCmd::CLEAR]
+        .map(|mc| (mc.name, mc))
+        .into_iter()
+        .collect()
 }
