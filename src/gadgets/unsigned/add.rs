@@ -107,8 +107,6 @@ pub struct Diff<T, const W: usize> {
     result: UncheckedWord<T, W>,
 }
 
-pub type Diff64<T> = Diff<T, 8>;
-
 impl<F: AbstractField, const W: usize> Diff<F, W> {
     pub fn populate<U>(&mut self, lhs: &U, rhs: &U, byte_record: &mut impl ByteRecord) -> U
     where
