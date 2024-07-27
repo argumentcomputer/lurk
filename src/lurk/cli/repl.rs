@@ -82,7 +82,6 @@ pub(crate) struct Repl<F: PrimeField32, H: Chipset<F>> {
     pub(crate) queries: QueryRecord<F>,
     pub(crate) toplevel: Toplevel<F, H>,
     pub(crate) lurk_main_idx: usize,
-    eval_idx: usize,
     pub(crate) env: ZPtr<F>,
     state: StateRcCell,
     pwd_path: Utf8PathBuf,
@@ -94,14 +93,12 @@ impl Repl<BabyBear, LurkChip> {
         let (toplevel, mut zstore) = build_lurk_toplevel();
         let queries = QueryRecord::new(&toplevel);
         let lurk_main_idx = toplevel.get_by_name("lurk_main").index;
-        let eval_idx = toplevel.get_by_name("eval").index;
         let env = zstore.intern_empty_env();
         Self {
             zstore,
             queries,
             toplevel,
             lurk_main_idx,
-            eval_idx,
             env,
             state: State::init_lurk_state().rccell(),
             pwd_path: current_dir().expect("Couldn't get current directory"),
@@ -110,11 +107,15 @@ impl Repl<BabyBear, LurkChip> {
     }
 }
 
-fn pretty_iterations_display(iterations: usize) -> String {
+fn pretty_iterations_display(iterations: usize, width: usize) -> String {
     if iterations != 1 {
-        format!("{iterations} iterations")
+        let average_width = width as f64 / iterations as f64;
+        format!(
+            "{iterations} iterations, average step size {:.2}",
+            average_width
+        )
     } else {
-        "1 iteration".into()
+        format!("1 iteration, width {width}")
     }
 }
 
@@ -213,10 +214,10 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             &mut self.queries,
         ));
         self.memoize_dag(output.tag, &output.digest);
-        let iterations = self.queries.func_queries[self.eval_idx].len();
+        let (iterations, width) = self.queries.stats(&self.toplevel);
         println!(
             "[{}] => {}",
-            pretty_iterations_display(iterations),
+            pretty_iterations_display(iterations, width),
             self.fmt(&output)
         );
     }
