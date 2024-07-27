@@ -121,6 +121,10 @@ name = "fib"
 harness = false
 
 [[bench]]
+name = "lcs"
+harness = false
+
+[[bench]]
 name = "lurk"
 harness = false
 
