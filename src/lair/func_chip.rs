@@ -20,7 +20,7 @@ pub type LayoutSizes = ColumnLayout<usize, usize>;
 
 impl LayoutSizes {
     #[inline]
-    fn total(&self) -> usize {
+    pub fn total(&self) -> usize {
         self.nonce + self.input + self.aux + self.sel + self.output
     }
 }
