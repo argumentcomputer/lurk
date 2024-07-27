@@ -25,29 +25,23 @@ use loam::{
 };
 
 fn get_lcs_args() -> (&'static str, &'static str) {
-    (
-        "when in the course of human events",
-        "he only ever cares about saving himself",
-    )
+    ( "When in the Course of human events, it becomes necessary for one people to dissolve the political bands which have connected them with another",
+       "There must be some kind of way outta here Said the joker to the thief. There's too much confusion. I can't get no relief.")
 }
 
 fn build_lurk_expr(a: &str, b: &str) -> String {
     format!(
         r#"
-(letrec ((longer (lambda (a b)
-                   (letrec ((aux (lambda (a b orig-a orig-b)
-                                   (if (eq a "")
-                                       orig-b
-                                       (if (eq b "")
-                                           orig-a
-                                           (aux (cdr a) (cdr b) orig-a orig-b))))))
-                     (aux a b a b))))
+(letrec ((lte (lambda (a b)
+                (if (eq a "") t
+                    (if (eq b "") nil
+                        (lte (cdr a) (cdr b))))))
          (lcs (lambda (a b)
                 (if (eq a "") ""
                     (if (eq b "") ""
-                        (if (eq (car a) (car b))
-                            (strcons (car a) (lcs (cdr a) (cdr b)))
-                            (longer (lcs a (cdr b)) (lcs (cdr a) b))))))))
+                        (if (eq (car a) (car b)) (strcons (car a) (lcs (cdr a) (cdr b)))
+                            (if (lte (lcs a (cdr b)) (lcs (cdr a) b)) (lcs (cdr a) b)
+                                (lcs a (cdr b)))))))))
   (lcs "{a}" "{b}"))"#
     )
 }
