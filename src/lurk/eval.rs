@@ -468,7 +468,7 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                     match head_tag {
                         Tag::Builtin => {
                             match head [|sym| builtins.index(sym).to_field()] {
-                                "let", "letrec", "lambda" => {
+                                "let", "letrec", "lambda", "+", "-", "*", "/", "=", "cons", "strcons" => {
                                     let rest_not_cons = sub(rest_tag, cons_tag);
                                     if rest_not_cons {
                                         return (err_tag, invalid_form)
@@ -504,6 +504,14 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                             // parameter list, a body and an environment
                                             let res_tag = Tag::Fun;
                                             let res = store(fst_tag, fst, snd_tag, snd, env);
+                                            return (res_tag, res)
+                                        }
+                                        "+", "-", "*", "/", "=" => {
+                                            let (res_tag, res) = call(eval_binop_num, head, fst_tag, fst, snd_tag, snd, env);
+                                            return (res_tag, res)
+                                        }
+                                        "cons", "strcons" => {
+                                            let (res_tag, res) = call(eval_binop_misc, head, fst_tag, fst, snd_tag, snd, env);
                                             return (res_tag, res)
                                         }
                                     }
@@ -644,17 +652,9 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                     let (res_tag, res) = call(eval, t_branch_tag, t_branch, env);
                                     return (res_tag, res)
                                 }
-                                "+", "-", "*", "/", "=" => {
-                                    let (res_tag, res) = call(eval_binop_num, head, rest_tag, rest, env);
-                                    return (res_tag, res)
-                                }
                                 "eq" => {
                                     let res: [2] = call(equal, rest_tag, rest, env);
                                     return res
-                                }
-                                "cons", "strcons" => {
-                                    let (res_tag, res) = call(eval_binop_misc, head, rest_tag, rest, env);
-                                    return (res_tag, res)
                                 }
                                 "hide" => {
                                     let (res_tag, res) = call(eval_hide, rest_tag, rest, env);
@@ -860,26 +860,10 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
 
 pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
-        fn eval_binop_num(head, rest_tag, rest, env): [2] {
+        fn eval_binop_num(head, exp1_tag, exp1, exp2_tag, exp2, env): [2] {
             let err_tag = Tag::Err;
             let num_tag = Tag::Num;
-            let cons_tag = Tag::Cons;
             let nil_tag = Tag::Nil;
-            let invalid_form = EvalErr::InvalidForm;
-            let rest_not_cons = sub(rest_tag, cons_tag);
-            if rest_not_cons {
-                return (err_tag, invalid_form)
-            }
-            let (exp1_tag, exp1, rest_tag, rest) = load(rest);
-            let rest_not_cons = sub(rest_tag, cons_tag);
-            if rest_not_cons {
-                return (err_tag, invalid_form)
-            }
-            let (exp2_tag, exp2, rest_tag, _rest) = load(rest);
-            let rest_not_nil = sub(rest_tag, nil_tag);
-            if rest_not_nil {
-                return (err_tag, invalid_form)
-            }
             let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
             match val1_tag {
                 Tag::Err => {
@@ -941,25 +925,9 @@ pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
 
 pub fn eval_binop_misc<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
-        fn eval_binop_misc(head, rest_tag, rest, env): [2] {
+        fn eval_binop_misc(head, exp1_tag, exp1, exp2_tag, exp2, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
-            let nil_tag = Tag::Nil;
-            let invalid_form = EvalErr::InvalidForm;
-            let rest_not_cons = sub(rest_tag, cons_tag);
-            if rest_not_cons {
-                return (err_tag, invalid_form)
-            }
-            let (exp1_tag, exp1, rest_tag, rest) = load(rest);
-            let rest_not_cons = sub(rest_tag, cons_tag);
-            if rest_not_cons {
-                return (err_tag, invalid_form)
-            }
-            let (exp2_tag, exp2, rest_tag, _rest) = load(rest);
-            let rest_not_nil = sub(rest_tag, nil_tag);
-            if rest_not_nil {
-                return (err_tag, invalid_form)
-            }
             let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
             match val1_tag {
                 Tag::Err => {
@@ -993,8 +961,7 @@ pub fn eval_binop_misc<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) ->
                     }
                     return (str_tag, strcons)
                 }
-            };
-            return (err_tag, invalid_form)
+            }
         }
     )
 }
@@ -1449,8 +1416,8 @@ mod test {
         expect_eq(eval_comm_unop.width(), expect!["71"]);
         expect_eq(eval_hide.width(), expect!["76"]);
         expect_eq(eval_unop.width(), expect!["33"]);
-        expect_eq(eval_binop_num.width(), expect!["50"]);
-        expect_eq(eval_binop_misc.width(), expect!["48"]);
+        expect_eq(eval_binop_num.width(), expect!["35"]);
+        expect_eq(eval_binop_misc.width(), expect!["32"]);
         expect_eq(eval_let.width(), expect!["54"]);
         expect_eq(eval_letrec.width(), expect!["58"]);
         expect_eq(equal.width(), expect!["44"]);
