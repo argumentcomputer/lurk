@@ -1,5 +1,6 @@
 use hashbrown::HashMap;
 use indexmap::IndexMap;
+use itertools::Itertools;
 use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use sphinx_core::stark::{Indexed, MachineRecord};
@@ -386,6 +387,29 @@ impl<F: PrimeField32> Func<F> {
         push_block_exec_entries!(&self.body);
         while let Some(exec_entry) = exec_entries_stack.pop() {
             match exec_entry {
+                ExecEntry::Op(Op::AssertEq(a, b)) => {
+                    for (a, b) in a.iter().zip(b.iter()) {
+                        let a = map[*a];
+                        let b = map[*b];
+                        assert_eq!(a, b);
+                    }
+                }
+                ExecEntry::Op(Op::AssertNe(a, b)) => {
+                    let mut unequal = false;
+                    for (a, b) in a.iter().zip(b.iter()) {
+                        let a = map[*a];
+                        let b = map[*b];
+                        if a != b {
+                            unequal = true;
+                            break;
+                        }
+                    }
+                    assert!(unequal)
+                }
+                ExecEntry::Op(Op::Contains(a, b)) => {
+                    let b = map[*b];
+                    assert!(a.iter().map(|&a| map[a]).contains(&b));
+                }
                 ExecEntry::Op(Op::Call(callee_index, inp)) => {
                     let inp = inp.iter().map(|v| map[*v]).collect::<Vec<_>>();
                     if let Some(result) =
@@ -531,25 +555,12 @@ impl<F: PrimeField32> Func<F> {
                         break;
                     }
                 }
-                ExecEntry::Ctrl(Ctrl::If(b, t, f)) => {
-                    if map[*b].is_zero() {
-                        push_block_exec_entries!(f);
-                    } else {
-                        push_block_exec_entries!(t);
-                    }
-                }
-                ExecEntry::Ctrl(Ctrl::IfMany(bs, t, f)) => {
-                    if bs.iter().any(|b| !map[*b].is_zero()) {
-                        push_block_exec_entries!(t);
-                    } else {
-                        push_block_exec_entries!(f);
-                    }
-                }
-                ExecEntry::Ctrl(Ctrl::Match(v, cases)) => {
-                    let block = cases.match_case(&map[*v]).expect("No match");
+                ExecEntry::Ctrl(Ctrl::Choose(v, cases, _)) => {
+                    let v = map[*v];
+                    let block = cases.match_case(&v).expect("No match");
                     push_block_exec_entries!(block);
                 }
-                ExecEntry::Ctrl(Ctrl::MatchMany(vs, cases)) => {
+                ExecEntry::Ctrl(Ctrl::ChooseMany(vs, cases)) => {
                     let vs = vs.iter().map(|v| map[*v]).collect();
                     let block = cases.match_case(&vs).expect("No match");
                     push_block_exec_entries!(block);

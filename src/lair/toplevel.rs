@@ -1,3 +1,4 @@
+use p3_field::Field;
 use rustc_hash::FxHashMap;
 
 use super::{bytecode::*, chipset::Chipset, expr::*, map::Map, List, Name};
@@ -13,7 +14,7 @@ pub(crate) struct FuncInfo {
     output_size: usize,
 }
 
-impl<F: Clone + Ord, H: Chipset<F>> Toplevel<F, H> {
+impl<F: Field + Ord, H: Chipset<F>> Toplevel<F, H> {
     pub fn new(funcs: &[FuncE<F>], chip_map: Map<Name, H>) -> Self {
         let ordered_funcs = Map::from_vec(funcs.iter().map(|func| (func.name, func)).collect());
         let info_vec = ordered_funcs
@@ -79,8 +80,7 @@ type UsedMap = FxHashMap<(Var, usize), bool>;
 
 #[inline]
 fn bind_new<H>(var: &Var, ctx: &mut CheckCtx<'_, H>) {
-    let idxs = (0..var.size).map(|i| ctx.var_index + i).collect();
-    ctx.var_index += var.size;
+    let idxs = (0..var.size).map(|_| ctx.new_var()).collect();
     bind(var, idxs, ctx);
 }
 
@@ -131,9 +131,15 @@ impl<'a, H> CheckCtx<'a, H> {
         self.var_index = index;
         self.bind_map = bind_map;
     }
+
+    fn new_var(&mut self) -> usize {
+        let var = self.var_index;
+        self.var_index += 1;
+        var
+    }
 }
 
-impl<F: Clone + Ord> FuncE<F> {
+impl<F: Field + Ord> FuncE<F> {
     /// Checks if a named `Func` is correct, and produces an index-based `Func`
     /// by replacing names with indices
     fn check_and_link<H: Chipset<F>>(
@@ -175,161 +181,15 @@ impl<F: Clone + Ord> FuncE<F> {
     }
 }
 
-impl<F: Clone + Ord> BlockE<F> {
-    fn check_and_link<H: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, H>) -> Block<F> {
-        let mut ops = Vec::new();
-        for op in self.ops.iter() {
-            match op {
-                OpE::Const(tgt, f) => {
-                    assert_eq!(tgt.size, 1);
-                    ops.push(Op::Const(f.clone()));
-                    bind_new(tgt, ctx);
-                }
-                OpE::Array(tgt, fs) => {
-                    assert_eq!(tgt.size, fs.len());
-                    for f in fs.iter() {
-                        ops.push(Op::Const(f.clone()));
-                    }
-                    bind_new(tgt, ctx);
-                }
-                OpE::Add(tgt, a, b) => {
-                    assert_eq!(a.size, b.size);
-                    assert_eq!(a.size, tgt.size);
-                    let a = use_var(a, ctx).to_vec();
-                    let b = use_var(b, ctx);
-                    for (a, b) in a.iter().zip(b.iter()) {
-                        ops.push(Op::Add(*a, *b));
-                    }
-                    bind_new(tgt, ctx);
-                }
-                OpE::Mul(tgt, a, b) => {
-                    assert_eq!(a.size, b.size);
-                    assert_eq!(a.size, tgt.size);
-                    let a = use_var(a, ctx).to_vec();
-                    let b = use_var(b, ctx);
-                    for (a, b) in a.iter().zip(b.iter()) {
-                        ops.push(Op::Mul(*a, *b));
-                    }
-                    bind_new(tgt, ctx);
-                }
-                OpE::Sub(tgt, a, b) => {
-                    assert_eq!(a.size, b.size);
-                    assert_eq!(a.size, tgt.size);
-                    let a = use_var(a, ctx).to_vec();
-                    let b = use_var(b, ctx);
-                    for (a, b) in a.iter().zip(b.iter()) {
-                        ops.push(Op::Sub(*a, *b));
-                    }
-                    bind_new(tgt, ctx);
-                }
-                OpE::Div(tgt, a, b) => {
-                    assert_eq!(a.size, b.size);
-                    assert_eq!(a.size, tgt.size);
-                    let b = use_var(b, ctx);
-                    for b in b.iter() {
-                        ops.push(Op::Inv(*b));
-                    }
-                    let a = use_var(a, ctx).to_vec();
-                    for a in a.iter() {
-                        ops.push(Op::Mul(*a, ctx.var_index));
-                        ctx.var_index += 1;
-                    }
-                    bind_new(tgt, ctx);
-                }
-                OpE::Inv(tgt, a) => {
-                    assert_eq!(a.size, tgt.size);
-                    let a = use_var(a, ctx);
-                    for a in a.iter() {
-                        ops.push(Op::Inv(*a));
-                    }
-                    bind_new(tgt, ctx);
-                }
-                OpE::Not(tgt, a) => {
-                    assert_eq!(tgt.size, 1);
-                    assert_eq!(a.size, 1);
-                    let a = use_var(a, ctx)[0];
-                    ops.push(Op::Not(a));
-                    bind_new(tgt, ctx);
-                }
-                OpE::Eq(tgt, a, b) => {
-                    assert_eq!(tgt.size, 1);
-                    assert_eq!(a.size, 1);
-                    assert_eq!(b.size, 1);
-                    let a = use_var(a, ctx)[0];
-                    let b = use_var(b, ctx)[0];
-                    ops.push(Op::Sub(a, b));
-                    ops.push(Op::Not(ctx.var_index));
-                    ctx.var_index += 1;
-                    bind_new(tgt, ctx);
-                }
-                OpE::Call(out, name, inp) => {
-                    let name_idx = ctx
-                        .info_map
-                        .get_index_of(name)
-                        .unwrap_or_else(|| panic!("Unknown function {name}"));
-                    let FuncInfo {
-                        input_size,
-                        output_size,
-                    } = ctx.info_map.get_index(name_idx).unwrap().1;
-                    assert_eq!(inp.total_size(), input_size);
-                    assert_eq!(out.total_size(), output_size);
-                    let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
-                    ops.push(Op::Call(name_idx, inp));
-                    out.iter().for_each(|t| bind_new(t, ctx));
-                }
-                OpE::PreImg(out, name, inp) => {
-                    let name_idx = ctx
-                        .info_map
-                        .get_index_of(name)
-                        .unwrap_or_else(|| panic!("Unknown function {name}"));
-                    let FuncInfo {
-                        input_size,
-                        output_size,
-                    } = ctx.info_map.get_index(name_idx).unwrap().1;
-                    assert_eq!(out.total_size(), input_size);
-                    assert_eq!(inp.total_size(), output_size);
-                    let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
-                    ops.push(Op::PreImg(name_idx, inp));
-                    out.iter().for_each(|t| bind_new(t, ctx));
-                }
-                OpE::Store(ptr, vals) => {
-                    assert_eq!(ptr.size, 1);
-                    let vals = vals.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
-                    ops.push(Op::Store(vals));
-                    bind_new(ptr, ctx);
-                }
-                OpE::Load(vals, ptr) => {
-                    assert_eq!(ptr.size, 1);
-                    let ptr = use_var(ptr, ctx)[0];
-                    ops.push(Op::Load(vals.total_size(), ptr));
-                    vals.iter().for_each(|val| bind_new(val, ctx));
-                }
-                OpE::Debug(s) => ops.push(Op::Debug(s)),
-                OpE::Slice(pats, args) => {
-                    assert_eq!(pats.total_size(), args.total_size());
-                    let args: List<_> =
-                        args.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
-                    let mut i = 0;
-                    for pat in pats.as_slice() {
-                        let idxs = args[i..i + pat.size].into();
-                        bind(pat, idxs, ctx);
-                        i += pat.size;
-                    }
-                }
-                OpE::ExternCall(out, name, inp) => {
-                    let name_idx = ctx
-                        .chip_map
-                        .get_index_of(name)
-                        .unwrap_or_else(|| panic!("Unknown extern chip {name}"));
-                    let (_, chip) = ctx.chip_map.get_index(name_idx).unwrap();
-                    assert_eq!(inp.total_size(), chip.input_size());
-                    assert_eq!(out.total_size(), chip.output_size());
-                    let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
-                    ops.push(Op::ExternCall(name_idx, inp));
-                    out.iter().for_each(|t| bind_new(t, ctx));
-                }
-            }
-        }
+impl<F: Field + Ord> BlockE<F> {
+    fn check_and_link_with_ops<H: Chipset<F>>(
+        &self,
+        mut ops: Vec<Op<F>>,
+        ctx: &mut CheckCtx<'_, H>,
+    ) -> Block<F> {
+        self.ops
+            .iter()
+            .for_each(|op| op.check_and_link(&mut ops, ctx));
         let ops = ops.into();
         let saved_return_idents = std::mem::take(&mut ctx.return_idents);
         let ctrl = self.ctrl.check_and_link(ctx);
@@ -346,9 +206,13 @@ impl<F: Clone + Ord> BlockE<F> {
             return_idents: block_return_idents.into(),
         }
     }
+
+    fn check_and_link<H: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, H>) -> Block<F> {
+        self.check_and_link_with_ops(Vec::new(), ctx)
+    }
 }
 
-impl<F: Clone + Ord> CtrlE<F> {
+impl<F: Field + Ord> CtrlE<F> {
     fn check_and_link<H: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, H>) -> Ctrl<F> {
         match &self {
             CtrlE::Return(return_vars) => {
@@ -367,62 +231,294 @@ impl<F: Clone + Ord> CtrlE<F> {
                 ctx.return_ident += 1;
                 ctrl
             }
-            CtrlE::Match(var, cases) => {
-                assert_eq!(var.size, 1);
-                let t = use_var(var, ctx)[0];
-                let mut vec = Vec::with_capacity(cases.branches.size());
-                for (f, block) in cases.branches.iter() {
+            CtrlE::Match(t, cases) => {
+                assert_eq!(t.size, 1);
+                let var = use_var(t, ctx)[0];
+                let mut vec = Vec::with_capacity(cases.branches.len());
+                let mut unique_branches = Vec::new();
+                for (fs, block) in cases.branches.iter() {
                     ctx.block_ident += 1;
                     let state = ctx.save_bind_state();
-                    let block = block.check_and_link(ctx);
+                    let mut ops = Vec::new();
+                    // Collect all constants as vars
+                    let fs_vars = push_const_array(fs, &mut ops, ctx);
+                    // Assert that var is contained in the constants
+                    ops.push(Op::Contains(fs_vars, var));
+                    let block = block.check_and_link_with_ops(ops, ctx);
                     ctx.restore_bind_state(state);
-                    vec.push((f.clone(), block))
+                    fs.iter().for_each(|f| vec.push((*f, block.clone())));
+                    unique_branches.push(block);
                 }
                 let branches = Map::from_vec(vec);
                 let default = cases.default.as_ref().map(|def| {
                     ctx.block_ident += 1;
-                    def.check_and_link(ctx).into()
+                    let mut ops = Vec::new();
+                    for (fs, _) in cases.branches.iter() {
+                        for f in fs.iter() {
+                            // Collect constant as var
+                            ops.push(Op::Const(*f));
+                            let f_var = ctx.new_var();
+                            // Assert inequality of matched var
+                            ops.push(Op::AssertNe([var].into(), [f_var].into()));
+                        }
+                    }
+                    def.check_and_link_with_ops(ops, ctx).into()
                 });
                 let cases = Cases { branches, default };
-                Ctrl::Match(t, cases)
+                Ctrl::Choose(var, cases, unique_branches.into())
             }
             CtrlE::MatchMany(t, cases) => {
                 let size = t.size;
-                let vars = use_var(t, ctx).into();
-                let mut vec = Vec::with_capacity(cases.branches.size());
+                let vars: List<_> = use_var(t, ctx).into();
+                let mut vec = Vec::with_capacity(cases.branches.len());
                 for (fs, block) in cases.branches.iter() {
                     assert_eq!(fs.len(), size, "Pattern must have size {size}");
                     ctx.block_ident += 1;
                     let state = ctx.save_bind_state();
-                    let block = block.check_and_link(ctx);
+                    let mut ops = Vec::new();
+                    // Collect all constants as vars
+                    let fs_vars = push_const_array(fs, &mut ops, ctx);
+                    // Assert equality of matched vars
+                    ops.push(Op::AssertEq(vars.clone(), fs_vars));
+                    let block = block.check_and_link_with_ops(ops, ctx);
                     ctx.restore_bind_state(state);
                     vec.push((fs.clone(), block))
                 }
                 let branches = Map::from_vec(vec);
                 let default = cases.default.as_ref().map(|def| {
                     ctx.block_ident += 1;
-                    def.check_and_link(ctx).into()
+                    let mut ops = Vec::new();
+                    for (fs, _) in cases.branches.iter() {
+                        // Collect all constants as vars
+                        let fs_vars = push_const_array(fs, &mut ops, ctx);
+                        // Assert inequality of matched vars
+                        ops.push(Op::AssertNe(vars.clone(), fs_vars));
+                    }
+                    def.check_and_link_with_ops(ops, ctx).into()
                 });
                 let cases = Cases { branches, default };
-                Ctrl::MatchMany(vars, cases)
+                Ctrl::ChooseMany(vars, cases)
             }
             CtrlE::If(b, true_block, false_block) => {
-                let vars = use_var(b, ctx).into();
+                let size = b.size;
+                let vars: List<_> = use_var(b, ctx).into();
 
-                ctx.block_ident += 1;
                 let state = ctx.save_bind_state();
-                let true_block = true_block.check_and_link(ctx);
+                ctx.block_ident += 1;
+                let mut ops = Vec::new();
+                ops.push(Op::Const(F::zero()));
+                let zero = ctx.new_var();
+                let zeros = (0..size).map(|_| zero).collect();
+                ops.push(Op::AssertNe(vars.clone(), zeros));
+                let true_block = true_block.check_and_link_with_ops(ops, ctx);
                 ctx.restore_bind_state(state);
 
                 ctx.block_ident += 1;
-                let false_block = false_block.check_and_link(ctx);
+                let mut ops = Vec::new();
+                ops.push(Op::Const(F::zero()));
+                let zero = ctx.new_var();
+                let zeros = (0..size).map(|_| zero).collect();
+                ops.push(Op::AssertEq(vars.clone(), zeros));
+                let false_block = false_block.check_and_link_with_ops(ops, ctx);
 
-                if b.size != 1 {
-                    Ctrl::IfMany(vars, true_block.into(), false_block.into())
+                if size == 1 {
+                    let branches = Map::from_vec(vec![(F::zero(), false_block.clone())]);
+                    let cases = Cases {
+                        branches,
+                        default: Some(true_block.into()),
+                    };
+                    Ctrl::Choose(vars[0], cases, [false_block].into())
                 } else {
-                    Ctrl::If(vars[0], true_block.into(), false_block.into())
+                    let arr = vec![F::zero(); b.size];
+                    let branches = Map::from_vec(vec![(arr.into(), false_block)]);
+                    let cases = Cases {
+                        branches,
+                        default: Some(true_block.into()),
+                    };
+                    Ctrl::ChooseMany(vars, cases)
                 }
             }
         }
     }
+}
+
+impl<F: Field + Ord> OpE<F> {
+    fn check_and_link<H: Chipset<F>>(&self, ops: &mut Vec<Op<F>>, ctx: &mut CheckCtx<'_, H>) {
+        match self {
+            OpE::AssertNe(a, b) => {
+                let a = use_var(a, ctx).into();
+                let b = use_var(b, ctx).into();
+                ops.push(Op::AssertNe(a, b));
+            }
+            OpE::AssertEq(a, b) => {
+                let a = use_var(a, ctx).into();
+                let b = use_var(b, ctx).into();
+                ops.push(Op::AssertEq(a, b));
+            }
+            OpE::Contains(a, b) => {
+                assert_eq!(b.size, 1);
+                let a = use_var(a, ctx).into();
+                let b = use_var(b, ctx)[0];
+                ops.push(Op::Contains(a, b));
+            }
+            OpE::Const(tgt, f) => {
+                assert_eq!(tgt.size, 1);
+                ops.push(Op::Const(*f));
+                bind_new(tgt, ctx);
+            }
+            OpE::Array(tgt, fs) => {
+                assert_eq!(tgt.size, fs.len());
+                for f in fs.iter() {
+                    ops.push(Op::Const(*f));
+                }
+                bind_new(tgt, ctx);
+            }
+            OpE::Add(tgt, a, b) => {
+                assert_eq!(a.size, b.size);
+                assert_eq!(a.size, tgt.size);
+                let a = use_var(a, ctx).to_vec();
+                let b = use_var(b, ctx);
+                for (a, b) in a.iter().zip(b.iter()) {
+                    ops.push(Op::Add(*a, *b));
+                }
+                bind_new(tgt, ctx);
+            }
+            OpE::Mul(tgt, a, b) => {
+                assert_eq!(a.size, b.size);
+                assert_eq!(a.size, tgt.size);
+                let a = use_var(a, ctx).to_vec();
+                let b = use_var(b, ctx);
+                for (a, b) in a.iter().zip(b.iter()) {
+                    ops.push(Op::Mul(*a, *b));
+                }
+                bind_new(tgt, ctx);
+            }
+            OpE::Sub(tgt, a, b) => {
+                assert_eq!(a.size, b.size);
+                assert_eq!(a.size, tgt.size);
+                let a = use_var(a, ctx).to_vec();
+                let b = use_var(b, ctx);
+                for (a, b) in a.iter().zip(b.iter()) {
+                    ops.push(Op::Sub(*a, *b));
+                }
+                bind_new(tgt, ctx);
+            }
+            OpE::Div(tgt, a, b) => {
+                assert_eq!(a.size, b.size);
+                assert_eq!(a.size, tgt.size);
+                let b = use_var(b, ctx);
+                for b in b.iter() {
+                    ops.push(Op::Inv(*b));
+                }
+                let a = use_var(a, ctx).to_vec();
+                for a in a.iter() {
+                    ops.push(Op::Mul(*a, ctx.new_var()));
+                }
+                bind_new(tgt, ctx);
+            }
+            OpE::Inv(tgt, a) => {
+                assert_eq!(a.size, tgt.size);
+                let a = use_var(a, ctx);
+                for a in a.iter() {
+                    ops.push(Op::Inv(*a));
+                }
+                bind_new(tgt, ctx);
+            }
+            OpE::Not(tgt, a) => {
+                assert_eq!(tgt.size, 1);
+                assert_eq!(a.size, 1);
+                let a = use_var(a, ctx)[0];
+                ops.push(Op::Not(a));
+                bind_new(tgt, ctx);
+            }
+            OpE::Eq(tgt, a, b) => {
+                assert_eq!(tgt.size, 1);
+                assert_eq!(a.size, 1);
+                assert_eq!(b.size, 1);
+                let a = use_var(a, ctx)[0];
+                let b = use_var(b, ctx)[0];
+                ops.push(Op::Sub(a, b));
+                ops.push(Op::Not(ctx.new_var()));
+                bind_new(tgt, ctx);
+            }
+            OpE::Call(out, name, inp) => {
+                let name_idx = ctx
+                    .info_map
+                    .get_index_of(name)
+                    .unwrap_or_else(|| panic!("Unknown function {name}"));
+                let FuncInfo {
+                    input_size,
+                    output_size,
+                } = ctx.info_map.get_index(name_idx).unwrap().1;
+                assert_eq!(inp.total_size(), input_size);
+                assert_eq!(out.total_size(), output_size);
+                let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
+                ops.push(Op::Call(name_idx, inp));
+                out.iter().for_each(|t| bind_new(t, ctx));
+            }
+            OpE::PreImg(out, name, inp) => {
+                let name_idx = ctx
+                    .info_map
+                    .get_index_of(name)
+                    .unwrap_or_else(|| panic!("Unknown function {name}"));
+                let FuncInfo {
+                    input_size,
+                    output_size,
+                } = ctx.info_map.get_index(name_idx).unwrap().1;
+                assert_eq!(out.total_size(), input_size);
+                assert_eq!(inp.total_size(), output_size);
+                let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
+                ops.push(Op::PreImg(name_idx, inp));
+                out.iter().for_each(|t| bind_new(t, ctx));
+            }
+            OpE::Store(ptr, vals) => {
+                assert_eq!(ptr.size, 1);
+                let vals = vals.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
+                ops.push(Op::Store(vals));
+                bind_new(ptr, ctx);
+            }
+            OpE::Load(vals, ptr) => {
+                assert_eq!(ptr.size, 1);
+                let ptr = use_var(ptr, ctx)[0];
+                ops.push(Op::Load(vals.total_size(), ptr));
+                vals.iter().for_each(|val| bind_new(val, ctx));
+            }
+            OpE::Debug(s) => ops.push(Op::Debug(s)),
+            OpE::Slice(pats, args) => {
+                assert_eq!(pats.total_size(), args.total_size());
+                let args: List<_> = args.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
+                let mut i = 0;
+                for pat in pats.as_slice() {
+                    let idxs = args[i..i + pat.size].into();
+                    bind(pat, idxs, ctx);
+                    i += pat.size;
+                }
+            }
+            OpE::ExternCall(out, name, inp) => {
+                let name_idx = ctx
+                    .chip_map
+                    .get_index_of(name)
+                    .unwrap_or_else(|| panic!("Unknown extern chip {name}"));
+                let (_, chip) = ctx.chip_map.get_index(name_idx).unwrap();
+                assert_eq!(inp.total_size(), chip.input_size());
+                assert_eq!(out.total_size(), chip.output_size());
+                let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
+                ops.push(Op::ExternCall(name_idx, inp));
+                out.iter().for_each(|t| bind_new(t, ctx));
+            }
+        }
+    }
+}
+
+fn push_const_array<F: Field + Ord, H>(
+    fs: &[F],
+    ops: &mut Vec<Op<F>>,
+    ctx: &mut CheckCtx<'_, H>,
+) -> List<usize> {
+    fs.iter()
+        .map(|f| {
+            ops.push(Op::Const(*f));
+            ctx.new_var()
+        })
+        .collect()
 }

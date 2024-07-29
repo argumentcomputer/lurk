@@ -9,6 +9,12 @@ use super::{map::Map, List, Name};
 /// The type for Lair operations
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Op<F> {
+    /// `AssertEq(x, y)` makes sure `x` is equal to `y`
+    AssertEq(List<usize>, List<usize>),
+    /// `AssertNe(x, y)` makes sure `x` is unequal to `y`
+    AssertNe(List<usize>, List<usize>),
+    /// `Contains(x, y)` makes sure an array `x` contains the value `y`
+    Contains(List<usize>, usize),
     /// `Const(x)` pushes `x` to the stack
     Const(F),
     /// `Add(i, j)` pushes `stack[i] + stack[j]` to the stack
@@ -53,14 +59,11 @@ pub struct Block<F> {
 /// Encodes the logical flow of a Lair program
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Ctrl<F> {
-    /// `Match(x, cases)` matches on `x` in order to decide which case to execute
-    Match(usize, Cases<F, F>),
-    /// `MatchMany(x, cases)` matches on array `x` in order to decide which case to execute
-    MatchMany(List<usize>, Cases<List<F>, F>),
-    /// `If(b, t, f)` executes block `f` if `stack[b]` is zero and `t` otherwise
-    If(usize, Box<Block<F>>, Box<Block<F>>),
-    /// `IfMany(bs, t, f)` executes block `f` if `bs` is a zero array and `t` otherwise
-    IfMany(List<usize>, Box<Block<F>>, Box<Block<F>>),
+    /// `Choose(x, cases)` non-deterministically chooses which case to execute based on a value `x`
+    /// The third item is the list of unique branches, needed for `eval`
+    Choose(usize, Cases<F, F>, List<Block<F>>), // TODO use Arc or indices so that blocks are not duplicated
+    /// `ChooseMany(x, cases)` non-deterministically chooses which case to execute based on an array `x`
+    ChooseMany(List<usize>, Cases<List<F>, F>),
     /// Contains the variables whose bindings will construct the output of the
     /// block. The first `usize` is an unique identifier, representing the
     /// selector used for arithmetization

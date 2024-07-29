@@ -133,67 +133,35 @@ impl<F> Ctrl<F> {
                 // last nonce, last count
                 *aux += 2;
             }
-            Ctrl::Match(_, cases) => {
+            Ctrl::Choose(_, cases, branches) => {
                 let degrees_len = degrees.len();
                 let mut max_aux = *aux;
-                for (_, block) in cases.branches.iter() {
+                let mut process = |block: &Block<_>| {
                     let block_aux = &mut aux.clone();
                     block.compute_layout_sizes(degrees, toplevel, block_aux, sel);
                     degrees.truncate(degrees_len);
                     max_aux = max_aux.max(*block_aux);
-                }
-                if let Some(block) = &cases.default {
-                    let block_aux = &mut aux.clone();
-                    *block_aux += cases.branches.size();
-                    block.compute_layout_sizes(degrees, toplevel, block_aux, sel);
-                    degrees.truncate(degrees_len);
-                    max_aux = max_aux.max(*block_aux);
-                }
+                };
+                branches.iter().for_each(&mut process);
+                if let Some(block) = cases.default.as_ref() {
+                    process(block)
+                };
                 *aux = max_aux;
             }
-            Ctrl::MatchMany(vars, cases) => {
+            Ctrl::ChooseMany(_, cases) => {
                 let degrees_len = degrees.len();
                 let mut max_aux = *aux;
-                for (_, block) in cases.branches.iter() {
+                let mut process = |block: &Block<_>| {
                     let block_aux = &mut aux.clone();
                     block.compute_layout_sizes(degrees, toplevel, block_aux, sel);
                     degrees.truncate(degrees_len);
                     max_aux = max_aux.max(*block_aux);
-                }
-                if let Some(block) = &cases.default {
-                    let block_aux = &mut aux.clone();
-                    // It is assumed that all arrays have the same length and matches
-                    // the number of variables in the match statement
-                    let arr_size = vars.len();
-                    *block_aux += cases.branches.size() * arr_size;
-                    block.compute_layout_sizes(degrees, toplevel, block_aux, sel);
-                    degrees.truncate(degrees_len);
-                    max_aux = max_aux.max(*block_aux);
-                }
+                };
+                cases.branches.iter().for_each(|(_, block)| process(block));
+                if let Some(block) = cases.default.as_ref() {
+                    process(block)
+                };
                 *aux = max_aux;
-            }
-            Ctrl::If(_, t, f) => {
-                let degrees_len = degrees.len();
-                let t_aux = &mut aux.clone();
-                // for proof of inequality we need inversion
-                *t_aux += 1;
-                t.compute_layout_sizes(degrees, toplevel, t_aux, sel);
-                degrees.truncate(degrees_len);
-                let f_aux = &mut aux.clone();
-                f.compute_layout_sizes(degrees, toplevel, f_aux, sel);
-                degrees.truncate(degrees_len);
-                *aux = (*t_aux).max(*f_aux);
-            }
-            Ctrl::IfMany(vars, t, f) => {
-                let degrees_len = degrees.len();
-                let t_aux = &mut aux.clone();
-                *t_aux += vars.len();
-                t.compute_layout_sizes(degrees, toplevel, t_aux, sel);
-                degrees.truncate(degrees_len);
-                let f_aux = &mut aux.clone();
-                f.compute_layout_sizes(degrees, toplevel, f_aux, sel);
-                degrees.truncate(degrees_len);
-                *aux = (*t_aux).max(*f_aux);
             }
         }
     }
@@ -207,6 +175,13 @@ impl<F> Op<F> {
         aux: &mut usize,
     ) {
         match self {
+            Op::AssertEq(..) => {}
+            Op::AssertNe(a, _) => {
+                *aux += a.len();
+            }
+            Op::Contains(a, _) => {
+                *aux += a.len() - 1;
+            }
             Op::Const(..) => {
                 degrees.push(0);
             }

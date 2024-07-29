@@ -1,6 +1,6 @@
 //! Defines a frontend for Lair using named references for variables and functions.
 
-use super::{map::Map, List, Name};
+use super::{List, Name};
 
 /// The type for variable references
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
@@ -44,6 +44,12 @@ impl<const N: usize> From<[Var; N]> for VarList {
 /// Interface for basic Lair operations
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OpE<F> {
+    /// `AssertEq(x, y)` makes sure `x` is equal to `y`
+    AssertEq(Var, Var),
+    /// `AssertNe(x, y)` makes sure `x` is unequal to `y`
+    AssertNe(Var, Var),
+    /// `Contains(x, y)` makes sure an array `x` contains the value `y`
+    Contains(Var, Var),
     /// `Const(var, x)` binds `var` to the constant `x`
     Const(Var, F),
     /// `Array(var, arr)` binds `var` to the constant array `arr`
@@ -95,8 +101,9 @@ pub struct BlockE<F> {
 /// Encodes the logical flow of a Lair program
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CtrlE<F> {
-    /// `Match(x, cases)` matches on `x` in order to decide which case to execute
-    Match(Var, CasesE<F, F>),
+    /// `Match(x, cases)` matches on `x` in order to decide which case to execute.
+    /// The list collects all the values that map to the same branch
+    Match(Var, CasesE<List<F>, F>),
     /// `MatchMany(x, cases)` matches on array `x` in order to decide which case to execute
     MatchMany(Var, CasesE<List<F>, F>),
     /// `If(b, t, f)` executes block `f` if `b` is zero and `t` otherwise
@@ -111,7 +118,7 @@ pub enum CtrlE<F> {
 /// is encoded as its own block
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CasesE<K, F> {
-    pub branches: Map<K, BlockE<F>>,
+    pub branches: Vec<(K, BlockE<F>)>,
     pub default: Option<Box<BlockE<F>>>,
 }
 

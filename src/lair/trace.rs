@@ -162,48 +162,15 @@ impl<F: PrimeField32> Ctrl<F> {
                 slice.push_aux(index, provide.last_nonce);
                 slice.push_aux(index, provide.last_count);
             }
-            Ctrl::Match(t, cases) => {
-                let (t, _) = map[*t];
-                if let Some(branch) = cases.branches.get(&t) {
-                    branch.populate_row(ctx, map, index, slice);
-                } else {
-                    for (f, _) in cases.branches.iter() {
-                        slice.push_aux(index, (t - *f).inverse());
-                    }
-                    let branch = cases.default.as_ref().expect("No match");
-                    branch.populate_row(ctx, map, index, slice);
-                }
+            Ctrl::Choose(var, cases, _) => {
+                let val = map[*var].0;
+                let branch = cases.match_case(&val).expect("No match");
+                branch.populate_row(ctx, map, index, slice);
             }
-            Ctrl::MatchMany(vars, cases) => {
+            Ctrl::ChooseMany(vars, cases) => {
                 let vals = vars.iter().map(|&var| map[var].0).collect();
-                if let Some(branch) = cases.branches.get(&vals) {
-                    branch.populate_row(ctx, map, index, slice);
-                } else {
-                    for (fs, _) in cases.branches.iter() {
-                        let diffs = vals.iter().zip(fs.iter()).map(|(val, f)| *val - *f);
-                        push_inequality_witness(index, slice, diffs);
-                    }
-                    let branch = cases.default.as_ref().expect("No match");
-                    branch.populate_row(ctx, map, index, slice);
-                }
-            }
-            Ctrl::If(b, t, f) => {
-                let (b, _) = map[*b];
-                if b != F::zero() {
-                    slice.push_aux(index, b.inverse());
-                    t.populate_row(ctx, map, index, slice);
-                } else {
-                    f.populate_row(ctx, map, index, slice);
-                }
-            }
-            Ctrl::IfMany(vars, t, f) => {
-                let vals = vars.iter().map(|&var| map[var].0);
-                if vals.clone().any(|b| b != F::zero()) {
-                    push_inequality_witness(index, slice, vals);
-                    t.populate_row(ctx, map, index, slice);
-                } else {
-                    f.populate_row(ctx, map, index, slice);
-                }
+                let branch = cases.match_case(&vals).expect("No match");
+                branch.populate_row(ctx, map, index, slice);
             }
         }
     }
@@ -235,6 +202,19 @@ impl<F: PrimeField32> Op<F> {
         slice: &mut ColumnMutSlice<'_, F>,
     ) {
         match self {
+            Op::AssertEq(..) => {}
+            Op::AssertNe(a, b) => {
+                let diffs = a.iter().zip(b.iter()).map(|(a, b)| map[*a].0 - map[*b].0);
+                push_inequality_witness(index, slice, diffs);
+            }
+            Op::Contains(a, b) => {
+                let (b, _) = map[*b];
+                a.iter().map(|a| map[*a].0 - b).reduce(|acc, diff| {
+                    let acc = acc * diff;
+                    slice.push_aux(index, acc);
+                    acc
+                });
+            }
             Op::Const(f) => map.push((*f, 0)),
             Op::Add(a, b) => {
                 let (a, a_deg) = map[*a];

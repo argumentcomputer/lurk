@@ -218,6 +218,42 @@ impl<F: Field> Op<F> {
         <AB as AirBuilder>::Var: Debug,
     {
         match self {
+            Op::AssertNe(a, b) => {
+                let coeffs = (0..a.len()).map(|_| local.next_aux(index)).collect();
+                let diffs = a
+                    .iter()
+                    .zip(b.iter())
+                    .map(|(a, b)| {
+                        let a = map[*a].to_expr();
+                        let b = map[*b].to_expr();
+                        a - b
+                    })
+                    .collect();
+                constrain_inequality_witness(sel.clone(), coeffs, diffs, builder);
+            }
+            Op::AssertEq(a, b) => {
+                for (a, b) in a.iter().zip(b.iter()) {
+                    let a = &map[*a];
+                    let b = &map[*b];
+                    builder
+                        .when(sel.clone())
+                        .assert_eq(a.to_expr(), b.to_expr());
+                }
+            }
+            Op::Contains(a, b) => {
+                let b = map[*b].to_expr();
+                let acc = a
+                    .iter()
+                    .map(|a| map[*a].to_expr() - b.clone())
+                    .reduce(|acc, diff| {
+                        let aux = local.next_aux(index);
+                        let acc = acc * diff;
+                        builder.when(sel.clone()).assert_eq(acc.clone(), aux);
+                        aux.into()
+                    })
+                    .unwrap();
+                builder.when(sel.clone()).assert_zero(acc);
+            }
             Op::Const(c) => {
                 map.push(Val::Const(*c));
             }
@@ -390,119 +426,35 @@ impl<F: Field> Ctrl<F> {
         <AB as AirBuilder>::Var: Debug,
     {
         match self {
-            Ctrl::Match(v, cases) => {
+            Ctrl::Choose(_, cases, branches) => {
                 let map_len = map.len();
                 let init_state = index.save();
-                let v = map[*v].to_expr();
 
-                for (f, branch) in cases.branches.iter() {
-                    let sel = branch.return_sel::<AB>(local);
-                    branch.eval(builder, local, &sel, index, map, toplevel, call_ctx.clone());
-                    builder.when(sel).assert_eq(v.clone(), *f);
+                let mut process = |block: &Block<F>| {
+                    let sel = block.return_sel::<AB>(local);
+                    block.eval(builder, local, &sel, index, map, toplevel, call_ctx.clone());
                     map.truncate(map_len);
                     index.restore(init_state);
-                }
-
-                if let Some(branch) = &cases.default {
-                    let invs = (0..cases.branches.size())
-                        .map(|_| local.next_aux(index))
-                        .collect::<Vec<_>>();
-                    let sel = branch.return_sel::<AB>(local);
-                    branch.eval(builder, local, &sel, index, map, toplevel, call_ctx);
-                    for ((f, _), inv) in cases.branches.iter().zip(invs.into_iter()) {
-                        builder.when(sel.clone()).assert_one(inv * (v.clone() - *f));
-                    }
-                    map.truncate(map_len);
-                    index.restore(init_state);
-                }
+                };
+                branches.iter().for_each(&mut process);
+                if let Some(block) = cases.default.as_ref() {
+                    process(block)
+                };
             }
-            Ctrl::MatchMany(vars, cases) => {
+            Ctrl::ChooseMany(_, cases) => {
                 let map_len = map.len();
                 let init_state = index.save();
-                let vals: Vec<_> = vars.iter().map(|&var| map[var].to_expr()).collect();
 
-                for (fs, branch) in cases.branches.iter() {
-                    let sel = branch.return_sel::<AB>(local);
-                    branch.eval(builder, local, &sel, index, map, toplevel, call_ctx.clone());
-                    vals.iter()
-                        .zip(fs.iter())
-                        .for_each(|(v, f)| builder.when(sel.clone()).assert_eq(v.clone(), *f));
+                let mut process = |block: &Block<F>| {
+                    let sel = block.return_sel::<AB>(local);
+                    block.eval(builder, local, &sel, index, map, toplevel, call_ctx.clone());
                     map.truncate(map_len);
                     index.restore(init_state);
-                }
-
-                if let Some(branch) = &cases.default {
-                    let wit: Vec<Vec<_>> = (0..cases.branches.size())
-                        .map(|_| (0..vars.len()).map(|_| local.next_aux(index)).collect())
-                        .collect();
-                    let sel = branch.return_sel::<AB>(local);
-                    branch.eval(builder, local, &sel, index, map, toplevel, call_ctx);
-                    for (coeffs, (fs, _)) in wit.into_iter().zip(cases.branches.iter()) {
-                        let diffs = vals
-                            .iter()
-                            .zip(fs.iter())
-                            .map(|(v, f)| v.clone() - *f)
-                            .collect();
-                        constrain_inequality_witness(sel.clone(), coeffs, diffs, builder);
-                    }
-                    map.truncate(map_len);
-                    index.restore(init_state);
-                }
-            }
-            Ctrl::If(b, t, f) => {
-                let map_len = map.len();
-                let init_state = index.save();
-                let b = map[*b].to_expr();
-
-                let inv = local.next_aux(index);
-                let t_sel = t.return_sel::<AB>(local);
-                t.eval(
-                    builder,
-                    local,
-                    &t_sel,
-                    index,
-                    map,
-                    toplevel,
-                    call_ctx.clone(),
-                );
-                builder.when(t_sel).assert_one(inv * b.clone());
-                map.truncate(map_len);
-                index.restore(init_state);
-
-                let f_sel = f.return_sel::<AB>(local);
-                f.eval(builder, local, &f_sel, index, map, toplevel, call_ctx);
-                builder.when(f_sel).assert_zero(b);
-                map.truncate(map_len);
-                index.restore(init_state);
-            }
-            Ctrl::IfMany(vars, t, f) => {
-                let map_len = map.len();
-                let init_state = index.save();
-
-                let coeffs = vars.iter().map(|_| local.next_aux(index)).collect();
-                let vals = vars.iter().map(|&v| map[v].to_expr()).collect();
-                let t_sel = t.return_sel::<AB>(local);
-                t.eval(
-                    builder,
-                    local,
-                    &t_sel,
-                    index,
-                    map,
-                    toplevel,
-                    call_ctx.clone(),
-                );
-                constrain_inequality_witness(t_sel, coeffs, vals, builder);
-                map.truncate(map_len);
-                index.restore(init_state);
-
-                let f_sel = f.return_sel::<AB>(local);
-                f.eval(builder, local, &f_sel, index, map, toplevel, call_ctx);
-                for var in vars.iter() {
-                    let b = map[*var].to_expr();
-                    builder.when(f_sel.clone()).assert_zero(b);
-                }
-                map.truncate(map_len);
-                index.restore(init_state);
+                };
+                cases.branches.iter().for_each(|(_, block)| process(block));
+                if let Some(block) = cases.default.as_ref() {
+                    process(block)
+                };
             }
             Ctrl::Return(ident, vs) => {
                 let sel = local.sel[*ident];
@@ -764,5 +716,93 @@ mod tests {
         assert_eq!(match_many_trace, expected_trace);
 
         let _ = debug_constraints_collecting_queries(&match_many_chip, &[], None, &expected_trace);
+    }
+
+    #[test]
+    fn lair_assert_test() {
+        let assert_func = func!(
+        fn assert(a: [4]): [4] {
+            let arr1 = [2, 4, 5, 8];
+            let arr2 = [2, 4, 6, 8];
+            assert_ne!(a, arr1);
+            let two = 2;
+            let four = 4;
+            contains!(a, two);
+            contains!(a, four);
+            assert_eq!(a, arr2);
+            return a
+        });
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[assert_func]);
+        let mut queries = QueryRecord::new(&toplevel);
+        let f = field_from_u32;
+        let args = &[f(2), f(4), f(6), f(8)];
+        toplevel.execute_by_name("assert", args, &mut queries);
+        let chip = FuncChip::from_name("assert", &toplevel);
+        let trace = chip.generate_trace(&Shard::new(&queries));
+
+        #[rustfmt::skip]
+        let expected_trace = RowMajorMatrix::new(
+            [
+                // nonce, 4 inputs, 6 multiplications for the two `contains!`, 4 coefficients for `assert_ne!`, last nonce, last count, selector
+                0, 2, 4, 6, 8, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
+                // dummies
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ]
+            .into_iter()
+            .map(F::from_canonical_u32)
+            .collect::<Vec<_>>(),
+            chip.width(),
+        );
+        assert_eq!(trace, expected_trace);
+        let _ = debug_constraints_collecting_queries(&chip, &[], None, &trace);
+    }
+
+    #[test]
+    fn lair_equal_branch_test() {
+        let func = func!(
+        fn test(a): [1] {
+            match a {
+                2, 3, 4 => {
+                    let one = 1;
+                    return one
+                }
+            };
+            return a
+        });
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[func]);
+        let mut queries = QueryRecord::new(&toplevel);
+        let f = field_from_u32;
+        let args = &[f(1)];
+        toplevel.execute_by_name("test", args, &mut queries);
+        let args = &[f(2)];
+        toplevel.execute_by_name("test", args, &mut queries);
+        let args = &[f(3)];
+        toplevel.execute_by_name("test", args, &mut queries);
+        let args = &[f(4)];
+        toplevel.execute_by_name("test", args, &mut queries);
+        let chip = FuncChip::from_name("test", &toplevel);
+        let trace = chip.generate_trace(&Shard::new(&queries));
+
+        #[rustfmt::skip]
+        let expected_trace = RowMajorMatrix::new(
+            [
+                // branch case:
+                //   nonce, input, (a-2)*(a-3), (a-2)*(a-3)*(a-4), dummy, last nonce, last count, two selectors
+                // default case:
+                //   nonce, input, 1/(a-2), 1/(a-3), 1/(a-4), last nonce, last count, two selectors
+                0, 1, 2013265920, 1006632960, 671088640, 0, 1, 0, 1,
+                1, 2,          0,          0,         0, 1, 0, 1, 0,
+                2, 3,          0,          0,         0, 1, 0, 1, 0,
+                3, 4,          2,          0,         0, 1, 0, 1, 0
+            ]
+            .into_iter()
+            .map(F::from_canonical_u32)
+            .collect::<Vec<_>>(),
+            chip.width(),
+        );
+        assert_eq!(trace, expected_trace);
+        let _ = debug_constraints_collecting_queries(&chip, &[], None, &trace);
     }
 }
