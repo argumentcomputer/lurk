@@ -92,6 +92,11 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, 
         hash_24_8(),
         hash_32_8(),
         hash_48_8(),
+        u64_add(),
+        u64_sub(),
+        u64_mul(),
+        u64_divrem(),
+        u64_lessthan(),
     ];
     let lurk_chip_map = lurk_chip_map();
     let toplevel = Toplevel::new(funcs, lurk_chip_map);
@@ -424,6 +429,66 @@ pub fn hash_48_8<F>() -> FuncE<F> {
         invertible fn hash_48_8(preimg: [48]): [8] {
             let img: [8] = extern_call(hash_48_8, preimg);
             return img
+        }
+    )
+}
+
+pub fn u64_add<F>() -> FuncE<F> {
+    func!(
+        fn u64_add(a, b): [1] {
+            let a: [8] = load(a);
+            let b: [8] = load(b);
+            let c: [8] = extern_call(u64_add, a, b);
+            let c = store(c);
+            return c
+        }
+    )
+}
+
+pub fn u64_sub<F>() -> FuncE<F> {
+    func!(
+        fn u64_sub(a, b): [1] {
+            let a: [8] = load(a);
+            let b: [8] = load(b);
+            let c: [8] = extern_call(u64_sub, a, b);
+            let c = store(c);
+            return c
+        }
+    )
+}
+
+pub fn u64_mul<F>() -> FuncE<F> {
+    func!(
+        fn u64_mul(a, b): [1] {
+            let a: [8] = load(a);
+            let b: [8] = load(b);
+            let c: [8] = extern_call(u64_mul, a, b);
+            let c = store(c);
+            return c
+        }
+    )
+}
+
+pub fn u64_divrem<F>() -> FuncE<F> {
+    func!(
+        fn u64_divrem(a, b): [2] {
+            let a: [8] = load(a);
+            let b: [8] = load(b);
+            let (q: [8], r: [8]) = extern_call(u64_divrem, a, b);
+            let q = store(q);
+            let r = store(r);
+            return (q, r)
+        }
+    )
+}
+
+pub fn u64_lessthan<F>() -> FuncE<F> {
+    func!(
+        fn u64_lessthan(a, b): [1] {
+            let a: [8] = load(a);
+            let b: [8] = load(b);
+            let c = extern_call(u64_lessthan, a, b);
+            return c
         }
     )
 }
@@ -864,7 +929,12 @@ pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
         fn eval_binop_num(head, exp1_tag, exp1, exp2_tag, exp2, env): [2] {
             let err_tag = Tag::Err;
             let num_tag = Tag::Num;
+            let u64_tag = Tag::U64;
             let nil_tag = Tag::Nil;
+            let err_div_zero = EvalErr::DivByZero;
+            let builtin_tag = Tag::Builtin;
+            let t = builtins.index("t");
+            let nil = 0;
             let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
             match val1_tag {
                 Tag::Err => {
@@ -882,38 +952,75 @@ pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
                 [Tag::U64, Tag::U64] => {
                     match head [|sym| builtins.index(sym).to_field()] {
                         "+" => {
-                            let res = add(val1, val2);
-                            return (num_tag, res)
+                            let res = call(u64_add, val1, val2);
+                            return (u64_tag, res)
                         }
                         "-" => {
-                            let res = sub(val1, val2);
-                            return (num_tag, res)
+                            let res = call(u64_sub, val1, val2);
+                            return (u64_tag, res)
                         }
                         "*" => {
-                            let res = mul(val1, val2);
-                            return (num_tag, res)
+                            let res = call(u64_mul, val1, val2);
+                            return (u64_tag, res)
                         }
-                        "/" => {
+                        "/", "%" => {
                             if !val2 {
-                                let err = EvalErr::DivByZero;
-                                return (err_tag, err)
+                                return (err_tag, err_div_zero)
                             }
-                            let res = div(val1, val2);
-                            return (num_tag, res)
+                            let (quot, rem) = call(u64_divrem, val1, val2);
+                            match head [|sym| builtins.index(sym).to_field()] {
+                                "/" => {
+                                    return (u64_tag, quot)
+                                }
+                                "%" => {
+                                    return (u64_tag, rem)
+                                }
+                            }
                         }
                         "=" => {
+                            let val1: [8] = load(val1);
+                            let val2: [8] = load(val2);
                             let diff = sub(val1, val2);
                             if !diff {
-                                let builtin_tag = Tag::Builtin;
-                                let t = builtins.index("t");
                                 return (builtin_tag, t)
                             }
-                            let nil = 0;
                             return (nil_tag, nil)
                         }
-                        "%", "<", ">", "<=", ">=" => {
-                            let err = EvalErr::Todo;
-                            return (err_tag, err)
+                        "<", ">=" => {
+                            let res = call(u64_lessthan, val1, val2);
+                            match head [|sym| builtins.index(sym).to_field()] {
+                                "<" => {
+                                    if res {
+                                        return (builtin_tag, t)
+                                    }
+                                    return (nil_tag, nil)
+                                }
+                                ">=" => {
+                                    if res {
+                                        return (nil_tag, nil)
+                                    }
+                                    return (builtin_tag, t)
+
+                                }
+                            }
+                        }
+                        ">", "<=" => {
+                            let res = call(u64_lessthan, val2, val1);
+                            match head [|sym| builtins.index(sym).to_field()] {
+                                ">" => {
+                                    if res {
+                                        return (builtin_tag, t)
+                                    }
+                                    return (nil_tag, nil)
+                                }
+                                "<=" => {
+                                    if res {
+                                        return (nil_tag, nil)
+                                    }
+                                    return (builtin_tag, t)
+
+                                }
+                            }
                         }
                     }
                 }
@@ -933,8 +1040,7 @@ pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
                         }
                         "/" => {
                             if !val2 {
-                                let err = EvalErr::DivByZero;
-                                return (err_tag, err)
+                                return (err_tag, err_div_zero)
                             }
                             let res = div(val1, val2);
                             return (num_tag, res)
@@ -942,8 +1048,6 @@ pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
                         "=" => {
                             let diff = sub(val1, val2);
                             if !diff {
-                                let builtin_tag = Tag::Builtin;
-                                let t = builtins.index("t");
                                 return (builtin_tag, t)
                             }
                             let nil = 0;
@@ -1455,7 +1559,7 @@ mod test {
         expect_eq(eval_comm_unop.width(), expect!["71"]);
         expect_eq(eval_hide.width(), expect!["76"]);
         expect_eq(eval_unop.width(), expect!["33"]);
-        expect_eq(eval_binop_num.width(), expect!["44"]);
+        expect_eq(eval_binop_num.width(), expect!["78"]);
         expect_eq(eval_binop_misc.width(), expect!["32"]);
         expect_eq(eval_let.width(), expect!["54"]);
         expect_eq(eval_letrec.width(), expect!["58"]);
