@@ -116,6 +116,7 @@ pub enum EvalErr {
     NotString,
     CannotCastToNum,
     NonConstantBuiltin,
+    NotU64,
     Todo,
 }
 
@@ -468,7 +469,7 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                     match head_tag {
                         Tag::Builtin => {
                             match head [|sym| builtins.index(sym).to_field()] {
-                                "let", "letrec", "lambda", "+", "-", "*", "/", "=", "cons", "strcons" => {
+                                "let", "letrec", "lambda", "+", "-", "*", "/", "=", "%", "<", ">", "<=", ">=", "cons", "strcons" => {
                                     let rest_not_cons = sub(rest_tag, cons_tag);
                                     if rest_not_cons {
                                         return (err_tag, invalid_form)
@@ -506,7 +507,7 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                             let res = store(fst_tag, fst, snd_tag, snd, env);
                                             return (res_tag, res)
                                         }
-                                        "+", "-", "*", "/", "=" => {
+                                        "+", "-", "*", "/", "=", "%", "<", ">", "<=", ">=" => {
                                             let (res_tag, res) = call(eval_binop_num, head, fst_tag, fst, snd_tag, snd, env);
                                             return (res_tag, res)
                                         }
@@ -876,49 +877,87 @@ pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
                     return (val2_tag, val2)
                 }
             };
-            // Both must be numbers
-            let not_num = sub(val1_tag, num_tag);
-            if not_num {
-                let err = EvalErr::ArgNotNumber;
-                return (err_tag, err)
-            }
-            let not_num = sub(val2_tag, num_tag);
-            if not_num {
-                let err = EvalErr::ArgNotNumber;
-                return (err_tag, err)
-            }
-            match head [|sym| builtins.index(sym).to_field()] {
-                "+" => {
-                    let res = add(val1, val2);
-                    return (num_tag, res)
-                }
-                "-" => {
-                    let res = sub(val1, val2);
-                    return (num_tag, res)
-                }
-                "*" => {
-                    let res = mul(val1, val2);
-                    return (num_tag, res)
-                }
-                "/" => {
-                    if !val2 {
-                        let err = EvalErr::DivByZero;
-                        return (err_tag, err)
+            let tags: [2] = (val1_tag, val2_tag);
+            match tags {
+                [Tag::U64, Tag::U64] => {
+                    match head [|sym| builtins.index(sym).to_field()] {
+                        "+" => {
+                            let res = add(val1, val2);
+                            return (num_tag, res)
+                        }
+                        "-" => {
+                            let res = sub(val1, val2);
+                            return (num_tag, res)
+                        }
+                        "*" => {
+                            let res = mul(val1, val2);
+                            return (num_tag, res)
+                        }
+                        "/" => {
+                            if !val2 {
+                                let err = EvalErr::DivByZero;
+                                return (err_tag, err)
+                            }
+                            let res = div(val1, val2);
+                            return (num_tag, res)
+                        }
+                        "=" => {
+                            let diff = sub(val1, val2);
+                            if !diff {
+                                let builtin_tag = Tag::Builtin;
+                                let t = builtins.index("t");
+                                return (builtin_tag, t)
+                            }
+                            let nil = 0;
+                            return (nil_tag, nil)
+                        }
+                        "%", "<", ">", "<=", ">=" => {
+                            let err = EvalErr::Todo;
+                            return (err_tag, err)
+                        }
                     }
-                    let res = div(val1, val2);
-                    return (num_tag, res)
                 }
-                "=" => {
-                    let diff = sub(val1, val2);
-                    if !diff {
-                        let builtin_tag = Tag::Builtin;
-                        let t = builtins.index("t");
-                        return (builtin_tag, t)
+                [Tag::Num, Tag::Num] => {
+                    match head [|sym| builtins.index(sym).to_field()] {
+                        "+" => {
+                            let res = add(val1, val2);
+                            return (num_tag, res)
+                        }
+                        "-" => {
+                            let res = sub(val1, val2);
+                            return (num_tag, res)
+                        }
+                        "*" => {
+                            let res = mul(val1, val2);
+                            return (num_tag, res)
+                        }
+                        "/" => {
+                            if !val2 {
+                                let err = EvalErr::DivByZero;
+                                return (err_tag, err)
+                            }
+                            let res = div(val1, val2);
+                            return (num_tag, res)
+                        }
+                        "=" => {
+                            let diff = sub(val1, val2);
+                            if !diff {
+                                let builtin_tag = Tag::Builtin;
+                                let t = builtins.index("t");
+                                return (builtin_tag, t)
+                            }
+                            let nil = 0;
+                            return (nil_tag, nil)
+                        }
+                        "%", "<", ">", "<=", ">=" => {
+                            let err = EvalErr::NotU64;
+                            return (err_tag, err)
+                        }
                     }
-                    let nil = 0;
-                    return (nil_tag, nil)
                 }
-            }
+            };
+            let err = EvalErr::ArgNotNumber;
+            return (err_tag, err)
         }
     )
 }
@@ -1412,11 +1451,11 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["52"]);
-        expect_eq(eval.width(), expect!["94"]);
+        expect_eq(eval.width(), expect!["103"]);
         expect_eq(eval_comm_unop.width(), expect!["71"]);
         expect_eq(eval_hide.width(), expect!["76"]);
         expect_eq(eval_unop.width(), expect!["33"]);
-        expect_eq(eval_binop_num.width(), expect!["35"]);
+        expect_eq(eval_binop_num.width(), expect!["44"]);
         expect_eq(eval_binop_misc.width(), expect!["32"]);
         expect_eq(eval_let.width(), expect!["54"]);
         expect_eq(eval_letrec.width(), expect!["58"]);
