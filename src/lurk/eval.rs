@@ -1050,7 +1050,6 @@ pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
                             if !diff {
                                 return (builtin_tag, t)
                             }
-                            let nil = 0;
                             return (nil_tag, nil)
                         }
                         "%", "<", ">", "<=", ">=" => {
