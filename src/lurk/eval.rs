@@ -468,71 +468,45 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                     match head_tag {
                         Tag::Builtin => {
                             match head [|sym| builtins.index(sym).to_field()] {
-                                "lambda" => {
-                                    // A lambda expression is a 3 element list
-                                    // first element: lambda symbol
-                                    // second element: parameter list
-                                    // third element: body
+                                "let", "letrec", "lambda" => {
                                     let rest_not_cons = sub(rest_tag, cons_tag);
                                     if rest_not_cons {
                                         return (err_tag, invalid_form)
                                     }
-                                    let (params_tag, params, rest_tag, rest) = load(rest);
+                                    let (fst_tag, fst, rest_tag, rest) = load(rest);
                                     let rest_not_cons = sub(rest_tag, cons_tag);
                                     if rest_not_cons {
                                         return (err_tag, invalid_form)
                                     }
-                                    let (body_tag, body, rest_tag, _rest) = load(rest);
+                                    let (snd_tag, snd, rest_tag, _rest) = load(rest);
                                     let rest_not_nil = sub(rest_tag, nil_tag);
                                     if rest_not_nil {
                                         return (err_tag, invalid_form)
                                     }
-                                    // A function (more precisely, a closure) is an object with a
-                                    // parameter list, a body and an environment
-                                    let res_tag = Tag::Fun;
-                                    let res = store(params_tag, params, body_tag, body, env);
-                                    return (res_tag, res)
-                                }
-                                "let" => {
-                                    // A let expression is a 3 element list
-                                    // first element: let symbol
-                                    // second element: binding list
-                                    // third element: body
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
+                                    match head [|sym| builtins.index(sym).to_field()] {
+                                        "let" => {
+                                            // first element: let symbol
+                                            // second element: binding list
+                                            // third element: body
+                                            let (res_tag, res) = call(eval_let, fst_tag, fst, snd_tag, snd, env);
+                                            return (res_tag, res)
+                                        }
+                                        "letrec" => {
+                                            // analogous to `let`
+                                            let (res_tag, res) = call(eval_letrec, fst_tag, fst, snd_tag, snd, env);
+                                            return (res_tag, res)
+                                        }
+                                        "lambda" => {
+                                            // first element: lambda symbol
+                                            // second element: parameter list
+                                            // third element: body
+                                            // A function (more precisely, a closure) is an object with a
+                                            // parameter list, a body and an environment
+                                            let res_tag = Tag::Fun;
+                                            let res = store(fst_tag, fst, snd_tag, snd, env);
+                                            return (res_tag, res)
+                                        }
                                     }
-                                    let (binds_tag, binds, rest_tag, rest) = load(rest);
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
-                                    let (body_tag, body, rest_tag, _rest) = load(rest);
-                                    let rest_not_nil = sub(rest_tag, nil_tag);
-                                    if rest_not_nil {
-                                        return (err_tag, invalid_form)
-                                    }
-                                    let (res_tag, res) = call(eval_let, binds_tag, binds, body_tag, body, env);
-                                    return (res_tag, res)
-                                }
-                                "letrec" => {
-                                    // A letrec expression is analogous to a let expression
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
-                                    let (binds_tag, binds, rest_tag, rest) = load(rest);
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
-                                    let (body_tag, body, rest_tag, _rest) = load(rest);
-                                    let rest_not_nil = sub(rest_tag, nil_tag);
-                                    if rest_not_nil {
-                                        return (err_tag, invalid_form)
-                                    }
-                                    let (res_tag, res) = call(eval_letrec, binds_tag, binds, body_tag, body, env);
-                                    return (res_tag, res)
                                 }
                                 "eval" => {
                                     let rest_not_cons = sub(rest_tag, cons_tag);
@@ -703,10 +677,7 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                     return (res_tag, res)
                                 }
                                 // TODO: other builtins
-                            };
-                            let (head_tag, head) = call(eval, head_tag, head, env);
-                            let (res_tag, res) = call(apply, head_tag, head, rest_tag, rest, env);
-                            return (res_tag, res)
+                            }
                         }
                     };
                     let (head_tag, head) = call(eval, head_tag, head, env);
@@ -1474,7 +1445,7 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["52"]);
-        expect_eq(eval.width(), expect!["107"]);
+        expect_eq(eval.width(), expect!["94"]);
         expect_eq(eval_comm_unop.width(), expect!["71"]);
         expect_eq(eval_hide.width(), expect!["76"]);
         expect_eq(eval_unop.width(), expect!["33"]);
