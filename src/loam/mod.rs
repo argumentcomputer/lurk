@@ -12,6 +12,7 @@ use crate::lurk::tag::Tag;
 use crate::lurk::zstore::{self, lurk_zstore, ZPtr, ZStore};
 
 mod allocation;
+mod distilled_evaluation;
 mod evaluation;
 
 pub type LE = BabyBear;
@@ -139,6 +140,13 @@ impl WidePtr {
 
     fn empty_env() -> Self {
         Self::nil()
+    }
+
+    fn to_zptr(&self) -> ZPtr<LE> {
+        ZPtr {
+            tag: Tag::from_field(&self.0.f()),
+            digest: self.1 .0,
+        }
     }
 }
 
