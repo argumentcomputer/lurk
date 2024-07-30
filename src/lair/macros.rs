@@ -50,6 +50,10 @@ macro_rules! block_init {
 #[macro_export]
 macro_rules! block {
     // Operations
+    ({ range_u8!($($a:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+        $ops.push($crate::lair::expr::OpE::RangeU8([$($a),*].into()));
+        $crate::block!({ $($tail)* }, $ops)
+    }};
     ({ assert_eq!($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
         $ops.push($crate::lair::expr::OpE::AssertEq($a, $b));
         $crate::block!({ $($tail)* }, $ops)

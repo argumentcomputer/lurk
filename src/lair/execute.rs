@@ -6,7 +6,10 @@ use rustc_hash::{FxBuildHasher, FxHashMap};
 use sphinx_core::stark::{Indexed, MachineRecord};
 use std::ops::Range;
 
-use crate::{air::builder::Record, gadgets::bytes::record::BytesRecord};
+use crate::{
+    air::builder::Record,
+    gadgets::bytes::{record::BytesRecord, ByteRecord},
+};
 
 use super::{
     bytecode::{Ctrl, Func, Op},
@@ -516,6 +519,15 @@ impl<F: PrimeField32> Func<F> {
                     map.extend(chip.execute(&input, nonce as u32, queries, &mut requires));
                 }
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
+                ExecEntry::Op(Op::RangeU8(x)) => {
+                    let x = map[*x];
+                    let mut bytes = queries.bytes.context(nonce as u32, &mut requires);
+                    let b = x
+                        .as_canonical_u32()
+                        .try_into()
+                        .expect("Variable not in u8 range");
+                    bytes.range_check_u8(b);
+                }
                 ExecEntry::Ctrl(Ctrl::Return(_, out)) => {
                     let out = out.iter().map(|v| map[*v]).collect::<Vec<_>>();
                     let (inp, result) = queries.func_queries[func_index]

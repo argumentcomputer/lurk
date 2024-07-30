@@ -3,7 +3,10 @@ use p3_field::Field;
 use p3_matrix::Matrix;
 use std::fmt::Debug;
 
-use crate::air::builder::{LookupBuilder, ProvideRecord, RequireRecord};
+use crate::{
+    air::builder::{LookupBuilder, ProvideRecord, RequireRecord},
+    gadgets::bytes::{builder::BytesAirRecordWithContext, ByteAirRecord},
+};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
@@ -408,6 +411,13 @@ impl<F: Field> Op<F> {
                 }
             }
             Op::Debug(..) => (),
+            Op::RangeU8(x) => {
+                let x = map[*x].to_expr();
+                let require = [local.next_require(index)];
+                let mut air_record = BytesAirRecordWithContext::default();
+                air_record.range_check_u8(x, sel.clone());
+                air_record.require_all(builder, (*local.nonce).into(), require);
+            }
         }
     }
 }

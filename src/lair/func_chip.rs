@@ -248,6 +248,9 @@ impl<F> Op<F> {
                 degrees.extend(vec![1; aux_size]);
             }
             Op::Debug(..) => (),
+            Op::RangeU8(_) => {
+                *aux += 3;
+            }
         }
     }
 }

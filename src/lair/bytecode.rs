@@ -45,6 +45,8 @@ pub enum Op<F> {
     ExternCall(usize, List<usize>),
     /// `Debug(s)` emits debug message `s`
     Debug(&'static str),
+    /// `RangeU8(x)` makes sure `x` are is a U8 element
+    RangeU8(usize),
 }
 
 /// A "code block" containing a sequence of operators and a control node to be

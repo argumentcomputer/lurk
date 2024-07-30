@@ -169,7 +169,12 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
                     let zero = 0;
                     return zero
                 }
-                Tag::Sym, Tag::Key, Tag::U64, Tag::Comm => {
+                Tag::U64 => {
+                    range_u8!(digest);
+                    let ptr = store(digest);
+                    return ptr
+                }
+                Tag::Sym, Tag::Key, Tag::Comm => {
                     let ptr = store(digest);
                     return ptr
                 }
@@ -1544,7 +1549,7 @@ mod test {
         expect_eq(car_cdr.width(), expect!["34"]);
         expect_eq(apply.width(), expect!["60"]);
         expect_eq(env_lookup.width(), expect!["47"]);
-        expect_eq(ingress.width(), expect!["97"]);
+        expect_eq(ingress.width(), expect!["98"]);
         expect_eq(ingress_builtin.width(), expect!["46"]);
         expect_eq(egress.width(), expect!["68"]);
         expect_eq(egress_builtin.width(), expect!["39"]);

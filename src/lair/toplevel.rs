@@ -506,6 +506,12 @@ impl<F: Field + Ord> OpE<F> {
                 ops.push(Op::ExternCall(name_idx, inp));
                 out.iter().for_each(|t| bind_new(t, ctx));
             }
+            OpE::RangeU8(xs) => {
+                let xs = xs.iter().flat_map(|x| use_var(x, ctx).to_vec());
+                for x in xs {
+                    ops.push(Op::RangeU8(x));
+                }
+            }
         }
     }
 }

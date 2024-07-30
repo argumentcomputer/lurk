@@ -334,6 +334,10 @@ impl<F: PrimeField32> Op<F> {
                 }
             }
             Op::Debug(..) => (),
+            Op::RangeU8(_) => {
+                let lookup = ctx.requires.next().expect("Not enough require hints");
+                slice.push_require(index, lookup.into_require());
+            }
         }
     }
 }
