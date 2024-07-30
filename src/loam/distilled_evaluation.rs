@@ -348,8 +348,7 @@ ascent! {
         cons_rel(arg, more_args, args),
         cons_rel(unevaled, more_vals, rest);
 
-    fun_call(expr, env, more_args, body, new_closed_env, more_vals)
-        <--
+    fun_call(expr, env, more_args, body, new_closed_env, more_vals) <--
         fun_call(expr, env, args, body, closed_env, rest),
         cons_rel(arg, more_args, args),
         cons_rel(unevaled, more_vals, rest),
@@ -360,10 +359,10 @@ ascent! {
     ////////////////////
     // let binding
 
-    // Signal
-    relation bind_parse(Ptr, Ptr, Ptr); // (expr, env, bindings-and-body)
-    // Signal
-    relation rec_bind_parse(Ptr, Ptr, Ptr); // (expr, env, bindings-and-body)
+    // // Signal
+    // relation bind_parse(Ptr, Ptr, Ptr); // (expr, env, bindings-and-body)
+    // // Signal
+    // relation rec_bind_parse(Ptr, Ptr, Ptr); // (expr, env, bindings-and-body)
 
     // Final
     relation bind(Ptr, Ptr, Ptr, Ptr, Ptr, bool); // (expr, env, body, extended-env, bindings, is-rec)
@@ -376,24 +375,23 @@ ascent! {
     // // Signal
     // relation bind_cont3(Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, Ptr); // (expr, env, body, extended-env, var, evaled, more-bindings)
 
-    bind_parse(expr, env, tail) <--
-        eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
-        if head.is_binding();
+    // bind_parse(expr, env, tail) <--
+    //     eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
+    //     if head.is_binding();
 
-    rec_bind_parse(expr, env, tail) <--
-        eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
-        if head.is_recursive_binding();
+    // rec_bind_parse(expr, env, tail) <--
+    //     eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
+    //     if head.is_recursive_binding();
 
     // let base case: bindings list is empty.
     bind(expr, env, body, env, bindings, false) <--
-        bind_parse(expr, env, tail),
+        eval_input(expr, env), cons_rel(head, tail, expr), if head.is_binding(),
         cons_rel(bindings, rest, tail),
         cons_rel(body, end, rest), if end.is_nil(); // TODO: error otherwise
 
     // letrec base case: bindings list is empty.
     bind(expr, env, body, env, bindings, true) <--
-        // TODO: eliminate signal relation (rec_bind_parse) in primarily rule for second pass..
-        rec_bind_parse(expr, env, tail),
+        eval_input(expr, env), cons_rel(head, tail, expr), if head.is_recursive_binding(),
         cons_rel(bindings, rest, tail),
         cons_rel(body, end, rest), if end.is_nil(); // TODO: error otherwise
 
@@ -487,18 +485,16 @@ ascent! {
     ////////////////////
     // lambda
 
-    // Signal (for now)
-    relation lambda_parse(Ptr, Ptr, Ptr); // (expr, env, args-and-body)
+    // // Signal (for now)
+    // relation lambda_parse(Ptr, Ptr, Ptr); // (expr, env, args-and-body)
     
-    lambda_parse(expr, env, tail) <--
-        eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
-        if head.is_lambda();
+    // lambda_parse(expr, env, tail) <--
+    //     eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
+    //     if head.is_lambda();
 
     // register a fun created from a lambda expression as its evaluation
     eval(expr, env, fun) <--
-        eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
-        if head.is_lambda(),
-        lambda_parse(expre, env, tail),
+        eval_input(expr, env), cons_rel(head, tail, expr), if head.is_lambda(),
         fun_rel(args, body, env, fun);
 
     ////////////////////
