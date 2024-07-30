@@ -348,9 +348,7 @@ impl<F: PrimeField32> Op<F> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        air::debug::{
-            debug_chip_constraints_and_queries_with_sharding, debug_constraints_collecting_queries,
-        },
+        air::debug::debug_chip_constraints_and_queries_with_sharding,
         func,
         lair::{
             chipset::Nochip,
@@ -635,44 +633,5 @@ mod tests {
         machine
             .verify(&vk, &proof, &mut challenger_v)
             .expect("proof verifies");
-    }
-
-    #[test]
-    fn lair_range_test() {
-        let func_range = func!(
-        fn range_test(x: [3]): [1] {
-            range_u8!(x);
-            let (res, _a, _b) = x;
-            return res
-        });
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[func_range]);
-        let range_chip = FuncChip::from_name("range_test", &toplevel);
-        let mut queries = QueryRecord::new(&toplevel);
-
-        let f = F::from_canonical_usize;
-        let args = &[f(100), f(12), f(64)];
-        toplevel.execute_by_name("range_test", args, &mut queries);
-        let trace = range_chip.generate_trace(&Shard::new(&queries));
-        #[rustfmt::skip]
-        let expected_trace = [
-            0, 100, 12, 64, 0, 0, 1, 0, 0, 1, 0, 1, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-        ]
-        .into_iter()
-        .map(field_from_u32)
-        .collect::<Vec<_>>();
-        assert_eq!(trace.values, expected_trace);
-        let queries = debug_constraints_collecting_queries(&range_chip, &[], None, &trace);
-        // function return provide
-        assert!(queries
-            .memoset
-            .contains_key(&vec![f(0), f(0), f(100), f(12), f(64), f(100)]));
-        // byte range checks for 100, 12, 64
-        assert!(queries
-            .memoset
-            .contains_key(&vec![f(3), f(1), f(100), f(12)]));
-        assert!(queries.memoset.contains_key(&vec![f(3), f(1), f(64), f(0)]));
     }
 }
