@@ -3,7 +3,10 @@ use p3_field::Field;
 use p3_matrix::Matrix;
 use std::fmt::Debug;
 
-use crate::air::builder::{LookupBuilder, ProvideRecord, RequireRecord};
+use crate::{
+    air::builder::{LookupBuilder, ProvideRecord, RequireRecord},
+    gadgets::bytes::{builder::BytesAirRecordWithContext, ByteAirRecord},
+};
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
@@ -408,6 +411,16 @@ impl<F: Field> Op<F> {
                 }
             }
             Op::Debug(..) => (),
+            Op::RangeU8(xs) => {
+                let num_requires = (xs.len() / 2) + (xs.len() % 2);
+                let requires = (0..num_requires)
+                    .map(|_| local.next_require(index))
+                    .collect::<Vec<_>>();
+                let mut air_record = BytesAirRecordWithContext::default();
+                let xs = xs.iter().map(|x| map[*x].to_expr());
+                air_record.range_check_u8_iter(xs, sel.clone());
+                air_record.require_all(builder, (*local.nonce).into(), requires);
+            }
         }
     }
 }
@@ -804,5 +817,43 @@ mod tests {
         );
         assert_eq!(trace, expected_trace);
         let _ = debug_constraints_collecting_queries(&chip, &[], None, &trace);
+    }
+
+    #[test]
+    fn lair_range_test() {
+        let func_range = func!(
+        fn range_test(x: [3]): [0] {
+            range_u8!(x);
+            return ()
+        });
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[func_range]);
+        let range_chip = FuncChip::from_name("range_test", &toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
+
+        let f = F::from_canonical_usize;
+        let args = &[f(100), f(12), f(64)];
+        toplevel.execute_by_name("range_test", args, &mut queries);
+        let trace = range_chip.generate_trace(&Shard::new(&queries));
+        #[rustfmt::skip]
+        let expected_trace = [
+            0, 100, 12, 64, 0, 0, 1, 0, 0, 1, 0, 1, 1,
+            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        ]
+        .into_iter()
+        .map(field_from_u32)
+        .collect::<Vec<_>>();
+        assert_eq!(trace.values, expected_trace);
+        let queries = debug_constraints_collecting_queries(&range_chip, &[], None, &trace);
+        // function return provide
+        assert!(queries
+            .memoset
+            .contains_key(&vec![f(0), f(0), f(100), f(12), f(64)]));
+        // byte range checks for 100, 12, 64
+        assert!(queries
+            .memoset
+            .contains_key(&vec![f(3), f(1), f(100), f(12)]));
+        assert!(queries.memoset.contains_key(&vec![f(3), f(1), f(64), f(0)]));
     }
 }

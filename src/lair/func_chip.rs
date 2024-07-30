@@ -248,6 +248,10 @@ impl<F> Op<F> {
                 degrees.extend(vec![1; aux_size]);
             }
             Op::Debug(..) => (),
+            Op::RangeU8(xs) => {
+                let num_requires = (xs.len() / 2) + (xs.len() % 2);
+                *aux += 3 * num_requires;
+            }
         }
     }
 }

@@ -17,7 +17,7 @@ type LocalRowView<'a, F> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatri
 type Query<F> = Vec<F>;
 
 #[derive(Debug, Copy, Clone, Default)]
-struct Record {
+pub(crate) struct Record {
     prev_nonce: u32,
     prev_count: u32,
     nonce: u32,
@@ -25,11 +25,11 @@ struct Record {
 
 type MemoSetAccessRecords = BTreeMap<u32, Record>;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct TraceQueries<F> {
     sends: HashMap<Query<F>, usize>,
     receives: HashMap<Query<F>, usize>,
-    memoset: HashMap<Query<F>, MemoSetAccessRecords>,
+    pub(crate) memoset: HashMap<Query<F>, MemoSetAccessRecords>,
 }
 
 impl<F: PrimeField32> TraceQueries<F> {
