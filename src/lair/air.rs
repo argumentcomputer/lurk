@@ -411,12 +411,15 @@ impl<F: Field> Op<F> {
                 }
             }
             Op::Debug(..) => (),
-            Op::RangeU8(x) => {
-                let x = map[*x].to_expr();
-                let require = [local.next_require(index)];
+            Op::RangeU8(xs) => {
+                let num_requires = (xs.len() / 2) + (xs.len() % 2);
+                let requires = (0..num_requires)
+                    .map(|_| local.next_require(index))
+                    .collect::<Vec<_>>();
                 let mut air_record = BytesAirRecordWithContext::default();
-                air_record.range_check_u8(x, sel.clone());
-                air_record.require_all(builder, (*local.nonce).into(), require);
+                let xs = xs.iter().map(|x| map[*x].to_expr());
+                air_record.range_check_u8_iter(xs, sel.clone());
+                air_record.require_all(builder, (*local.nonce).into(), requires);
             }
         }
     }

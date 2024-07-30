@@ -519,14 +519,15 @@ impl<F: PrimeField32> Func<F> {
                     map.extend(chip.execute(&input, nonce as u32, queries, &mut requires));
                 }
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
-                ExecEntry::Op(Op::RangeU8(x)) => {
-                    let x = map[*x];
+                ExecEntry::Op(Op::RangeU8(xs)) => {
                     let mut bytes = queries.bytes.context(nonce as u32, &mut requires);
-                    let b = x
-                        .as_canonical_u32()
-                        .try_into()
-                        .expect("Variable not in u8 range");
-                    bytes.range_check_u8(b);
+                    let xs = xs.iter().map(|x| {
+                        map[*x]
+                            .as_canonical_u32()
+                            .try_into()
+                            .expect("Variable not in u8 range")
+                    });
+                    bytes.range_check_u8_iter(xs);
                 }
                 ExecEntry::Ctrl(Ctrl::Return(_, out)) => {
                     let out = out.iter().map(|v| map[*v]).collect::<Vec<_>>();
