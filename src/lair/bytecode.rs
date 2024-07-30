@@ -45,7 +45,7 @@ pub enum Op<F> {
     ExternCall(usize, List<usize>),
     /// `Debug(s)` emits debug message `s`
     Debug(&'static str),
-    /// `RangeU8(x)` makes sure `x` is a U8 element
+    /// `RangeU8(x)` makes sure `xs` is a list of only U8 elements
     RangeU8(List<usize>),
 }
 
