@@ -39,3 +39,9 @@ impl Tag {
         14
     }
 }
+
+impl From<Tag> for i32 {
+    fn from(item: Tag) -> Self {
+        item as u32 as i32
+    }
+}

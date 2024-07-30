@@ -778,7 +778,13 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     {
         match zptr.tag {
             Tag::Num => zptr.digest[0].to_string(),
-            Tag::U64 => format!("{}u64", zptr.digest[0]),
+            Tag::U64 => format!(
+                "{}u64",
+                u64::from_le_bytes(
+                    zptr.digest
+                        .map(|f| u8::try_from(f.as_canonical_u32()).expect("invalid u64 limbs"))
+                )
+            ),
             Tag::Char => format!(
                 "'{}'",
                 char::from_u32(zptr.digest[0].as_canonical_u32()).expect("invalid char")

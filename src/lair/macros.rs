@@ -275,7 +275,7 @@ macro_rules! block {
         let mut branches = Vec::new();
         {
             $({
-                let arr = $arr.map($crate::lair::field_from_i32).into_iter().collect();
+                let arr = $arr.map(|x| $crate::lair::field_from_i32(x.into())).into_iter().collect();
                 branches.push((
                     arr,
                     $crate::block_init!( $branch )
