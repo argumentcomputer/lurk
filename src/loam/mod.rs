@@ -92,6 +92,14 @@ impl Ptr {
     fn is_err(&self) -> bool {
         self.0 == Tag::Err.elt()
     }
+
+    pub fn tag(&self) -> Tag {
+        Tag::from_field(&self.0)
+    }
+
+    pub fn wide_tag(&self) -> Wide {
+        Wide::widen(self.0)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]

@@ -36,9 +36,7 @@ ascent! {
     relation tag(LE, Wide) = Memory::initial_tag_relation(); // (short-tag, wide-tag)
 
     // Final
-    relation ptr_value(Ptr, Wide); // (ptr, value)}
-    // Final (but could be optimized out).
-    relation ptr_tag(Ptr, Wide); // (ptr, tag)
+    relation ptr_value(Ptr, Wide); // (ptr, value)
 
     // triggers memoized/deduplicated allocation of input conses by populating cons outside of testing, this indirection
     // is likely unnecessary.
@@ -51,28 +49,7 @@ ascent! {
     // Final
     relation input_ptr(Ptr, Ptr); // (expr, env)
     // Final
-    relation output_ptr(Ptr); // (wide-ptr
-
-    // Final
-    relation car(Ptr, Ptr); // (cons, car)
-    // Final
-    relation cdr(Ptr, Ptr); // (cons, cdr)
-
-    // maybe not needed?
-    // // Final
-    // relation hash4(Ptr, Wide, Wide, Wide, Wide); // (a, b, c, d)
-    // // Final
-    // relation hash4_rel(Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, digest)
-
-    // // Final
-    // relation hash6(Ptr, Wide, Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, e, f)
-    // // Final
-    // relation hash6_rel(Wide, Wide, Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, e, f, digest)
-
-    // Final
-    relation ptr_tag(Ptr, Wide); // (ptr, tag)
-    // Final
-    relation ptr_value(Ptr, Wide); // (ptr, value)
+    relation output_ptr(Ptr); // (wide-ptr)
 
     ////////////////////////////////////////////////////////////////////////////////
     // Memory
@@ -88,17 +65,10 @@ ascent! {
     // Final
     lattice cons_mem(Ptr, Ptr, Dual<LEWrap>); // (car, cdr, addr)
 
-    // Convert addr to ptr and register ptr relations.
-    ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0.0);
-
-    // // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
-    // cons_digest_mem(digest, addr) <--
-    //     cons_mem(car, cdr, addr),
-    //     ptr_value(car, car_value), ptr_value(cdr, cdr_value),
-    //     ptr_tag(car, car_tag), ptr_tag(cdr, cdr_tag),
-    //     hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest);
-
-    cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0.0)) <-- cons_mem(car, cdr, addr);
+    // Register cons value.
+    ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0.0);
+    // Register cons relation.
+    cons_rel(car, cdr, cons) <-- cons_mem(car, cdr, addr), let cons = Ptr(Tag::Cons.elt(), addr.0.0);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Fun
@@ -112,15 +82,10 @@ ascent! {
     // Final
     lattice fun_mem(Ptr, Ptr, Ptr, Dual<LEWrap>); // (args, body, closed-env, addr)
 
-    ptr_tag(ptr, Tag::Fun.value()), ptr_value(ptr, value) <-- fun_digest_mem(value, addr), let ptr = Ptr(Tag::Fun.elt(), addr.0.0);
-
-    // fun_digest_mem(digest, addr) <--
-    //     fun_mem(args, body, closed_env, addr),
-    //     ptr_value(args, args_value), ptr_value(body, body_value), ptr_value(closed_env, closed_env_value),
-    //     ptr_tag(args, args_tag), ptr_tag(body, body_tag), ptr_tag(closed_env, closed_env_tag),
-    //     hash6_rel(args_tag, args_value, body_tag, body_value, closed_env_tag, closed_env_value, digest);
-
-    fun_rel(args, body, closed_env, Ptr(Tag::Fun.elt(), addr.0.0)) <-- fun_mem(args, body, closed_env, addr);
+    // Register fun value.
+    ptr_value(ptr, value) <-- fun_digest_mem(value, addr), let ptr = Ptr(Tag::Fun.elt(), addr.0.0);
+    // Register fun relation.
+    fun_rel(args, body, closed_env, fun) <-- fun_mem(args, body, closed_env, addr), let fun = Ptr(Tag::Fun.elt(), addr.0.0);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Thunk
@@ -134,16 +99,10 @@ ascent! {
     // Final
     lattice thunk_mem(Ptr, Ptr, Dual<LEWrap>); // (body, closed-env, addr)
 
-    ptr_tag(ptr, Tag::Thunk.value()), ptr_value(ptr, value) <-- thunk_digest_mem(value, addr), let ptr = Ptr(Tag::Thunk.elt(), addr.0.0);
-
-    // thunk_digest_mem(digest, addr) <--
-    //     thunk_mem(body, closed_env, addr),
-    //     ptr_value(body, body_value), ptr_value(closed_env, closed_env_value),
-    //     ptr_tag(body, body_tag), ptr_tag(closed_env, closed_env_tag),
-    //     hash4_rel(body_tag, body_value, closed_env_tag, closed_env_value, digest);
-
-    thunk_rel(body, closed_env, Ptr(Tag::Thunk.elt(), addr.0.0)) <-- thunk_mem(body, closed_env, addr);
-
+    // Register thunk value.
+    ptr_value(ptr, value) <-- thunk_digest_mem(value, addr), let ptr = Ptr(Tag::Thunk.elt(), addr.0.0);
+    // Register thunk relation.
+    thunk_rel(body, closed_env, cons) <-- thunk_mem(body, closed_env, addr), let cons = Ptr(Tag::Thunk.elt(), addr.0.0);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Sym
@@ -152,7 +111,7 @@ ascent! {
     lattice sym_digest_mem(Wide, Dual<LEWrap>); // (digest, addr)
 
     // // Convert addr to ptr and register ptr relations.
-    ptr_tag(ptr, Tag::Sym.value()), ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), addr.0.0);
+    ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), addr.0.0);
     // todo: sym_value
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -162,7 +121,7 @@ ascent! {
     lattice builtin_digest_mem(Wide, Dual<LEWrap>) = Memory::initial_builtin_relation(); // (digest, addr)
 
     // // Convert addr to ptr and register ptr relations.
-    ptr_tag(ptr, Tag::Builtin.value()), ptr_value(ptr, value) <-- builtin_digest_mem(value, addr), let ptr = Ptr(Tag::Builtin.elt(), addr.0.0);
+    ptr_value(ptr, value) <-- builtin_digest_mem(value, addr), let ptr = Ptr(Tag::Builtin.elt(), addr.0.0);
 
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -172,34 +131,30 @@ ascent! {
     // Can this be combined with sym_digest_mem? Can it be eliminated? (probably eventually).
     lattice nil_digest_mem(Wide, Dual<LEWrap>) = Memory::initial_nil_relation(); // (digest, addr)
 
-    ptr_tag(ptr, Tag::Nil.value()), ptr_value(ptr, value) <-- nil_digest_mem(value, addr), let ptr = Ptr(Tag::Nil.elt(), addr.0.0);
+    ptr_value(ptr, value) <-- nil_digest_mem(value, addr), let ptr = Ptr(Tag::Nil.elt(), addr.0.0);
 
     ////////////////////////////////////////////////////////////////////////////////
+    // Num
+
+    // Final
+    // not sure how this is supposed to work as Num is immediate... but hey it works
+    relation num(Ptr);
+
+    ptr_value(ptr, Wide::widen(ptr.1)) <-- num(ptr);
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // Ingress path
 
     input_ptr(expr_ptr, env_ptr) <--
         toplevel_input(expr, env),
-        ptr_tag(expr_ptr, expr.0), ptr_value(expr_ptr, expr.1),
-        ptr_tag(env_ptr, env.0), ptr_value(env_ptr, env.1);
-
-    // cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0.0)),
-    // cons_mem(car, cdr, addr) <--
-    //     hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest),
-    //     cons_digest_mem(digest, addr),
-    //     ptr_tag(car, car_tag), ptr_tag(cdr, cdr_tag),
-    //     ptr_value(car, car_value), ptr_value(cdr, cdr_value);
-
-    car(cons, car), cdr(cons, cdr) <-- cons_rel(car, cdr, cons);
+        ptr_value(expr_ptr, expr.1),
+        ptr_value(env_ptr, env.1);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Egress path
 
     // Construct output_expr from output_ptr
-    output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), ptr_value(ptr, value), ptr_tag(ptr, wide_tag);
-
-    // // TODO: reorg src. This is not cons-specific.
-    // hash4_rel(a, b, c, d, allocator().hash4(*a, *b, *c, *d)) <-- hash4(ptr, a, b, c, d);
-
-    // hash6_rel(a, b, c, d, e, f, allocator().hash6(*a, *b, *c, *d, *e, *f)) <-- hash6(ptr, a, b, c, d, e, f);
+    output_expr(WidePtr(ptr.wide_tag(), *value)) <-- output_ptr(ptr), ptr_value(ptr, value);
 
     ////////////////////////////////////////////////////////////////////////////////
     // eval
@@ -656,6 +611,7 @@ mod test {
         prog.sym_digest_mem = original_program.sym_digest_mem.clone();
         prog.builtin_digest_mem = original_program.builtin_digest_mem.clone();
         prog.nil_digest_mem = original_program.nil_digest_mem.clone();
+        prog.num = original_program.num.clone();
 
         prog.run();
 

@@ -216,9 +216,7 @@ ascent! {
     relation tag(LE, Wide) = Memory::initial_tag_relation(); // (short-tag, wide-tag)
 
     // Final
-    relation ptr_value(Ptr, Wide); // (ptr, value)}
-    // Final (but could be optimized out).
-    relation ptr_tag(Ptr, Wide); // (ptr, tag)
+    relation ptr_value(Ptr, Wide); // (ptr, value)
 
     // triggers memoized/deduplicated allocation of input conses by populating cons outside of testing, this indirection
     // is likely unnecessary.
@@ -235,10 +233,6 @@ ascent! {
 
     // Signal: triggers allocation once per unique cons
     relation cons(Ptr, Ptr); // (car, cdr)
-    // Final
-    relation car(Ptr, Ptr); // (cons, car)
-    // Final
-    relation cdr(Ptr, Ptr); // (cons, cdr)
     // Final
     relation hash4(Ptr, Wide, Wide, Wide, Wide); // (a, b, c, d)
     // Signal
@@ -260,18 +254,6 @@ ascent! {
 
     // Signal: inclusion triggers *_value relations.
     relation egress(Ptr); // (ptr)
-    // Signal (is that right?)
-    relation f_value(Ptr, Wide); // (ptr, immediate-wide-value)
-    // Signal (is that right?)
-    relation cons_value(Ptr, Wide); // (cons, value)
-
-    // all known `Ptr`s should be added to ptr.
-    // Signal
-    relation ptr(Ptr); // (ptr)
-    // Final
-    relation ptr_tag(Ptr, Wide); // (ptr, tag)
-    // Final
-    relation ptr_value(Ptr, Wide); // (ptr, value)
 
     // supporting ingress
     // inclusion triggers *_value relations.
@@ -296,25 +278,28 @@ ascent! {
     lattice cons_mem(Ptr, Ptr, Dual<LEWrap>); // (car, cdr, addr)
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
-    #[trace("cons_digest_mem(value, alloc_addr()) <-- alloc(Tag::Cons, {:?})", value)]
+    #[trace("cons_digest_mem alloc")]
     cons_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::zero(), "cons_digest_mem")))) <-- alloc(tag, value), if *tag == Tag::Cons.elt();
-
-    // Convert addr to ptr and register ptr relations.
-    ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0.0);
-
     // Populating cons(...) triggers allocation in cons mem.
+    #[trace("cons_mem alloc")]
     cons_mem(car, cdr, Dual(idx)) <-- cons(car, cdr), let idx = LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::zero(), "cons_mem"));
+
+    // Register cons value.
+    ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0.0);
+    // Register cons relation.
+    cons_rel(car, cdr, cons) <-- cons_mem(car, cdr, addr), let cons = Ptr(Tag::Cons.elt(), addr.0.0);
 
     // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
     cons_digest_mem(digest, addr) <--
         cons_mem(car, cdr, addr),
         ptr_value(car, car_value), ptr_value(cdr, cdr_value),
-        ptr_tag(car, car_tag), ptr_tag(cdr, cdr_tag),
-        hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest);
-
-    cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0.0)) <-- cons_mem(car, cdr, addr);
-
-    ptr(cons), ptr_tag(cons, Tag::Cons.value()) <-- cons_rel(_, _, cons);
+        hash4_rel(car.wide_tag(), car_value, cdr.wide_tag(), cdr_value, digest);
+    // Other way around
+    cons_mem(car, cdr, addr) <--
+        hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest),
+        cons_digest_mem(digest, addr),
+        ptr_value(car, car_value), ptr_value(cdr, cdr_value),
+        if car.wide_tag() == *car_tag && cdr.wide_tag() == *cdr_tag;
 
     ////////////////////////////////////////////////////////////////////////////////
     // Fun
@@ -328,22 +313,29 @@ ascent! {
     // Final
     lattice fun_mem(Ptr, Ptr, Ptr, Dual<LEWrap>); // (args, body, closed-env, addr)
 
-    #[trace("fun_digest_mem(value, alloc_addr()) <-- alloc(Tag::Fun, {:?})", value)]
+    // Populating alloc(...) triggers allocation in fun_digest_mem.
+    #[trace("fun_digest_mem alloc")]
     fun_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Fun.elt(), LE::zero(), "fun_digest_mem")))) <-- alloc(tag, value), if *tag == Tag::Fun.elt();
+    // Populating cons(...) triggers allocation in cons mem.
+    #[trace("fun_mem alloc")]
+    fun_mem(args, body, closed_env, Dual(idx)) <-- fun(args, body, closed_env), let idx = LEWrap(allocator().alloc_addr(Tag::Fun.elt(), LE::zero(), "fun_mem"));
 
-    ptr(ptr), ptr_tag(ptr, Tag::Fun.value()), ptr_value(ptr, value) <-- fun_digest_mem(value, addr), let ptr = Ptr(Tag::Fun.elt(), addr.0.0);
+    // Register fun value.
+    ptr_value(ptr, value) <-- fun_digest_mem(value, addr), let ptr = Ptr(Tag::Fun.elt(), addr.0.0);
+    // Register fun relation.
+    fun_rel(args, body, closed_env, fun) <-- fun_mem(args, body, closed_env, addr), let fun = Ptr(Tag::Fun.elt(), addr.0.0);
 
-    fun_mem(args, body, closed_env, Dual(LEWrap(allocator().alloc_addr(Tag::Fun.elt(), LE::zero(), "fun_mem")))) <-- fun(args, body, closed_env);
-
+    // Populate fun_digest_mem if a fun in fun_mem has been hashed in hash4_rel.
     fun_digest_mem(digest, addr) <--
         fun_mem(args, body, closed_env, addr),
         ptr_value(args, args_value), ptr_value(body, body_value), ptr_value(closed_env, closed_env_value),
-        ptr_tag(args, args_tag), ptr_tag(body, body_tag), ptr_tag(closed_env, closed_env_tag),
-        hash6_rel(args_tag, args_value, body_tag, body_value, closed_env_tag, closed_env_value, digest);
-
-    fun_rel(args, body, closed_env, Ptr(Tag::Fun.elt(), addr.0.0)) <-- fun_mem(args, body, closed_env, addr);
-
-    ptr(fun), ptr_tag(fun, Tag::Fun.value()) <-- fun_rel(_, _, _, fun);
+        hash6_rel(args.wide_tag(), args_value, body.wide_tag(), body_value, closed_env.wide_tag(), closed_env_value, digest);
+    // Other way around
+    fun_mem(args, body, closed_env, addr) <--
+        hash6_rel(args_tag, args_value, body_tag, body_value, closed_env_tag, closed_env_value, digest),
+        fun_digest_mem(digest, addr),
+        ptr_value(args, args_value), ptr_value(body, body_value), ptr_value(closed_env, closed_env_value),
+        if args.wide_tag() == *args_tag && body.wide_tag() == *body_tag && closed_env.wide_tag() == *closed_env_tag;
 
     ////////////////////////////////////////////////////////////////////////////////
     // Thunk
@@ -357,23 +349,29 @@ ascent! {
     // Final
     lattice thunk_mem(Ptr, Ptr, Dual<LEWrap>); // (body, closed-env, addr)
 
-    #[trace("thunk_digest_mem(value, alloc_addr()) <-- alloc(Tag::Thunk, {:?})", value)]
+    // Populating alloc(...) triggers allocation in thunk_digest_mem.
+    #[trace("thunk_digest_mem alloc")]
     thunk_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Thunk.elt(), LE::zero(), "thunk_digest_mem")))) <-- alloc(tag, value), if *tag == Tag::Thunk.elt();
+    // Populating cons(...) triggers allocation in cons mem.
+    #[trace("thunk_mem alloc")]
+    thunk_mem(body, closed_env, Dual(idx)) <-- thunk(body, closed_env), let idx = LEWrap(allocator().alloc_addr(Tag::Thunk.elt(), LE::zero(), "thunk_mem"));
 
-    ptr(ptr), ptr_tag(ptr, Tag::Thunk.value()), ptr_value(ptr, value) <-- thunk_digest_mem(value, addr), let ptr = Ptr(Tag::Thunk.elt(), addr.0.0);
+    // Register thunk value.
+    ptr_value(ptr, value) <-- thunk_digest_mem(value, addr), let ptr = Ptr(Tag::Thunk.elt(), addr.0.0);
+    // Register thunk relation.
+    thunk_rel(body, closed_env, cons) <-- thunk_mem(body, closed_env, addr), let cons = Ptr(Tag::Thunk.elt(), addr.0.0);
 
-    thunk_mem(body, closed_env, Dual(LEWrap(allocator().alloc_addr(Tag::Thunk.elt(), LE::zero(), "thunk_mem")))) <-- thunk(body, closed_env);
-
+    // Populate thunk_digest_mem if a thunk in thunk_mem has been hashed in hash4_rel.
     thunk_digest_mem(digest, addr) <--
         thunk_mem(body, closed_env, addr),
         ptr_value(body, body_value), ptr_value(closed_env, closed_env_value),
-        ptr_tag(body, body_tag), ptr_tag(closed_env, closed_env_tag),
-        hash4_rel(body_tag, body_value, closed_env_tag, closed_env_value, digest);
-
-    thunk_rel(body, closed_env, Ptr(Tag::Thunk.elt(), addr.0.0)) <-- thunk_mem(body, closed_env, addr);
-
-    ptr(thunk), ptr_tag(thunk, Tag::Thunk.value()) <-- thunk_rel(_, _, thunk);
-
+        hash4_rel(body.wide_tag(), body_value, closed_env.wide_tag(), closed_env_value, digest);
+    // Other way around
+    thunk_mem(body, closed_env, addr) <--
+        hash4_rel(body_tag, body_value, closed_env_tag, closed_env_value, digest),
+        thunk_digest_mem(digest, addr),
+        ptr_value(body, body_value), ptr_value(closed_env, closed_env_value),
+        if body.wide_tag() == *body_tag && closed_env.wide_tag() == *closed_env_tag;
 
     ////////////////////////////////////////////////////////////////////////////////
     // Sym
@@ -385,8 +383,8 @@ ascent! {
     #[trace("sym_digest_mem(value, alloc_addr()) <-- alloc(Tag::Sym, {:?})", value)]
     sym_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Sym.elt(), LE::zero(), "sym_digest_mem")))) <-- alloc(tag, value), if *tag == Tag::Sym.elt();
 
-    // // Convert addr to ptr and register ptr relations.
-    ptr(ptr), ptr_tag(ptr, Tag::Sym.value()), ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), addr.0.0);
+    // Convert addr to ptr and register ptr relations.
+    ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), addr.0.0);
     // todo: sym_value
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -399,8 +397,8 @@ ascent! {
     #[trace("builtin_digest_mem(value, alloc_addr()) <-- alloc(Tag::Builtin, {:?})", value)]
     builtin_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Sym.elt(), Memory::initial_builtin_addr(), "builtin_digest_mem")))) <-- alloc(tag, value), if *tag == Tag::Builtin.elt();
 
-    // // Convert addr to ptr and register ptr relations.
-    ptr(ptr), ptr_tag(ptr, Tag::Builtin.value()), ptr_value(ptr, value) <-- builtin_digest_mem(value, addr), let ptr = Ptr(Tag::Builtin.elt(), addr.0.0);
+    // Convert addr to ptr and register ptr relations.
+    ptr_value(ptr, value) <-- builtin_digest_mem(value, addr), let ptr = Ptr(Tag::Builtin.elt(), addr.0.0);
     // todo: builtin_value
 
 
@@ -414,15 +412,17 @@ ascent! {
     #[trace("nil_digest_mem(value, alloc_addr()) <-- alloc(Tag::Nil)")]
     nil_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Nil.elt(), Memory::initial_nil_addr(), "nil_digest_mem")))) <-- alloc(tag, value), if *tag == Tag::Nil.elt();
 
-    ptr(ptr), ptr_tag(ptr, Tag::Nil.value()), ptr_value(ptr, value) <-- nil_digest_mem(value, addr), let ptr = Ptr(Tag::Nil.elt(), addr.0.0);
+    ptr_value(ptr, value) <-- nil_digest_mem(value, addr), let ptr = Ptr(Tag::Nil.elt(), addr.0.0);
 
     ////////////////////////////////////////////////////////////////////////////////
+    // Num
 
-    // Provide ptr_tag and ptr_value when known.
-    ptr_tag(ptr, wide_tag) <-- ptr(ptr), tag(ptr.0, wide_tag);
-    ptr_value(ptr, value) <-- ptr(ptr), cons_value(ptr, value);
-    ptr_value(ptr, value) <-- ptr(ptr), f_value(ptr, value);
-    // todo: sym_value
+    // Final
+    // not sure how this is supposed to work as Num is immediate... but hey it works
+    relation num(Ptr);
+
+    num(Ptr(Tag::Num.elt(), value.f())) <-- alloc(&Tag::Num.elt(), value);
+    ptr_value(ptr, Wide::widen(ptr.1)) <-- num(ptr);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Ingress path
@@ -433,8 +433,8 @@ ascent! {
     ingress(expr_ptr),
     input_ptr(expr_ptr, env_ptr) <--
         toplevel_input(expr, env),
-        ptr_tag(expr_ptr, expr.0), ptr_value(expr_ptr, expr.1),
-        ptr_tag(env_ptr, env.0), ptr_value(env_ptr, env.1);
+        ptr_value(expr_ptr, expr.1),
+        ptr_value(env_ptr, env.1);
 
     // mark ingress conses for unhashing.
     unhash4(Tag::Cons.elt(), digest) <-- ingress(ptr), if ptr.is_cons(), ptr_value(ptr, digest);
@@ -454,25 +454,6 @@ ascent! {
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
 
-    f_value(Ptr(Tag::Num.elt(), value.f()), value) <-- alloc(&Tag::Num.elt(), value);
-
-    cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0.0)),
-    cons_mem(car, cdr, addr) <--
-        hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest),
-        cons_digest_mem(digest, addr),
-        ptr_tag(car, car_tag), ptr_tag(cdr, cdr_tag),
-        ptr_value(car, car_value), ptr_value(cdr, cdr_value);
-
-    ptr(cons), car(cons, car), cdr(cons, cdr) <-- cons_rel(car, cdr, cons);
-
-    f_value(ptr, Wide::widen(ptr.1)) <-- ptr(ptr), if ptr.is_num();
-    ptr(ptr) <-- f_value(ptr, _);
-
-    // Provide cons_value when known.
-    cons_value(ptr, digest)
-        <-- hash4(ptr, car_tag, car_value, cdr_tag, cdr_value),
-            hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest);
-
     ////////////////////////////////////////////////////////////////////////////////
     // Egress path
 
@@ -486,55 +467,38 @@ ascent! {
     egress(args), egress(body), egress(closed_env) <-- egress(fun), fun_rel(args, body, closed_env, fun);
 
     // Num: FIXME: change this when F becomes u32.
-    ptr_tag(ptr, Tag::Num.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_num();
+    num(ptr) <-- egress(ptr), if ptr.is_num();
 
     // Err
-    ptr_tag(ptr, Tag::Err.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_err();
+    ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_err();
 
     // Construct output_expr from output_ptr
-    output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), ptr_value(ptr, value), ptr_tag(ptr, wide_tag);
+    output_expr(WidePtr(ptr.wide_tag(), *value)) <-- output_ptr(ptr), ptr_value(ptr, value);
 
     // Cons
-    hash4(cons, car_tag, car_value, cdr_tag, cdr_value) <--
+    hash4(cons, car.wide_tag(), car_value, cdr.wide_tag(), cdr_value) <--
         egress(cons),
         cons_rel(car, cdr, cons),
-        ptr_tag(car, car_tag), ptr_tag(cdr, cdr_tag),
         ptr_value(car, car_value), ptr_value(cdr, cdr_value);
 
     // TODO: reorg src. This is not cons-specific.
     hash4_rel(a, b, c, d, allocator().hash4(*a, *b, *c, *d)) <-- hash4(ptr, a, b, c, d);
 
-    // TODO: refactor names. This is shared with thunks (and other 2-ptr structures).
-    // TODO: but also, is this actually necessary?
-    ptr(car), ptr(cdr) <--
-        hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, _),
-        ptr_tag(car, wide_car_tag), ptr_tag(cdr, wide_cdr_tag),
-        ptr_value(car, car_value), ptr_value(cdr, cdr_value);
-
     // Thunk
-    hash4(thunk, body_tag, body_value, closed_env_tag, closed_env_value) <--
+    hash4(thunk, body.wide_tag(), body_value, closed_env.wide_tag(), closed_env_value) <--
         egress(thunk),
         cons_rel(body, closed_env, thunk),
-        ptr_tag(body, body_tag), ptr_tag(closed_env, closed_env_tag),
         ptr_value(body, body_value), ptr_value(closed_env, closed_env_value);
 
     // Fun
-    hash6(fun, args_tag, args_value, body_tag, body_value, closed_env_tag, closed_env_value) <--
+    hash6(fun, args.wide_tag(), args_value, body.wide_tag(), body_value, closed_env.wide_tag(), closed_env_value) <--
         egress(fun),
         fun_rel(args, body, closed_env, fun),
-        ptr_tag(args, args_tag),
         ptr_value(args, args_value),
-        ptr_tag(body, body_tag),
         ptr_value(body, body_value),
-        ptr_tag(closed_env, closed_env_tag),
         ptr_value(closed_env, closed_env_value);
 
     hash6_rel(a, b, c, d, e, f, allocator().hash6(*a, *b, *c, *d, *e, *f)) <-- hash6(ptr, a, b, c, d, e, f);
-
-    ptr(args), ptr(body), ptr(closed_env) <--
-        hash6_rel(args_tag, args_value, body_tag, body_value, closed_env_tag, closed_env_value, _),
-        ptr_tag(args, args_tag), ptr_tag(body, body_tag), ptr_tag(closed_env, closed_env_tag),
-        ptr_value(args, args_value), ptr_value(body, body_value), ptr_value(closed_env, closed_env_value);
 
     ////////////////////////////////////////////////////////////////////////////////
     // eval
@@ -1045,7 +1009,7 @@ impl EvaluationProgram {
 
     pub fn deref(&self, ptr: &Ptr) -> Option<String> {
         let ptr = &(*ptr,);
-        let tag = Tag::from_field(&self.ptr_tag_indices_0.0.get(ptr)?[0].0.f());
+        let tag = ptr.0.tag();
         let digest = self.ptr_value_indices_0.0.get(ptr)?[0].0 .0;
         if tag == Tag::Thunk {
             return Some("skip cuz bad impl".into());
@@ -1468,15 +1432,10 @@ mod test {
         println!("{}", prog.relation_sizes_summary());
 
         let EvaluationProgram {
-            car,
-            cdr,
-            ptr_tag,
             mut ptr_value,
             cons,
             cons_rel,
-            cons_value,
             cons_mem,
-            ptr,
             hash4,
             unhash4,
             hash4_rel,
@@ -1484,7 +1443,6 @@ mod test {
             egress,
             toplevel_input,
             output_expr,
-            f_value,
             alloc,
             input_ptr,
             output_ptr,
