@@ -195,7 +195,7 @@ pub fn parse_numeric_suffix<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Span
             tag("i32"),
             tag("i64"),
             tag("i128"),
-            tag("/"),
+            tag("n"),
         ))(from)?;
         Ok((upto, suffix))
     }
@@ -213,7 +213,31 @@ pub fn parse_numeric<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Synt
         let (upto, suffix) = opt(parse_numeric_suffix())(i)?;
         let suffix = suffix.map(|x| *x.fragment());
         match suffix {
-            Some("u64") => {
+            Some("n") => {
+                // Field elements
+                let (_, be_bytes) = be_bytes_from_digits(base, &digits, i)?;
+                let f = f_from_be_bytes::<F>(&be_bytes);
+                let num = f;
+                let mut tmp = F::zero();
+                if neg.is_some() {
+                    tmp -= num;
+                } else {
+                    tmp = num;
+                }
+                let pos = Pos::from_upto(from, upto);
+                Ok((upto, Syntax::Num(pos, tmp)))
+            }
+            // when more uint types are supported we can do:
+            #[allow(clippy::unnested_or_patterns)]
+            Some("u8") | Some("u16") | Some("u32") | Some("u128") | Some("i8") | Some("i16")
+            | Some("i32") | Some("i64") | Some("i128") => {
+                let suffix = suffix.unwrap();
+                ParseError::throw(
+                    from,
+                    ParseErrorKind::Custom(format!("Numeric suffix {suffix} not yet supported")),
+                )
+            }
+            None | Some("u64") => {
                 if neg.is_some() {
                     ParseError::throw(
                         from,
@@ -227,49 +251,6 @@ pub fn parse_numeric<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Synt
                     let pos = Pos::from_upto(from, upto);
                     Ok((upto, Syntax::U64(pos, x)))
                 }
-            }
-            // when more uint types are supported we can do:
-            Some("i64") => {
-                let mut int_digits = match neg.map(|x| *x.fragment()) {
-                    Some("-") => String::from("-"),
-                    _ => String::from("+"),
-                };
-                int_digits.push_str(&digits);
-                let (_, x) =
-                    ParseError::res(i64::from_str_radix(&int_digits, base.radix()), from, |e| {
-                        ParseErrorKind::ParseIntErr(e)
-                    })?;
-                let pos = Pos::from_upto(from, upto);
-                Ok((upto, Syntax::U64(pos, x as u64)))
-            }
-            // when more uint types are supported we can do:
-            #[allow(clippy::unnested_or_patterns)]
-            Some("u8") | Some("u16") | Some("u32") | Some("u128") | Some("i8") | Some("i16")
-            | Some("i32") | Some("i128") => {
-                let suffix = suffix.unwrap();
-                ParseError::throw(
-                    from,
-                    ParseErrorKind::Custom(format!("Numeric suffix {suffix} not yet supported")),
-                )
-            }
-            None | Some("/") => {
-                let (_, be_bytes) = be_bytes_from_digits(base, &digits, i)?;
-                let (upto, denom) = opt(base::parse_litbase_digits(base))(upto)?;
-                let f = f_from_be_bytes::<F>(&be_bytes);
-                let num = f;
-                let mut tmp = F::zero();
-                if neg.is_some() {
-                    tmp -= num;
-                } else {
-                    tmp = num;
-                }
-                if let Some(denom) = denom {
-                    let (_, denom) = be_bytes_from_digits(base, &denom, i)?;
-                    let denom = f_from_be_bytes::<F>(&denom);
-                    tmp *= denom.inverse();
-                }
-                let pos = Pos::from_upto(from, upto);
-                Ok((upto, Syntax::Num(pos, tmp)))
             }
             _ => unreachable!("implementation error in parse_nat"),
         }
