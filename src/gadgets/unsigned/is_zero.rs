@@ -69,7 +69,7 @@ impl<Var, const W: usize> IsZeroWitness<Var, W> {
     pub fn assert_is_zero<AB: AirBuilder<Var = Var>>(
         &self,
         builder: &mut AB,
-        input: [AB::Expr; W],
+        input: &[AB::Expr; W],
         is_zero: impl Into<AB::Expr>,
         is_real: impl Into<AB::Expr>,
     ) where
@@ -83,7 +83,7 @@ impl<Var, const W: usize> IsZeroWitness<Var, W> {
             // If is_zero, all limbs are zero
             builder.when(is_zero.clone()).assert_zero(input.clone());
 
-            lc += input * inverse;
+            lc += input.clone() * inverse;
         }
 
         // Otherwise, there exist w such that 1 = ∑ w[i]*limb[i]
@@ -136,13 +136,28 @@ impl<F: Field, const W: usize> IsZeroOrEqual<F, W> {
             false
         }
     }
+
+    pub const fn witness_size() -> usize {
+        size_of::<IsZeroOrEqual<u8, W>>()
+    }
+
+    pub const fn num_requires() -> usize {
+        0
+    }
+
+    pub fn iter_result(&self) -> impl IntoIterator<Item = F>
+    where
+        F: Clone,
+    {
+        [self.result]
+    }
 }
 
 impl<Var, const W: usize> IsZeroOrEqual<Var, W> {
     pub fn eval_is_zero<AB: AirBuilder<Var = Var>>(
         &self,
         builder: &mut AB,
-        input: Word<AB::Expr, W>,
+        input: &Word<AB::Expr, W>,
         is_real: impl Into<AB::Expr>,
     ) -> AB::Var
     where
@@ -152,7 +167,7 @@ impl<Var, const W: usize> IsZeroOrEqual<Var, W> {
         let is_zero = self.result;
         builder.when(is_real.clone()).assert_bool(is_zero);
         self.witness
-            .assert_is_zero(builder, input.into_array(), is_zero, is_real);
+            .assert_is_zero(builder, &input.0, is_zero, is_real);
         is_zero
     }
 
@@ -172,7 +187,7 @@ impl<Var, const W: usize> IsZeroOrEqual<Var, W> {
 
         let input = array::from_fn(|i| lhs[i].clone() - rhs[i].clone());
         self.witness
-            .assert_is_zero(builder, input, is_equal, is_real);
+            .assert_is_zero(builder, &input, is_equal, is_real);
         is_equal
     }
 }
@@ -194,7 +209,7 @@ mod tests {
 
         let is_zero_f = witness.eval_is_zero(
             &mut GadgetTester::passing(),
-            Word::<F, W>::from_unsigned(input),
+            &Word::<F, W>::from_unsigned(input),
             F::one(),
         );
         assert_eq!(is_zero_f, F::from_bool(is_zero));
@@ -202,10 +217,14 @@ mod tests {
         if !is_zero {
             witness.eval_is_zero(
                 &mut GadgetTester::passing(),
-                Word::<F, W>::zero(),
+                &Word::<F, W>::zero(),
                 F::zero(),
             );
-            witness.eval_is_zero(&mut GadgetTester::failing(), Word::<F, W>::zero(), F::one());
+            witness.eval_is_zero(
+                &mut GadgetTester::failing(),
+                &Word::<F, W>::zero(),
+                F::one(),
+            );
         }
     }
     fn test_is_diff<const W: usize, U: ToBytes<Bytes = [u8; W]> + Unsigned>(lhs: &U, rhs: &U) {
@@ -237,8 +256,11 @@ mod tests {
         let is_zero = witness.populate_is_zero(&0u64);
         assert!(is_zero);
 
-        let is_zero_f =
-            witness.eval_is_zero(&mut GadgetTester::passing(), Word::<F, 8>::zero(), F::one());
+        let is_zero_f = witness.eval_is_zero(
+            &mut GadgetTester::passing(),
+            &Word::<F, 8>::zero(),
+            F::one(),
+        );
         assert_eq!(is_zero_f, F::one());
     }
 

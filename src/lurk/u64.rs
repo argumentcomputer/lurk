@@ -4,6 +4,7 @@ use std::borrow::{Borrow, BorrowMut};
 use p3_air::AirBuilder;
 use p3_field::PrimeField32;
 
+use crate::gadgets::unsigned::is_zero::IsZero;
 use crate::{
     air::builder::{LookupBuilder, Record, RequireRecord},
     gadgets::{
@@ -23,6 +24,7 @@ pub type Sum64<T> = Sum<T, 8>;
 pub type Diff64<T> = Diff<T, 8>;
 pub type DivRem64<T> = DivRem<T, 8>;
 pub type IsLessThan64<T> = IsLessThan<T, 8>;
+pub type IsZero64<T> = IsZero<T, 8>;
 pub type Product64<T> = Product<T, 8>;
 
 #[derive(Clone)]
@@ -32,6 +34,7 @@ pub enum U64 {
     Mul,
     DivRem,
     LessThan,
+    IsZero,
 }
 
 fn into_u64<F: PrimeField32>(slice: &[F]) -> u64 {
@@ -42,13 +45,16 @@ fn into_u64<F: PrimeField32>(slice: &[F]) -> u64 {
 
 impl<F: PrimeField32> Chipset<F> for U64 {
     fn input_size(&self) -> usize {
-        16
+        match self {
+            U64::IsZero => 8,
+            _ => 16,
+        }
     }
 
     fn output_size(&self) -> usize {
         match self {
-            U64::DivRem => 16,  // returns (quot, rem)
-            U64::LessThan => 1, // returns one bool
+            U64::DivRem => 16,                // returns (quot, rem)
+            U64::LessThan | U64::IsZero => 1, // returns one bool
             _ => 8,
         }
     }
@@ -60,6 +66,7 @@ impl<F: PrimeField32> Chipset<F> for U64 {
             U64::Mul => Product64::<F>::witness_size(),
             U64::DivRem => DivRem64::<F>::witness_size(),
             U64::LessThan => IsLessThan64::<F>::witness_size(),
+            U64::IsZero => IsZero64::<F>::witness_size(),
         }
     }
 
@@ -70,6 +77,7 @@ impl<F: PrimeField32> Chipset<F> for U64 {
             U64::Mul => Product64::<F>::num_requires(),
             U64::DivRem => DivRem64::<F>::num_requires(),
             U64::LessThan => IsLessThan64::<F>::num_requires(),
+            U64::IsZero => IsZero64::<F>::num_requires(),
         }
     }
 
@@ -81,7 +89,10 @@ impl<F: PrimeField32> Chipset<F> for U64 {
         requires: &mut Vec<Record>,
     ) -> Vec<F> {
         let in1 = into_u64(&input[0..8]);
-        let in2 = into_u64(&input[8..16]);
+        let in2 = match self {
+            U64::IsZero => 0, // unused
+            _ => into_u64(&input[8..16]),
+        };
         let bytes = &mut queries.bytes.context(nonce, requires);
         match self {
             U64::Add => {
@@ -109,12 +120,20 @@ impl<F: PrimeField32> Chipset<F> for U64 {
                 witness.populate_less_than(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
+            U64::IsZero => {
+                let mut witness = IsZero64::<F>::default();
+                witness.populate_is_zero(&in1);
+                witness.iter_result().into_iter().collect()
+            }
         }
     }
 
     fn populate_witness(&self, input: &[F], witness: &mut [F]) -> Vec<F> {
         let in1 = into_u64(&input[0..8]);
-        let in2 = into_u64(&input[8..16]);
+        let in2 = match self {
+            U64::IsZero => 0, // unused
+            _ => into_u64(&input[8..16]),
+        };
         let bytes = &mut DummyBytesRecord;
         match self {
             U64::Add => {
@@ -142,6 +161,11 @@ impl<F: PrimeField32> Chipset<F> for U64 {
                 witness.populate_less_than(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
+            U64::IsZero => {
+                let witness: &mut IsZero64<F> = witness.borrow_mut();
+                witness.populate_is_zero(&in1);
+                witness.iter_result().into_iter().collect()
+            }
         }
     }
 
@@ -155,7 +179,10 @@ impl<F: PrimeField32> Chipset<F> for U64 {
         requires: &[RequireRecord<AB::Var>],
     ) -> Vec<AB::Expr> {
         let in1 = ins[0..8].iter().cloned().collect::<Word64<_>>();
-        let in2 = ins[8..16].iter().cloned().collect::<Word64<_>>();
+        let in2 = match self {
+            U64::IsZero => Word64::default(), // unused
+            _ => ins[8..16].iter().cloned().collect::<Word64<_>>(),
+        };
         let mut air_record = BytesAirRecordWithContext::default();
         let out = match self {
             U64::Add => {
@@ -183,6 +210,11 @@ impl<F: PrimeField32> Chipset<F> for U64 {
                 let out =
                     witness.eval_less_than(builder, &in1, &in2, &mut air_record, is_real.clone());
                 vec![out]
+            }
+            U64::IsZero => {
+                let witness: &IsZero64<AB::Var> = witness.borrow();
+                let out = witness.eval_is_zero(builder, &in1, is_real.clone());
+                vec![out.into()]
             }
         };
         air_record.require_all(builder, nonce, requires.iter().cloned());
@@ -499,6 +531,41 @@ mod test {
         let machine = StarkMachine::new(
             config,
             build_chip_vector(&lessthan_chip),
+            queries.expect_public_values().len(),
+        );
+
+        let (pk, _vk) = machine.setup(&LairMachineProgram);
+        let shard = Shard::new(&queries);
+        machine.debug_constraints(&pk, shard.clone());
+    }
+
+    #[test]
+    fn u64_iszero_test() {
+        sphinx_core::utils::setup_logger();
+
+        let iszero_func = func!(
+        fn iszero(a: [8]): [1] {
+            let c = extern_call(u64_iszero, a);
+            return c
+        });
+        let lurk_chip_map = lurk_chip_map();
+        let toplevel = Toplevel::new(&[iszero_func], lurk_chip_map);
+
+        let iszero_chip = FuncChip::from_name("iszero", &toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
+        let f = F::from_canonical_usize;
+        // Little endian
+        let args = &[f(0), f(0), f(0), f(0), f(0), f(0), f(0), f(0)];
+        let out = toplevel.execute_by_name("iszero", args, &mut queries);
+        assert_eq!(out.as_ref(), &[f(1)]);
+
+        let lair_chips = build_lair_chip_vector(&iszero_chip);
+        debug_chip_constraints_and_queries_with_sharding(&queries, &lair_chips, None);
+
+        let config = BabyBearPoseidon2::new();
+        let machine = StarkMachine::new(
+            config,
+            build_chip_vector(&iszero_chip),
             queries.expect_public_values().len(),
         );
 
