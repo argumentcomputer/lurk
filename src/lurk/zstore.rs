@@ -777,9 +777,9 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         F: PrimeField32,
     {
         match zptr.tag {
-            Tag::Num => zptr.digest[0].to_string(),
+            Tag::Num => format!("{}n", zptr.digest[0]),
             Tag::U64 => format!(
-                "{}u64",
+                "{}",
                 u64::from_le_bytes(
                     zptr.digest
                         .map(|f| u8::try_from(f.as_canonical_u32()).expect("invalid u64 limbs"))
@@ -944,10 +944,10 @@ mod test {
         assert_eq!(zstore.fmt_with_state(state, &a_char), "'a'");
 
         let one = ZPtr::num(BabyBear::one());
-        assert_eq!(zstore.fmt_with_state(state, &one), "1");
+        assert_eq!(zstore.fmt_with_state(state, &one), "1n");
 
         let one_u64 = ZPtr::u64(1);
-        assert_eq!(zstore.fmt_with_state(state, &one_u64), "1u64");
+        assert_eq!(zstore.fmt_with_state(state, &one_u64), "1");
 
         let zero_comm = ZPtr::comm([BabyBear::zero(); 8]);
         assert_eq!(zstore.fmt_with_state(state, &zero_comm), "#0x0");
@@ -993,7 +993,7 @@ mod test {
 
         assert_eq!(zstore.fmt_with_state(state, &empty_env), "<Env ()>");
         let env = zstore.intern_env(x, one, empty_env);
-        assert_eq!(zstore.fmt_with_state(state, &env), "<Env ((x . 1))>");
+        assert_eq!(zstore.fmt_with_state(state, &env), "<Env ((x . 1n))>");
     }
 
     #[test]
