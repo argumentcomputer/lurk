@@ -89,6 +89,27 @@ impl Ptr {
         self.is_built_in_named("/") || self.is_built_in_named("-")
     }
 
+    pub fn is_cons_op(&self) -> bool {
+        self.is_built_in_named("cons")
+    }
+
+    pub fn is_car(&self) -> bool {
+        self.is_built_in_named("car")
+    }
+
+    pub fn is_cdr(&self) -> bool {
+        self.is_built_in_named("cdr")
+    }
+
+    pub fn is_atom_op(&self) -> bool {
+        self.is_built_in_named("atom")
+    }
+
+    pub fn is_atom(&self) -> bool {
+        let tag = Tag::from_field(&self.0);
+        tag != Tag::Cons
+    }
+
     pub fn is_built_in(&self) -> bool {
         if !self.is_builtin() {
             return false;
@@ -217,10 +238,6 @@ ascent! {
 
     // Final
     relation ptr_value(Ptr, Wide); // (ptr, value)
-
-    // triggers memoized/deduplicated allocation of input conses by populating cons outside of testing, this indirection
-    // is likely unnecessary.
-    // relation input_cons(Ptr, Ptr); // (car, cdr)
 
     // Final
     relation toplevel_input(WidePtr, WidePtr); // (expr, env)
@@ -579,6 +596,102 @@ ascent! {
     // expr is Cons
     ingress(expr) <-- eval_input(expr, env), if expr.is_cons();
 
+    ////////////////////
+    // cons op
+
+    // Signals
+    relation cons_cont1(Ptr, Ptr, Ptr); // (expr, env, unevaled-car-cdr)
+    relation cons_cont2(Ptr, Ptr, Ptr, Ptr); // (expr, env, car, cdr)
+
+    ingress(tail), cons_cont1(expr, env, tail) <-- 
+        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_cons_op();
+
+    // Signal: eval car
+    eval_input(car, env), ingress(cdr_nil) <--
+        cons_cont1(expr, env, tail),
+        cons_rel(car, cdr_nil, tail);
+
+    // Signal: eval cdr
+    cons_cont2(expr, env, car, cdr), eval_input(cdr, env) <--
+        cons_cont1(expr, env, tail),
+        cons_rel(car, cdr_nil, tail),
+        cons_rel(cdr, end, cdr_nil), if end.is_nil(); // TODO: otherwise error
+
+    // Signal: 
+    cons(evaled_car, evaled_cdr) <-- 
+        cons_cont2(expr, env, car, cdr),
+        eval(car, env, evaled_car), 
+        eval(cdr, env, evaled_cdr);
+
+    // register a cons created from a cons expression as its evaluation
+    // this is the real rule?
+    eval(expr, env, evaled_cons) <--
+        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_cons_op(),
+        cons_rel(car, cdr_nil, tail),
+        cons_rel(cdr, end, cdr_nil), if end.is_nil(),
+        eval(car, env, evaled_car), 
+        eval(cdr, env, evaled_cdr),
+        cons_rel(evaled_car, evaled_cdr, evaled_cons);
+
+    ////////////////////
+    // car op
+
+    // Signals
+    relation car_cont1(Ptr, Ptr, Ptr); // (expr, env, tail)
+
+    ingress(tail), car_cont1(expr, env, tail) <-- 
+        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_car();
+
+    // Signal: eval body
+    eval_input(body, env) <--
+        car_cont1(expr, env, tail),
+        cons_rel(body, end, tail), if end.is_nil(); // TODO: otherwise error
+    
+    eval(expr, env, car) <--
+        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_car(),
+        cons_rel(body, end, tail), if end.is_nil(),
+        eval(body, env, evaled),
+        cons_rel(car, cdr, evaled); // I think this just works?
+
+    ////////////////////
+    // cdr op
+
+    // Signals
+    relation cdr_cont1(Ptr, Ptr, Ptr); // (expr, env, tail)
+
+    ingress(tail), cdr_cont1(expr, env, tail) <-- 
+        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_cdr();
+
+    // Signal: eval body
+    eval_input(body, env) <--
+        cdr_cont1(expr, env, tail),
+        cons_rel(body, end, tail), if end.is_nil(); // TODO: otherwise error
+    
+    eval(expr, env, cdr) <--
+        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_cdr(),
+        cons_rel(body, end, tail), if end.is_nil(),
+        eval(body, env, evaled),
+        cons_rel(car, cdr, evaled); // I think this just works?
+
+    ////////////////////
+    // atom op
+
+    // Signals
+    relation atom_cont1(Ptr, Ptr, Ptr); // (expr, env, tail)
+
+    ingress(tail), atom_cont1(expr, env, tail) <-- 
+        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_atom_op();
+
+    // Signal: eval body
+    eval_input(body, env) <--
+        atom_cont1(expr, env, tail),
+        cons_rel(body, end, tail), if end.is_nil(); // TODO: otherwise error
+    
+    eval(expr, env, is_atom) <--
+        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_atom_op(),
+        cons_rel(body, end, tail), if end.is_nil(),
+        eval(body, env, evaled),
+        let is_atom = Ptr::lurk_bool(!evaled.is_cons()); // is this good?
 
     ////////////////////
     // conditional
@@ -684,8 +797,7 @@ ascent! {
         eval(unevaled, env, evaled),
         cons_rel(arg, evaled, binding);
 
-    fun_call(expr, env, more_args, body, new_closed_env, more_vals)
-        <--
+    fun_call(expr, env, more_args, body, new_closed_env, more_vals) <--
         fun_call(expr, env, args, body, closed_env, rest),
         cons_rel(arg, more_args, args),
         cons_rel(unevaled, more_vals, rest),
@@ -796,7 +908,7 @@ ascent! {
 
     // This is the 'real rule'. Since the signal relations will be distilled out, the second-pass program should contain
     // all the required dependencies.
-     bind(expr, env, body, new_env, more_bindings, false) <--
+    bind(expr, env, body, new_env, more_bindings, false) <--
         bind(expr, env, body, extended_env, bindings, false),
         cons_rel(binding, more_bindings, bindings),
         cons_rel(var, binding_tail, binding),
@@ -805,7 +917,7 @@ ascent! {
         cons_rel(var, evaled, env_binding),
         cons_rel(env_binding, extended_env, new_env);
 
-     bind(expr, env, body, new_env, more_bindings, true) <--
+    bind(expr, env, body, new_env, more_bindings, true) <--
         bind(expr, env, body, extended_env, bindings, true),
         cons_rel(binding, more_bindings, bindings),
         cons_rel(var, binding_tail, binding),
@@ -856,10 +968,7 @@ ascent! {
 
     // register a fun created from a lambda expression as its evaluation
     eval(expr, env, fun) <--
-        eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
-        if head.is_lambda(),
-        lambda_parse(expre, env, tail),
-        fun(args, body, env),
+        eval_input(expr, env), cons_rel(head, tail, expr), if head.is_lambda(),
         fun_rel(args, body, env, fun);
 
     ////////////////////
@@ -1086,8 +1195,6 @@ mod test {
         prog.run();
 
         println!("{}", prog.relation_sizes_summary());
-        let (a, b, c) = &prog.thunk_mem[0];
-        println!("thunk_mem: {:?} {:?}", prog.deref(a), prog.deref(b));
         prog.print_memory_tables();
 
         let expected = vec![(expected_output,)];
@@ -1404,23 +1511,44 @@ mod test {
     }
 
     #[test]
-    fn test_cons_mem() {
+    fn test_add_fibonacci() {
         let fibonacci_twice = |n| {
             format!(
                 "
-(letrec ((fibonacci (lambda (n) 
-                        (if (< n 2) 
-                            1 
-                            (
-                                let ((a (fibonacci (- n 1)))
-                                     (b (fibonacci (- n 2))))
-                                (+ a b)
-                            )))))
+(letrec ((fibonacci (lambda (n) (if (< n 2) 1 (let ((a (fibonacci (- n 1))) (b (fibonacci (- n 2)))) (+ a b))))))
   (+ (fibonacci {n}) (fibonacci {n})))
 "
             )
         };
         test_aux(&fibonacci_twice(7), "42", None);
+    }
+
+    #[test]
+    fn test_cons_simple() {
+        test_aux("(cons 1 2)", "(1 . 2)", None);
+    }
+
+    #[test]
+    fn test_car_cdr_cons_simple() {
+        test_aux("(car (cons 1 2))", "1", None);
+        test_aux("(cdr (cons 1 2))", "2", None);
+    }
+
+    #[test]
+    fn test_atom_simple() {
+        test_aux("(atom 1)", "t", None);
+        test_aux("(atom nil)", "t", None);
+        test_aux("(atom (cons 1 2))", "nil", None);
+    }
+
+    #[test]
+    fn test_map_double_cons() {
+        let map_double = "
+(letrec ((input (cons (cons 1 2) (cons 2 4)))
+         (map-double (lambda (x) (if (atom x) (+ x x) (cons (map-double (car x))  (map-double (cdr x)))))))
+    (map-double input))
+        ";
+        test_aux(map_double, "((2 . 4) . (4 . 8))", None);
     }
 
     #[test]

@@ -38,10 +38,6 @@ ascent! {
     // Final
     relation ptr_value(Ptr, Wide); // (ptr, value)
 
-    // triggers memoized/deduplicated allocation of input conses by populating cons outside of testing, this indirection
-    // is likely unnecessary.
-    // relation input_cons(Ptr, Ptr); // (car, cdr)
-
     // Final
     relation toplevel_input(WidePtr, WidePtr); // (expr, env)
     // Final
@@ -153,7 +149,6 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
     // Egress path
 
-    // Construct output_expr from output_ptr
     output_expr(WidePtr(ptr.wide_tag(), *value)) <-- output_ptr(ptr), ptr_value(ptr, value);
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -223,6 +218,77 @@ ascent! {
         cons_rel(new_binding, closed_env, extended_env),
         eval(body, extended_env, result);
 
+    ////////////////////
+    // cons op
+
+    // ok just writing this here so I don't forget:
+    // it should be possible to generate the cont signals knowing
+    // this is the shape of the rule that needs to be evaluated, i.e.
+    // it should be possible to compile lair -> loam
+    // 
+    // also this is still a signal -- but it's in the same category as
+    // eval-input, since it's driving the evaluation (of the cons op specifically)
+    relation eval_cons_op(Ptr, Ptr, Ptr, Ptr);
+
+    // idk the compiler needs to be smart enough to find this rule
+    eval_input(car, env), eval_input(cdr, env), eval_cons_op(expr, env, car, cdr) <-- 
+        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_cons_op(),
+        cons_rel(car, cdr_nil, tail),
+        cons_rel(cdr, end, cdr_nil), if end.is_nil();
+
+    // register a cons created from a cons expression as its evaluation
+    eval(expr, env, evaled_cons) <--
+        // here, this "signal" stands in for the same 3 lines on the top:
+        //      eval_input(expr, env), cons_rel(op, tail, expr), if op.is_cons_op(),
+        //      cons_rel(car, cdr_nil, tail),
+        //      cons_rel(cdr, end, cdr_nil), if end.is_nil(),
+        // but it's more efficient because less lookups
+        eval_cons_op(expr, env, car, cdr),
+        eval(car, env, evaled_car), 
+        eval(cdr, env, evaled_cdr),
+        cons_rel(evaled_car, evaled_cdr, evaled_cons);
+
+    ////////////////////
+    // car op
+
+    relation eval_car(Ptr, Ptr, Ptr); // (expr, env, body)
+
+    eval_input(body, env), eval_car(expr, env, body) <-- 
+        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_car(),
+        cons_rel(body, end, tail), if end.is_nil();
+    
+    eval(expr, env, car) <--
+        eval_car(expr, env, body),
+        eval(body, env, evaled),
+        cons_rel(car, cdr, evaled);
+
+    ////////////////////
+    // cdr op
+
+    relation eval_cdr(Ptr, Ptr, Ptr); // (expr, env, body)
+
+    eval_input(body, env), eval_cdr(expr, env, body) <-- 
+        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_cdr(),
+        cons_rel(body, end, tail), if end.is_nil();
+    
+    eval(expr, env, cdr) <--
+        eval_cdr(expr, env, body),
+        eval(body, env, evaled),
+        cons_rel(car, cdr, evaled);
+
+    ////////////////////
+    // atom op
+
+    relation eval_atom(Ptr, Ptr, Ptr); // (expr, env, body)
+
+    eval_input(body, env), eval_atom(expr, env, body) <-- 
+        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_atom_op(),
+        cons_rel(body, end, tail), if end.is_nil();
+    
+    eval(expr, env, is_atom) <--
+        eval_atom(expr, env, body),
+        eval(body, env, evaled),
+        let is_atom = Ptr::lurk_bool(!evaled.is_cons());
 
     ////////////////////
     // conditional
@@ -648,6 +714,17 @@ mod test {
             )
         };
         let prog = test_aux(&fibonacci_twice(7), "42", None);
+        test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_map_double_distilled() {
+        let map_double = "
+(letrec ((input (cons (cons 1 2) (cons 2 4)))
+         (map-double (lambda (x) (if (atom x) (+ x x) (cons (map-double (car x))  (map-double (cdr x)))))))
+    (map-double input))
+        ";
+        let prog = test_aux(map_double, "((2 . 4) . (4 . 8))", None);
         test_distilled(&prog);
     }
 }
