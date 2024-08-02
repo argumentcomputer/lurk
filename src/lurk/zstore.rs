@@ -354,7 +354,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         digest
     }
 
-    fn intern_tuple2(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>) -> ZPtr<F> {
+    pub fn intern_tuple2(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>) -> ZPtr<F> {
         let preimg = ZPtr::flatten2(&a, &b);
         let digest = self.hash4(preimg);
         let zptr = ZPtr { tag, digest };
@@ -362,7 +362,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         zptr
     }
 
-    fn intern_tuple3(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>, c: ZPtr<F>) -> ZPtr<F> {
+    pub fn intern_tuple3(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>, c: ZPtr<F>) -> ZPtr<F> {
         let preimg = ZPtr::flatten3(&a, &b, &c);
         let digest = self.hash6(preimg);
         let zptr = ZPtr { tag, digest };
@@ -798,7 +798,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     #[inline]
     pub fn fetch_tuple2(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>) {
         let Some(ZPtrType::Tuple2(a, b)) = self.dag.get(zptr) else {
-            panic!("Tuple2 data not found on DAG")
+            panic!("Tuple2 data not found on DAG: {:?}", zptr)
         };
         (a, b)
     }
@@ -806,7 +806,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     #[inline]
     pub fn fetch_tuple3(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>, &ZPtr<F>) {
         let Some(ZPtrType::Tuple3(a, b, c)) = self.dag.get(zptr) else {
-            panic!("Tuple3 data not found on DAG")
+            panic!("Tuple3 data not found on DAG: {:?}", zptr)
         };
         (a, b, c)
     }
@@ -814,7 +814,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     #[inline]
     pub fn fetch_compact2(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>) {
         let Some(ZPtrType::Compact2(a, b)) = self.dag.get(zptr) else {
-            panic!("Compact2 data not found on DAG")
+            panic!("Compact2 data not found on DAG: {:?}", zptr)
         };
         (a, b)
     }
@@ -822,7 +822,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     #[inline]
     pub fn fetch_compact3(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>, &ZPtr<F>) {
         let Some(ZPtrType::Compact3(a, b, c)) = self.dag.get(zptr) else {
-            panic!("Compact3 data not found on DAG")
+            panic!("Compact3 data not found on DAG: {:?}", zptr)
         };
         (a, b, c)
     }

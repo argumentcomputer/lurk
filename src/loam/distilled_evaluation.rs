@@ -5,7 +5,6 @@
 use num_traits::FromPrimitive;
 use p3_baby_bear::BabyBear;
 
-use crate::loam::allocation::allocator;
 use crate::loam::evaluation::Memory;
 use crate::loam::lurk_sym_index;
 use crate::loam::{LEWrap, Num, Ptr, Wide, WidePtr, LE};
@@ -251,14 +250,19 @@ ascent! {
     ////////////////////
     // car op
 
-    relation eval_car(Ptr, Ptr, Ptr); // (expr, env, body)
+    relation eval_car_cdr(Ptr, Ptr, Ptr, bool); // (expr, env, body, is_car)
 
-    eval_input(body, env), eval_car(expr, env, body) <-- 
-        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_car(),
+    eval_input(body, env), eval_car_cdr(expr, env, body, is_car) <-- 
+        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_car_cdr(), let is_car = op.is_car(),
         cons_rel(body, end, tail), if end.is_nil();
     
     eval(expr, env, car) <--
-        eval_car(expr, env, body),
+        eval_car_cdr(expr, env, body, true),
+        eval(body, env, evaled),
+        cons_rel(car, cdr, evaled);
+
+    eval(expr, env, cdr) <--
+        eval_car_cdr(expr, env, body, false),
         eval(body, env, evaled),
         cons_rel(car, cdr, evaled);
 
@@ -289,6 +293,14 @@ ascent! {
         eval_atom(expr, env, body),
         eval(body, env, evaled),
         let is_atom = Ptr::lurk_bool(!evaled.is_cons());
+
+    ////////////////////
+    // quote op
+
+    // Don't eval body :P
+    eval(expr, env, body) <-- 
+        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_quote(),
+        cons_rel(body, end, tail), if end.is_nil();
 
     ////////////////////
     // conditional
@@ -635,8 +647,6 @@ mod test {
 
     fn read_wideptr(zstore: &mut ZStore<BabyBear, LurkChip>, src: &str) -> WidePtr {
         let ZPtr { tag, digest } = zstore.read(src).unwrap();
-
-        allocator().import_hashes(zstore.tuple2_hashes());
         wide_ptr(tag.elt(), digest)
     }
 
@@ -651,6 +661,8 @@ mod test {
         prog.zstore = zstore;
         prog.toplevel_input = vec![(input, env.unwrap_or(WidePtr::empty_env()))];
         prog.run();
+
+        prog.hydrate();
 
         println!("\n{}", prog.relation_sizes_summary());
         prog.print_memory_tables();
@@ -687,8 +699,6 @@ mod test {
     }
 
     fn test_aux(input: &str, expected_output: &str, env: Option<&str>) -> EvaluationProgram {
-        allocator().init();
-
         let mut zstore = lurk_zstore();
         let input = read_wideptr(&mut zstore, input);
         let expected_output = read_wideptr(&mut zstore, expected_output);
@@ -721,6 +731,17 @@ mod test {
     fn test_map_double_distilled() {
         let map_double = "
 (letrec ((input (cons (cons 1 2) (cons 2 4)))
+         (map-double (lambda (x) (if (atom x) (+ x x) (cons (map-double (car x))  (map-double (cdr x)))))))
+    (map-double input))
+        ";
+        let prog = test_aux(map_double, "((2 . 4) . (4 . 8))", None);
+        test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_map_double_distilled_noncontiguous() {
+        let map_double = "
+(letrec ((input (quote ((1 . 2) . (2 . 4))))
          (map-double (lambda (x) (if (atom x) (+ x x) (cons (map-double (car x))  (map-double (cdr x)))))))
     (map-double input))
         ";

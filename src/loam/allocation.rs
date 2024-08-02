@@ -18,36 +18,14 @@ use crate::lurk::{
     zstore::{ZPtr, ZStore},
 };
 
-// Because of how the macros work, it's not easy (or possible) to pass a per-invocation structure like the `Allocator`
-// into the program, while also having access to the program struct itself. However, that access is extremely useful
-// both before and after running the program -- while developing and testing.
-//
-// Eventually, we can switch to using `ascent_run!` or `ascent_run_par!`, and then we can wrap the definition in a
-// function to which the desired allocator and other inputs will be sent. However, this will require somewhat heavy
-// mechanism for accessing inputs and outputs. Until then, we use a global `Allocator` and reinitialize it before each
-// use.
-pub fn allocator() -> MutexGuard<'static, Allocator> {
-    static ALLOCATOR: OnceLock<Mutex<Allocator>> = OnceLock::new();
-    ALLOCATOR
-        .get_or_init(Default::default)
-        .lock()
-        .expect("poisoned")
-}
-
 pub struct Allocator {
     allocation_map: FxHashMap<LE, LE>,
-    digest_cache: FxHashMap<Vec<Wide>, Wide>,
-    preimage_cache: FxHashMap<Wide, Vec<Wide>>,
-    hasher: LurkHasher,
 }
 
 impl Default for Allocator {
     fn default() -> Self {
         Self {
             allocation_map: Default::default(),
-            digest_cache: Default::default(),
-            preimage_cache: Default::default(),
-            hasher: lurk_hasher(),
         }
     }
 }
@@ -55,111 +33,19 @@ impl Default for Allocator {
 impl Allocator {
     pub fn init(&mut self) {
         self.allocation_map = Default::default();
-        self.hasher = lurk_hasher();
-        self.digest_cache = Default::default();
-        self.preimage_cache = Default::default();
     }
 
     pub fn reset_allocation(&mut self) {
         self.allocation_map = Default::default();
     }
 
-    pub fn import_hashes(&mut self, hashes: &FxHashMap<[LE; HASH4_SIZE], [LE; DIGEST_SIZE]>) {
-        for (preimage, digest) in hashes {
-            let preimage_vec = preimage
-                .chunks(8)
-                .map(|chunk| Wide::from_slice(chunk))
-                .collect::<Vec<_>>();
-            let digest_wide = Wide(digest.clone());
-
-            self.digest_cache
-                .insert(preimage_vec.clone(), digest_wide.clone());
-
-            self.preimage_cache.insert(digest_wide, preimage_vec);
-        }
-    }
-
-    pub fn alloc_addr(&mut self, tag: LE, initial_addr: LE, label: &str) -> LE {
+    pub fn alloc_addr(&mut self, tag: LE, initial_addr: LE) -> LE {
         let idx = *self
             .allocation_map
             .entry(tag)
             .and_modify(|x| *x += LE::from_canonical_u32(1))
             .or_insert(initial_addr);
-        println!("alloc: {:?} {} ({})", Tag::from_field(&tag), idx, label);
         idx
-    }
-
-    pub fn hash4(&mut self, a: Wide, b: Wide, c: Wide, d: Wide) -> Wide {
-        println!("allocator().hash4(..)");
-        let mut preimage = Vec::with_capacity(32);
-
-        preimage.extend(&a.0);
-        preimage.extend(&b.0);
-        preimage.extend(&c.0);
-        preimage.extend(&d.0);
-
-        let preimage_vec = vec![a, b, c, d];
-
-        if let Some(digest) = self.digest_cache.get(&preimage_vec) {
-            return digest.clone();
-        };
-
-        let mut digest0 = [LE::zero(); 8];
-        let digest1 = self.hasher.hash(&preimage);
-
-        digest0.copy_from_slice(&digest1);
-        let digest = Wide(digest0);
-
-        self.digest_cache.insert(preimage_vec.clone(), digest);
-        self.preimage_cache.insert(digest, preimage_vec);
-
-        digest
-    }
-
-    // TODO: refactor to share code with hash4
-    pub fn hash6(&mut self, a: Wide, b: Wide, c: Wide, d: Wide, e: Wide, f: Wide) -> Wide {
-        let mut preimage = Vec::with_capacity(32);
-
-        preimage.extend(&a.0);
-        preimage.extend(&b.0);
-        preimage.extend(&c.0);
-        preimage.extend(&d.0);
-        preimage.extend(&e.0);
-        preimage.extend(&f.0);
-
-        let preimage_vec = vec![a, b, c, d];
-
-        if let Some(digest) = self.digest_cache.get(&preimage_vec) {
-            return digest.clone();
-        };
-
-        let mut digest0 = [LE::zero(); 8];
-        let digest1 = self.hasher.hash(&preimage);
-
-        digest0.copy_from_slice(&digest1);
-        let digest = Wide(digest0);
-
-        self.digest_cache.insert(preimage_vec.clone(), digest);
-        self.preimage_cache.insert(digest, preimage_vec);
-
-        digest
-    }
-    pub fn unhash4(&mut self, digest: &Wide) -> Option<[Wide; 4]> {
-        let mut preimage = [Wide::widen(LE::from_canonical_u32(0)); 4];
-
-        self.preimage_cache.get(digest).map(|digest| {
-            preimage.copy_from_slice(&digest[..4]);
-            preimage
-        })
-    }
-
-    pub fn unhash6(&mut self, digest: &Wide) -> Option<[Wide; 6]> {
-        let mut preimage = [Wide::widen(LE::from_canonical_u32(0)); 6];
-
-        self.preimage_cache.get(digest).map(|digest| {
-            preimage.copy_from_slice(&digest[..6]);
-            preimage
-        })
     }
 }
 
@@ -167,6 +53,7 @@ impl Allocator {
 ascent! {
     // #![trace]
     struct AllocationProgram {
+        allocator: Allocator,
         zstore: ZStore<LE, LurkChip>,
     }
 
@@ -227,7 +114,7 @@ ascent! {
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
     #[trace("#0:")]
-    cons_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::zero(), "cons_digest_mem")))) <-- alloc(Tag::Cons.elt(), value);
+    cons_digest_mem(value, Dual(LEWrap(_self.allocator.alloc_addr(Tag::Cons.elt(), LE::zero())))) <-- alloc(Tag::Cons.elt(), value);
 
     // Convert addr to ptr and register ptr relations.
     #[trace("#1:")]
@@ -235,7 +122,7 @@ ascent! {
 
     // Populating cons(...) triggers allocation in cons mem.
     #[trace("#2: cons_mem {:?}, {:?}", car, cdr)]
-    cons_mem(car, cdr, Dual(LEWrap(allocator().alloc_addr(Tag::Cons.elt(), LE::zero(), "cons_mem")))) <-- cons(car, cdr);
+    cons_mem(car, cdr, Dual(LEWrap(_self.allocator.alloc_addr(Tag::Cons.elt(), LE::zero())))) <-- cons(car, cdr);
 
     // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
     #[trace("#3:")]
@@ -280,7 +167,7 @@ ascent! {
 
     // unhash to acquire preimage pointers from digest.
     #[trace("#11: hash4_rel <-- unhash4")]
-    hash4_rel(a, b, c, d, digest) <-- unhash4(_, digest), let [a, b, c, d] = allocator().unhash4(digest).unwrap();
+    hash4_rel(a, b, c, d, digest) <-- unhash4(tag, digest), let [a, b, c, d] = _self.unhash4(*tag, *digest);
 
     #[trace("#12: alloc unhash4")]
     alloc(car_tag, car_value),
@@ -344,7 +231,8 @@ ascent! {
         ptr_value(cdr, cdr_value);
 
     #[trace("#23:")]
-    hash4_rel(a, b, c, d, allocator().hash4(*a, *b, *c, *d)) <-- hash4(ptr, a, b, c, d);
+    hash4_rel(a, b, c, d, digest) <-- 
+        hash4(ptr, a, b, c, d), let digest = _self.hash4(ptr.0, *a, *b, *c, *d);
 
     #[trace("#24:")]
     ptr(car), ptr(cdr) <--
@@ -434,6 +322,28 @@ impl AllocationProgram {
         no_duplicates
             && addrs[0].0.is_zero()
             && LE::as_canonical_u32(&addrs[len - 1].0) as usize == len - 1
+    }
+
+    fn unhash4(&mut self, tag: LE, digest: Wide) -> [Wide; 4] {
+        let zptr = ZPtr {
+            tag: Tag::from_field(&tag),
+            digest: digest.0,
+        };
+        let (a, b) = self.zstore.fetch_tuple2(&zptr);
+        [Wide::widen(a.tag.elt()), Wide(a.digest), Wide::widen(b.tag.elt()), Wide(b.digest)]
+    }
+
+    fn hash4(&mut self, tag: LE, a: Wide, b: Wide, c: Wide, d: Wide) -> Wide {
+        let a_zptr = ZPtr {
+            tag: Tag::from_field(&a.f()),
+            digest: b.0,
+        };
+        let b_zptr = ZPtr {
+            tag: Tag::from_field(&c.f()),
+            digest: d.0,
+        };
+        let zptr = self.zstore.intern_tuple2(Tag::from_field(&tag), a_zptr, b_zptr);
+        Wide(zptr.digest)
     }
 
     fn fmt(&self, tag: Tag, digest: &Wide) -> String {
@@ -600,8 +510,6 @@ mod test {
 
     fn read_wideptr(zstore: &mut ZStore<BabyBear, LurkChip>, src: &str) -> WidePtr {
         let ZPtr { tag, digest } = zstore.read(src).unwrap();
-
-        allocator().import_hashes(zstore.tuple2_hashes());
         wide_ptr(tag.elt(), digest)
     }
 
@@ -625,8 +533,6 @@ mod test {
     }
 
     fn test_aux(input: &str, expected_output: &str) -> AllocationProgram {
-        allocator().init();
-
         let mut zstore = lurk_zstore();
         let input = read_wideptr(&mut zstore, input);
         let expected_output = read_wideptr(&mut zstore, expected_output);
@@ -634,8 +540,6 @@ mod test {
     }
 
     fn test_aux1(input: &str, expected_output: WidePtr) -> AllocationProgram {
-        allocator().init();
-
         let mut zstore = lurk_zstore();
         let input = read_wideptr(&mut zstore, input);
         test_aux0(zstore, input, expected_output)
