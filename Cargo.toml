@@ -127,6 +127,10 @@ name = "lcs"
 harness = false
 
 [[bench]]
+name = "sum"
+harness = false
+
+[[bench]]
 name = "lurk"
 harness = false
 
