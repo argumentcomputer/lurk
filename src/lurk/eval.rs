@@ -1543,6 +1543,12 @@ mod test {
         let hash_24_8 = FuncChip::from_name("hash_24_8", toplevel);
         let hash_32_8 = FuncChip::from_name("hash_32_8", toplevel);
         let hash_48_8 = FuncChip::from_name("hash_48_8", toplevel);
+        let u64_add = FuncChip::from_name("u64_add", toplevel);
+        let u64_sub = FuncChip::from_name("u64_sub", toplevel);
+        let u64_mul = FuncChip::from_name("u64_mul", toplevel);
+        let u64_divrem = FuncChip::from_name("u64_divrem", toplevel);
+        let u64_lessthan = FuncChip::from_name("u64_lessthan", toplevel);
+        let u64_iszero = FuncChip::from_name("u64_iszero", toplevel);
 
         let expect_eq = |computed: usize, expected: Expect| {
             expected.assert_eq(&computed.to_string());
@@ -1568,6 +1574,12 @@ mod test {
         expect_eq(hash_24_8.width(), expect!["485"]);
         expect_eq(hash_32_8.width(), expect!["647"]);
         expect_eq(hash_48_8.width(), expect!["967"]);
+        expect_eq(u64_add.width(), expect!["52"]);
+        expect_eq(u64_sub.width(), expect!["52"]);
+        expect_eq(u64_mul.width(), expect!["84"]);
+        expect_eq(u64_divrem.width(), expect!["165"]);
+        expect_eq(u64_lessthan.width(), expect!["43"]);
+        expect_eq(u64_iszero.width(), expect!["25"]);
     }
 
     #[test]
