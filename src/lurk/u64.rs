@@ -213,7 +213,7 @@ impl<F: PrimeField32> Chipset<F> for U64 {
             }
             U64::IsZero => {
                 let witness: &IsZero64<AB::Var> = witness.borrow();
-                let out = witness.eval_is_zero(builder, &in1, is_real.clone());
+                let out = witness.eval_is_zero(builder, in1, is_real.clone());
                 vec![out.into()]
             }
         };
