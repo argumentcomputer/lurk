@@ -572,5 +572,24 @@ mod test {
         let (pk, _vk) = machine.setup(&LairMachineProgram);
         let shard = Shard::new(&queries);
         machine.debug_constraints(&pk, shard.clone());
+
+        let mut queries = QueryRecord::new(&toplevel);
+        let args = &[f(0), f(0), f(0), f(123), f(0), f(0), f(0), f(0)];
+        let out = toplevel.execute_by_name("iszero", args, &mut queries);
+        assert_eq!(out.as_ref(), &[f(0)]);
+
+        let lair_chips = build_lair_chip_vector(&iszero_chip);
+        debug_chip_constraints_and_queries_with_sharding(&queries, &lair_chips, None);
+
+        let config = BabyBearPoseidon2::new();
+        let machine = StarkMachine::new(
+            config,
+            build_chip_vector(&iszero_chip),
+            queries.expect_public_values().len(),
+        );
+
+        let (pk, _vk) = machine.setup(&LairMachineProgram);
+        let shard = Shard::new(&queries);
+        machine.debug_constraints(&pk, shard.clone());
     }
 }
