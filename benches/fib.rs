@@ -36,11 +36,10 @@ fn get_fib_arg() -> usize {
 fn build_lurk_expr(arg: usize) -> String {
     format!(
         "(letrec ((fib
-                (lambda (n)
-                (if (= n 0) 0
-                    (if (= n 1) 1
-                    (+ (fib (- n 1)) (fib (- n 2))))))))
-            (fib {arg}))"
+          (lambda (n)
+            (if (<= n 1) n
+              (+ (fib (- n 1)) (fib (- (- n 1) 1)))))))
+  (fib {arg}))"
     )
 }
 
