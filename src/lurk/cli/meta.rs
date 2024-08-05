@@ -1,12 +1,32 @@
 use anyhow::{bail, Result};
 use camino::Utf8Path;
+use p3_baby_bear::BabyBear;
 use p3_field::PrimeField32;
 use rustc_hash::FxHashMap;
+use sphinx_core::{
+    stark::{LocalProver, MachineProof, StarkGenericConfig, StarkMachine},
+    utils::{BabyBearPoseidon2, SphinxCoreOpts},
+};
 
 use crate::{
-    lair::chipset::Chipset,
-    lurk::{cli::repl::Repl, state::lurk_sym, tag::Tag, zstore::ZPtr},
+    lair::{
+        chipset::Chipset,
+        execute::Shard,
+        func_chip::FuncChip,
+        lair_chip::{build_chip_vector, LairChip, LairMachineProgram},
+    },
+    lurk::{
+        cli::{paths::proofs_dir, repl::Repl},
+        state::lurk_sym,
+        syntax::digest_to_biguint,
+        tag::Tag,
+        zstore::{ZPtr, DIGEST_SIZE},
+    },
 };
+
+const INPUT_SIZE: usize = 24;
+const OUTPUT_SIZE: usize = 16;
+const NUM_PUBLIC_VALUES: usize = INPUT_SIZE + OUTPUT_SIZE;
 
 #[allow(dead_code)]
 #[allow(clippy::type_complexity)]
@@ -51,9 +71,9 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
     const DEFREC: Self = Self {
         name: "defrec",
         summary: "Extends env with a recursive binding.",
-        format: "!(defrec <binding> <body>)",
+        format: "!(defrec <symbol> <value>)",
         description: &[
-            "Gets macroexpanded to (letrec ((foo (lambda () 123))) (current-env))",
+            "Gets macroexpanded to (letrec ((<symbol> <value>)) (current-env)).",
             "The REPL's env is set to the result.",
         ],
         example: &[
@@ -81,7 +101,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
 
     const CLEAR: Self = Self {
         name: "clear",
-        summary: "Reset the current environment to be empty.",
+        summary: "Resets the current environment to be empty.",
         format: "!(clear)",
         description: &[],
         example: &["!(def a 1)", "(current-env)", "!(clear)", "(current-env)"],
@@ -92,10 +112,92 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
     };
 }
 
+type F = BabyBear;
+
+impl<H: Chipset<F>> MetaCmd<F, H> {
+    fn stark_machine(repl: &Repl<F, H>) -> StarkMachine<BabyBearPoseidon2, LairChip<'_, F, H>> {
+        let lurk_main_chip = FuncChip::from_index(repl.lurk_main_idx, &repl.toplevel);
+        StarkMachine::new(
+            BabyBearPoseidon2::new(),
+            build_chip_vector(&lurk_main_chip),
+            NUM_PUBLIC_VALUES,
+        )
+    }
+
+    const PROVE: Self = Self {
+        name: "prove",
+        summary: "Proves a Lurk reduction",
+        format: "!(prove <expr>?)",
+        description: &["Prove a Lurk reduction, persists the proof and prints its key"],
+        example: &["'(1 2 3)", "!(prove)", "!(prove '(1 2 3))"],
+        run: |repl, args, _path| {
+            if args.tag != Tag::Nil {
+                let expr = *repl.peek1(args)?;
+                repl.handle_non_meta(&expr);
+            }
+            let Some(proof_key_preimg) = repl.queries.public_values.as_ref() else {
+                bail!("No data found for latest computation");
+            };
+            let proof_key_img: &[F; DIGEST_SIZE] = &repl
+                .zstore
+                .hasher()
+                .hash(&proof_key_preimg[..INPUT_SIZE])
+                .try_into()
+                .unwrap();
+            let proof_key = format!("{:x}", digest_to_biguint(proof_key_img));
+            let proof_path = proofs_dir()?.join(&proof_key);
+            if !proof_path.exists() {
+                let machine = Self::stark_machine(repl);
+                let (pk, _) = machine.setup(&LairMachineProgram);
+                let challenger = &mut machine.config().challenger();
+                let shard = Shard::new(&repl.queries);
+                let opts = SphinxCoreOpts::default();
+                let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, challenger, opts);
+                let proof_bytes = bincode::serialize(&proof)?;
+                std::fs::write(proof_path, proof_bytes)?;
+            }
+            println!("Proof key: \"{proof_key}\"");
+            Ok(())
+        },
+    };
+
+    const VERIFY: Self = Self {
+        name: "verify",
+        summary: "Verifies Lurk reduction proof",
+        format: "!(verify <string>)",
+        description: &["Verifies a Lurk reduction proof by its key"],
+        example: &["!(verify \"2ae20412c6f4740f409196522c15b0e42aae2338c2b5b9c524f675cba0a93e\")"],
+        run: |repl, args, _path| {
+            let proof_key = repl.zstore.fetch_string(repl.peek1(args)?);
+            let proof_path = proofs_dir()?.join(&proof_key);
+            if !proof_path.exists() {
+                bail!("Proof not found");
+            }
+            let proof_bytes = std::fs::read(proof_path)?;
+            let proof: MachineProof<BabyBearPoseidon2> = bincode::deserialize(&proof_bytes)?;
+            let machine = Self::stark_machine(repl);
+            let (_, vk) = machine.setup(&LairMachineProgram);
+            let challenger = &mut machine.config().challenger();
+            if machine.verify(&vk, &proof, challenger).is_ok() {
+                println!("✓ Proof \"{proof_key}\" verified");
+            } else {
+                println!("✗ Proof \"{proof_key}\" failed on verification");
+            }
+            Ok(())
+        },
+    };
+}
+
 #[inline]
-pub(crate) fn meta_cmds<F: PrimeField32, H: Chipset<F>>() -> MetaCmdsMap<F, H> {
-    [MetaCmd::DEF, MetaCmd::DEFREC, MetaCmd::CLEAR]
-        .map(|mc| (mc.name, mc))
-        .into_iter()
-        .collect()
+pub(crate) fn meta_cmds<H: Chipset<F>>() -> MetaCmdsMap<F, H> {
+    [
+        MetaCmd::DEF,
+        MetaCmd::DEFREC,
+        MetaCmd::CLEAR,
+        MetaCmd::PROVE,
+        MetaCmd::VERIFY,
+    ]
+    .map(|mc| (mc.name, mc))
+    .into_iter()
+    .collect()
 }

@@ -257,6 +257,11 @@ pub(crate) fn builtin_vec() -> &'static Vec<Symbol> {
 }
 
 impl<F: Field, H: Chipset<F>> ZStore<F, H> {
+    #[inline]
+    pub fn hasher(&self) -> &Hasher<F, H> {
+        &self.hasher
+    }
+
     fn hash2(&mut self, preimg: [F; TUPLE2_SIZE]) -> [F; DIGEST_SIZE] {
         if let Some(img) = self.tuple2_hashes.get(&preimg) {
             return *img;

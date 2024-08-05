@@ -21,6 +21,12 @@ pub(crate) fn lurk_dir() -> Result<&'static Utf8PathBuf> {
 }
 
 #[inline]
+pub(crate) fn proofs_dir() -> Result<Utf8PathBuf> {
+    let proofs_dir_path = get_config().lurk_dir.join("proofs");
+    create_dir_all_and_return(proofs_dir_path)
+}
+
+#[inline]
 pub(crate) fn repl_history() -> Result<Utf8PathBuf> {
     Ok(lurk_dir()?.join("repl-history"))
 }

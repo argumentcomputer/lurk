@@ -37,9 +37,9 @@ impl Validator for InputValidator {
 
 pub(crate) struct Repl<F: PrimeField32, H: Chipset<F>> {
     pub(crate) zstore: ZStore<F, H>,
-    queries: QueryRecord<F>,
-    toplevel: Toplevel<F, H>,
-    lurk_main_idx: usize,
+    pub(crate) queries: QueryRecord<F>,
+    pub(crate) toplevel: Toplevel<F, H>,
+    pub(crate) lurk_main_idx: usize,
     eval_idx: usize,
     pub(crate) env: ZPtr<F>,
     state: StateRcCell,
@@ -77,7 +77,6 @@ fn pretty_iterations_display(iterations: usize) -> String {
 }
 
 impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
-    #[allow(dead_code)]
     pub(crate) fn peek1(&self, args: &ZPtr<F>) -> Result<&ZPtr<F>> {
         if args.tag != Tag::Cons {
             bail!("Missing first argument")
@@ -113,6 +112,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         )
     }
 
+    #[inline]
     pub(crate) fn fmt(&self, zptr: &ZPtr<F>) -> String {
         self.zstore.fmt_with_state(&self.state, zptr)
     }
@@ -147,7 +147,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         output
     }
 
-    fn handle_non_meta(&mut self, expr: &ZPtr<F>) {
+    pub(crate) fn handle_non_meta(&mut self, expr: &ZPtr<F>) {
         self.prepare_queries();
         let output = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
             self.lurk_main_idx,
