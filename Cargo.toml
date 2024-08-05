@@ -5,9 +5,9 @@ edition.workspace = true
 repository.workspace = true
 
 [workspace.package]
-authors = ["Lurk Lab Engineering <engineering@lurk-lab.com>"]
+authors = ["Argument Engineering <engineering@argument.xyz>"]
 edition = "2021"
-repository = "https://github.com/lurk-lab/loam"
+repository = "https://github.com/argumentcomputer/loam"
 license = "MIT"
 
 
@@ -16,27 +16,27 @@ license = "MIT"
 [workspace.dependencies]
 rayon = "1.10.0"
 itertools = "0.13.0"
-p3-air = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-baby-bear = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-field = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-matrix = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-mds = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-commit = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-challenger = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-maybe-rayon = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-poseidon2 = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-symmetric = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-uni-stark = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-p3-util = { git = "https://github.com/lurk-lab/Plonky3.git", branch = "sp1" }
-sphinx-core = { git = "ssh://git@github.com/lurk-lab/sphinx.git", branch = "dev"}
-sphinx-derive = { git = "ssh://git@github.com/lurk-lab/sphinx.git", branch = "dev" }
+p3-air = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-baby-bear = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-field = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-matrix = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-mds = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-commit = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-challenger = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-maybe-rayon = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-poseidon2 = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-symmetric = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-uni-stark = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-util = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+sphinx-core = { git = "ssh://git@github.com/argumentcomputer/sphinx.git", branch = "dev"}
+sphinx-derive = { git = "ssh://git@github.com/argumentcomputer/sphinx.git", branch = "dev" }
 anyhow = "1.0.72"
 ascent = "0.6.0"
 arc-swap = "1.7.1"
 base-x = "0.2.11"
 camino = "1.1"
 criterion = "0.5"
-elsa = { git = "https://github.com/lurk-lab/elsa", branch = "sync_frozen" }
+elsa = { git = "https://github.com/argumentcomputer/elsa", branch = "sync_frozen" }
 expect-test = "1.4.1"
 home = "0.5"
 indexmap = "2.2.6"

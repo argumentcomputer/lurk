@@ -21,7 +21,7 @@ jobs:
           echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" | tee -a $GITHUB_ENV
       - uses: actions/checkout@v4
         with:
-          repository: lurk-lab/ci-workflows
+          repository: argumentcomputer/ci-workflows
       - uses: ./.github/actions/ci-env
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -41,7 +41,7 @@ jobs:
           echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" | tee -a $GITHUB_ENV
       - uses: actions/checkout@v4
         with:
-          repository: lurk-lab/ci-workflows
+          repository: argumentcomputer/ci-workflows
       - uses: ./.github/actions/ci-env
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -69,7 +69,7 @@ jobs:
           echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" | tee -a $GITHUB_ENV
       - uses: actions/checkout@v4
         with:
-          repository: lurk-lab/ci-workflows
+          repository: argumentcomputer/ci-workflows
       - uses: ./.github/actions/ci-env
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
