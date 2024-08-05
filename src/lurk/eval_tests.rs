@@ -173,20 +173,21 @@ fn trivial_id_fun(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
 fn trivial_a_1_env(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
     let empty_env = zstore.intern_empty_env();
     let a = zstore.intern_symbol(&user_sym("a"));
-    let one = ZPtr::num(F::one());
+    let one = uint(1);
     zstore.intern_env(a, one, empty_env)
 }
 
-fn num(u: u32) -> ZPtr<F> {
-    ZPtr::num(F::from_canonical_u32(u))
+fn uint(u: u64) -> ZPtr<F> {
+    ZPtr::u64(u)
 }
 
 // self-evaluating
-test!(test_num, "1", |_| ZPtr::num(F::one()));
+test!(test_num, "1", |_| uint(1));
 test!(test_char, "'a'", |_| ZPtr::char('a'));
 test!(test_str, "\"abc\"", |z| z.intern_string("abc"));
 test!(test_key, ":hi", |z| z.intern_symbol(&Symbol::key(&["hi"])));
 test!(test_u64, "1u64", |_| ZPtr::u64(1));
+test!(test_field_elem, "1n", |_| ZPtr::num(F::one()));
 test!(test_t, "t", |z| z.intern_symbol(&lurk_sym("t")));
 test!(test_nil, "nil", |z| z.intern_nil());
 test_raw!(test_fun, trivial_id_fun, trivial_id_fun);
@@ -196,40 +197,40 @@ test_raw!(test_comm, |_| ZPtr::null(Tag::Comm), |_| ZPtr::null(
 
 // functions & applications
 test!(test_lambda, "(lambda (x) x)", trivial_id_fun);
-test!(test_app1, "((lambda (x) x) 1)", |_| ZPtr::num(F::one()));
-test!(test_app2, "((lambda (x y z) y) 1 2 3)", |_| num(2));
+test!(test_app1, "((lambda (x) x) 1)", |_| uint(1));
+test!(test_app2, "((lambda (x y z) y) 1 2 3)", |_| uint(2));
 test!(test_app3, "((lambda (x) (lambda (y) x)) 1 2)", |_| {
-    ZPtr::num(F::one())
+    uint(1)
 });
 
 // builtins
-test!(test_if, "(if 1 1 0)", |_| ZPtr::num(F::one()));
-test!(test_if2, "(if nil 1 0)", |_| ZPtr::num(F::zero()));
-test!(test_let, "(let ((x 0) (y 1)) x)", |_| ZPtr::num(F::zero()));
-test!(test_let2, "(let ((x 0) (y 1)) y)", |_| ZPtr::num(F::one()));
-test!(test_add, "(+ 1 2)", |_| num(3));
-test!(test_sub, "(- 5 2)", |_| num(3));
-test!(test_mul, "(* 2 3)", |_| num(6));
-test!(test_div, "(/ 6 3)", |_| num(2));
-test!(test_arith, "(+ (* 2 2) (* 2 3))", |_| num(10));
+test!(test_if, "(if 1 1 0)", |_| uint(1));
+test!(test_if2, "(if nil 1 0)", |_| uint(0));
+test!(test_let, "(let ((x 0) (y 1)) x)", |_| uint(0));
+test!(test_let2, "(let ((x 0) (y 1)) y)", |_| uint(1));
+test!(test_add, "(+ 1 2)", |_| uint(3));
+test!(test_sub, "(- 5 2)", |_| uint(3));
+test!(test_mul, "(* 2 3)", |_| uint(6));
+test!(test_div, "(/ 6 3)", |_| uint(2));
+test!(test_arith, "(+ (* 2 2) (* 2 3))", |_| uint(10));
 test!(test_num_eq, "(= 0 1)", |z| z.intern_nil());
 test!(test_num_eq2, "(= 1 1)", |z| z.intern_symbol(&lurk_sym("t")));
-test!(test_begin, "(begin 1 2 3)", |_| num(3));
+test!(test_begin, "(begin 1 2 3)", |_| uint(3));
 test!(test_quote, "'(x 1 :foo)", |z| {
     let x = z.intern_symbol(&user_sym("x"));
-    let one = ZPtr::num(F::one());
+    let one = uint(1);
     let foo = z.intern_symbol(&Symbol::key(&["foo"]));
     z.intern_list([x, one, foo])
 });
-test!(test_eval, "(eval '(+ 1 2) (empty-env))", |_| num(3));
+test!(test_eval, "(eval '(+ 1 2) (empty-env))", |_| uint(3));
 test!(test_eval2, "(eval 'x (let ((x 1)) (current-env)))", |_| {
-    ZPtr::num(F::one())
+    uint(1)
 });
-test!(test_cons, "(cons 0 1)", |z| {
+test!(test_cons, "(cons 0n 1n)", |z| {
     z.intern_cons(ZPtr::num(F::zero()), ZPtr::num(F::one()))
 });
-test!(test_car, "(car (cons 0 1))", |_| ZPtr::num(F::zero()));
-test!(test_cdr, "(cdr (cons 0 1))", |_| ZPtr::num(F::one()));
+test!(test_car, "(car (cons 0 1))", |_| uint(0));
+test!(test_cdr, "(cdr (cons 0 1))", |_| uint(1));
 test!(test_strcons, "(strcons 'a' \"bc\")", |z| z
     .intern_string("abc"));
 test!(test_eq1, "(eq (cons 1 2) '(1 . 2))", |z| z
@@ -239,7 +240,7 @@ test!(
     test_misc1,
     "(letrec ((ones (cons 1 (lambda () ones))))
        (car ((cdr ones))))",
-    |_| ZPtr::num(F::one())
+    |_| uint(1)
 );
 
 // environment
@@ -248,9 +249,7 @@ test!(
     "(let ((a 1)) (current-env))",
     trivial_a_1_env
 );
-test_env!(test_manual_env, "a", trivial_a_1_env, |_| ZPtr::num(
-    F::one()
-));
+test_env!(test_manual_env, "a", trivial_a_1_env, |_| uint(1));
 
 // heavier computations
 test!(
@@ -260,7 +259,7 @@ test!(
         (if (= n 0) 1
           (* n (factorial (- n 1)))))))
       (factorial 5))",
-    |_| num(120)
+    |_| uint(120)
 );
 test!(
     test_fib,
@@ -270,14 +269,14 @@ test!(
               (if (= n 1) 1
                 (+ (fib (- n 1)) (fib (- n 2))))))))
         (fib 10))",
-    |_| num(55)
+    |_| uint(55)
 );
 
 // commitments
 test!(test_commit, "(commit 123)", |_| {
     let mut preimg = Vec::with_capacity(24);
     preimg.extend([F::zero(); 8]);
-    preimg.extend(num(123).flatten());
+    preimg.extend(uint(123).flatten());
     ZPtr::comm(lurk_hasher().hash(&preimg).try_into().unwrap())
 });
 test!(
@@ -286,25 +285,25 @@ test!(
     |_| {
         let mut preimg = Vec::with_capacity(24);
         preimg.extend([F::zero(); 8]);
-        preimg.extend(num(123).flatten());
+        preimg.extend(ZPtr::num(F::from_canonical_u32(123)).flatten());
         ZPtr::comm(lurk_hasher().hash(&preimg).try_into().unwrap())
     }
 );
 test!(test_hide, "(hide (commit 321) 123)", |_| {
     let mut secret_preimg = Vec::with_capacity(24);
     secret_preimg.extend([F::zero(); 8]);
-    secret_preimg.extend(num(321).flatten());
+    secret_preimg.extend(uint(321).flatten());
     let hasher = lurk_hasher();
     let mut preimg = Vec::with_capacity(24);
     preimg.extend(hasher.hash(&secret_preimg));
-    preimg.extend(num(123).flatten());
+    preimg.extend(uint(123).flatten());
     ZPtr::comm(hasher.hash(&preimg).try_into().unwrap())
 });
-test!(test_open_roundtrip, "(open (commit 123))", |_| num(123));
+test!(test_open_roundtrip, "(open (commit 123))", |_| uint(123));
 test!(
     test_open_raw_roundtrip,
-    "(begin (commit 123) (open #0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3))",
-    |_| num(123)
+    "(begin (commit 123n) (open #0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3))",
+    |_| ZPtr::num(F::from_canonical_u32(123))
 );
 test!(test_secret, "(secret (commit 123))", |_| ZPtr::comm(
     [F::zero(); 8]
@@ -312,6 +311,9 @@ test!(test_secret, "(secret (commit 123))", |_| ZPtr::comm(
 
 // errors
 test!(test_unbound_var, "a", |_| ZPtr::err(EvalErr::UnboundVar));
+test!(test_div_by_zero_fel, "(/ 1n 0n)", |_| ZPtr::err(
+    EvalErr::DivByZero
+));
 test!(test_div_by_zero, "(/ 1 0)", |_| ZPtr::err(
     EvalErr::DivByZero
 ));

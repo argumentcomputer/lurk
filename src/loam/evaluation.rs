@@ -1034,7 +1034,7 @@ mod test {
 
     #[test]
     fn test_self_evaluating_f() {
-        test_aux("123", "123", None);
+        test_aux("123n", "123n", None);
     }
 
     #[test]
@@ -1044,59 +1044,59 @@ mod test {
 
     #[test]
     fn test_zero_arg_addition() {
-        test_aux("(+)", "0", None);
+        test_aux("(+)", "0n", None);
     }
 
     #[test]
     fn test_one_arg_addition() {
-        test_aux("(+ 1)", "1", None);
+        test_aux("(+ 1n)", "1n", None);
     }
 
     #[test]
     fn test_two_arg_addition() {
-        test_aux("(+ 1 2)", "3", None);
+        test_aux("(+ 1n 2n)", "3n", None);
     }
 
     #[test]
     fn test_three_arg_addition() {
-        test_aux("(+ 1 2 3)", "6", None);
+        test_aux("(+ 1n 2n 3n)", "6n", None);
     }
 
     #[test]
     fn test_zerog_arg_multiplication() {
-        test_aux("(*)", "1", None);
+        test_aux("(*)", "1n", None);
     }
 
     #[test]
     fn test_one_arg_multiplication() {
-        test_aux("(* 2)", "2", None);
+        test_aux("(* 2n)", "2n", None);
     }
 
     #[test]
     fn test_two_arg_multiplication() {
-        test_aux("(* 2 3)", "6", None);
+        test_aux("(* 2n 3n)", "6n", None);
     }
 
     #[test]
     fn test_three_arg_multiplication() {
-        test_aux("(* 2 3 4)", "24", None);
+        test_aux("(* 2n 3n 4n)", "24n", None);
     }
 
     #[test]
     fn test_nested_arithmetic() {
-        test_aux("(+ 5 (* 3 4))", "17", None);
+        test_aux("(+ 5n (* 3n 4n))", "17n", None);
     }
 
     #[test]
     fn test_three_arg_division() {
-        test_aux("(/ 10 2 5)", "1", None);
+        test_aux("(/ 10n 2n 5n)", "1n", None);
     }
 
     #[test]
     fn test_complicated_nested_arithmetic() {
         test_aux(
-            "(+ 5 (-) (*) (/) (+) (* 3 4 (- 7 2 1)) (/ 10 2 5))",
-            "56",
+            "(+ 5n (-) (*) (/) (+) (* 3n 4n (- 7n 2n 1n)) (/ 10n 2n 5n))",
+            "56n",
             None,
         );
     }
@@ -1104,21 +1104,21 @@ mod test {
     #[test]
     fn test_relational() {
         test_aux("(=)", "t", None);
-        test_aux("(= 1)", "t", None);
-        test_aux("(= 1 1)", "t", None);
-        test_aux("(= 1 1 1)", "t", None);
-        test_aux("(= 1 2)", "nil", None);
-        test_aux("(= 1 1 2)", "nil", None);
+        test_aux("(= 1n)", "t", None);
+        test_aux("(= 1n 1n)", "t", None);
+        test_aux("(= 1n 1n 1n)", "t", None);
+        test_aux("(= 1n 2n)", "nil", None);
+        test_aux("(= 1n 1n 2n)", "nil", None);
 
         // TODO: handle these type errors
         // test_aux1("(= nil)", err(), None);
-        // test_aux1("(= 1 nil)", err(), None);
+        // test_aux1("(= 1n nil)", err(), None);
     }
 
     #[test]
     fn test_if() {
-        test_aux("(if (= 1 1) 123 456)", "123", None);
-        test_aux("(if (= 1 2) 123 456)", "456", None);
+        test_aux("(if (= 1n 1n) 123n 456n)", "123n", None);
+        test_aux("(if (= 1n 2n) 123n 456n)", "456n", None);
     }
 
     #[test]
@@ -1128,32 +1128,32 @@ mod test {
 
     #[test]
     fn test_var_lookup() {
-        test_aux("x", "9", Some("((x . 9))"));
+        test_aux("x", "9n", Some("((x . 9n))"));
     }
 
     #[test]
     fn test_deep_var_lookup() {
-        let env = read_wideptr("((y . 10) (x . 9))");
+        let env = read_wideptr("((y . 10n) (x . 9n))");
         let expr = read_wideptr("x");
 
-        test_aux("x", "9", Some("((y . 10) (x . 9))"));
-        test_aux("y", "10", Some("((y . 10) (x . 9))"));
-        test_aux1("z", err(), Some("((y . 10) (x . 9))"));
+        test_aux("x", "9n", Some("((y . 10n) (x . 9n))"));
+        test_aux("y", "10n", Some("((y . 10n) (x . 9n))"));
+        test_aux1("z", err(), Some("((y . 10n) (x . 9n))"));
     }
 
     #[test]
     fn test_let_plain() {
-        test_aux("(let ((x 9)) x)", "9", None);
-        test_aux("(let ((x 9)(y 10)) x)", "9", None);
-        test_aux("(let ((x 9)(y 10)) y)", "10", None);
-        test_aux("(let ((x (+ 1 1))) x)", "2", None);
-        test_aux("(let ((y 9) (x (+ 1 1))) x)", "2", None);
+        test_aux("(let ((x 9n)) x)", "9n", None);
+        test_aux("(let ((x 9n)(y 10n)) x)", "9n", None);
+        test_aux("(let ((x 9n)(y 10n)) y)", "10n", None);
+        test_aux("(let ((x (+ 1n 1n))) x)", "2n", None);
+        test_aux("(let ((y 9n) (x (+ 1n 1n))) x)", "2n", None);
     }
 
     #[test]
     fn test_lambda() {
         let args_wide_ptr = read_wideptr("(x)");
-        let body_wide_ptr = read_wideptr("(+ x 1)");
+        let body_wide_ptr = read_wideptr("(+ x 1n)");
         let expected_fun_digest = allocator().hash6(
             args_wide_ptr.0,
             args_wide_ptr.1,
@@ -1164,97 +1164,109 @@ mod test {
         );
         let expected_fun = WidePtr(Tag::Fun.value(), expected_fun_digest);
 
-        test_aux1("(lambda (x) (+ x 1))", expected_fun, None);
+        test_aux1("(lambda (x) (+ x 1n))", expected_fun, None);
 
-        test_aux("((lambda (x) (+ x 1)) 7)", "8", None);
+        test_aux("((lambda (x) (+ x 1n)) 7n)", "8n", None);
 
-        test_aux("(let ((f (lambda () 123))) (f))", "123", None);
-        test_aux("(let ((f (lambda (x) (+ 1 x)))) (f 2))", "3", None);
+        test_aux("(let ((f (lambda () 123n))) (f))", "123n", None);
+        test_aux("(let ((f (lambda (x) (+ 1n x)))) (f 2n))", "3n", None);
 
         // evaled args
-        test_aux("(let ((f (lambda (x) (+ 1 x)))) (f (* 2 3)))", "7", None);
+        test_aux(
+            "(let ((f (lambda (x) (+ 1n x)))) (f (* 2n 3n)))",
+            "7n",
+            None,
+        );
 
         // multiple args
-        test_aux("(let ((f (lambda (a b) (* a b)))) (f 2 3))", "6", None);
+        test_aux("(let ((f (lambda (a b) (* a b)))) (f 2n 3n))", "6n", None);
 
         // closure
         test_aux(
-            "(let ((k 123)(foo (lambda (x) (+ x k)))) (foo 1))",
-            "124",
+            "(let ((k 123n)(foo (lambda (x) (+ x k)))) (foo 1n))",
+            "124n",
             None,
         );
 
         test_aux(
-            "(let ((foo (lambda (x) (* x 2)))(bar 123)) (foo 3))",
-            "6",
+            "(let ((foo (lambda (x) (* x 2n)))(bar 123n)) (foo 3n))",
+            "6n",
             None,
         );
         test_aux(
-            "(let ((foo (lambda (x) (* x 2)))(bar (lambda () 123))) (foo 3))",
-            "6",
+            "(let ((foo (lambda (x) (* x 2n)))(bar (lambda () 123n))) (foo 3n))",
+            "6n",
             None,
         );
         test_aux(
-            "(let ((foo (lambda (x) (* x 2)))(bar (lambda (x) 123))) (foo 3))",
-            "6",
+            "(let ((foo (lambda (x) (* x 2n)))(bar (lambda (x) 123n))) (foo 3n))",
+            "6n",
             None,
         );
 
         // nested calls
         test_aux(
-            "(let ((foo (lambda (x) (* x 2))) (bar (lambda (x) (+ 1 (foo x))))) (bar 3))",
-            "7",
+            "(let ((foo (lambda (x) (* x 2n))) (bar (lambda (x) (+ 1n (foo x))))) (bar 3n))",
+            "7n",
             None,
         );
 
         ////////////////////////////////////////
         // with letrec
 
-        test_aux("(letrec ((f (lambda () 123))) (f))", "123", None);
-        test_aux("(letrec ((f (lambda (x) (+ 1 x)))) (f 2))", "3", None);
+        test_aux("(letrec ((f (lambda () 123n))) (f))", "123n", None);
+        test_aux("(letrec ((f (lambda (x) (+ 1n x)))) (f 2n))", "3n", None);
 
         // evaled args
-        test_aux("(letrec ((f (lambda (x) (+ 1 x)))) (f (* 2 3)))", "7", None);
+        test_aux(
+            "(letrec ((f (lambda (x) (+ 1n x)))) (f (* 2n 3n)))",
+            "7n",
+            None,
+        );
 
         // multiple args
-        test_aux("(letrec ((f (lambda (a b) (* a b)))) (f 2 3))", "6", None);
+        test_aux(
+            "(letrec ((f (lambda (a b) (* a b)))) (f 2n 3n))",
+            "6n",
+            None,
+        );
 
         // closure
         test_aux(
-            "(letrec ((k 123)(foo (lambda (x) (+ x k)))) (foo 1))",
-            "124",
+            "(letrec ((k 123n)(foo (lambda (x) (+ x k)))) (foo 1n))",
+            "124n",
             None,
         );
 
         test_aux(
-            "(letrec ((foo (lambda (x) (* x 2)))(bar 123)) (foo 3))",
-            "6",
+            "(letrec ((foo (lambda (x) (* x 2n)))(bar 123n)) (foo 3n))",
+            "6n",
             None,
         );
         test_aux(
-            "(letrec ((foo (lambda (x) (* x 2)))(bar (lambda () 123))) (foo 3))",
-            "6",
+            "(letrec ((foo (lambda (x) (* x 2n)))(bar (lambda () 123n))) (foo 3n))",
+            "6n",
             None,
         );
         test_aux(
-            "(letrec ((foo (lambda (x) (* x 2)))(bar (lambda (x) 123))) (foo 3))",
-            "6",
+            "(letrec ((foo (lambda (x) (* x 2n)))(bar (lambda (x) 123n))) (foo 3n))",
+            "6n",
             None,
         );
 
         // nested calls
         test_aux(
-            "(letrec ((foo (lambda (x) (* x 2))) (bar (lambda (x) (+ 1 (foo x))))) (bar 3))",
-            "7",
+            "(letrec ((foo (lambda (x) (* x 2n))) (bar (lambda (x) (+ 1n (foo x))))) (bar 3n))",
+            "7n",
             None,
         );
     }
 
     #[test]
     fn test_letrec_binding() {
-        let thunk = "(letrec ((f 123)) f)";
+        let thunk = "(letrec ((f 123n)) f)";
 
-        let expr_ptr = read_wideptr("123");
+        let expr_ptr = read_wideptr("123n");
         let env_ptr = WidePtr::empty_env();
 
         let expected_thunk_digest = allocator().hash4(expr_ptr.0, expr_ptr.1, env_ptr.0, env_ptr.1);
@@ -1265,12 +1277,12 @@ mod test {
 
     #[test]
     fn test_letrec_plain() {
-        test_aux("(letrec ((x 9)) x)", "9", None);
-        test_aux("(letrec ((x (+ 1 1))) x)", "2", None);
+        test_aux("(letrec ((x 9n)) x)", "9n", None);
+        test_aux("(letrec ((x (+ 1n 1n))) x)", "2n", None);
 
-        test_aux("(letrec ((x 9)(y 10)) x)", "9", None);
-        test_aux("(letrec ((x 9)(y 10)) y)", "10", None);
-        test_aux("(letrec ((y 9) (x (+ 1 1))) x)", "2", None);
+        test_aux("(letrec ((x 9n)(y 10n)) x)", "9n", None);
+        test_aux("(letrec ((x 9n)(y 10n)) y)", "10n", None);
+        test_aux("(letrec ((y 9n) (x (+ 1n 1n))) x)", "2n", None);
     }
 
     #[test]
@@ -1278,29 +1290,29 @@ mod test {
         let factorial = |n| {
             format!(
                 "
-(letrec ((factorial (lambda (n) (if (= n 0) 1 (* n (factorial (- n 1)))))))
-   (factorial {n}))"
+(letrec ((factorial (lambda (n) (if (= n 0n) 1n (* n (factorial (- n 1n)))))))
+   (factorial {n}n))"
             )
         };
 
         let fibonacci = |n| {
             format!(
                 "
-(letrec ((fibonacci (lambda (n) (if (< n 2) 1 (+ (fibonacci (- n 2)) (fibonacci (- n 1)))))))
-  (fibonacci {n}))
+(letrec ((fibonacci (lambda (n) (if (< n 2n) 1n (+ (fibonacci (- n 2n)) (fibonacci (- n 1n)))))))
+  (fibonacci {n}n))
 "
             )
         };
 
-        test_aux(&factorial(0), "1", None);
-        test_aux(&factorial(1), "1", None);
-        test_aux(&factorial(4), "24", None);
+        test_aux(&factorial(0), "1n", None);
+        test_aux(&factorial(1), "1n", None);
+        test_aux(&factorial(4), "24n", None);
 
         // // 1, 1, 2, 3, 5, 8, 13, 21
-        test_aux(&fibonacci(0), "1", None);
-        test_aux(&fibonacci(1), "1", None);
-        test_aux(&fibonacci(5), "8", None);
-        test_aux(&fibonacci(7), "21", None);
+        test_aux(&fibonacci(0), "1n", None);
+        test_aux(&fibonacci(1), "1n", None);
+        test_aux(&fibonacci(5), "8n", None);
+        test_aux(&fibonacci(7), "21n", None);
     }
 
     #[test]

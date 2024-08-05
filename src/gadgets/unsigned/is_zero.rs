@@ -136,6 +136,21 @@ impl<F: Field, const W: usize> IsZeroOrEqual<F, W> {
             false
         }
     }
+
+    pub const fn witness_size() -> usize {
+        size_of::<IsZeroOrEqual<u8, W>>()
+    }
+
+    pub const fn num_requires() -> usize {
+        0
+    }
+
+    pub fn iter_result(&self) -> impl IntoIterator<Item = F>
+    where
+        F: Clone,
+    {
+        [self.result]
+    }
 }
 
 impl<Var, const W: usize> IsZeroOrEqual<Var, W> {

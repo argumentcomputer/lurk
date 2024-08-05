@@ -97,6 +97,7 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, 
         u64_mul(),
         u64_divrem(),
         u64_lessthan(),
+        u64_iszero(),
     ];
     let lurk_chip_map = lurk_chip_map();
     let toplevel = Toplevel::new(funcs, lurk_chip_map);
@@ -494,6 +495,16 @@ pub fn u64_lessthan<F>() -> FuncE<F> {
             let b: [8] = load(b);
             let c = extern_call(u64_lessthan, a, b);
             return c
+        }
+    )
+}
+
+pub fn u64_iszero<F>() -> FuncE<F> {
+    func!(
+        fn u64_iszero(a): [1] {
+            let a: [8] = load(a);
+            let b = extern_call(u64_iszero, a);
+            return b
         }
     )
 }
@@ -969,7 +980,8 @@ pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
                             return (u64_tag, res)
                         }
                         "/", "%" => {
-                            if !val2 {
+                            let is_zero = call(u64_iszero, val2);
+                            if is_zero {
                                 return (err_tag, err_div_zero)
                             }
                             let (quot, rem) = call(u64_divrem, val1, val2);
@@ -1531,6 +1543,12 @@ mod test {
         let hash_24_8 = FuncChip::from_name("hash_24_8", toplevel);
         let hash_32_8 = FuncChip::from_name("hash_32_8", toplevel);
         let hash_48_8 = FuncChip::from_name("hash_48_8", toplevel);
+        let u64_add = FuncChip::from_name("u64_add", toplevel);
+        let u64_sub = FuncChip::from_name("u64_sub", toplevel);
+        let u64_mul = FuncChip::from_name("u64_mul", toplevel);
+        let u64_divrem = FuncChip::from_name("u64_divrem", toplevel);
+        let u64_lessthan = FuncChip::from_name("u64_lessthan", toplevel);
+        let u64_iszero = FuncChip::from_name("u64_iszero", toplevel);
 
         let expect_eq = |computed: usize, expected: Expect| {
             expected.assert_eq(&computed.to_string());
@@ -1540,7 +1558,7 @@ mod test {
         expect_eq(eval_comm_unop.width(), expect!["71"]);
         expect_eq(eval_hide.width(), expect!["76"]);
         expect_eq(eval_unop.width(), expect!["33"]);
-        expect_eq(eval_binop_num.width(), expect!["51"]);
+        expect_eq(eval_binop_num.width(), expect!["54"]);
         expect_eq(eval_binop_misc.width(), expect!["32"]);
         expect_eq(eval_let.width(), expect!["54"]);
         expect_eq(eval_letrec.width(), expect!["58"]);
@@ -1556,6 +1574,12 @@ mod test {
         expect_eq(hash_24_8.width(), expect!["485"]);
         expect_eq(hash_32_8.width(), expect!["647"]);
         expect_eq(hash_48_8.width(), expect!["967"]);
+        expect_eq(u64_add.width(), expect!["52"]);
+        expect_eq(u64_sub.width(), expect!["52"]);
+        expect_eq(u64_mul.width(), expect!["84"]);
+        expect_eq(u64_divrem.width(), expect!["165"]);
+        expect_eq(u64_lessthan.width(), expect!["43"]);
+        expect_eq(u64_iszero.width(), expect!["25"]);
     }
 
     #[test]

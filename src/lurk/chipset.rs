@@ -29,6 +29,7 @@ pub fn lurk_chip_map() -> Map<Name, LurkChip> {
     let u64_mul = LurkChip::U64(U64::Mul);
     let u64_divrem = LurkChip::U64(U64::DivRem);
     let u64_lessthan = LurkChip::U64(U64::LessThan);
+    let u64_iszero = LurkChip::U64(U64::IsZero);
     let vec = vec![
         (Name("hash_24_8"), hash_24_8),
         (Name("hash_32_8"), hash_32_8),
@@ -38,6 +39,7 @@ pub fn lurk_chip_map() -> Map<Name, LurkChip> {
         (Name("u64_mul"), u64_mul),
         (Name("u64_divrem"), u64_divrem),
         (Name("u64_lessthan"), u64_lessthan),
+        (Name("u64_iszero"), u64_iszero),
     ];
     Map::from_vec(vec)
 }
