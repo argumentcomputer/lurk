@@ -2,7 +2,7 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_till},
     character::complete::{anychar, char, multispace0, multispace1, none_of},
-    combinator::{opt, peek, success, value},
+    combinator::{eof, opt, peek, success, value},
     error::context,
     multi::{many0, many_till, separated_list1},
     sequence::{delimited, preceded, terminated},
@@ -26,19 +26,20 @@ use crate::lurk::{
 };
 
 pub fn parse_line_comment<F>(i: Span<'_>) -> ParseResult<'_, F, Span<'_>> {
+    let (i, _) = multispace0(i)?;
     let (i, _) = tag(";")(i)?;
     let (i, com) = take_till(|c| c == '\n')(i)?;
     Ok((i, com))
 }
 pub fn parse_space<F>(i: Span<'_>) -> ParseResult<'_, F, Vec<Span<'_>>> {
     let (i, _) = multispace0(i)?;
-    let (i, com) = many0(terminated(parse_line_comment, multispace1))(i)?;
+    let (i, com) = many0(terminated(parse_line_comment, alt((multispace1, eof))))(i)?;
     Ok((i, com))
 }
 
 pub fn parse_space1<F>(i: Span<'_>) -> ParseResult<'_, F, Vec<Span<'_>>> {
     let (i, _) = multispace1(i)?;
-    let (i, com) = many0(terminated(parse_line_comment, multispace1))(i)?;
+    let (i, com) = many0(terminated(parse_line_comment, alt((multispace1, eof))))(i)?;
     Ok((i, com))
 }
 

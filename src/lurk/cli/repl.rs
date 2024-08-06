@@ -1,39 +1,77 @@
 use anyhow::{bail, Result};
 use camino::{Utf8Path, Utf8PathBuf};
+use nom::sequence::{delimited, preceded};
+use nom::Parser;
+use std::fmt::Debug;
 use p3_baby_bear::BabyBear;
-use p3_field::PrimeField32;
+use p3_field::{Field, PrimeField32};
 use rustyline::{
-    error::ReadlineError,
-    history::DefaultHistory,
-    validate::{MatchingBracketValidator, ValidationContext, ValidationResult, Validator},
-    Completer, Editor, Helper, Highlighter, Hinter,
+    error::ReadlineError, highlight::{Highlighter, MatchingBracketHighlighter}, history::DefaultHistory, validate::{MatchingBracketValidator, ValidationContext, ValidationResult, Validator}, Completer, Editor, Helper, Highlighter, Hinter
 };
 use std::io::Write;
 
+use crate::lurk::parser::syntax::parse_space1;
 use crate::{
     lair::{chipset::Chipset, execute::QueryRecord, toplevel::Toplevel},
     lurk::{
-        chipset::LurkChip,
-        cli::{
+        chipset::LurkChip, cli::{
             meta::{meta_cmds, MetaCmdsMap},
             paths::{current_dir, repl_history},
-        },
-        eval::build_lurk_toplevel,
-        parser::{self, Span},
-        state::{State, StateRcCell},
-        tag::Tag,
-        zstore::{ZPtr, ZStore},
+        }, eval::build_lurk_toplevel, parser::{self, syntax::{parse_maybe_meta, parse_space}, Error, Span}, state::{State, StateRcCell}, syntax::Syntax, tag::Tag, zstore::{ZPtr, ZStore}
     },
 };
 
 #[derive(Helper, Highlighter, Hinter, Completer, Default)]
 struct InputValidator {
-    brackets: MatchingBracketValidator,
+}
+
+impl InputValidator {
+    fn try_parse<'a, F: Field + Debug>(
+        &self,
+        input: &'a str,
+    ) -> Result<Option<Syntax<F>>, Error> {
+        let state = State::init_lurk_state().rccell(); // TODO: share with the repl state
+        match delimited(parse_space, parse_maybe_meta(state, false), parse_space).parse(Span::new(input)) {
+            // Ok((_, None)) => Err(Error::NoInput),
+            Ok((_, None)) => Ok(None),
+            Err(e) => Err(Error::Syntax(format!("{}", e))),
+            Ok((rest, Some((_is_meta, syn)))) => {
+                if rest.is_empty() {
+                    Ok(Some(syn))
+                } else {
+                    Err(Error::Syntax(format!("Leftover input: {}", rest)))
+                }
+                // let offset = syn
+                //     .get_pos()
+                //     .get_from_offset()
+                //     .expect("Parsed syntax should have its Pos set");
+            }
+        }
+    }
+
 }
 
 impl Validator for InputValidator {
     fn validate(&self, ctx: &mut ValidationContext<'_>) -> rustyline::Result<ValidationResult> {
-        self.brackets.validate(ctx)
+        // self.validator.validate(ctx)
+        use ValidationResult::{Incomplete, Invalid, Valid};
+        let input = ctx.input();
+        let parse_result = self.try_parse::<BabyBear>(input);
+        // dbg!(&parse_result);
+        let result = match parse_result {
+            Ok(_) => Valid(None),
+            // Err(e) => Invalid(Some(format!("{}", e))),
+            Err(e) => Invalid(None),
+        };
+        // let result = if !input.starts_with("SELECT") {
+        //     // Invalid(Some(" --< Expect: SELECT stmt".to_owned()))
+        //     Invalid(None)
+        // } else if !input.ends_with(';') {
+        //     Incomplete
+        // } else {
+        //     Valid(None)
+        // };
+        Ok(result)
     }
 }
 
