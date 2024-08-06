@@ -206,6 +206,8 @@ test!(test_app3, "((lambda (x) (lambda (y) x)) 1 2)", |_| {
 // builtins
 test!(test_if, "(if 1 1 0)", |_| uint(1));
 test!(test_if2, "(if nil 1 0)", |_| uint(0));
+test!(test_if3, "(if 1 1)", |_| uint(1));
+test!(test_if4, "(if nil 1)", |z| z.intern_nil());
 test!(test_let, "(let ((x 0) (y 1)) x)", |_| uint(0));
 test!(test_let2, "(let ((x 0) (y 1)) y)", |_| uint(1));
 test!(test_add, "(+ 1 2)", |_| uint(3));
@@ -215,6 +217,7 @@ test!(test_div, "(/ 6 3)", |_| uint(2));
 test!(test_arith, "(+ (* 2 2) (* 2 3))", |_| uint(10));
 test!(test_num_eq, "(= 0 1)", |z| z.intern_nil());
 test!(test_num_eq2, "(= 1 1)", |z| z.intern_symbol(&lurk_sym("t")));
+test!(test_begin_empty, "(begin)", |z| z.intern_nil());
 test!(test_begin, "(begin 1 2 3)", |_| uint(3));
 test!(test_quote, "'(x 1 :foo)", |z| {
     let x = z.intern_symbol(&user_sym("x"));
