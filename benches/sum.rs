@@ -45,12 +45,12 @@ fn build_lurk_expr(n: usize) -> String {
   (sum {input}))"#)
 }
 
-fn setup<'a, H: Chipset<BabyBear>>(
+fn setup<H: Chipset<BabyBear>>(
     n: usize,
-    toplevel: &'a Toplevel<BabyBear, H>,
+    toplevel: &Toplevel<BabyBear, H>,
 ) -> (
     List<BabyBear>,
-    FuncChip<'a, BabyBear, H>,
+    FuncChip<'_, BabyBear, H>,
     QueryRecord<BabyBear>,
 ) {
     let code = build_lurk_expr(n);
