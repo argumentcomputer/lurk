@@ -63,7 +63,7 @@ fn setup<H: Chipset<BabyBear>>(
     let ZPtr { tag, digest } = zstore.read(&code).unwrap();
 
     let mut record = QueryRecord::new(toplevel);
-    record.inject_inv_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
+    record.inject_inv_queries("hash_32_8", toplevel, &zstore.hashes4);
 
     let mut full_input = [BabyBear::zero(); 24];
     full_input[0] = tag.to_field();

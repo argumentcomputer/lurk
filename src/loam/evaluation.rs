@@ -986,7 +986,7 @@ mod test {
         let zstore = &mut lurk_zstore();
         let ZPtr { tag, digest } = zstore.read(src).unwrap();
 
-        allocator().import_hashes(zstore.tuple2_hashes());
+        allocator().import_hashes(&zstore.hashes4);
         wide_ptr(tag.elt(), digest)
     }
 

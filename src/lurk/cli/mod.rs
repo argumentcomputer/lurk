@@ -1,7 +1,9 @@
 mod config;
+mod io_proof;
 mod meta;
 mod paths;
 pub mod repl;
+mod zdag;
 
 use anyhow::Result;
 use config::{set_config, Config};

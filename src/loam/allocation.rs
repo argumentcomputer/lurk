@@ -11,7 +11,7 @@ use rustc_hash::FxHashMap;
 use crate::loam::{LEWrap, Ptr, Wide, WidePtr, LE};
 use crate::lurk::chipset::{lurk_hasher, LurkHasher};
 use crate::lurk::tag::Tag;
-use crate::lurk::zstore::{DIGEST_SIZE, TUPLE2_SIZE};
+use crate::lurk::zstore::{DIGEST_SIZE, HASH4_SIZE};
 
 // Because of how the macros work, it's not easy (or possible) to pass a per-invocation structure like the `Allocator`
 // into the program, while also having access to the program struct itself. However, that access is extremely useful
@@ -59,7 +59,7 @@ impl Allocator {
         self.allocation_map = Default::default();
     }
 
-    pub fn import_hashes(&mut self, hashes: &FxHashMap<[LE; TUPLE2_SIZE], [LE; DIGEST_SIZE]>) {
+    pub fn import_hashes(&mut self, hashes: &FxHashMap<[LE; HASH4_SIZE], [LE; DIGEST_SIZE]>) {
         for (preimage, digest) in hashes {
             let preimage_vec = preimage
                 .chunks(8)

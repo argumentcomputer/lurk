@@ -1,7 +1,6 @@
 use std::hash::Hash;
 
 use crate::lurk::parser::Span;
-#[cfg(not(target_arch = "wasm32"))]
 
 /// Source code position of an expression in a file
 #[derive(Clone, Copy, Debug)]
