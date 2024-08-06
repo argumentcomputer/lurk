@@ -677,22 +677,21 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                     let (expr_tag, expr) = call(eval_begin, rest_tag, rest, env);
                                     return (expr_tag, expr)
                                 }
-                                "empty-env" => {
+                                "current-env", "empty-env" => {
                                     let rest_not_nil = sub(rest_tag, nil_tag);
                                     if rest_not_nil {
                                         return (err_tag, invalid_form)
                                     }
                                     let env_tag = Tag::Env;
-                                    let env = 0;
-                                    return (env_tag, env)
-                                }
-                                "current-env" => {
-                                    let rest_not_nil = sub(rest_tag, nil_tag);
-                                    if rest_not_nil {
-                                        return (err_tag, invalid_form)
+                                    match head [|sym| builtins.index(sym).to_field()] {
+                                        "current-env" => {
+                                            return (env_tag, env)
+                                        }
+                                        "empty-env" => {
+                                            let env = 0;
+                                            return (env_tag, env)
+                                        }
                                     }
-                                    let env_tag = Tag::Env;
-                                    return (env_tag, env)
                                 }
                                 "if" => {
                                     // An if expression is a list of 3 or 4 elements
@@ -1600,7 +1599,7 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["52"]);
-        expect_eq(eval.width(), expect!["95"]);
+        expect_eq(eval.width(), expect!["94"]);
         expect_eq(eval_comm_unop.width(), expect!["71"]);
         expect_eq(eval_hide.width(), expect!["76"]);
         expect_eq(eval_unop.width(), expect!["33"]);
