@@ -8,6 +8,7 @@ use rustyline::{
     validate::{MatchingBracketValidator, ValidationContext, ValidationResult, Validator},
     Completer, Editor, Helper, Highlighter, Hinter,
 };
+use std::io::Write;
 
 use crate::{
     lair::{chipset::Chipset, execute::QueryRecord, toplevel::Toplevel},
@@ -18,6 +19,7 @@ use crate::{
             paths::{current_dir, repl_history},
         },
         eval::build_lurk_toplevel,
+        parser::{self, Span},
         state::{State, StateRcCell},
         tag::Tag,
         zstore::{ZPtr, ZStore},
@@ -169,7 +171,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         );
     }
 
-    fn handle_meta(&mut self, expr: &ZPtr<F>, file_path: &Utf8Path) -> Result<()> {
+    fn handle_meta(&mut self, expr: &ZPtr<F>, file_dir: &Utf8Path) -> Result<()> {
         if expr.tag != Tag::Cons {
             bail!("Meta command calls must be written as cons lists");
         }
@@ -180,9 +182,70 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         let (cmd_sym_head, _) = self.zstore.fetch_tuple2(cmd_sym);
         let cmd = self.zstore.fetch_string(cmd_sym_head);
         if let Some(meta_cmd) = self.meta_cmds.get(cmd.as_str()) {
-            (meta_cmd.run)(self, &args, file_path)
+            (meta_cmd.run)(self, &args, file_dir)
         } else {
             bail!("Invalid meta command")
+        }
+    }
+
+    fn handle_form<'a>(
+        &mut self,
+        input: Span<'a>,
+        file_dir: &Utf8Path,
+        demo: bool,
+    ) -> Result<Span<'a>> {
+        let (syntax_start, mut new_input, is_meta, zptr) = self
+            .zstore
+            .read_maybe_meta_with_state(self.state.clone(), &input)?;
+        if demo {
+            // adjustment to print the exclamation mark in the right place
+            let syntax_start = syntax_start - usize::from(is_meta);
+            let potential_commentaries = &input[..syntax_start];
+            let actual_syntax = &input[syntax_start..new_input.location_offset()];
+            let input_marker = &self.input_marker();
+            if actual_syntax.contains('\n') {
+                // print the expression on a new line to avoid messing with the user's formatting
+                print!("{potential_commentaries}{input_marker}\n{actual_syntax}");
+            } else {
+                print!("{potential_commentaries}{input_marker}{actual_syntax}");
+            }
+            std::io::stdout().flush()?;
+            // wait for ENTER to be pressed
+            std::io::stdin().read_line(&mut String::new())?;
+            // ENTER already prints a new line so we can remove it from the start of incoming input
+            new_input = new_input.trim_start_matches('\n').into();
+        }
+        if is_meta {
+            self.handle_meta(&zptr, file_dir)?;
+        } else {
+            self.handle_non_meta(&zptr);
+        }
+        Ok(new_input)
+    }
+
+    pub(crate) fn load_file(&mut self, file_path: &Utf8Path, demo: bool) -> Result<()> {
+        let input = std::fs::read_to_string(file_path)?;
+        if demo {
+            println!("Loading {file_path} in demo mode");
+        } else {
+            println!("Loading {file_path}");
+        }
+        let mut input = Span::new(&input);
+        loop {
+            let Some(file_dir) = file_path.parent() else {
+                bail!("Can't load parent of {}", file_path);
+            };
+
+            match self.handle_form(input, file_dir, demo) {
+                Ok(new_input) => input = new_input,
+                Err(e) => {
+                    if let Some(parser::Error::NoInput) = e.downcast_ref::<parser::Error>() {
+                        // It's ok, it just means we've hit the EOF
+                        return Ok(());
+                    }
+                    return Err(e);
+                }
+            }
         }
     }
 
@@ -209,7 +272,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
                         .zstore
                         .read_maybe_meta_with_state(self.state.clone(), &line)
                     {
-                        Ok((is_meta, zptr)) => {
+                        Ok((.., is_meta, zptr)) => {
                             if is_meta {
                                 if let Err(e) = self.handle_meta(&zptr, &self.pwd_path.clone()) {
                                     eprintln!("!Error: {e}");
