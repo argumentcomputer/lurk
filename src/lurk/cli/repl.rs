@@ -60,18 +60,13 @@ impl Validator for InputValidator {
         // dbg!(&parse_result);
         let result = match parse_result {
             Ok(_) => Valid(None),
-            // Err(e) => Invalid(Some(format!("{}", e))),
-            Err(e) => Invalid(None),
+            Err(_) => Invalid(None),
         };
-        // let result = if !input.starts_with("SELECT") {
-        //     // Invalid(Some(" --< Expect: SELECT stmt".to_owned()))
-        //     Invalid(None)
-        // } else if !input.ends_with(';') {
-        //     Incomplete
-        // } else {
-        //     Valid(None)
-        // };
-        Ok(result)
+        if input.ends_with("\n\n") { // user has pressed enter a lot of times, there is probably a syntax error and we should just send it to the repl
+            Ok(Valid(None))
+        } else {
+            Ok(result)
+        }
     }
 }
 
