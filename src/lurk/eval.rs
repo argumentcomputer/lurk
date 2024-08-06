@@ -78,6 +78,7 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, 
         eval_unop(&builtins),
         eval_binop_num(&builtins),
         eval_binop_misc(&builtins),
+        eval_begin(&builtins),
         equal(&builtins),
         equal_inner(),
         car_cdr(),
@@ -550,7 +551,7 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                     match head_tag {
                         Tag::Builtin => {
                             match head [|sym| builtins.index(sym).to_field()] {
-                                "let", "letrec", "lambda", "+", "-", "*", "/", "%", "<", ">", "<=", ">=", "cons", "strcons" => {
+                                "let", "letrec", "lambda", "cons", "strcons" => {
                                     let rest_not_cons = sub(rest_tag, cons_tag);
                                     if rest_not_cons {
                                         return (err_tag, invalid_form)
@@ -588,15 +589,29 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                             let res = store(fst_tag, fst, snd_tag, snd, env);
                                             return (res_tag, res)
                                         }
-                                        "+", "-", "*", "/", "%", "<", ">", "<=", ">=" => {
-                                            let (res_tag, res) = call(eval_binop_num, head, fst_tag, fst, snd_tag, snd, env);
-                                            return (res_tag, res)
-                                        }
                                         "cons", "strcons" => {
                                             let (res_tag, res) = call(eval_binop_misc, head, fst_tag, fst, snd_tag, snd, env);
                                             return (res_tag, res)
                                         }
                                     }
+                                }
+                                "+", "-", "*", "/", "%", "<", ">", "<=", ">=" => {
+                                    let rest_not_cons = sub(rest_tag, cons_tag);
+                                    if rest_not_cons {
+                                        return (err_tag, invalid_form)
+                                    }
+                                    let (fst_tag, fst, rest_tag, rest) = load(rest);
+                                    let rest_not_cons = sub(rest_tag, cons_tag);
+                                    if rest_not_cons {
+                                        return (err_tag, invalid_form)
+                                    }
+                                    let (snd_tag, snd, rest_tag, _rest) = load(rest);
+                                    let rest_not_nil = sub(rest_tag, nil_tag);
+                                    if rest_not_nil {
+                                        return (err_tag, invalid_form)
+                                    }
+                                    let (res_tag, res) = call(eval_binop_num, head, fst_tag, fst, snd_tag, snd, env);
+                                    return (res_tag, res)
                                 }
                                 "eval" => {
                                     let rest_not_cons = sub(rest_tag, cons_tag);
@@ -659,28 +674,8 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                     return (expr_tag, expr)
                                 }
                                 "begin" => {
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
-                                    let (expr_tag, expr, rest_tag, rest) = load(rest);
-                                    let (val_tag, val) = call(eval, expr_tag, expr, env);
-                                    match val_tag {
-                                        Tag::Err => {
-                                            return (val_tag, val)
-                                        }
-                                    };
-                                    match rest_tag {
-                                        Tag::Nil => {
-                                            return (val_tag, val)
-                                        }
-                                        Tag::Cons => {
-                                            let smaller_expr = store(head_tag, head, rest_tag, rest);
-                                            let (val_tag, val) = call(eval, cons_tag, smaller_expr, env);
-                                            return (val_tag, val)
-                                        }
-                                    };
-                                    return (err_tag, invalid_form)
+                                    let (expr_tag, expr) = call(eval_begin, rest_tag, rest, env);
+                                    return (expr_tag, expr)
                                 }
                                 "empty-env" => {
                                     let rest_not_nil = sub(rest_tag, nil_tag);
@@ -700,7 +695,7 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                     return (env_tag, env)
                                 }
                                 "if" => {
-                                    // An if expression is a list of 4 elements
+                                    // An if expression is a list of 3 or 4 elements
                                     let rest_not_cons = sub(rest_tag, cons_tag);
                                     if rest_not_cons {
                                         return (err_tag, invalid_form)
@@ -711,28 +706,38 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                         return (err_tag, invalid_form)
                                     }
                                     let (t_branch_tag, t_branch, rest_tag, rest) = load(rest);
-                                    let rest_not_cons = sub(rest_tag, cons_tag);
-                                    if rest_not_cons {
-                                        return (err_tag, invalid_form)
-                                    }
-                                    let (f_branch_tag, f_branch, rest_tag, _rest) = load(rest);
-                                    let rest_not_nil = sub(rest_tag, nil_tag);
-                                    if rest_not_nil {
-                                        return (err_tag, invalid_form)
-                                    }
-
-                                    let (val_tag, val) = call(eval, expr_tag, expr, env);
-                                    match val_tag {
+                                    match rest_tag {
                                         Tag::Nil => {
-                                            let (res_tag, res) = call(eval, f_branch_tag, f_branch, env);
+                                            let (val_tag, val) = call(eval, expr_tag, expr, env);
+                                            match val_tag {
+                                                Tag::Nil, Tag::Err => {
+                                                    return (val_tag, val)
+                                                }
+                                            };
+                                            let (res_tag, res) = call(eval, t_branch_tag, t_branch, env);
                                             return (res_tag, res)
                                         }
-                                        Tag::Err => {
-                                            return (val_tag, val)
+                                        Tag::Cons => {
+                                            let (f_branch_tag, f_branch, rest_tag, _rest) = load(rest);
+                                            let rest_not_nil = sub(rest_tag, nil_tag);
+                                            if rest_not_nil {
+                                                return (err_tag, invalid_form)
+                                            }
+                                            let (val_tag, val) = call(eval, expr_tag, expr, env);
+                                            match val_tag {
+                                                Tag::Nil => {
+                                                    let (res_tag, res) = call(eval, f_branch_tag, f_branch, env);
+                                                    return (res_tag, res)
+                                                }
+                                                Tag::Err => {
+                                                    return (val_tag, val)
+                                                }
+                                            };
+                                            let (res_tag, res) = call(eval, t_branch_tag, t_branch, env);
+                                            return (res_tag, res)
                                         }
                                     };
-                                    let (res_tag, res) = call(eval, t_branch_tag, t_branch, env);
-                                    return (res_tag, res)
+                                    return (err_tag, invalid_form)
                                 }
                                 "eq", "=" => {
                                     let res: [2] = call(equal, rest_tag, rest, env);
@@ -936,6 +941,46 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
                     return eq
                 }
             }
+        }
+    )
+}
+
+pub fn eval_begin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
+    func!(
+        fn eval_begin(rest_tag, rest, env): [2] {
+            let err_tag = Tag::Err;
+            let cons_tag = Tag::Cons;
+            let invalid_form = EvalErr::InvalidForm;
+            match rest_tag {
+                Tag::Cons => {
+                    let (expr_tag, expr, rest_tag, rest) = load(rest);
+                    let (val_tag, val) = call(eval, expr_tag, expr, env);
+                    match val_tag {
+                        Tag::Err => {
+                            return (val_tag, val)
+                        }
+                    };
+                    match rest_tag {
+                        Tag::Nil => {
+                            return (val_tag, val)
+                        }
+                        Tag::Cons => {
+                            let builtin_tag = Tag::Builtin;
+                            let begin = builtins.index("begin");
+                            let smaller_expr = store(builtin_tag, begin, rest_tag, rest);
+                            let (val_tag, val) = call(eval, cons_tag, smaller_expr, env);
+                            return (val_tag, val)
+                        }
+                    };
+                    return (err_tag, invalid_form)
+                }
+                Tag::Nil => {
+                    let nil_tag = Tag::Nil;
+                    let nil = 0;
+                    return (nil_tag, nil)
+                }
+            };
+            return (err_tag, invalid_form)
         }
     )
 }
@@ -1529,6 +1574,7 @@ mod test {
         let eval_unop = FuncChip::from_name("eval_unop", toplevel);
         let eval_binop_num = FuncChip::from_name("eval_binop_num", toplevel);
         let eval_binop_misc = FuncChip::from_name("eval_binop_misc", toplevel);
+        let eval_begin = FuncChip::from_name("eval_begin", toplevel);
         let eval_let = FuncChip::from_name("eval_let", toplevel);
         let eval_letrec = FuncChip::from_name("eval_letrec", toplevel);
         let equal = FuncChip::from_name("equal", toplevel);
@@ -1554,12 +1600,13 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["52"]);
-        expect_eq(eval.width(), expect!["101"]);
+        expect_eq(eval.width(), expect!["95"]);
         expect_eq(eval_comm_unop.width(), expect!["71"]);
         expect_eq(eval_hide.width(), expect!["76"]);
         expect_eq(eval_unop.width(), expect!["33"]);
         expect_eq(eval_binop_num.width(), expect!["54"]);
         expect_eq(eval_binop_misc.width(), expect!["32"]);
+        expect_eq(eval_begin.width(), expect!["34"]);
         expect_eq(eval_let.width(), expect!["54"]);
         expect_eq(eval_letrec.width(), expect!["58"]);
         expect_eq(equal.width(), expect!["44"]);
