@@ -24,7 +24,7 @@ use loam::{
     },
 };
 
-const DEFAULT_SUM_ARG : usize = 1000;
+const DEFAULT_SUM_ARG: usize = 1000;
 
 fn get_sum_arg() -> usize {
     std::env::args()
@@ -34,7 +34,10 @@ fn get_sum_arg() -> usize {
 }
 
 fn u64s_below(n: usize) -> String {
-    (0..n).map(|i| format!("{i}u64 ")).collect::<Vec<_>>().join("")
+    (0..n)
+        .map(|i| format!("{i}u64 "))
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 fn build_lurk_expr(n: usize) -> String {
@@ -42,7 +45,8 @@ fn build_lurk_expr(n: usize) -> String {
     format!(
         r#"
 (letrec ((sum (lambda (l) (if l (+ (car l) (sum (cdr l))) 0))))
-  (sum {input}))"#)
+  (sum {input}))"#
+    )
 }
 
 fn setup<H: Chipset<BabyBear>>(
