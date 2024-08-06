@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use itertools::Itertools;
 use nom::{sequence::preceded, Parser};
 use once_cell::sync::OnceCell;
@@ -13,7 +13,7 @@ use crate::{
     lurk::{
         parser::{
             syntax::{parse_maybe_meta, parse_space},
-            Span,
+            Error, Span,
         },
         state::{lurk_sym, State, StateRcCell, LURK_PACKAGE_SYMBOLS_NAMES},
         symbol::Symbol,
@@ -472,26 +472,35 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     }
 
     #[inline]
-    pub fn read_maybe_meta_with_state(
+    pub fn read_maybe_meta_with_state<'a>(
         &mut self,
         state: StateRcCell,
-        input: &str,
-    ) -> Result<(bool, ZPtr<F>)> {
+        input: &'a str,
+    ) -> Result<(usize, Span<'a>, bool, ZPtr<F>), Error> {
         match preceded(parse_space, parse_maybe_meta(state, false)).parse(Span::new(input)) {
-            Err(e) => bail!("{}", e),
-            Ok((_, None)) => bail!("Read EOF error"),
-            Ok((_, Some((is_meta, syn)))) => Ok((is_meta, self.intern_syntax(&syn))),
+            Ok((_, None)) => Err(Error::NoInput),
+            Err(e) => Err(Error::Syntax(format!("{}", e))),
+            Ok((rest, Some((is_meta, syn)))) => {
+                let offset = syn
+                    .get_pos()
+                    .get_from_offset()
+                    .expect("Parsed syntax should have its Pos set");
+                Ok((offset, rest, is_meta, self.intern_syntax(&syn)))
+            }
         }
     }
 
     #[inline]
-    pub fn read_maybe_meta(&mut self, input: &str) -> Result<(bool, ZPtr<F>)> {
+    pub fn read_maybe_meta<'a>(
+        &mut self,
+        input: &'a str,
+    ) -> Result<(usize, Span<'a>, bool, ZPtr<F>), Error> {
         self.read_maybe_meta_with_state(State::init_lurk_state().rccell(), input)
     }
 
     #[inline]
     pub fn read_with_state(&mut self, state: StateRcCell, input: &str) -> Result<ZPtr<F>> {
-        let (is_meta, zptr) = self.read_maybe_meta_with_state(state, input)?;
+        let (.., is_meta, zptr) = self.read_maybe_meta_with_state(state, input)?;
         assert!(!is_meta);
         Ok(zptr)
     }

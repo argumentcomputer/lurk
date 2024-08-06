@@ -42,6 +42,22 @@ pub(crate) struct MetaCmd<F: PrimeField32, H: Chipset<F>> {
 pub(crate) type MetaCmdsMap<F, H> = FxHashMap<&'static str, MetaCmd<F, H>>;
 
 impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
+    const LOAD: Self = Self {
+        name: "load",
+        summary: "Load Lurk expressions from a file.",
+        format: "!(load <string>)",
+        description: &[],
+        example: &["!(load \"my_file.lurk\")"],
+        run: |repl, args, path| {
+            let file_name_zptr = repl.peek1(args)?;
+            if file_name_zptr.tag != Tag::Str {
+                bail!("Path must be a string");
+            }
+            let file_name = repl.zstore.fetch_string(file_name_zptr);
+            repl.load_file(&path.join(file_name), false)
+        },
+    };
+
     const DEF: Self = Self {
         name: "def",
         summary: "Extends env with a non-recursive binding.",
@@ -168,7 +184,11 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         description: &["Verifies a Lurk reduction proof by its key"],
         example: &["!(verify \"2ae20412c6f4740f409196522c15b0e42aae2338c2b5b9c524f675cba0a93e\")"],
         run: |repl, args, _path| {
-            let proof_key = repl.zstore.fetch_string(repl.peek1(args)?);
+            let proof_key_zptr = repl.peek1(args)?;
+            if proof_key_zptr.tag != Tag::Str {
+                bail!("Proof key must be a string");
+            }
+            let proof_key = repl.zstore.fetch_string(proof_key_zptr);
             let proof_path = proofs_dir()?.join(&proof_key);
             if !proof_path.exists() {
                 bail!("Proof not found");
@@ -191,6 +211,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
 #[inline]
 pub(crate) fn meta_cmds<H: Chipset<F>>() -> MetaCmdsMap<F, H> {
     [
+        MetaCmd::LOAD,
         MetaCmd::DEF,
         MetaCmd::DEFREC,
         MetaCmd::CLEAR,
