@@ -324,7 +324,12 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
                                 self.handle_non_meta(&zptr)
                             }
                         }
-                        Err(e) => eprintln!("Read error: {e}"),
+                        Err(Error::NoInput) => {
+                                // It's ok, the line is only a single comment
+                        }
+                        Err(e) => {
+                                eprintln!("Read error: {e}");
+                        }
                     }
                 }
                 Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
