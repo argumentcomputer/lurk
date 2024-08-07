@@ -31,7 +31,7 @@ use super::{
 pub(crate) const DIGEST_SIZE: usize = 8;
 
 pub(crate) const ZPTR_SIZE: usize = 2 * DIGEST_SIZE;
-const HASH3_SIZE: usize = DIGEST_SIZE + ZPTR_SIZE;
+pub(crate) const HASH3_SIZE: usize = DIGEST_SIZE + ZPTR_SIZE;
 pub(crate) const HASH4_SIZE: usize = 2 * ZPTR_SIZE;
 const HASH6_SIZE: usize = 3 * ZPTR_SIZE;
 
@@ -286,7 +286,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         &self.hasher
     }
 
-    fn hash3(&mut self, preimg: [F; HASH3_SIZE]) -> [F; DIGEST_SIZE] {
+    pub(crate) fn hash3(&mut self, preimg: [F; HASH3_SIZE]) -> [F; DIGEST_SIZE] {
         if let Some(img) = self.hashes3.get(&preimg) {
             return *img;
         }
