@@ -5,6 +5,7 @@ pub mod cli;
 pub mod eval;
 #[cfg(test)]
 mod eval_tests;
+pub mod ingress;
 pub mod package;
 pub mod parser;
 pub mod poseidon;
