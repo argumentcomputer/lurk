@@ -2,6 +2,7 @@
 
 pub mod chipset;
 pub mod cli;
+pub mod compile;
 pub mod eval;
 #[cfg(test)]
 mod eval_tests;
