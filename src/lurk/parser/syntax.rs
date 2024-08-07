@@ -451,7 +451,7 @@ pub fn parse_maybe_meta<F: Field>(
     create_unknown_packages: bool,
 ) -> impl Fn(Span<'_>) -> ParseResult<'_, F, Option<(bool, Syntax<F>)>> {
     move |from: Span<'_>| {
-        let (_, is_eof) = opt(nom::combinator::eof)(from)?;
+        let (_, is_eof) = opt(eof)(from)?;
         if is_eof.is_some() {
             return Ok((from, None));
         }

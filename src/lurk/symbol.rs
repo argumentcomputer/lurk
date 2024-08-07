@@ -9,7 +9,6 @@ pub static LURK_WHITESPACE: [char; 27] = [
     '\u{202F}', '\u{205F}', '\u{3000}',
 ];
 
-pub(crate) const COMMENT_MARKER: char = ';';
 pub(crate) const KEYWORD_MARKER: char = ':';
 pub(crate) const SYM_SEPARATOR: char = '.';
 pub(crate) const SYM_MARKER: char = '.';

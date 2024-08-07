@@ -1,38 +1,47 @@
 use anyhow::{bail, Result};
 use camino::{Utf8Path, Utf8PathBuf};
-use nom::sequence::{delimited, preceded};
+use nom::sequence::delimited;
 use nom::Parser;
-use std::fmt::Debug;
 use p3_baby_bear::BabyBear;
 use p3_field::{Field, PrimeField32};
 use rustyline::{
-    error::ReadlineError, highlight::{Highlighter, MatchingBracketHighlighter}, history::DefaultHistory, validate::{MatchingBracketValidator, ValidationContext, ValidationResult, Validator}, Completer, Editor, Helper, Highlighter, Hinter
+    error::ReadlineError,
+    history::DefaultHistory,
+    validate::{ValidationContext, ValidationResult, Validator},
+    Completer, Editor, Helper, Highlighter, Hinter,
 };
+use std::fmt::Debug;
 use std::io::Write;
 
-use crate::lurk::parser::syntax::parse_space1;
 use crate::{
     lair::{chipset::Chipset, execute::QueryRecord, toplevel::Toplevel},
     lurk::{
-        chipset::LurkChip, cli::{
+        chipset::LurkChip,
+        cli::{
             meta::{meta_cmds, MetaCmdsMap},
             paths::{current_dir, repl_history},
-        }, eval::build_lurk_toplevel, parser::{self, syntax::{parse_maybe_meta, parse_space}, Error, Span}, state::{State, StateRcCell}, syntax::Syntax, tag::Tag, zstore::{ZPtr, ZStore}
+        },
+        eval::build_lurk_toplevel,
+        parser::{
+            syntax::{parse_maybe_meta, parse_space},
+            Error, Span,
+        },
+        state::{State, StateRcCell},
+        syntax::Syntax,
+        tag::Tag,
+        zstore::{ZPtr, ZStore},
     },
 };
 
-#[derive(Helper, Highlighter, Hinter, Completer, Default)]
-struct InputValidator {
-}
+#[derive(Helper, Highlighter, Hinter, Completer)]
+struct InputValidator;
 
 impl InputValidator {
-    fn try_parse<'a, F: Field + Debug>(
-        &self,
-        input: &'a str,
-    ) -> Result<Option<Syntax<F>>, Error> {
+    fn try_parse<F: Field + Debug>(&self, input: &str) -> Result<Option<Syntax<F>>, Error> {
         let state = State::init_lurk_state().rccell(); // TODO: share with the repl state
-        match delimited(parse_space, parse_maybe_meta(state, false), parse_space).parse(Span::new(input)) {
-            // Ok((_, None)) => Err(Error::NoInput),
+        match delimited(parse_space, parse_maybe_meta(state, false), parse_space)
+            .parse(Span::new(input))
+        {
             Ok((_, None)) => Ok(None),
             Err(e) => Err(Error::Syntax(format!("{}", e))),
             Ok((rest, Some((_is_meta, syn)))) => {
@@ -41,29 +50,22 @@ impl InputValidator {
                 } else {
                     Err(Error::Syntax(format!("Leftover input: {}", rest)))
                 }
-                // let offset = syn
-                //     .get_pos()
-                //     .get_from_offset()
-                //     .expect("Parsed syntax should have its Pos set");
             }
         }
     }
-
 }
 
 impl Validator for InputValidator {
     fn validate(&self, ctx: &mut ValidationContext<'_>) -> rustyline::Result<ValidationResult> {
-        // self.validator.validate(ctx)
-        use ValidationResult::{Incomplete, Invalid, Valid};
         let input = ctx.input();
         let parse_result = self.try_parse::<BabyBear>(input);
-        // dbg!(&parse_result);
         let result = match parse_result {
-            Ok(_) => Valid(None),
-            Err(_) => Invalid(None),
+            Ok(_) => ValidationResult::Valid(None),
+            Err(_) => ValidationResult::Invalid(None),
         };
-        if input.ends_with("\n\n") { // user has pressed enter a lot of times, there is probably a syntax error and we should just send it to the repl
-            Ok(Valid(None))
+        if input.ends_with("\n\n") {
+            // user has pressed enter a lot of times, there is probably a syntax error and we should just send it to the repl
+            Ok(ValidationResult::Valid(None))
         } else {
             Ok(result)
         }
@@ -282,7 +284,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             match self.handle_form(input, file_dir, demo) {
                 Ok(new_input) => input = new_input,
                 Err(e) => {
-                    if let Some(parser::Error::NoInput) = e.downcast_ref::<parser::Error>() {
+                    if let Some(Error::NoInput) = e.downcast_ref::<Error>() {
                         // It's ok, it just means we've hit the EOF
                         return Ok(());
                     }
@@ -297,7 +299,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
 
         let mut editor: Editor<InputValidator, DefaultHistory> = Editor::new()?;
 
-        editor.set_helper(Some(InputValidator::default()));
+        editor.set_helper(Some(InputValidator));
 
         let repl_history = &repl_history()?;
         if repl_history.exists() {
@@ -325,10 +327,10 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
                             }
                         }
                         Err(Error::NoInput) => {
-                                // It's ok, the line is only a single comment
+                            // It's ok, the line is only a single comment
                         }
                         Err(e) => {
-                                eprintln!("Read error: {e}");
+                            eprintln!("Read error: {e}");
                         }
                     }
                 }
