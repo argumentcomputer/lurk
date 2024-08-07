@@ -1646,7 +1646,7 @@ mod test {
             let digest: List<_> = digest.into();
 
             let mut queries = QueryRecord::new(toplevel);
-            queries.inject_inv_queries("hash_32_8", toplevel, zstore.tuple2_hashes());
+            queries.inject_inv_queries("hash_32_8", toplevel, &zstore.hashes4);
 
             let mut ingress_args = [F::zero(); 16];
             ingress_args[0] = tag;

@@ -278,7 +278,7 @@ pub(crate) const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 36] = [
     ">=",
 ];
 
-const META_PACKAGE_SYMBOLS_NAMES: [&str; 28] = [
+const META_PACKAGE_SYMBOLS_NAMES: [&str; 27] = [
     "def",
     "defrec",
     "load",
@@ -301,7 +301,6 @@ const META_PACKAGE_SYMBOLS_NAMES: [&str; 28] = [
     "call",
     "chain",
     "inspect",
-    "inspect-full",
     "dump-data",
     "def-load-data",
     "defprotocol",

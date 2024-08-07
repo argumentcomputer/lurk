@@ -4,7 +4,7 @@ use p3_baby_bear::BabyBear;
 use p3_field::PrimeField32;
 use rustc_hash::FxHashMap;
 use sphinx_core::{
-    stark::{LocalProver, MachineProof, StarkGenericConfig, StarkMachine},
+    stark::{LocalProver, StarkGenericConfig, StarkMachine},
     utils::{BabyBearPoseidon2, SphinxCoreOpts},
 };
 
@@ -16,7 +16,7 @@ use crate::{
         lair_chip::{build_chip_vector, LairChip, LairMachineProgram},
     },
     lurk::{
-        cli::{paths::proofs_dir, repl::Repl},
+        cli::{io_proof::IOProof, paths::proofs_dir, repl::Repl},
         state::lurk_sym,
         syntax::digest_to_biguint,
         tag::Tag,
@@ -151,26 +151,36 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
                 let expr = *repl.peek1(args)?;
                 repl.handle_non_meta(&expr);
             }
-            let Some(proof_key_preimg) = repl.queries.public_values.as_ref() else {
+            // make env DAG available so `IOProof` can carry it
+            repl.memoize_env_dag();
+            let Some(public_values) = repl.queries.public_values.as_ref() else {
                 bail!("No data found for latest computation");
             };
             let proof_key_img: &[F; DIGEST_SIZE] = &repl
                 .zstore
                 .hasher()
-                .hash(&proof_key_preimg[..INPUT_SIZE])
+                .hash(&public_values[..INPUT_SIZE])
                 .try_into()
                 .unwrap();
             let proof_key = format!("{:x}", digest_to_biguint(proof_key_img));
             let proof_path = proofs_dir()?.join(&proof_key);
-            if !proof_path.exists() {
+            let must_prove = if !proof_path.exists() {
+                true
+            } else {
+                let io_proof_bytes = std::fs::read(&proof_path)?;
+                // force an overwrite if deserialization goes wrong
+                bincode::deserialize::<IOProof>(&io_proof_bytes).is_err()
+            };
+            if must_prove {
                 let machine = Self::stark_machine(repl);
                 let (pk, _) = machine.setup(&LairMachineProgram);
                 let challenger = &mut machine.config().challenger();
                 let shard = Shard::new(&repl.queries);
                 let opts = SphinxCoreOpts::default();
-                let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, challenger, opts);
-                let proof_bytes = bincode::serialize(&proof)?;
-                std::fs::write(proof_path, proof_bytes)?;
+                let sphinx_proof = machine.prove::<LocalProver<_, _>>(&pk, shard, challenger, opts);
+                let io_proof = IOProof::new(sphinx_proof, public_values, &repl.zstore);
+                let io_proof_bytes = bincode::serialize(&io_proof)?;
+                std::fs::write(proof_path, io_proof_bytes)?;
             }
             println!("Proof key: \"{proof_key}\"");
             Ok(())
@@ -193,16 +203,49 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
             if !proof_path.exists() {
                 bail!("Proof not found");
             }
-            let proof_bytes = std::fs::read(proof_path)?;
-            let proof: MachineProof<BabyBearPoseidon2> = bincode::deserialize(&proof_bytes)?;
+            let io_proof_bytes = std::fs::read(proof_path)?;
+            let io_proof: IOProof = bincode::deserialize(&io_proof_bytes)?;
             let machine = Self::stark_machine(repl);
-            let (_, vk) = machine.setup(&LairMachineProgram);
-            let challenger = &mut machine.config().challenger();
-            if machine.verify(&vk, &proof, challenger).is_ok() {
+            if io_proof.verify(&machine) {
                 println!("✓ Proof \"{proof_key}\" verified");
             } else {
                 println!("✗ Proof \"{proof_key}\" failed on verification");
             }
+            Ok(())
+        },
+    };
+
+    const INSPECT: Self = Self {
+        name: "inspect",
+        summary: "Prints a proof claim",
+        format: "!(inspect <string>)",
+        description: &[],
+        example: &["!(inspect \"2ae20412c6f4740f409196522c15b0e42aae2338c2b5b9c524f675cba0a93e\")"],
+        run: |repl, args, _path| {
+            let proof_key_zptr = repl.peek1(args)?;
+            if proof_key_zptr.tag != Tag::Str {
+                bail!("Proof key must be a string");
+            }
+            let proof_key = repl.zstore.fetch_string(proof_key_zptr);
+            let proof_path = proofs_dir()?.join(&proof_key);
+            if !proof_path.exists() {
+                bail!("Proof not found");
+            }
+            let io_proof_bytes = std::fs::read(proof_path)?;
+            let IOProof {
+                expr,
+                env,
+                result,
+                zdag,
+                ..
+            } = bincode::deserialize(&io_proof_bytes)?;
+            zdag.populate_zstore(&mut repl.zstore);
+            println!(
+                "Expr: {}\nEnv: {}\nResult: {}",
+                repl.fmt(&expr),
+                repl.fmt(&env),
+                repl.fmt(&result)
+            );
             Ok(())
         },
     };
@@ -217,6 +260,7 @@ pub(crate) fn meta_cmds<H: Chipset<F>>() -> MetaCmdsMap<F, H> {
         MetaCmd::CLEAR,
         MetaCmd::PROVE,
         MetaCmd::VERIFY,
+        MetaCmd::INSPECT,
     ]
     .map(|mc| (mc.name, mc))
     .into_iter()

@@ -106,11 +106,10 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
     }
 
     fn input_marker(&self) -> String {
+        let state = self.state.borrow();
         format!(
             "{}> ",
-            self.state
-                .borrow()
-                .fmt_to_string(self.state.borrow().get_current_package_name())
+            state.fmt_to_string(state.get_current_package_name())
         )
     }
 
@@ -122,9 +121,11 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
     fn prepare_queries(&mut self) {
         self.queries.clean();
         self.queries
-            .inject_inv_queries("hash_32_8", &self.toplevel, self.zstore.tuple2_hashes());
+            .inject_inv_queries("hash_24_8", &self.toplevel, &self.zstore.hashes3);
         self.queries
-            .inject_inv_queries("hash_48_8", &self.toplevel, self.zstore.tuple3_hashes());
+            .inject_inv_queries("hash_32_8", &self.toplevel, &self.zstore.hashes4);
+        self.queries
+            .inject_inv_queries("hash_48_8", &self.toplevel, &self.zstore.hashes6);
     }
 
     fn build_input(&self, expr: &ZPtr<F>) -> [F; 24] {
@@ -149,6 +150,21 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         output
     }
 
+    fn memoize_dag(&mut self, tag: Tag, digest: &[F]) {
+        self.zstore.memoize_dag(
+            tag,
+            digest,
+            self.queries.get_inv_queries("hash_24_8", &self.toplevel),
+            self.queries.get_inv_queries("hash_32_8", &self.toplevel),
+            self.queries.get_inv_queries("hash_48_8", &self.toplevel),
+        )
+    }
+
+    #[inline]
+    pub(crate) fn memoize_env_dag(&mut self) {
+        self.memoize_dag(Tag::Env, &self.env.digest.clone())
+    }
+
     pub(crate) fn handle_non_meta(&mut self, expr: &ZPtr<F>) {
         self.prepare_queries();
         let output = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
@@ -156,13 +172,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             &self.build_input(expr),
             &mut self.queries,
         ));
-        self.zstore.memoize_dag(
-            output.tag,
-            &output.digest,
-            self.queries.get_inv_queries("hash_24_8", &self.toplevel),
-            self.queries.get_inv_queries("hash_32_8", &self.toplevel),
-            self.queries.get_inv_queries("hash_48_8", &self.toplevel),
-        );
+        self.memoize_dag(output.tag, &output.digest);
         let iterations = self.queries.func_queries[self.eval_idx].len();
         println!(
             "[{}] => {}",
