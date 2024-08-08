@@ -20,7 +20,7 @@ pub enum Tag {
     Key,
     Env,
     Err,
-    Thunk,
+    Fix,
     Builtin,
 }
 

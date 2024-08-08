@@ -476,8 +476,8 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     }
 
     #[inline]
-    pub fn intern_thunk(&mut self, body: ZPtr<F>, env: ZPtr<F>) -> ZPtr<F> {
-        self.intern_compact2(Tag::Thunk, body, env)
+    pub fn intern_fix(&mut self, body: ZPtr<F>, env: ZPtr<F>) -> ZPtr<F> {
+        self.intern_compact2(Tag::Fix, body, env)
     }
 
     #[inline]
@@ -682,7 +682,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 digest = cdr_digest;
                 zptr = ZPtr::from_flat_data(cdr);
             },
-            Tag::Thunk => {
+            Tag::Fix => {
                 let preimg = hash3_inv.get(digest).expect("Hash3 preimg not found");
                 let (fst, snd_digest) = preimg.split_at(ZPTR_SIZE);
                 let (fst_tag, fst_digest) = fst.split_at(DIGEST_SIZE);
@@ -899,9 +899,9 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                     .join(" ");
                 format!("<Env ({})>", pairs_str)
             }
-            Tag::Thunk => {
+            Tag::Fix => {
                 let (body, _) = self.fetch_compact2(zptr);
-                format!("<Thunk {}>", self.fmt_with_state(state, body))
+                format!("<Fix {}>", self.fmt_with_state(state, body))
             }
             Tag::Err => format!("<Err {:?}>", EvalErr::from_field(&zptr.digest[0])),
         }

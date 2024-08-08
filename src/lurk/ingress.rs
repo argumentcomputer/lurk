@@ -109,7 +109,7 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
                     let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr);
                     return ptr
                 }
-                Tag::Thunk => {
+                Tag::Fix => {
                     let (fst_tag, padding: [7], fst_digest: [8], snd_digest: [8]) = preimg(hash_24_8, digest);
                     let snd_tag = Tag::Env;
                     let fst_ptr = call(ingress, fst_tag, padding, fst_digest);
@@ -233,7 +233,7 @@ pub fn egress<F: AbstractField + Ord>(nil: List<F>) -> FuncE<F> {
                     let digest: [8] = call(hash_32_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
                     return digest
                 }
-                Tag::Thunk => {
+                Tag::Fix => {
                     let (fst_tag, fst_ptr, snd_ptr) = load(val);
                     let snd_tag = Tag::Env;
                     let fst_digest: [8] = call(egress, fst_tag, fst_ptr);

@@ -340,11 +340,11 @@ ascent! {
     // Final
     lattice thunk_mem(Ptr, Ptr, Dual<LEWrap>); // (body, closed-env, addr)
 
-    thunk_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Thunk.elt(), LE::zero())))) <-- alloc(tag, value), if *tag == Tag::Thunk.elt();
+    thunk_digest_mem(value, Dual(LEWrap(allocator().alloc_addr(Tag::Fix.elt(), LE::zero())))) <-- alloc(tag, value), if *tag == Tag::Fix.elt();
 
-    ptr(ptr), ptr_tag(ptr, Tag::Thunk.value()), ptr_value(ptr, value) <-- thunk_digest_mem(value, addr), let ptr = Ptr(Tag::Thunk.elt(), addr.0.0);
+    ptr(ptr), ptr_tag(ptr, Tag::Fix.value()), ptr_value(ptr, value) <-- thunk_digest_mem(value, addr), let ptr = Ptr(Tag::Fix.elt(), addr.0.0);
 
-    thunk_mem(body, closed_env, Dual(LEWrap(allocator().alloc_addr(Tag::Thunk.elt(), LE::zero())))) <-- thunk(body, closed_env);
+    thunk_mem(body, closed_env, Dual(LEWrap(allocator().alloc_addr(Tag::Fix.elt(), LE::zero())))) <-- thunk(body, closed_env);
 
     thunk_digest_mem(digest, addr) <--
         thunk_mem(body, closed_env, addr),
@@ -352,9 +352,9 @@ ascent! {
         ptr_tag(body, body_tag), ptr_tag(closed_env, closed_env_tag),
         hash4_rel(body_tag, body_value, closed_env_tag, closed_env_value, digest);
 
-    thunk_rel(body, closed_env, Ptr(Tag::Thunk.elt(), addr.0.0)) <-- thunk_mem(body, closed_env, addr);
+    thunk_rel(body, closed_env, Ptr(Tag::Fix.elt(), addr.0.0)) <-- thunk_mem(body, closed_env, addr);
 
-    ptr(thunk), ptr_tag(thunk, Tag::Thunk.value()) <-- thunk_rel(_, _, thunk);
+    ptr(thunk), ptr_tag(thunk, Tag::Fix.value()) <-- thunk_rel(_, _, thunk);
 
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -1271,7 +1271,7 @@ mod test {
 
         let expected_thunk_digest = allocator().hash4(expr_ptr.0, expr_ptr.1, env_ptr.0, env_ptr.1);
 
-        let expected_thunk = WidePtr(Tag::Thunk.value(), expected_thunk_digest);
+        let expected_thunk = WidePtr(Tag::Fix.value(), expected_thunk_digest);
         let prog = test_aux1(thunk, expr_ptr, None);
     }
 

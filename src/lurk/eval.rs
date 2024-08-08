@@ -138,14 +138,14 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                     let expr_digest: [8] = load(expr);
                     let (res_tag, res) = call(env_lookup, expr_digest, env);
                     match res_tag {
-                        Tag::Thunk => {
-                            // In the case the result is a thunk we extend
-                            // its environment with itself and reduce its
-                            // body in the extended environment
+                        Tag::Fix => {
+                            // In the case the result is a fixed point we extend
+                            // its environment with itself and reduce its body in
+                            // the extended environment
                             let (body_tag, body, body_env) = load(res);
                             // `expr` is the symbol
-                            let thunk_env = store(expr, res_tag, res, body_env);
-                            let (res_tag, res) = call(eval, body_tag, body, thunk_env);
+                            let fix_env = store(expr, res_tag, res, body_env);
+                            let (res_tag, res) = call(eval, body_tag, body, fix_env);
                             return (res_tag, res)
                         }
                     };
@@ -582,7 +582,7 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
                     let eq = mul(fst_eq, snd_eq);
                     return eq
                 }
-                Tag::Cons, Tag::Thunk => {
+                Tag::Cons, Tag::Fix => {
                     let (a_fst: [2], a_snd: [2]) = load(a);
                     let (b_fst: [2], b_snd: [2]) = load(b);
                     let fst_eq = call(equal_inner, a_fst, b_fst);
@@ -1096,12 +1096,12 @@ pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
                         return (err_tag, invalid_form)
                     }
 
-                    let thunk_tag = Tag::Thunk;
-                    let thunk = store(expr_tag, expr, env);
-                    let ext_env = store(param, thunk_tag, thunk, env);
-                    // this will preemptively evaluate the thunk, so that we do not skip evaluation in case
-                    // the variable is not used inside the letrec body, and furthermore it follows a strict
-                    // evaluation order
+                    let fix_tag = Tag::Fix;
+                    let fix = store(expr_tag, expr, env);
+                    let ext_env = store(param, fix_tag, fix, env);
+                    // this will preemptively evaluate the fixed point, so that we do not skip evaluation
+                    // in case the variable is not used inside the letrec body, and furthermore it follows
+                    // a strict evaluation order
                     let (val_tag, val) = call(eval, expr_tag, expr, ext_env);
                     match val_tag {
                         Tag::Err => {
