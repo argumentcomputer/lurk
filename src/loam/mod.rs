@@ -14,6 +14,7 @@ use crate::lurk::zstore::{self, lurk_zstore, ZPtr, ZStore};
 mod allocation;
 mod distilled_evaluation;
 mod evaluation;
+mod memory;
 
 pub type LE = BabyBear;
 
@@ -100,7 +101,46 @@ impl Ptr {
     pub fn wide_tag(&self) -> Wide {
         Wide::widen(self.0)
     }
+
+    pub fn is_eq(&self, other: &Ptr) -> PtrEq {
+        if self == other {
+            // The pointers are actually equal
+            PtrEq::Equal
+        } else if self.tag() != other.tag() {
+            // The pointers' tags are not equal, and thus the pointers must not be equal
+            PtrEq::NotEqual
+        } else {
+            // The pointers' addresses are not equal, must check for deep equality
+            PtrEq::DontKnow
+        }
+    }
 }
+
+/// Possible ways two pointer can be "equal" to each other
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
+pub enum PtrEq {
+    Equal = 0,
+    NotEqual,
+    DontKnow,
+}
+
+impl Lattice for PtrEq {
+    fn meet_mut(&mut self, other: Self) -> bool {
+        let changed = *self > other;
+        if changed {
+            *self = other;
+        }
+        changed
+    }
+    fn join_mut(&mut self, other: Self) -> bool {
+        let changed = *self < other;
+        if changed {
+            *self = other;
+        }
+        changed
+    }
+}
+
 
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct Wide(pub [LE; 8]);

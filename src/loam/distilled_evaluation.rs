@@ -5,7 +5,7 @@
 use num_traits::FromPrimitive;
 use p3_baby_bear::BabyBear;
 
-use crate::loam::evaluation::Memory;
+use crate::loam::memory::Memory;
 use crate::loam::lurk_sym_index;
 use crate::loam::{LEWrap, Num, Ptr, Wide, WidePtr, LE};
 use crate::lurk::chipset::LurkChip;
@@ -17,6 +17,7 @@ use p3_field::{AbstractField, Field, PrimeField32};
 
 use ascent::{ascent, Dual};
 
+#[cfg(feature = "loam")]
 ascent! {
     #![trace]
 
@@ -216,6 +217,24 @@ ascent! {
         cons_rel(var, thunk, new_binding),
         cons_rel(new_binding, closed_env, extended_env),
         eval(body, extended_env, result);
+
+    ////////////////////
+    // eq op
+
+    // Signal: Drive the eq parsing.
+    relation eval_eq_op(Ptr, Ptr, Ptr, Ptr);
+
+    eval_input(arg1, env), eval_input(arg2, env), eval_eq_op(expr, env, arg1, arg2) <-- 
+        eval_input(expr, env), cons_rel(op, tail, expr), if op.is_eq_op(),
+        cons_rel(arg1, rest, tail),
+        cons_rel(arg2, end, rest), if end.is_nil();
+
+    // This is a beautiful rule. After we distill the memory, we have O(1) pointer equality.
+    eval(expr, env, is_eq) <--
+        eval_eq_op(expr, env, arg1, arg2),
+        eval(arg1, env, evaled_arg1), 
+        eval(arg2, env, evaled_arg2),
+        let is_eq = Ptr::lurk_bool(evaled_arg1 == evaled_arg2);
 
     ////////////////////
     // cons op
@@ -624,6 +643,7 @@ ascent! {
 }
 
 #[cfg(test)]
+#[cfg(feature = "loam")]
 mod test {
     use p3_baby_bear::BabyBear;
 
@@ -668,7 +688,7 @@ mod test {
         prog.print_memory_tables();
 
         assert_eq!(vec![(expected_output,)], prog.output_expr);
-        assert!(prog.cons_mem_is_contiguous());
+        prog.export_memory().check_compact();
         prog
     }
 
