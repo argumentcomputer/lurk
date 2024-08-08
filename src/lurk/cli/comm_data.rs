@@ -19,6 +19,7 @@ pub(crate) struct CommData<F: std::hash::Hash + Eq> {
 }
 
 impl<F: std::hash::Hash + Eq + Default + Copy> CommData<F> {
+    #[inline]
     pub(crate) fn new<H: Chipset<F>>(
         secret: ZPtr<F>,
         payload: ZPtr<F>,
@@ -52,13 +53,12 @@ impl<F: std::hash::Hash + Eq + Default + Copy> CommData<F> {
         ZPtr::comm(zstore.hash3(self.build_preimg()))
     }
 
-    pub(crate) fn fetch<H: Chipset<F>>(self, zstore: &mut ZStore<F, H>)
+    #[inline]
+    pub(crate) fn populate_zstore<H: Chipset<F>>(self, zstore: &mut ZStore<F, H>)
     where
         F: Field,
     {
-        let preimg = self.build_preimg();
-        zstore.hash3(preimg);
-        let Self { zdag, .. } = self;
-        zdag.populate_zstore(zstore);
+        zstore.hash3(self.build_preimg()); // make zstore aware of this hash
+        self.zdag.populate_zstore(zstore);
     }
 }
