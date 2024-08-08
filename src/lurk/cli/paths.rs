@@ -10,6 +10,7 @@ pub(crate) fn current_dir() -> Result<Utf8PathBuf> {
     Ok(path)
 }
 
+#[inline]
 fn create_dir_all_and_return<P: AsRef<Path>>(path: P) -> Result<P> {
     std::fs::create_dir_all(path.as_ref())?;
     Ok(path)
@@ -22,8 +23,12 @@ pub(crate) fn lurk_dir() -> Result<&'static Utf8PathBuf> {
 
 #[inline]
 pub(crate) fn proofs_dir() -> Result<Utf8PathBuf> {
-    let proofs_dir_path = get_config().lurk_dir.join("proofs");
-    create_dir_all_and_return(proofs_dir_path)
+    create_dir_all_and_return(get_config().lurk_dir.join("proofs"))
+}
+
+#[inline]
+pub(crate) fn commits_dir() -> Result<Utf8PathBuf> {
+    create_dir_all_and_return(get_config().lurk_dir.join("commits"))
 }
 
 #[inline]

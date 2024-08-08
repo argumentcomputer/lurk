@@ -150,7 +150,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         output
     }
 
-    fn memoize_dag(&mut self, tag: Tag, digest: &[F]) {
+    pub(crate) fn memoize_dag(&mut self, tag: Tag, digest: &[F]) {
         self.zstore.memoize_dag(
             tag,
             digest,

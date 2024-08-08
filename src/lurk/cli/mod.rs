@@ -1,3 +1,4 @@
+mod comm_data;
 mod config;
 mod io_proof;
 mod meta;
