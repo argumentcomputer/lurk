@@ -34,13 +34,18 @@ use crate::{
 };
 
 #[derive(Helper, Highlighter, Hinter, Completer)]
-struct InputValidator;
+struct InputValidator {
+    state: StateRcCell,
+}
 
 impl InputValidator {
     fn try_parse<F: Field + Debug>(&self, input: &str) -> Result<Option<Syntax<F>>, Error> {
-        let state = State::init_lurk_state().rccell(); // TODO: share with the repl state
-        match delimited(parse_space, parse_maybe_meta(state, false), parse_space)
-            .parse(Span::new(input))
+        match delimited(
+            parse_space,
+            parse_maybe_meta(self.state.clone(), false),
+            parse_space,
+        )
+        .parse(Span::new(input))
         {
             Ok((_, None)) => Ok(None),
             Err(e) => Err(Error::Syntax(format!("{}", e))),
@@ -114,6 +119,10 @@ fn pretty_iterations_display(iterations: usize) -> String {
 }
 
 impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
+    pub(crate) fn state(&self) -> StateRcCell {
+        self.state.clone()
+    }
+
     pub(crate) fn peek1(&self, args: &ZPtr<F>) -> Result<&ZPtr<F>> {
         if args.tag != Tag::Cons {
             bail!("Missing first argument")
@@ -299,7 +308,9 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
 
         let mut editor: Editor<InputValidator, DefaultHistory> = Editor::new()?;
 
-        editor.set_helper(Some(InputValidator));
+        editor.set_helper(Some(InputValidator {
+            state: self.state(),
+        }));
 
         let repl_history = &repl_history()?;
         if repl_history.exists() {
