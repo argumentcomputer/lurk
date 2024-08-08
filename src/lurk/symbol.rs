@@ -12,7 +12,7 @@ pub static LURK_WHITESPACE: [char; 27] = [
 pub(crate) const KEYWORD_MARKER: char = ':';
 pub(crate) const SYM_SEPARATOR: char = '.';
 pub(crate) const SYM_MARKER: char = '.';
-pub(crate) const ESCAPE_CHARS: &str = "|(){}[],.:'\\\"";
+pub(crate) const ESCAPE_CHARS: &str = "|(){}[],.:;'\\\"";
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Serialize, Deserialize, Hash, Ord)]
 /// Type for hierarchical symbol names.

@@ -1,14 +1,17 @@
 use anyhow::{bail, Result};
 use camino::{Utf8Path, Utf8PathBuf};
+use nom::sequence::delimited;
+use nom::Parser;
 use p3_baby_bear::BabyBear;
-use p3_field::PrimeField32;
+use p3_field::{Field, PrimeField32};
 use rustyline::{
     error::ReadlineError,
     history::DefaultHistory,
-    validate::{MatchingBracketValidator, ValidationContext, ValidationResult, Validator},
+    validate::{ValidationContext, ValidationResult, Validator},
     Completer, Editor, Helper, Highlighter, Hinter,
 };
 use std::io::Write;
+use std::{fmt::Debug, marker::PhantomData};
 
 use crate::{
     lair::{chipset::Chipset, execute::QueryRecord, toplevel::Toplevel},
@@ -19,21 +22,58 @@ use crate::{
             paths::{current_dir, repl_history},
         },
         eval::build_lurk_toplevel,
-        parser::{self, Span},
+        parser::{
+            syntax::{parse_maybe_meta, parse_space},
+            Error, Span,
+        },
         state::{State, StateRcCell},
         tag::Tag,
         zstore::{ZPtr, ZStore},
     },
 };
 
-#[derive(Helper, Highlighter, Hinter, Completer, Default)]
-struct InputValidator {
-    brackets: MatchingBracketValidator,
+#[derive(Helper, Highlighter, Hinter, Completer)]
+struct InputValidator<F: Field + Debug> {
+    state: StateRcCell,
+    _marker: PhantomData<F>,
 }
 
-impl Validator for InputValidator {
+impl<F: Field + Debug> InputValidator<F> {
+    fn try_parse(&self, input: &str) -> Result<(), Error> {
+        match delimited(
+            parse_space::<F>,
+            parse_maybe_meta(self.state.clone(), false),
+            parse_space,
+        )
+        .parse(Span::new(input))
+        {
+            Err(e) => Err(Error::Syntax(format!("{}", e))),
+            Ok((_, None)) => Ok(()),
+            Ok((rest, Some(_))) => {
+                if rest.is_empty() {
+                    Ok(())
+                } else {
+                    Err(Error::Syntax(format!("Leftover input: {}", rest)))
+                }
+            }
+        }
+    }
+}
+
+impl<F: Field + Debug> Validator for InputValidator<F> {
     fn validate(&self, ctx: &mut ValidationContext<'_>) -> rustyline::Result<ValidationResult> {
-        self.brackets.validate(ctx)
+        let input = ctx.input();
+        let parse_result = self.try_parse(input);
+        let result = match parse_result {
+            Ok(_) => ValidationResult::Valid(None),
+            Err(_) => ValidationResult::Invalid(None),
+        };
+        if input.ends_with("\n\n") {
+            // user has pressed enter a lot of times, there is probably a syntax error and we should just send it to the repl
+            Ok(ValidationResult::Valid(None))
+        } else {
+            Ok(result)
+        }
     }
 }
 
@@ -249,7 +289,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             match self.handle_form(input, file_dir, demo) {
                 Ok(new_input) => input = new_input,
                 Err(e) => {
-                    if let Some(parser::Error::NoInput) = e.downcast_ref::<parser::Error>() {
+                    if let Some(Error::NoInput) = e.downcast_ref::<Error>() {
                         // It's ok, it just means we've hit the EOF
                         return Ok(());
                     }
@@ -262,9 +302,12 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
     pub(crate) fn run(&mut self) -> Result<()> {
         println!("Lurk REPL welcomes you.");
 
-        let mut editor: Editor<InputValidator, DefaultHistory> = Editor::new()?;
+        let mut editor: Editor<InputValidator<F>, DefaultHistory> = Editor::new()?;
 
-        editor.set_helper(Some(InputValidator::default()));
+        editor.set_helper(Some(InputValidator::<F> {
+            state: self.state.clone(),
+            _marker: Default::default(),
+        }));
 
         let repl_history = &repl_history()?;
         if repl_history.exists() {
@@ -291,7 +334,12 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
                                 self.handle_non_meta(&zptr)
                             }
                         }
-                        Err(e) => eprintln!("Read error: {e}"),
+                        Err(Error::NoInput) => {
+                            // It's ok, the line is only a single comment
+                        }
+                        Err(e) => {
+                            eprintln!("Read error: {e}");
+                        }
                     }
                 }
                 Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
