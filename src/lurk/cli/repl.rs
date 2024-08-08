@@ -10,8 +10,8 @@ use rustyline::{
     validate::{ValidationContext, ValidationResult, Validator},
     Completer, Editor, Helper, Highlighter, Hinter,
 };
-use std::fmt::Debug;
 use std::io::Write;
+use std::{fmt::Debug, marker::PhantomData};
 
 use crate::{
     lair::{chipset::Chipset, execute::QueryRecord, toplevel::Toplevel},
@@ -33,12 +33,13 @@ use crate::{
 };
 
 #[derive(Helper, Highlighter, Hinter, Completer)]
-struct InputValidator {
+struct InputValidator<F: Field + Debug> {
     state: StateRcCell,
+    _marker: PhantomData<F>,
 }
 
-impl InputValidator {
-    fn try_parse<F: Field + Debug>(&self, input: &str) -> Result<(), Error> {
+impl<F: Field + Debug> InputValidator<F> {
+    fn try_parse(&self, input: &str) -> Result<(), Error> {
         match delimited(
             parse_space::<F>,
             parse_maybe_meta(self.state.clone(), false),
@@ -59,10 +60,10 @@ impl InputValidator {
     }
 }
 
-impl Validator for InputValidator {
+impl<F: Field + Debug> Validator for InputValidator<F> {
     fn validate(&self, ctx: &mut ValidationContext<'_>) -> rustyline::Result<ValidationResult> {
         let input = ctx.input();
-        let parse_result = self.try_parse::<BabyBear>(input);
+        let parse_result = self.try_parse(input);
         let result = match parse_result {
             Ok(_) => ValidationResult::Valid(None),
             Err(_) => ValidationResult::Invalid(None),
@@ -301,10 +302,11 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
     pub(crate) fn run(&mut self) -> Result<()> {
         println!("Lurk REPL welcomes you.");
 
-        let mut editor: Editor<InputValidator, DefaultHistory> = Editor::new()?;
+        let mut editor: Editor<InputValidator<F>, DefaultHistory> = Editor::new()?;
 
-        editor.set_helper(Some(InputValidator {
+        editor.set_helper(Some(InputValidator::<F> {
             state: self.state.clone(),
+            _marker: Default::default(),
         }));
 
         let repl_history = &repl_history()?;
