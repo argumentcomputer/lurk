@@ -118,10 +118,6 @@ fn pretty_iterations_display(iterations: usize) -> String {
 }
 
 impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
-    pub(crate) fn state(&self) -> StateRcCell {
-        self.state.clone()
-    }
-
     pub(crate) fn peek1(&self, args: &ZPtr<F>) -> Result<&ZPtr<F>> {
         if args.tag != Tag::Cons {
             bail!("Missing first argument")
@@ -308,7 +304,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         let mut editor: Editor<InputValidator, DefaultHistory> = Editor::new()?;
 
         editor.set_helper(Some(InputValidator {
-            state: self.state(),
+            state: self.state.clone(),
         }));
 
         let repl_history = &repl_history()?;
