@@ -27,7 +27,6 @@ use crate::{
             Error, Span,
         },
         state::{State, StateRcCell},
-        syntax::Syntax,
         tag::Tag,
         zstore::{ZPtr, ZStore},
     },
@@ -39,19 +38,19 @@ struct InputValidator {
 }
 
 impl InputValidator {
-    fn try_parse<F: Field + Debug>(&self, input: &str) -> Result<Option<Syntax<F>>, Error> {
+    fn try_parse<F: Field + Debug>(&self, input: &str) -> Result<(), Error> {
         match delimited(
-            parse_space,
+            parse_space::<F>,
             parse_maybe_meta(self.state.clone(), false),
             parse_space,
         )
         .parse(Span::new(input))
         {
-            Ok((_, None)) => Ok(None),
             Err(e) => Err(Error::Syntax(format!("{}", e))),
-            Ok((rest, Some((_is_meta, syn)))) => {
+            Ok((_, None)) => Ok(()),
+            Ok((rest, Some(_))) => {
                 if rest.is_empty() {
-                    Ok(Some(syn))
+                    Ok(())
                 } else {
                     Err(Error::Syntax(format!("Leftover input: {}", rest)))
                 }
