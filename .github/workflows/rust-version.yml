@@ -32,6 +32,7 @@ jobs:
         if: steps.compare-versions.outputs.outdated == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
+          token: "${{ secrets.REPO_TOKEN }}"
           branch: "ci-update-rust-version"
           title: "chore: Update Rust version to nightly-${{ env.RUST_VERSION }}"
           commit-message: "chore: Update Rust version to nightly-${{ env.RUST_VERSION }}"
