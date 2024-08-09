@@ -28,7 +28,7 @@ use crate::{
     },
 };
 
-use super::comm_data::CommData;
+use super::{comm_data::CommData, lurk_data::LurkData};
 
 const INPUT_SIZE: usize = 24;
 const OUTPUT_SIZE: usize = 16;
@@ -379,6 +379,58 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             Self::persist_comm_data(secret, payload, repl)
         },
     };
+
+    const DUMP_EXPR: Self = Self {
+        name: "dump-expr",
+        summary: "Evaluates an expression and dumps the result to the file system",
+        format: "!(dump-expr <expr> <string>)",
+        description: &["Commitments are persisted opaquely."],
+        example: &["!(dump-expr (+ 1 1) \"my_file\")"],
+        run: |repl, args, _path| {
+            let (&expr, &path) = repl.peek2(args)?;
+            if path.tag != Tag::Str {
+                bail!("Path must be a string");
+            }
+            let result = repl.reduce_aux(&expr);
+            if result.tag == Tag::Err {
+                bail!("Reduction error: {}", repl.fmt(&result));
+            }
+            let path_str = repl.zstore.fetch_string(&path);
+            repl.memoize_dag(result.tag, &result.digest);
+            let lurk_data = LurkData::new(result, &repl.zstore);
+            let lurk_data_bytes = bincode::serialize(&lurk_data)?;
+            std::fs::write(&path_str, lurk_data_bytes)?;
+            println!("Data persisted at {path_str}");
+            Ok(())
+        },
+    };
+
+    const LOAD_EXPR: Self = Self {
+        name: "load-expr",
+        summary: "Loads Lurk data from the file system and binds it to a symbol",
+        format: "!(load-expr <symbol> <string>)",
+        description: &[],
+        example: &[
+            "!(dump-expr (+ 1 1) \"my_file\")",
+            "!(load-expr x \"my_file\")",
+        ],
+        run: |repl, args, _path| {
+            let (&sym, &path) = repl.peek2(args)?;
+            if sym.tag != Tag::Sym {
+                bail!("Binding variable must be a symbol");
+            }
+            if path.tag != Tag::Str {
+                bail!("Path must be a string");
+            }
+            let path_str = repl.zstore.fetch_string(&path);
+            let lurk_data_bytes = std::fs::read(&path_str)?;
+            let lurk_data: LurkData<F> = bincode::deserialize(&lurk_data_bytes)?;
+            let payload = lurk_data.populate_zstore(&mut repl.zstore);
+            println!("{}", repl.fmt(&sym));
+            repl.env = repl.zstore.intern_env(sym, payload, repl.env);
+            Ok(())
+        },
+    };
 }
 
 type F = BabyBear;
@@ -515,6 +567,8 @@ pub(crate) fn meta_cmds<H: Chipset<F>>() -> MetaCmdsMap<F, H> {
         MetaCmd::FETCH,
         MetaCmd::CALL,
         MetaCmd::CHAIN,
+        MetaCmd::DUMP_EXPR,
+        MetaCmd::LOAD_EXPR,
         MetaCmd::PROVE,
         MetaCmd::VERIFY,
         MetaCmd::INSPECT,
