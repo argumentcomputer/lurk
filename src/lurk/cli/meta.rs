@@ -133,11 +133,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         },
     };
 
-    fn hide(secret: ZPtr<F>, payload_expr: &ZPtr<F>, repl: &mut Repl<F, H>) -> Result<()> {
-        let payload = repl.reduce_aux(payload_expr);
-        if payload.tag == Tag::Err {
-            bail!("Payload reduction error: {}", repl.fmt(&payload));
-        }
+    fn persist_comm_data(secret: ZPtr<F>, payload: ZPtr<F>, repl: &mut Repl<F, H>) -> Result<()> {
         repl.memoize_dag(secret.tag, &secret.digest);
         repl.memoize_dag(payload.tag, &payload.digest);
         let comm_data = CommData::new(secret, payload, &repl.zstore);
@@ -146,6 +142,14 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         std::fs::write(commits_dir()?.join(&hash), bincode::serialize(&comm_data)?)?;
         println!("Hash: {}", repl.fmt(&comm));
         Ok(())
+    }
+
+    fn hide(secret: ZPtr<F>, payload_expr: &ZPtr<F>, repl: &mut Repl<F, H>) -> Result<()> {
+        let payload = repl.reduce_aux(payload_expr);
+        if payload.tag == Tag::Err {
+            bail!("Payload reduction error: {}", repl.fmt(&payload));
+        }
+        Self::persist_comm_data(secret, payload, repl)
     }
 
     const HIDE: Self = Self {
@@ -183,21 +187,25 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         },
     };
 
-    fn open(repl: &mut Repl<F, H>, args: &ZPtr<F>, print_payload: bool) -> Result<()> {
-        let comm = *repl.peek1(args)?;
-        if comm.tag != Tag::Comm {
-            bail!("Expected a commitment");
-        }
+    fn fetch_comm_data(
+        repl: &mut Repl<F, H>,
+        comm: &ZPtr<F>,
+        print_payload: Option<bool>,
+    ) -> Result<()> {
         let hash = format!("{:x}", digest_to_biguint(&comm.digest));
         let comm_data_bytes = std::fs::read(commits_dir()?.join(&hash))?;
         let comm_data: CommData<F> = bincode::deserialize(&comm_data_bytes)?;
-        let message = if print_payload {
-            repl.fmt(&comm_data.payload)
-        } else {
-            "Data is now available".to_string()
-        };
-        comm_data.fetch(&mut repl.zstore);
-        println!("{message}");
+        let message = print_payload.map(|print_payload| {
+            if print_payload {
+                repl.fmt(&comm_data.payload)
+            } else {
+                "Data is now available".to_string()
+            }
+        });
+        comm_data.populate_zstore(&mut repl.zstore);
+        if let Some(message) = message {
+            println!("{message}");
+        }
         Ok(())
     }
 
@@ -206,8 +214,17 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         summary: "Fetches a persisted commitment and prints the payload.",
         format: "!(open <comm>)",
         description: &[],
-        example: &["!(open #0x3719f5d02845123a80da4f5077c803ba0ce1964e08289a9d020603c1f3c450)"],
-        run: |repl, args, _path| Self::open(repl, args, true),
+        example: &[
+            "!(commit 123)",
+            "!(open #0x3719f5d02845123a80da4f5077c803ba0ce1964e08289a9d020603c1f3c450)",
+        ],
+        run: |repl, args, _path| {
+            let comm = *repl.peek1(args)?;
+            if comm.tag != Tag::Comm {
+                bail!("Expected a commitment");
+            }
+            Self::fetch_comm_data(repl, &comm, Some(true))
+        },
     };
 
     const FETCH: Self = Self {
@@ -215,8 +232,84 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         summary: "Fetches a persisted commitment.",
         format: "!(fetch <comm>)",
         description: &[],
-        example: &["!(fetch #0x3719f5d02845123a80da4f5077c803ba0ce1964e08289a9d020603c1f3c450)"],
-        run: |repl, args, _path| Self::open(repl, args, false),
+        example: &[
+            "!(commit 123)",
+            "!(fetch #0x3719f5d02845123a80da4f5077c803ba0ce1964e08289a9d020603c1f3c450)",
+        ],
+        run: |repl, args, _path| {
+            let comm = *repl.peek1(args)?;
+            if comm.tag != Tag::Comm {
+                bail!("Expected a commitment");
+            }
+            Self::fetch_comm_data(repl, &comm, Some(false))
+        },
+    };
+
+    fn call(repl: &mut Repl<F, H>, args: &ZPtr<F>) -> Result<()> {
+        let (&comm, &arg) = repl.peek2(args)?;
+        if comm.tag != Tag::Comm {
+            bail!("Expected a commitment");
+        }
+        let inv_hashes3 = repl.queries.get_inv_queries("hash_24_8", &repl.toplevel);
+        if !inv_hashes3.contains_key(comm.digest.as_slice()) {
+            // try to fetch a persisted commitment
+            Self::fetch_comm_data(repl, &comm, None)?;
+        }
+        let open = repl.zstore.intern_symbol(&lurk_sym("open"));
+        let open_expr = repl.zstore.intern_list([open, comm]);
+        let call_expr = repl.zstore.intern_list([open_expr, arg]);
+        repl.handle_non_meta(&call_expr);
+        Ok(())
+    }
+
+    const CALL: Self = Self {
+        name: "call",
+        summary: "Opens a functional commitment then applies an argument to it.",
+        format: "!(call <comm> <arg>)",
+        description: &["It's also capable of opening persisted commitments."],
+        example: &[
+            "(commit (lambda (x) x))",
+            "!(call #0x3f2e7102a9f8a303255b90724f24f4eb05b61e99723ca838cf30671676c86a 0)",
+        ],
+        run: |repl, args, _path| Self::call(repl, args),
+    };
+
+    const CHAIN: Self = Self {
+        name: "chain",
+        summary: "Chains a functional commitment and then persists the resulting commitment",
+        format: "!(chain <comm> <arg>)",
+        description: &["It's also capable of opening persisted commitments."],
+        example: &[
+            "(commit (letrec ((add (lambda (counter x)
+                       (let ((counter (+ counter x)))
+                         (cons counter (commit (add counter)))))))
+               (add 0)))",
+            "!(chain #0x8ef25bc2228ca9799db65fd2b137a7b0ebccbfc04cf8530133e60087d403db 1)",
+        ],
+        run: |repl, args, _path| {
+            Self::call(repl, args)?;
+            let public_values = repl
+                .queries
+                .public_values
+                .as_ref()
+                .expect("Computation must have finished");
+            let cons = ZPtr::from_flat_data(&public_values[INPUT_SIZE..]);
+            if cons.tag != Tag::Cons {
+                bail!("Chain result must be a pair");
+            }
+            let (_, comm) = repl.zstore.fetch_tuple2(&cons);
+            if comm.tag != Tag::Comm {
+                bail!("Expected a commitment as the second pair component");
+            }
+            let inv_hashes3 = repl.queries.get_inv_queries("hash_24_8", &repl.toplevel);
+            let preimg = inv_hashes3
+                .get(comm.digest.as_slice())
+                .expect("Preimage must be known");
+            let (secret, payload) = preimg.split_at(DIGEST_SIZE);
+            let secret = ZPtr::from_flat_digest(Tag::Comm, secret);
+            let payload = ZPtr::from_flat_data(payload);
+            Self::persist_comm_data(secret, payload, repl)
+        },
     };
 }
 
@@ -349,6 +442,8 @@ pub(crate) fn meta_cmds<H: Chipset<F>>() -> MetaCmdsMap<F, H> {
         MetaCmd::COMMIT,
         MetaCmd::OPEN,
         MetaCmd::FETCH,
+        MetaCmd::CALL,
+        MetaCmd::CHAIN,
         MetaCmd::PROVE,
         MetaCmd::VERIFY,
         MetaCmd::INSPECT,

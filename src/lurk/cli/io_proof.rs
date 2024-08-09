@@ -38,10 +38,11 @@ impl IOProof {
         zstore: &ZStore<F, H>,
     ) -> Self {
         let mut zdag = ZDag::default();
-        let expr = ZPtr::from_flat_data(&public_values[..ZPTR_SIZE]);
-        let env =
-            ZPtr::from_flat_digest(Tag::Env, &public_values[ZPTR_SIZE..ZPTR_SIZE + DIGEST_SIZE]);
-        let result = ZPtr::from_flat_data(&public_values[ZPTR_SIZE + DIGEST_SIZE..]);
+        let (expr_data, rest) = public_values.split_at(ZPTR_SIZE);
+        let (env_digest, result_data) = rest.split_at(DIGEST_SIZE);
+        let expr = ZPtr::from_flat_data(expr_data);
+        let env = ZPtr::from_flat_digest(Tag::Env, env_digest);
+        let result = ZPtr::from_flat_data(result_data);
         zdag.populate_with_many([&expr, &env, &result], zstore);
         Self {
             sphinx_proof,
