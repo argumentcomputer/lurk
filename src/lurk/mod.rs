@@ -4,6 +4,7 @@ pub mod chipset;
 pub mod cli;
 pub mod compile;
 pub mod eval;
+pub mod eval_compiled;
 #[cfg(test)]
 mod eval_tests;
 pub mod ingress;

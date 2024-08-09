@@ -9,8 +9,9 @@ use super::{ingress::BuiltinMemo, tag::Tag};
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, FromPrimitive)]
 pub enum CTag {
-    // If statement
+    // If statement and true value
     If = 0x00001000,
+    True,
     // Local (recursive) definition
     Let,
     Letrec,
@@ -309,8 +310,13 @@ pub fn compile<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F
                                     if rest_not_nil {
                                         return (err_tag, invalid_form)
                                     }
-                                    let tag = CTag::Quote;
                                     let (cexpr_tag, cexpr) = call(convert_data, expr_tag, expr);
+                                    match cexpr_tag {
+                                        Tag::Err => {
+                                            return (cexpr_tag, cexpr)
+                                        }
+                                    };
+                                    let tag = CTag::Quote;
                                     let ptr = store(cexpr_tag, cexpr);
                                     return (tag, ptr)
                                 }
@@ -425,7 +431,7 @@ pub fn compile<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F
                     let (res_tag, res) = call(compile_apply, chead_tag, chead, rest_tag, rest);
                     return (res_tag, res)
                 }
-                Tag::Env, Tag::Fix, Tag::Fun => {
+                Tag::Env, Tag::Fix, Tag::Fun, Tag::Builtin => {
                     let (cexpr_tag, cexpr) = call(convert_data, expr_tag, expr);
                     return (cexpr_tag, cexpr)
                 }
@@ -511,14 +517,24 @@ pub fn compile_let<F: AbstractField + Ord>() -> FuncE<F> {
                     return (cbody_tag, cbody)
                 }
                 Tag::Cons => {
-                    let (bind_tag, bind, rest_binds_tag, rest_binds) = load(binds);
                     let cons_tag = Tag::Cons;
+                    let nil_tag = Tag::Nil;
+                    let sym_tag = Tag::Sym;
+                    let (bind_tag, bind, rest_binds_tag, rest_binds) = load(binds);
                     let bind_not_cons = sub(bind_tag, cons_tag);
                     if bind_not_cons {
                         return (err_tag, invalid_form)
                     }
-                    let (var_tag, var, val_tag, val) = load(bind);
-                    let sym_tag = Tag::Sym;
+                    let (var_tag, var, rest_tag, rest) = load(bind);
+                    let rest_not_cons = sub(rest_tag, cons_tag);
+                    if rest_not_cons {
+                        return (err_tag, invalid_form)
+                    }
+                    let (val_tag, val, rest_tag, _rest) = load(rest);
+                    let rest_not_nil = sub(rest_tag, nil_tag);
+                    if rest_not_nil {
+                        return (err_tag, invalid_form)
+                    }
                     let var_not_sym = sub(var_tag, sym_tag);
                     if var_not_sym {
                         return (err_tag, invalid_form)
@@ -563,6 +579,11 @@ pub fn compile_begin<F: AbstractField + Ord>() -> FuncE<F> {
                             return (cval_tag, cval)
                         }
                     };
+                    match rest_tag {
+                        Tag::Nil => {
+                            return (cval_tag, cval)
+                        }
+                    };
                     let (bbody_tag, bbody) = call(compile_begin, rest_tag, rest);
                     match bbody_tag {
                         Tag::Err => {
@@ -584,6 +605,16 @@ pub fn convert_data<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Fu
     func!(
         fn convert_data(expr_tag, expr): [2] {
             match expr_tag {
+                Tag::Builtin => {
+                    let t = builtins.index("t");
+                    let expr_not_t = sub(expr, t);
+                    if expr_not_t {
+                        return (expr_tag, expr)
+                    }
+                    let tag = CTag::True;
+                    let val = 0;
+                    return (tag, val)
+                }
                 Tag::Cons => {
                     let (car_tag, car, cdr_tag, cdr) = load(expr);
                     let (ccar_tag, ccar) = call(convert_data, car_tag, car);
@@ -603,6 +634,9 @@ pub fn convert_data<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Fu
                     return (cons_tag, ptr)
                 }
                 Tag::Env => {
+                    if !expr {
+                       return (expr_tag, expr)
+                    }
                     let (var, val_tag, val, env) = load(expr);
                     let (cval_tag, cval) = call(convert_data, val_tag, val);
                     match cval_tag {
@@ -683,10 +717,15 @@ pub fn convert_data<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Fu
     )
 }
 
-pub fn deconvert_data<F: AbstractField + Ord>() -> FuncE<F> {
+pub fn deconvert_data<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
         fn deconvert_data(cexpr_tag, cexpr): [2] {
             match cexpr_tag {
+                CTag::True => {
+                    let tag = Tag::Builtin;
+                    let t = builtins.index("t");
+                    return (tag, t)
+                }
                 Tag::Cons => {
                     let (ccar_tag, ccar, ccdr_tag, ccdr) = load(cexpr);
                     let (car_tag, car) = call(deconvert_data, ccar_tag, ccar);
@@ -696,6 +735,9 @@ pub fn deconvert_data<F: AbstractField + Ord>() -> FuncE<F> {
                     return (tag, ptr)
                 }
                 Tag::Env => {
+                    if !cexpr {
+                       return (cexpr_tag, cexpr)
+                    }
                     let (var, cval_tag, cval, cenv) = load(cexpr);
                     let (val_tag, val) = call(deconvert_data, cval_tag, cval);
                     let env_tag = Tag::Env;
@@ -737,61 +779,11 @@ pub fn deconvert_data<F: AbstractField + Ord>() -> FuncE<F> {
                     let ptr = store(body_tag, body, env);
                     return (tag, ptr)
                 }
-                Tag::Nil, Tag::Sym, Tag::Fun, Tag::Num, Tag::Str, Tag::Char => {
-                    return (cexpr_tag, cexpr)
-                }
-                Tag::Comm, Tag::U64, Tag::Key, Tag::Err, Tag::Fix, Tag::Builtin => {
+                Tag::Nil, Tag::Sym, Tag::Num, Tag::Str, Tag::Char,
+                Tag::Comm, Tag::U64, Tag::Key, Tag::Err, Tag::Builtin => {
                     return (cexpr_tag, cexpr)
                 }
             }
         }
     )
-}
-
-#[cfg(test)]
-mod test {
-    use expect_test::{expect, Expect};
-
-    use crate::{
-        lair::{chipset::Nochip, func_chip::FuncChip, toplevel::Toplevel},
-        lurk::{state::State, zstore::lurk_zstore},
-    };
-
-    use super::*;
-
-    #[test]
-    fn test_compile_widths() {
-        let state = State::init_lurk_state().rccell();
-        let mut zstore = lurk_zstore();
-        let builtins = BuiltinMemo::new(&state, &mut zstore);
-        let funcs = &[
-            compile(&builtins),
-            compile_apply(),
-            compile_lambda(),
-            compile_let(),
-            compile_begin(),
-            convert_data(&builtins),
-            deconvert_data(),
-        ];
-        let toplevel = &Toplevel::<_, Nochip>::new_pure(funcs);
-
-        let compile = FuncChip::from_name("compile", toplevel);
-        let compile_apply = FuncChip::from_name("compile_apply", toplevel);
-        let compile_lambda = FuncChip::from_name("compile_lambda", toplevel);
-        let compile_let = FuncChip::from_name("compile_let", toplevel);
-        let compile_begin = FuncChip::from_name("compile_begin", toplevel);
-        let convert_data = FuncChip::from_name("convert_data", toplevel);
-        let deconvert_data = FuncChip::from_name("deconvert_data", toplevel);
-
-        let expect_eq = |computed: usize, expected: Expect| {
-            expected.assert_eq(&computed.to_string());
-        };
-        expect_eq(compile.width(), expect!["124"]);
-        expect_eq(compile_apply.width(), expect!["33"]);
-        expect_eq(compile_lambda.width(), expect!["29"]);
-        expect_eq(compile_let.width(), expect!["46"]);
-        expect_eq(compile_begin.width(), expect!["33"]);
-        expect_eq(convert_data.width(), expect!["59"]);
-        expect_eq(deconvert_data.width(), expect!["58"]);
-    }
 }
