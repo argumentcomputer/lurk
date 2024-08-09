@@ -11,12 +11,12 @@ license.workspace = true
 proc-macro = true
 
 [dependencies]
-proc-macro2 = "1.0.66"
-quote = "1.0.31"
-syn = { version = "2.0.57", features = ["derive", "full", "extra-traits", "visit-mut"] }
-derive-syn-parse = "0.2.0"
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true, features = ["derive", "full", "extra-traits", "visit-mut"] }
+derive-syn-parse = { workspace = true }
 itertools = "0.12.0"
-lazy_static = "1.4.0"
+lazy_static = { workspace = true }
 
 [dev-dependencies]
-ascent = "0.6.0"
+ascent = { workspace = true }
