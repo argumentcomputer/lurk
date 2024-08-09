@@ -305,8 +305,9 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             let preimg = inv_hashes3
                 .get(comm.digest.as_slice())
                 .expect("Preimage must be known");
-            let secret = ZPtr::from_flat_digest(Tag::Comm, &preimg[..DIGEST_SIZE]);
-            let payload = ZPtr::from_flat_data(&preimg[DIGEST_SIZE..]);
+            let (secret, payload) = preimg.split_at(DIGEST_SIZE);
+            let secret = ZPtr::from_flat_digest(Tag::Comm, secret);
+            let payload = ZPtr::from_flat_data(payload);
             Self::persist_comm_data(secret, payload, repl)
         },
     };
