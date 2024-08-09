@@ -48,6 +48,74 @@ pub(crate) struct MetaCmd<F: PrimeField32, H: Chipset<F>> {
 pub(crate) type MetaCmdsMap<F, H> = FxHashMap<&'static str, MetaCmd<F, H>>;
 
 impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
+    const ASSERT: Self = Self {
+        name: "assert",
+        summary: "Asserts that an expression doesn't reduce to nil.",
+        format: "!(assert <expr>)",
+        description: &[],
+        example: &["!(assert t)", "!(assert (eq 3 (+ 1 2)))"],
+        run: |repl, args, _path| {
+            let expr = *repl.peek1(args)?;
+            let result = repl.reduce_aux(&expr);
+            if result.tag == Tag::Err {
+                bail!("Reduction error: {}", repl.fmt(&result));
+            }
+            if result.tag == Tag::Nil {
+                eprintln!("`assert` failed. {} evaluates to nil", repl.fmt(&expr));
+                std::process::exit(1);
+            }
+            Ok(())
+        },
+    };
+
+    const ASSERT_EQ: Self = Self {
+        name: "assert-eq",
+        summary: "Assert that two expressions evaluate to the same value.",
+        format: "!(assert-eq <expr1> <expr2>)",
+        description: &[],
+        example: &["!(assert-eq 3 (+ 1 2))"],
+        run: |repl, args, _path| {
+            let (&expr1, &expr2) = repl.peek2(args)?;
+            let result1 = repl.reduce_aux(&expr1);
+            if result1.tag == Tag::Err {
+                bail!("LHS reduction error: {}", repl.fmt(&result1));
+            }
+            let result2 = repl.reduce_aux(&expr2);
+            if result2.tag == Tag::Err {
+                bail!("RHS reduction error: {}", repl.fmt(&result2));
+            }
+            if result1 != result2 {
+                eprintln!(
+                    "`assert-eq` failed. {} ≠ {}",
+                    repl.fmt(&result1),
+                    repl.fmt(&result2)
+                );
+                std::process::exit(1);
+            }
+            Ok(())
+        },
+    };
+
+    const ASSERT_ERROR: Self = Self {
+        name: "assert-error",
+        summary: "Assert that a evaluation of <expr> fails.",
+        format: "!(assert-error <expr>)",
+        description: &[],
+        example: &["!(assert-error (1 1))"],
+        run: |repl, args, _path| {
+            let expr = *repl.peek1(args)?;
+            let result = repl.reduce_aux(&expr);
+            if result.tag != Tag::Err {
+                eprintln!(
+                    "`assert-error` failed. {} doesn't result on evaluation error.",
+                    repl.fmt(&expr)
+                );
+                std::process::exit(1);
+            }
+            Ok(())
+        },
+    };
+
     const LOAD: Self = Self {
         name: "load",
         summary: "Load Lurk expressions from a file.",
@@ -434,6 +502,9 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
 #[inline]
 pub(crate) fn meta_cmds<H: Chipset<F>>() -> MetaCmdsMap<F, H> {
     [
+        MetaCmd::ASSERT,
+        MetaCmd::ASSERT_EQ,
+        MetaCmd::ASSERT_ERROR,
         MetaCmd::LOAD,
         MetaCmd::DEF,
         MetaCmd::DEFREC,
