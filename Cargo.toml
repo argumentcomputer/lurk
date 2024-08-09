@@ -28,8 +28,8 @@ p3-poseidon2 = { git = "https://github.com/argumentcomputer/Plonky3.git", branch
 p3-symmetric = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1-new" }
 p3-uni-stark = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1-new" }
 p3-util = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1-new" }
-sphinx-core = { git = "ssh://git@github.com/argumentcomputer/sphinx.git", branch = "dev"}
-sphinx-derive = { git = "ssh://git@github.com/argumentcomputer/sphinx.git", branch = "dev" }
+sphinx-core = { git = "https://github.com/argumentcomputer/sphinx.git", branch = "dev"}
+sphinx-derive = { git = "https://github.com/argumentcomputer/sphinx.git", branch = "dev" }
 anyhow = "1.0.72"
 ascent = "0.6.0"
 arc-swap = "1.7.1"
