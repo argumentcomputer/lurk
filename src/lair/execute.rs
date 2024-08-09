@@ -418,7 +418,21 @@ impl<F: PrimeField32> Func<F> {
                     if let Some(result) =
                         queries.func_queries[*callee_index].get_mut(inp.as_slice())
                     {
-                        let out = result.output.as_ref().expect("Loop detected");
+                        // let out = result.output.as_ref().expect("Loop detected");
+                        let out = result.output.as_ref();
+                        let out = if out.is_none() {
+                            println!("Loop detected: {} {} {:?}", nonce, callee_index, inp);
+                            let out_size = toplevel.get_by_index(*callee_index).output_size;
+                            let eval_idx = toplevel.get_by_name("eval").index;
+                            if *callee_index == eval_idx {
+                                vec![F::from_canonical_u32(4), F::from_canonical_u32(42)]
+                            } else {
+                                println!("Non-eval loop");
+                                vec![F::from_canonical_u32(0); out_size]
+                            }
+                        } else {
+                            out.unwrap().to_vec()
+                        };
                         map.extend(out);
                         result.new_lookup(nonce, &mut requires);
                     } else {

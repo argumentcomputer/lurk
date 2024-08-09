@@ -634,4 +634,50 @@ mod tests {
             .verify(&vk, &proof, &mut challenger_v)
             .expect("proof verifies");
     }
+
+    #[test]
+    fn lair_cycle_test() {
+        sphinx_core::utils::setup_logger();
+        type H = Nochip;
+        let func_cycle = func!(
+        fn cycle(x): [1] {
+            let ret = call(cycle, x);
+            return ret
+        });
+        let toplevel = Toplevel::<F, H>::new_pure(&[func_cycle]);
+        let cycle_chip = FuncChip::from_name("cycle", &toplevel);
+        let mut queries = QueryRecord::new(&toplevel);
+
+        let f = F::from_canonical_usize;
+        let inp = &[f(123)];
+        let out = toplevel.execute_by_name("cycle", inp, &mut queries);
+        assert_eq!(out[0], f(321));
+
+        let lair_chips = build_lair_chip_vector(&cycle_chip);
+
+        debug_chip_constraints_and_queries_with_sharding(
+            &queries,
+            &lair_chips,
+            None,
+        );
+
+        let config = BabyBearPoseidon2::new();
+        let machine = StarkMachine::new(
+            config,
+            build_chip_vector(&cycle_chip),
+            queries.expect_public_values().len(),
+        );
+
+        let (pk, vk) = machine.setup(&LairMachineProgram);
+        let mut challenger_p = machine.config().challenger();
+        let mut challenger_v = machine.config().challenger();
+        let shard = Shard::new(&queries);
+
+        machine.debug_constraints(&pk, shard.clone());
+        let opts = SphinxCoreOpts::default();
+        let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
+        machine
+            .verify(&vk, &proof, &mut challenger_v)
+            .expect("proof verifies");
+    }
 }

@@ -64,6 +64,7 @@ impl<F: PrimeField32> MemChip<F> {
                 row[3] = provide.last_count;
                 row[4..].copy_from_slice(args)
             });
+        println!("Memory:\n{:?}", trace);
         trace
     }
 }
