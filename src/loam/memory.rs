@@ -385,7 +385,7 @@ pub fn generate_lisp_program(n: usize, op: &str) -> String {
     program.push_str("    (let (");
     for i in 0..n {
         program.push_str(&format!(
-            "({} (cons {} {}))\n          ",
+            "({} (cons {}n {}n))\n          ",
             y(i),
             2 * i + 1,
             2 * i + 2
@@ -429,7 +429,7 @@ pub fn generate_lisp_program(n: usize, op: &str) -> String {
 
     // Generate arguments
     for i in 0..n {
-        program.push_str(&format!("'({} . {}) ", 2 * i + 1, 2 * i + 2));
+        program.push_str(&format!("'({}n . {}n) ", 2 * i + 1, 2 * i + 2));
     }
     program.push_str(")");
 
@@ -531,9 +531,9 @@ mod tests {
     #[test]
     fn test_generate_lisp_program_n3() {
         let expected = r#"((lambda (x0 x1 x2) 
-    (let ((y0 (cons 1 2))
-          (y1 (cons 3 4))
-          (y2 (cons 5 6))
+    (let ((y0 (cons 1n 2n))
+          (y1 (cons 3n 4n))
+          (y2 (cons 5n 6n))
           
           (a0 x0)
           (a1 (cons a0 y1))
@@ -546,7 +546,7 @@ mod tests {
 
         (eq a2 b2)
     )) 
-    '(1 . 2) '(3 . 4) '(5 . 6) )"#;
+    '(1n . 2n) '(3n . 4n) '(5n . 6n) )"#;
 
         let result = generate_lisp_program(3, "eq");
 

@@ -17,7 +17,7 @@ use p3_field::{AbstractField, Field, PrimeField32};
 
 use ascent::{ascent, Dual};
 
-#[cfg(feature = "loam")]
+// #[cfg(feature = "loam")]
 ascent! {
     // #![trace]
 
@@ -639,7 +639,7 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
 }
 
-#[cfg(feature = "loam")]
+// #[cfg(feature = "loam")]
 impl DistilledEvaluationProgram {
     pub fn import_memory(&mut self, memory: Memory) {
         self.cons_digest_mem = memory.cons_digest_mem;
@@ -656,7 +656,7 @@ impl DistilledEvaluationProgram {
 }
 
 #[cfg(test)]
-#[cfg(feature = "loam")]
+// #[cfg(feature = "loam")]
 mod test {
     use hashbrown::raw;
     use p3_baby_bear::BabyBear;
@@ -737,7 +737,7 @@ mod test {
 
     #[test]
     fn test_self_evaluating_f() {
-        let prog = test_aux("123", "123", None);
+        let prog = test_aux("123n", "123n", None);
         test_distilled(&prog);
     }
 
@@ -749,69 +749,69 @@ mod test {
 
     #[test]
     fn test_zero_arg_addition() {
-        let prog = test_aux("(+)", "0", None);
+        let prog = test_aux("(+)", "0n", None);
         test_distilled(&prog);
     }
 
     #[test]
     fn test_one_arg_addition() {
-        let prog = test_aux("(+ 1)", "1", None);
+        let prog = test_aux("(+ 1n)", "1n", None);
         test_distilled(&prog);
     }
 
     #[test]
     fn test_two_arg_addition() {
-        let prog = test_aux("(+ 1 2)", "3", None);
+        let prog = test_aux("(+ 1n 2n)", "3n", None);
         test_distilled(&prog);
     }
 
     #[test]
     fn test_three_arg_addition() {
-        let prog = test_aux("(+ 1 2 3)", "6", None);
+        let prog = test_aux("(+ 1n 2n 3n)", "6n", None);
         test_distilled(&prog);
     }
 
     #[test]
     fn test_zerog_arg_multiplication() {
-        let prog = test_aux("(*)", "1", None);
+        let prog = test_aux("(*)", "1n", None);
         test_distilled(&prog);
     }
 
     #[test]
     fn test_one_arg_multiplication() {
-        let prog = test_aux("(* 2)", "2", None);
+        let prog = test_aux("(* 2n)", "2n", None);
         test_distilled(&prog);
     }
 
     #[test]
     fn test_two_arg_multiplication() {
-        let prog = test_aux("(* 2 3)", "6", None);
+        let prog = test_aux("(* 2n 3n)", "6n", None);
         test_distilled(&prog);
     }
 
     #[test]
     fn test_three_arg_multiplication() {
-        let prog = test_aux("(* 2 3 4)", "24", None);
+        let prog = test_aux("(* 2n 3n 4n)", "24n", None);
         test_distilled(&prog);
     }
 
     #[test]
     fn test_nested_arithmetic() {
-        let prog = test_aux("(+ 5 (* 3 4))", "17", None);
+        let prog = test_aux("(+ 5n (* 3n 4n))", "17n", None);
         test_distilled(&prog);
     }
 
     #[test]
     fn test_three_arg_division() {
-        let prog = test_aux("(/ 10 2 5)", "1", None);
+        let prog = test_aux("(/ 10n 2n 5n)", "1n", None);
         test_distilled(&prog);
     }
 
     #[test]
     fn test_complicated_nested_arithmetic() {
         let prog = test_aux(
-            "(+ 5 (-) (*) (/) (+) (* 3 4 (- 7 2 1)) (/ 10 2 5))",
-            "56",
+            "(+ 5n (-) (*) (/) (+) (* 3n 4n (- 7n 2n 1n)) (/ 10n 2n 5n))",
+            "56n",
             None,
         );
         test_distilled(&prog);
@@ -822,19 +822,19 @@ mod test {
         let prog = test_aux("(=)", "t", None);
         test_distilled(&prog);
 
-        let prog = test_aux("(= 1)", "t", None);
+        let prog = test_aux("(= 1n)", "t", None);
         test_distilled(&prog);
 
-        let prog = test_aux("(= 1 1)", "t", None);
+        let prog = test_aux("(= 1n 1n)", "t", None);
         test_distilled(&prog);
 
-        let prog = test_aux("(= 1 1 1)", "t", None);
+        let prog = test_aux("(= 1n 1n 1n)", "t", None);
         test_distilled(&prog);
 
-        let prog = test_aux("(= 1 2)", "nil", None);
+        let prog = test_aux("(= 1n 2n)", "nil", None);
         test_distilled(&prog);
 
-        let prog = test_aux("(= 1 1 2)", "nil", None);
+        let prog = test_aux("(= 1n 1n 2n)", "nil", None);
         test_distilled(&prog);
 
 
@@ -845,8 +845,8 @@ mod test {
 
     #[test]
     fn test_if() {
-        test_aux("(if (= 1 1) 123 456)", "123", None);
-        test_aux("(if (= 1 2) 123 456)", "456", None);
+        test_aux("(if (= 1n 1n) 123n 456n)", "123n", None);
+        test_aux("(if (= 1n 2n) 123n 456n)", "456n", None);
     }
 
     // #[test]
@@ -856,37 +856,37 @@ mod test {
 
     #[test]
     fn test_var_lookup() {
-        test_aux("x", "9", Some("((x . 9))"));
+        test_aux("x", "9n", Some("((x . 9n))"));
     }
 
     #[test]
     fn test_deep_var_lookup() {
         let mut zstore = lurk_zstore();
-        let env = read_wideptr(&mut zstore, "((y . 10) (x . 9))");
+        let env = read_wideptr(&mut zstore, "((y . 10n) (x . 9n))");
         let expr = read_wideptr(&mut zstore, "x");
 
-        test_aux("x", "9", Some("((y . 10) (x . 9))"));
-        test_aux("y", "10", Some("((y . 10) (x . 9))"));
+        test_aux("x", "9n", Some("((y . 10n) (x . 9n))"));
+        test_aux("y", "10n", Some("((y . 10n) (x . 9n))"));
         // test_aux1("z", err(), Some("((y . 10) (x . 9))"));
     }
 
     #[test]
     fn test_let_plain() {
-        test_aux("(let ((x 9)) x)", "9", None);
-        test_aux("(let ((x 9)(y 10)) x)", "9", None);
-        test_aux("(let ((x 9)(y 10)) y)", "10", None);
-        test_aux("(let ((x (+ 1 1))) x)", "2", None);
-        test_aux("(let ((y 9) (x (+ 1 1))) x)", "2", None);
+        test_aux("(let ((x 9n)) x)", "9n", None);
+        test_aux("(let ((x 9n)(y 10n)) x)", "9n", None);
+        test_aux("(let ((x 9n)(y 10n)) y)", "10n", None);
+        test_aux("(let ((x (+ 1n 1n))) x)", "2n", None);
+        test_aux("(let ((y 9n) (x (+ 1n 1n))) x)", "2n", None);
     }    
     
     #[test]
     fn test_letrec_plain() {
-        test_aux("(letrec ((x 9)) x)", "9", None);
-        test_aux("(letrec ((x (+ 1 1))) x)", "2", None);
+        test_aux("(letrec ((x 9n)) x)", "9n", None);
+        test_aux("(letrec ((x (+ 1n 1n))) x)", "2n", None);
 
-        test_aux("(letrec ((x 9)(y 10)) x)", "9", None);
-        test_aux("(letrec ((x 9)(y 10)) y)", "10", None);
-        test_aux("(letrec ((y 9) (x (+ 1 1))) x)", "2", None);
+        test_aux("(letrec ((x 9n)(y 10n)) x)", "9n", None);
+        test_aux("(letrec ((x 9n)(y 10n)) y)", "10n", None);
+        test_aux("(letrec ((y 9n) (x (+ 1n 1n))) x)", "2n", None);
     }
 
     #[test]
@@ -894,34 +894,34 @@ mod test {
         let fibonacci_twice = |n| {
             format!(
                 "
-(letrec ((fibonacci (lambda (n) (if (< n 2) 1 (+ (fibonacci (- n 2)) (fibonacci (- n 1)))))))
+(letrec ((fibonacci (lambda (n) (if (< n 2n) 1n (+ (fibonacci (- n 2n)) (fibonacci (- n 1n)))))))
   (fibonacci {n}))
 "
             )
         };
-        let prog = test_aux(&fibonacci_twice(2), "2", None);
+        let prog = test_aux(&fibonacci_twice(2), "2n", None);
         test_distilled(&prog);
     }
 
     #[test]
     fn test_map_double_distilled() {
         let map_double = "
-(letrec ((input (cons (cons 1 2) (cons 2 4)))
+(letrec ((input (cons (cons 1n 2n) (cons 2n 4n)))
          (map-double (lambda (x) (if (atom x) (+ x x) (cons (map-double (car x))  (map-double (cdr x)))))))
     (map-double input))
         ";
-        let prog = test_aux(map_double, "((2 . 4) . (4 . 8))", None);
+        let prog = test_aux(map_double, "((2n . 4n) . (4n . 8n))", None);
         test_distilled(&prog);
     }
 
     #[test]
     fn test_map_double_distilled_noncontiguous() {
         let map_double = "
-(letrec ((input (quote ((1 . 2) . (2 . 4))))
+(letrec ((input (quote ((1n . 2n) . (2n . 4n))))
          (map-double (lambda (x) (if (atom x) (+ x x) (cons (map-double (car x))  (map-double (cdr x)))))))
     (map-double input))
         ";
-        let prog = test_aux(map_double, "((2 . 4) . (4 . 8))", None);
+        let prog = test_aux(map_double, "((2n . 4n) . (4n . 8n))", None);
         test_distilled(&prog);
     }
 

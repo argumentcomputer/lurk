@@ -288,8 +288,9 @@ impl Default for ZStore<BabyBear, LurkChip> {
         Self {
             hasher: lurk_hasher(),
             dag: Default::default(),
-            tuple2_hashes: Default::default(),
-            tuple3_hashes: Default::default(),
+            hashes3: Default::default(),
+            hashes4: Default::default(),
+            hashes6: Default::default(),
             str_cache: Default::default(),
             sym_cache: Default::default(),
             syn_cache: Default::default(),

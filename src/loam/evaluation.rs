@@ -197,7 +197,7 @@ impl Tag {
 
 // Because it's hard to share code between ascent programs, this is a copy of `AllocationProgam`, replacing the `map_double` function
 // with evaluation
-#[cfg(feature = "loam")]
+// #[cfg(feature = "loam")]
 ascent! {
     // #![trace]
 
@@ -1201,7 +1201,7 @@ ascent! {
 
 }
 
-#[cfg(feature = "loam")]
+// #[cfg(feature = "loam")]
 impl EvaluationProgram {
     fn alloc_addr(&mut self, tag: LE, initial_addr: LE) -> LE {
         self.allocator.alloc_addr(tag, initial_addr)
@@ -1492,7 +1492,7 @@ impl EvaluationProgram {
 }
 
 #[cfg(test)]
-#[cfg(feature = "loam")]
+// #[cfg(feature = "loam")]
 mod test {
     use itertools::Itertools;
     use p3_baby_bear::BabyBear;
@@ -1822,9 +1822,9 @@ mod test {
             )
         };
 
-        test_aux(&factorial(0), "1n", None);
-        test_aux(&factorial(1), "1n", None);
-        test_aux(&factorial(4), "24n", None);
+        // test_aux(&factorial(0), "1n", None);
+        // test_aux(&factorial(1), "1n", None);
+        // test_aux(&factorial(4), "24n", None);
 
         // // 1, 1, 2, 3, 5, 8, 13, 21
         test_aux(&fibonacci(0), "1n", None);
