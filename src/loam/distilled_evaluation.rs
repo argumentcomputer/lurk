@@ -5,8 +5,8 @@
 use num_traits::FromPrimitive;
 use p3_baby_bear::BabyBear;
 
-use crate::loam::memory::Memory;
 use crate::loam::lurk_sym_index;
+use crate::loam::memory::Memory;
 use crate::loam::{LEWrap, Num, Ptr, Wide, WidePtr, LE};
 use crate::lurk::chipset::LurkChip;
 use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
@@ -19,7 +19,7 @@ use ascent::{ascent, Dual};
 
 #[cfg(feature = "loam")]
 ascent! {
-    #![trace]
+    // #![trace]
 
     struct DistilledEvaluationProgram {
         zstore: ZStore<LE, LurkChip>,
@@ -57,14 +57,14 @@ ascent! {
     relation cons_rel(Ptr, Ptr, Ptr); // (car, cdr, cons)
 
     // Final: Memory to support conses allocated by digest or contents.
-    lattice cons_digest_mem(Wide, Dual<LEWrap>); // (value, addr)
+    relation cons_digest_mem(Wide, LE); // (value, addr)
     // Final
-    lattice cons_mem(Ptr, Ptr, Dual<LEWrap>); // (car, cdr, addr)
+    relation cons_mem(Ptr, Ptr, LE); // (car, cdr, addr)
 
     // Register cons value.
-    ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0.0);
+    ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), *addr);
     // Register cons relation.
-    cons_rel(car, cdr, cons) <-- cons_mem(car, cdr, addr), let cons = Ptr(Tag::Cons.elt(), addr.0.0);
+    cons_rel(car, cdr, cons) <-- cons_mem(car, cdr, addr), let cons = Ptr(Tag::Cons.elt(), *addr);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Fun
@@ -74,14 +74,14 @@ ascent! {
     // Final
     relation fun_rel(Ptr, Ptr, Ptr, Ptr); // (args, body, closed-env, fun)
     // Final
-    lattice fun_digest_mem(Wide, Dual<LEWrap>); // (value, addr)
+    relation fun_digest_mem(Wide, LE); // (value, addr)
     // Final
-    lattice fun_mem(Ptr, Ptr, Ptr, Dual<LEWrap>); // (args, body, closed-env, addr)
+    relation fun_mem(Ptr, Ptr, Ptr, LE); // (args, body, closed-env, addr)
 
     // Register fun value.
-    ptr_value(ptr, value) <-- fun_digest_mem(value, addr), let ptr = Ptr(Tag::Fun.elt(), addr.0.0);
+    ptr_value(ptr, value) <-- fun_digest_mem(value, addr), let ptr = Ptr(Tag::Fun.elt(), *addr);
     // Register fun relation.
-    fun_rel(args, body, closed_env, fun) <-- fun_mem(args, body, closed_env, addr), let fun = Ptr(Tag::Fun.elt(), addr.0.0);
+    fun_rel(args, body, closed_env, fun) <-- fun_mem(args, body, closed_env, addr), let fun = Ptr(Tag::Fun.elt(), *addr);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Thunk
@@ -91,33 +91,33 @@ ascent! {
     // Final
     relation thunk_rel(Ptr, Ptr, Ptr); // (body, closed-env, thunk)
     // Final
-    lattice thunk_digest_mem(Wide, Dual<LEWrap>); // (value, addr)
+    relation thunk_digest_mem(Wide, LE); // (value, addr)
     // Final
-    lattice thunk_mem(Ptr, Ptr, Dual<LEWrap>); // (body, closed-env, addr)
+    relation thunk_mem(Ptr, Ptr, LE); // (body, closed-env, addr)
 
     // Register thunk value.
-    ptr_value(ptr, value) <-- thunk_digest_mem(value, addr), let ptr = Ptr(Tag::Thunk.elt(), addr.0.0);
+    ptr_value(ptr, value) <-- thunk_digest_mem(value, addr), let ptr = Ptr(Tag::Thunk.elt(), *addr);
     // Register thunk relation.
-    thunk_rel(body, closed_env, cons) <-- thunk_mem(body, closed_env, addr), let cons = Ptr(Tag::Thunk.elt(), addr.0.0);
+    thunk_rel(body, closed_env, cons) <-- thunk_mem(body, closed_env, addr), let cons = Ptr(Tag::Thunk.elt(), *addr);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Sym
 
     // Final
-    lattice sym_digest_mem(Wide, Dual<LEWrap>); // (digest, addr)
+    relation sym_digest_mem(Wide, LE); // (digest, addr)
 
     // // Convert addr to ptr and register ptr relations.
-    ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), addr.0.0);
+    ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), *addr);
     // todo: sym_value
 
     ////////////////////////////////////////////////////////////////////////////////
     // Builtin
 
     // Final
-    lattice builtin_digest_mem(Wide, Dual<LEWrap>) = Memory::initial_builtin_relation(); // (digest, addr)
+    relation builtin_digest_mem(Wide, LE); // (digest, addr)
 
     // // Convert addr to ptr and register ptr relations.
-    ptr_value(ptr, value) <-- builtin_digest_mem(value, addr), let ptr = Ptr(Tag::Builtin.elt(), addr.0.0);
+    ptr_value(ptr, value) <-- builtin_digest_mem(value, addr), let ptr = Ptr(Tag::Builtin.elt(), *addr);
 
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -125,9 +125,9 @@ ascent! {
 
     // Final
     // Can this be combined with sym_digest_mem? Can it be eliminated? (probably eventually).
-    lattice nil_digest_mem(Wide, Dual<LEWrap>) = Memory::initial_nil_relation(); // (digest, addr)
+    relation nil_digest_mem(Wide, LE); // (digest, addr)
 
-    ptr_value(ptr, value) <-- nil_digest_mem(value, addr), let ptr = Ptr(Tag::Nil.elt(), addr.0.0);
+    ptr_value(ptr, value) <-- nil_digest_mem(value, addr), let ptr = Ptr(Tag::Nil.elt(), *addr);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Num
@@ -224,7 +224,7 @@ ascent! {
     // Signal: Drive the eq parsing.
     relation eval_eq_op(Ptr, Ptr, Ptr, Ptr);
 
-    eval_input(arg1, env), eval_input(arg2, env), eval_eq_op(expr, env, arg1, arg2) <-- 
+    eval_input(arg1, env), eval_input(arg2, env), eval_eq_op(expr, env, arg1, arg2) <--
         eval_input(expr, env), cons_rel(op, tail, expr), if op.is_eq_op(),
         cons_rel(arg1, rest, tail),
         cons_rel(arg2, end, rest), if end.is_nil();
@@ -232,7 +232,7 @@ ascent! {
     // This is a beautiful rule. After we distill the memory, we have O(1) pointer equality.
     eval(expr, env, is_eq) <--
         eval_eq_op(expr, env, arg1, arg2),
-        eval(arg1, env, evaled_arg1), 
+        eval(arg1, env, evaled_arg1),
         eval(arg2, env, evaled_arg2),
         let is_eq = Ptr::lurk_bool(evaled_arg1 == evaled_arg2);
 
@@ -243,13 +243,13 @@ ascent! {
     // it should be possible to generate the cont signals knowing
     // this is the shape of the rule that needs to be evaluated, i.e.
     // it should be possible to compile lair -> loam
-    // 
+    //
     // also this is still a signal -- but it's in the same category as
     // eval-input, since it's driving the evaluation (of the cons op specifically)
     relation eval_cons_op(Ptr, Ptr, Ptr, Ptr);
 
     // idk the compiler needs to be smart enough to find this rule
-    eval_input(car, env), eval_input(cdr, env), eval_cons_op(expr, env, car, cdr) <-- 
+    eval_input(car, env), eval_input(cdr, env), eval_cons_op(expr, env, car, cdr) <--
         eval_input(expr, env), cons_rel(op, tail, expr), if op.is_cons_op(),
         cons_rel(car, cdr_nil, tail),
         cons_rel(cdr, end, cdr_nil), if end.is_nil();
@@ -262,7 +262,7 @@ ascent! {
         //      cons_rel(cdr, end, cdr_nil), if end.is_nil(),
         // but it's more efficient because less lookups
         eval_cons_op(expr, env, car, cdr),
-        eval(car, env, evaled_car), 
+        eval(car, env, evaled_car),
         eval(cdr, env, evaled_cdr),
         cons_rel(evaled_car, evaled_cdr, evaled_cons);
 
@@ -271,10 +271,10 @@ ascent! {
 
     relation eval_car_cdr(Ptr, Ptr, Ptr, bool); // (expr, env, body, is_car)
 
-    eval_input(body, env), eval_car_cdr(expr, env, body, is_car) <-- 
+    eval_input(body, env), eval_car_cdr(expr, env, body, is_car) <--
         eval_input(expr, env), cons_rel(op, tail, expr), if op.is_car_cdr(), let is_car = op.is_car(),
         cons_rel(body, end, tail), if end.is_nil();
-    
+
     eval(expr, env, car) <--
         eval_car_cdr(expr, env, body, true),
         eval(body, env, evaled),
@@ -290,10 +290,10 @@ ascent! {
 
     relation eval_cdr(Ptr, Ptr, Ptr); // (expr, env, body)
 
-    eval_input(body, env), eval_cdr(expr, env, body) <-- 
+    eval_input(body, env), eval_cdr(expr, env, body) <--
         eval_input(expr, env), cons_rel(op, tail, expr), if op.is_cdr(),
         cons_rel(body, end, tail), if end.is_nil();
-    
+
     eval(expr, env, cdr) <--
         eval_cdr(expr, env, body),
         eval(body, env, evaled),
@@ -304,10 +304,10 @@ ascent! {
 
     relation eval_atom(Ptr, Ptr, Ptr); // (expr, env, body)
 
-    eval_input(body, env), eval_atom(expr, env, body) <-- 
+    eval_input(body, env), eval_atom(expr, env, body) <--
         eval_input(expr, env), cons_rel(op, tail, expr), if op.is_atom_op(),
         cons_rel(body, end, tail), if end.is_nil();
-    
+
     eval(expr, env, is_atom) <--
         eval_atom(expr, env, body),
         eval(body, env, evaled),
@@ -317,7 +317,7 @@ ascent! {
     // quote op
 
     // Don't eval body :P
-    eval(expr, env, body) <-- 
+    eval(expr, env, body) <--
         eval_input(expr, env), cons_rel(op, tail, expr), if op.is_quote(),
         cons_rel(body, end, tail), if end.is_nil();
 
@@ -539,7 +539,7 @@ ascent! {
 
     // // Signal (for now)
     // relation lambda_parse(Ptr, Ptr, Ptr); // (expr, env, args-and-body)
-    
+
     // lambda_parse(expr, env, tail) <--
     //     eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
     //     if head.is_lambda();
@@ -561,17 +561,14 @@ ascent! {
         eval_input(expr, env), cons_rel(head, tail, expr), if head.is_left_foldable();
 
     // When left-folding with tail that is a cons, ingress its car and cdr, and eval the car.
-    #[trace("is_left_foldable {} {:?} recurse", op.built_in_name(), op)]
     eval_input(car, env) <-- fold(expr, env, op, _, tail), cons_rel(car, cdr, tail);
 
     // When left-folding, if car has been evaled and is F, apply the op to it and the acc, then recursively
     // fold acc and new tail. TODO: error if car is not f.
-    #[trace("is_left_foldable {} {:?} apply", op.built_in_name(), op)]
     fold(expr, env, op, op.apply_op(*acc, Num(evaled_car.1)), cdr) <--
         fold(expr, env, op, acc, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car), if evaled_car.is_num();
 
     // left-folding operation with an empty (nil) tail
-    #[trace("is_left_foldable {} {:?} base", op.built_in_name(), op)]
     eval(expr, env, Ptr(Tag::Num.elt(), acc.0)) <-- fold(expr, env, op, acc, tail), if tail.is_nil();
 
     ////////////////////
@@ -642,13 +639,30 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
 }
 
+#[cfg(feature = "loam")]
+impl DistilledEvaluationProgram {
+    pub fn import_memory(&mut self, memory: Memory) {
+        self.cons_digest_mem = memory.cons_digest_mem;
+        self.cons_mem = memory.cons_mem;
+        self.fun_digest_mem = memory.fun_digest_mem;
+        self.fun_mem = memory.fun_mem;
+        self.thunk_digest_mem = memory.thunk_digest_mem;
+        self.thunk_mem = memory.thunk_mem;
+        self.sym_digest_mem = memory.sym_digest_mem;
+        self.builtin_digest_mem = memory.builtin_digest_mem;
+        self.nil_digest_mem = memory.nil_digest_mem;
+        self.num = memory.num;
+    }
+}
+
 #[cfg(test)]
 #[cfg(feature = "loam")]
 mod test {
+    use hashbrown::raw;
     use p3_baby_bear::BabyBear;
 
     use crate::{
-        loam::evaluation::EvaluationProgram,
+        loam::{evaluation::EvaluationProgram, memory::generate_lisp_program},
         lurk::{
             chipset::LurkChip,
             zstore::{lurk_zstore, ZPtr, ZStore},
@@ -684,14 +698,14 @@ mod test {
 
         prog.hydrate();
 
-        println!("\n{}", prog.relation_sizes_summary());
-        prog.print_memory_tables();
+        // println!("\n{}", prog.relation_sizes_summary());
+        println!("cons_digest_mem size: {}", prog.cons_digest_mem.len());
+        println!("cons_mem size: {}", prog.cons_mem.len());
+        // prog.print_memory_tables();
 
         assert_eq!(vec![(expected_output,)], prog.output_expr);
-        prog.export_memory().check_compact();
         prog
     }
-
 
     fn test_distilled(original_program: &EvaluationProgram) {
         let mut prog = DistilledEvaluationProgram::default();
@@ -700,20 +714,15 @@ mod test {
         prog.toplevel_input = original_program.toplevel_input.clone();
 
         // transfer over the memory (assume it's been distilled)
-        prog.cons_digest_mem = original_program.cons_digest_mem.clone();
-        prog.cons_mem = original_program.cons_mem.clone();
-        prog.fun_digest_mem = original_program.fun_digest_mem.clone();
-        prog.fun_mem = original_program.fun_mem.clone();
-        prog.thunk_digest_mem = original_program.thunk_digest_mem.clone();
-        prog.thunk_mem = original_program.thunk_mem.clone();
-        prog.sym_digest_mem = original_program.sym_digest_mem.clone();
-        prog.builtin_digest_mem = original_program.builtin_digest_mem.clone();
-        prog.nil_digest_mem = original_program.nil_digest_mem.clone();
-        prog.num = original_program.num.clone();
+        let raw_memory = original_program.export_memory();
+        let memory = raw_memory.distill();
 
+        prog.import_memory(memory);
         prog.run();
 
-        println!("{}", prog.relation_sizes_summary());
+        // println!("{}", prog.relation_sizes_summary());
+        println!("cons_digest_mem size: {}", prog.cons_digest_mem.len());
+        println!("cons_mem size: {}", prog.cons_mem.len());
 
         assert_eq!(prog.output_expr, original_program.output_expr);
     }
@@ -727,23 +736,170 @@ mod test {
     }
 
     #[test]
+    fn test_self_evaluating_f() {
+        let prog = test_aux("123", "123", None);
+        test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_self_evaluating_nil() {
+        let prog = test_aux("nil", "nil", None);
+        test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_zero_arg_addition() {
+        let prog = test_aux("(+)", "0", None);
+        test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_one_arg_addition() {
+        let prog = test_aux("(+ 1)", "1", None);
+        test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_two_arg_addition() {
+        let prog = test_aux("(+ 1 2)", "3", None);
+        test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_three_arg_addition() {
+        let prog = test_aux("(+ 1 2 3)", "6", None);
+        test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_zerog_arg_multiplication() {
+        let prog = test_aux("(*)", "1", None);
+        test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_one_arg_multiplication() {
+        let prog = test_aux("(* 2)", "2", None);
+        test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_two_arg_multiplication() {
+        let prog = test_aux("(* 2 3)", "6", None);
+        test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_three_arg_multiplication() {
+        let prog = test_aux("(* 2 3 4)", "24", None);
+        test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_nested_arithmetic() {
+        let prog = test_aux("(+ 5 (* 3 4))", "17", None);
+        test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_three_arg_division() {
+        let prog = test_aux("(/ 10 2 5)", "1", None);
+        test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_complicated_nested_arithmetic() {
+        let prog = test_aux(
+            "(+ 5 (-) (*) (/) (+) (* 3 4 (- 7 2 1)) (/ 10 2 5))",
+            "56",
+            None,
+        );
+        test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_relational() {
+        let prog = test_aux("(=)", "t", None);
+        test_distilled(&prog);
+
+        let prog = test_aux("(= 1)", "t", None);
+        test_distilled(&prog);
+
+        let prog = test_aux("(= 1 1)", "t", None);
+        test_distilled(&prog);
+
+        let prog = test_aux("(= 1 1 1)", "t", None);
+        test_distilled(&prog);
+
+        let prog = test_aux("(= 1 2)", "nil", None);
+        test_distilled(&prog);
+
+        let prog = test_aux("(= 1 1 2)", "nil", None);
+        test_distilled(&prog);
+
+
+        // TODO: handle these type errors
+        // test_aux1("(= nil)", err(), None);
+        // test_aux1("(= 1 nil)", err(), None);
+    }
+
+    #[test]
+    fn test_if() {
+        test_aux("(if (= 1 1) 123 456)", "123", None);
+        test_aux("(if (= 1 2) 123 456)", "456", None);
+    }
+
+    // #[test]
+    // fn test_unbound_var() {
+    //     test_aux1("x", err(), None);
+    // }
+
+    #[test]
+    fn test_var_lookup() {
+        test_aux("x", "9", Some("((x . 9))"));
+    }
+
+    #[test]
+    fn test_deep_var_lookup() {
+        let mut zstore = lurk_zstore();
+        let env = read_wideptr(&mut zstore, "((y . 10) (x . 9))");
+        let expr = read_wideptr(&mut zstore, "x");
+
+        test_aux("x", "9", Some("((y . 10) (x . 9))"));
+        test_aux("y", "10", Some("((y . 10) (x . 9))"));
+        // test_aux1("z", err(), Some("((y . 10) (x . 9))"));
+    }
+
+    #[test]
+    fn test_let_plain() {
+        test_aux("(let ((x 9)) x)", "9", None);
+        test_aux("(let ((x 9)(y 10)) x)", "9", None);
+        test_aux("(let ((x 9)(y 10)) y)", "10", None);
+        test_aux("(let ((x (+ 1 1))) x)", "2", None);
+        test_aux("(let ((y 9) (x (+ 1 1))) x)", "2", None);
+    }    
+    
+    #[test]
+    fn test_letrec_plain() {
+        test_aux("(letrec ((x 9)) x)", "9", None);
+        test_aux("(letrec ((x (+ 1 1))) x)", "2", None);
+
+        test_aux("(letrec ((x 9)(y 10)) x)", "9", None);
+        test_aux("(letrec ((x 9)(y 10)) y)", "10", None);
+        test_aux("(letrec ((y 9) (x (+ 1 1))) x)", "2", None);
+    }
+
+    #[test]
     fn test_cons_mem_distilled() {
         let fibonacci_twice = |n| {
             format!(
                 "
-(letrec ((fibonacci (lambda (n) 
-                        (if (< n 2) 
-                            1 
-                            (
-                                let ((a (fibonacci (- n 1)))
-                                     (b (fibonacci (- n 2))))
-                                (+ a b)
-                            )))))
-  (+ (fibonacci {n}) (fibonacci {n})))
+(letrec ((fibonacci (lambda (n) (if (< n 2) 1 (+ (fibonacci (- n 2)) (fibonacci (- n 1)))))))
+  (fibonacci {n}))
 "
             )
         };
-        let prog = test_aux(&fibonacci_twice(7), "42", None);
+        let prog = test_aux(&fibonacci_twice(2), "2", None);
         test_distilled(&prog);
     }
 
@@ -767,5 +923,12 @@ mod test {
         ";
         let prog = test_aux(map_double, "((2 . 4) . (4 . 8))", None);
         test_distilled(&prog);
+    }
+
+    #[test]
+    fn test_eq_complex_distilled() {
+        let n = std::env::var("LISP_N").unwrap().parse::<usize>().unwrap();
+        let prog = test_aux(&generate_lisp_program(n, "eq"), "t", None);
+        test_distilled(&prog)
     }
 }

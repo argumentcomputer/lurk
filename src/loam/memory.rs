@@ -7,254 +7,29 @@ use crate::{
     loam::{allocation::Allocator, LEWrap, Num, Ptr, PtrEq, Wide, WidePtr, LE},
     lurk::{
         chipset::LurkChip,
-        state::LURK_PACKAGE_SYMBOLS_NAMES,
+        state::{StateRcCell, LURK_PACKAGE_SYMBOLS_NAMES},
         tag::Tag,
-        zstore::{builtin_vec, lurk_zstore, ZPtr, ZStore},
+        zstore::{self, builtin_vec, lurk_zstore, ZPtr, ZStore},
     },
 };
 
-pub trait MemoryType {
-    fn get_address(&self) -> LEWrap;
-    fn set_address(&mut self, new_address: LEWrap);
-    fn update_references(&mut self, address_map: &FxHashMap<LEWrap, LEWrap>);
-}
-
-impl MemoryType for (Ptr, Ptr, Dual<LEWrap>) {
-    fn get_address(&self) -> LEWrap {
-        self.2 .0
-    }
-    fn set_address(&mut self, new_address: LEWrap) {
-        self.2 = Dual(new_address);
-    }
-    fn update_references(&mut self, address_map: &FxHashMap<LEWrap, LEWrap>) {
-        self.0 = Ptr(
-            self.0 .0,
-            address_map
-                .get(&LEWrap(self.0 .1))
-                .unwrap_or(&LEWrap(self.0 .1))
-                .0,
-        );
-        self.1 = Ptr(
-            self.1 .0,
-            address_map
-                .get(&LEWrap(self.1 .1))
-                .unwrap_or(&LEWrap(self.1 .1))
-                .0,
-        );
-    }
-}
-
-impl MemoryType for (Ptr, Ptr, Ptr, Dual<LEWrap>) {
-    fn get_address(&self) -> LEWrap {
-        self.3 .0
-    }
-    fn set_address(&mut self, new_address: LEWrap) {
-        self.3 = Dual(new_address);
-    }
-    fn update_references(&mut self, address_map: &FxHashMap<LEWrap, LEWrap>) {
-        self.0 = Ptr(
-            self.0 .0,
-            address_map
-                .get(&LEWrap(self.0 .1))
-                .unwrap_or(&LEWrap(self.0 .1))
-                .0,
-        );
-        self.1 = Ptr(
-            self.1 .0,
-            address_map
-                .get(&LEWrap(self.1 .1))
-                .unwrap_or(&LEWrap(self.1 .1))
-                .0,
-        );
-        self.2 = Ptr(
-            self.2 .0,
-            address_map
-                .get(&LEWrap(self.2 .1))
-                .unwrap_or(&LEWrap(self.2 .1))
-                .0,
-        );
-    }
-}
-
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Memory {
-    pub cons_digest_mem: Vec<(Wide, Dual<LEWrap>)>,
-    pub cons_mem: Vec<(Ptr, Ptr, Dual<LEWrap>)>,
-    pub fun_digest_mem: Vec<(Wide, Dual<LEWrap>)>,
-    pub fun_mem: Vec<(Ptr, Ptr, Ptr, Dual<LEWrap>)>,
-    pub thunk_digest_mem: Vec<(Wide, Dual<LEWrap>)>,
-    pub thunk_mem: Vec<(Ptr, Ptr, Dual<LEWrap>)>,
+    pub cons_digest_mem: Vec<(Wide, LE)>,
+    pub cons_mem: Vec<(Ptr, Ptr, LE)>,
+    pub fun_digest_mem: Vec<(Wide, LE)>,
+    pub fun_mem: Vec<(Ptr, Ptr, Ptr, LE)>,
+    pub thunk_digest_mem: Vec<(Wide, LE)>,
+    pub thunk_mem: Vec<(Ptr, Ptr, LE)>,
 
-    pub sym_digest_mem: Vec<(Wide, Dual<LEWrap>)>,
-    pub builtin_digest_mem: Vec<(Wide, Dual<LEWrap>)>,
-    pub nil_digest_mem: Vec<(Wide, Dual<LEWrap>)>,
+    pub sym_digest_mem: Vec<(Wide, LE)>,
+    pub builtin_digest_mem: Vec<(Wide, LE)>,
+    pub nil_digest_mem: Vec<(Wide, LE)>,
 
     pub num: Vec<(Ptr,)>,
 }
 
 impl Memory {
-    pub fn distill(&mut self) {
-        let pointer_digests = self.pointer_digests();
-        self.ensure_closure(&pointer_digests);
-        self.compact_memory();
-        self.partition_memory();
-    }
-
-    pub fn check_compact(&self) {
-        println!("Checking memory compactness...");
-
-        self.check_memory_type("cons_mem", &self.cons_mem);
-        self.check_memory_type("fun_mem", &self.fun_mem);
-        self.check_memory_type("thunk_mem", &self.thunk_mem);
-
-        println!("Memory compactness check completed.");
-    }
-
-    fn check_memory_type<T: MemoryType>(&self, mem_type: &str, memory: &[(T)]) {
-        // Sort memory by address
-        let mut sorted_addresses: Vec<_> = memory.iter().map(|item| item.get_address().0).collect();
-        sorted_addresses.sort();
-
-        // Check for gaps
-        for (i, addr) in sorted_addresses.iter().enumerate() {
-            if addr.as_canonical_u32() as usize != i {
-                println!("Warning: Mismatch found in {} at index {}", mem_type, i);
-                println!("  Expected: {}", i);
-                println!("  Actual:   {}", addr.as_canonical_u32());
-            }
-        }
-    }
-
-    fn pointer_digests(&self) -> FxHashMap<Ptr, Wide> {
-        let mut map = FxHashMap::default();
-        let conses = self.cons_digest_mem.iter().map(|(x, Dual(LEWrap(y)))| {
-            let ptr = Ptr(Tag::Cons.elt(), *y);
-            (ptr, *x)
-        });
-        let funs = self.fun_digest_mem.iter().map(|(x, Dual(LEWrap(y)))| {
-            let ptr = Ptr(Tag::Fun.elt(), *y);
-            (ptr, *x)
-        });
-        let thunks = self.thunk_digest_mem.iter().map(|(x, Dual(LEWrap(y)))| {
-            let ptr = Ptr(Tag::Thunk.elt(), *y);
-            (ptr, *x)
-        });
-
-        map.extend(conses);
-        map.extend(funs);
-        map.extend(thunks);
-        map
-    }
-
-    fn ensure_closure(&mut self, pointer_digests: &FxHashMap<Ptr, Wide>) {
-        // TODO: Implement closure logic
-        // 1. Create a mapping of digests to addresses
-        // 2. Iterate through cons_mem, fun_mem, and thunk_mem
-        // 3. For each entry, check if a digest exists and update addresses accordingly
-        // 4. Remove duplicate entries
-    }
-
-    fn compact_memory(&mut self) {
-        println!("Starting memory compaction...");
-
-        let mut allocator = Allocator::default();
-        let mut address_map: FxHashMap<Ptr, Ptr> = FxHashMap::default();
-
-        for (_, _, Dual(LEWrap(cons))) in &self.cons_mem {
-            let addr = allocator.alloc_addr(Tag::Cons.elt(), LE::zero());
-            let old_ptr = Ptr(Tag::Cons.elt(), *cons);
-            let new_ptr = Ptr(Tag::Cons.elt(), addr);
-            address_map.insert(old_ptr, new_ptr);
-        }
-
-        for (_, _, _, Dual(LEWrap(fun))) in &self.fun_mem {
-            let addr = allocator.alloc_addr(Tag::Cons.elt(), LE::zero());
-            let old_ptr = Ptr(Tag::Cons.elt(), *fun);
-            let new_ptr = Ptr(Tag::Cons.elt(), addr);
-            address_map.insert(old_ptr, new_ptr);
-        }
-
-        for (_, _, Dual(LEWrap(thunk))) in &self.thunk_mem {
-            let addr = allocator.alloc_addr(Tag::Cons.elt(), LE::zero());
-            let old_ptr = Ptr(Tag::Cons.elt(), *thunk);
-            let new_ptr = Ptr(Tag::Cons.elt(), addr);
-            address_map.insert(old_ptr, new_ptr);
-        }
-
-        // // Compact and update references for all memory types
-        // self.compact_and_update_mem(&mut self.cons_mem);
-        // self.compact_and_update_mem(&mut self.fun_mem);
-        // self.compact_and_update_mem(&mut self.thunk_mem);
-
-        // // Update digest_mem vectors
-        // self.update_digest_mem(&mut self.cons_digest_mem, &address_map);
-        // self.update_digest_mem(&mut self.fun_digest_mem, &address_map);
-        // self.update_digest_mem(&mut self.thunk_digest_mem, &address_map);
-        // self.update_digest_mem(&mut self.sym_digest_mem, &address_map);
-        // self.update_digest_mem(&mut self.builtin_digest_mem, &address_map);
-        // self.update_digest_mem(&mut self.nil_digest_mem, &address_map);
-
-        println!("Memory compaction completed.");
-    }
-
-    fn compact_and_update_mem<T: MemoryType>(&mut self, mem: &mut Vec<T>) {
-        let mut address_map: FxHashMap<LEWrap, LEWrap> = FxHashMap::default();
-        let mut next_address = 0u32;
-
-        // Helper function to get or assign new address
-        let mut get_new_address = |old_addr: LEWrap| -> LEWrap {
-            *address_map.entry(old_addr).or_insert_with(|| {
-                let new_addr = LEWrap(LE::from_canonical_u32(next_address));
-                next_address += 1;
-                new_addr
-            })
-        };
-
-        for item in mem.iter_mut() {
-            let old_addr = item.get_address();
-            let new_addr = get_new_address(old_addr);
-            item.set_address(new_addr);
-        }
-
-        for item in mem.iter_mut() {
-            item.update_references(&address_map);
-        }
-    }
-
-    fn update_digest_mem(&mut self, digest_mem: &mut Vec<(Wide, Dual<LEWrap>)>) {
-        let mut address_map: FxHashMap<LEWrap, LEWrap> = FxHashMap::default();
-        let mut next_address = 0u32;
-
-        // Helper function to get or assign new address
-        let mut get_new_address = |old_addr: LEWrap| -> LEWrap {
-            *address_map.entry(old_addr).or_insert_with(|| {
-                let new_addr = LEWrap(LE::from_canonical_u32(next_address));
-                next_address += 1;
-                new_addr
-            })
-        };
-
-        *digest_mem = digest_mem
-            .iter()
-            .map(|(digest, addr)| {
-                let new_addr = address_map.get(&addr.0).unwrap_or(&addr.0);
-                (*digest, Dual(*new_addr))
-            })
-            .collect();
-    }
-
-    fn partition_memory(&mut self) {
-        // TODO: Implement partitioning logic
-        // 1. Separate digest-only addresses
-        // 2. Reorder memory vectors to ensure digest-only addresses come last
-        // 3. Update address mappings accordingly
-    }
-
-    fn update_references(&mut self, old_to_new: &FxHashMap<LEWrap, LEWrap>) {
-        // TODO: Implement reference updating
-        // This helper function will be used in compact_memory and partition_memory
-        // to update all references to use new addresses
-    }
-
     pub fn initial_builtin_relation() -> Vec<(Wide, Dual<LEWrap>)> {
         let zstore = &mut lurk_zstore();
         builtin_vec()
@@ -287,103 +62,313 @@ impl Memory {
     }
 }
 
-pub enum MPtrType {
-    Digest(Wide),
-    Tuple2(MPtr, MPtr),
-    Tuple3(MPtr, MPtr, MPtr),
-    DigestTuple2(Wide, MPtr, MPtr),
-    DigestTuple3(Wide, MPtr, MPtr, MPtr),
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
+/// Virtual pointer
+pub struct VPtr(pub Ptr);
+
+impl VPtr {
+    fn new(tag: Tag, addr: u32) -> Self {
+        VPtr(Ptr(tag.elt(), LE::from_canonical_u32(addr)))
+    }
+
+    fn num(addr: u32) -> Self {
+        VPtr::new(Tag::Num, addr)
+    }
+
+    fn cons(addr: u32) -> Self {
+        VPtr::new(Tag::Cons, addr)
+    }
+
+    fn fun(addr: u32) -> Self {
+        VPtr::new(Tag::Fun, addr)
+    }
+
+    fn to_pptr(&self) -> PPtr {
+        PPtr(self.0)
+    }
+
+    fn tag(&self) -> Tag {
+        self.0.tag()
+    }
+
+    fn addr(&self) -> LE {
+        self.0.1
+    }
 }
 
-pub struct MPtr {
-    tag: Tag,
-    address: LE,
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
+/// Physical pointer
+struct PPtr(Ptr);
+
+
+
+impl PPtr {
+    fn new(tag: Tag, addr: u32) -> Self {
+        PPtr(Ptr(tag.elt(), LE::from_canonical_u32(addr)))
+    }
+
+    fn num(addr: u32) -> Self {
+        PPtr::new(Tag::Num, addr)
+    }
+
+    fn cons(addr: u32) -> Self {
+        PPtr::new(Tag::Cons, addr)
+    }
+
+    fn fun(addr: u32) -> Self {
+        PPtr::new(Tag::Fun, addr)
+    }
+
+    fn tag(&self) -> Tag {
+        self.0.tag()
+    }
+
+    fn addr(&self) -> LE {
+        self.0.1
+    }
 }
 
-pub struct Memory2 {
-    pub zstore: ZStore<LE, LurkChip>,
-    pub dag: FxHashMap<MPtr, MPtrType>,
-
-    pub ptr_value: FxHashMap<Ptr, Wide>,
-
-    pub cons_rel: Vec<(Ptr, Ptr, Ptr)>,
-    pub fun_rel: Vec<(Ptr, Ptr, Ptr, Ptr)>,
-    pub thunk_rel: Vec<(Ptr, Ptr, Ptr)>,
-    pub num: Vec<(Ptr,)>,
-
-    pub sym_digest_mem: Vec<(Wide, Dual<LEWrap>)>,
-    pub builtin_digest_mem: Vec<(Wide, Dual<LEWrap>)>,
-    pub nil_digest_mem: Vec<(Wide, Dual<LEWrap>)>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PPtrType {
+    Tuple2(PPtr, PPtr),
+    Tuple3(PPtr, PPtr, PPtr),
 }
 
-// impl Memory2 {
-//     // this is somewhat painful to write
-//     fn intern_ptr(&mut self, ptr: Ptr) -> ZPtr<LE> {
-//         if let Some(zptr) = self.deref(&ptr) {
-//             return zptr;
-//         }
+impl PPtrType {
+    fn get2(self) -> (PPtr, PPtr) {
+        match self {
+            PPtrType::Tuple2(x, y) => (x, y),
+            PPtrType::Tuple3(_, _, _) => panic!(),
+        }
+    }
 
-//         let tag = Tag::from_field(&ptr.0);
-//         match tag {
-//             Tag::Cons => {
-//                 let data = self.cons_rel_indices_2.0.get(&(ptr,)).unwrap();
-//                 assert_eq!(data.len(), 1);
-//                 let (car, cdr) = data[0];
-//                 let car = self.intern_ptr(car);
-//                 let cdr = self.intern_ptr(cdr);
-//                 let zptr = self.zstore.intern_tuple2(Tag::Cons, car, cdr);
-//                 self.ptr_zptr.insert(ptr, zptr);
-//                 zptr
-//             }
-//             Tag::Fun => {
-//                 let data = self.fun_rel_indices_3.0.get(&(ptr,)).unwrap();
-//                 assert_eq!(data.len(), 1);
-//                 let (args, body, closed_env) = data[0];
-//                 let args = self.intern_ptr(args);
-//                 let body = self.intern_ptr(body);
-//                 let closed_env = self.intern_ptr(closed_env);
-//                 let zptr = self.zstore.intern_tuple3(Tag::Fun, args, body, closed_env);
-//                 self.ptr_zptr.insert(ptr, zptr);
-//                 zptr
-//             }
-//             Tag::Thunk => {
-//                 let thunk_map = self
-//                     .thunk_rel
-//                     .iter()
-//                     .map(|x| (x.2, (x.0, x.1)))
-//                     .collect::<FxHashMap<_, _>>();
-//                 let (body, closed_env) = thunk_map.get(&ptr).unwrap();
-//                 let body = self.intern_ptr(*body);
-//                 let closed_env = self.intern_ptr(*closed_env);
-//                 let zptr = self.zstore.intern_tuple2(Tag::Thunk, body, closed_env);
-//                 self.ptr_zptr.insert(ptr, zptr);
-//                 zptr
-//             }
-//             Tag::Sym => self.deref(&ptr).unwrap(), // these should already exist
-//             Tag::Nil => self.deref(&ptr).unwrap(),
-//             Tag::Num => self.deref_imm(&ptr),
-//             Tag::Err => self.deref(&ptr).unwrap(),
-//             Tag::Builtin => self.deref(&ptr).unwrap(),
-//             _ => panic!("unimplemented: {:?}", &ptr),
-//         }
-//     }
-// }
+    fn get3(self) -> (PPtr, PPtr, PPtr) {
+        match self {
+            PPtrType::Tuple2(_, _) => panic!(),
+            PPtrType::Tuple3(x, y, z) => (x, y, z),
+        }
+    }
+}
 
-// ((lambda (x0 x1 x2)
-// (let ((y0 (cons 1 2))
-// (y1 (cons 3 4))
-// (y2 (cons 5 6))
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
+pub struct RawMemory {
+    pub ptr_value: FxHashMap<VPtr, Wide>,
 
-// (a1 (cons x0 y1))
-// (a2 (cons a1 x2))
+    pub cons_rel: Vec<(VPtr, VPtr, VPtr)>,
+    pub fun_rel: Vec<(VPtr, VPtr, VPtr, VPtr)>,
+    pub thunk_rel: Vec<(VPtr, VPtr, VPtr)>,
+    pub num: Vec<(VPtr,)>,
 
-// (b1 (cons y0 x1))
-// (b2 (cons b1 y2)))
+    pub cons_rel_map: FxHashMap<VPtr, (VPtr, VPtr)>,
+    pub fun_rel_map: FxHashMap<VPtr, (VPtr, VPtr, VPtr)>,
+    pub thunk_rel_map: FxHashMap<VPtr, (VPtr, VPtr)>,
+}
 
-// (eq a2 b2)
-// ))
-// '(1 . 2) '(3 . 4) '(5 . 6))
-fn generate_lisp_program(n: usize) -> String {
+impl RawMemory {
+    pub fn distill(&self) -> Memory {
+        let mut store = Store::default();
+        store.intern_raw_memory(&self);
+        store.reconstuct_memory()
+    }
+}
+
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
+struct Store {
+    pub allocator: Allocator,
+
+    pub dag: FxHashMap<PPtr, (PPtrType, Option<Wide>)>,
+    pub inv_dag: FxHashMap<(Tag, PPtrType), PPtr>,
+
+    /// These are opaque pointers that only have digests.
+    pub pptr_digest: FxHashMap<PPtr, Wide>,
+
+    /// Virtual to physical address translation.
+    pub vptr_pptr: FxHashMap<VPtr, PPtr>,
+}
+
+impl Store {
+    fn intern_tuple2(&mut self, tag: Tag, p1: PPtr, p2: PPtr) -> PPtr {
+        let ptr_type = PPtrType::Tuple2(p1, p2);
+
+        if let Some(ptr) = self.inv_dag.get(&(tag, ptr_type)) {
+            // println!("{:?} = inv_dag.get({:?})", ptr, ptr_type);
+            *ptr
+        } else {
+            let next_addr = self.allocator.alloc_addr(tag.elt(), LE::zero());
+            let ptr = PPtr(Ptr(tag.elt(), next_addr));
+            self.dag.insert(ptr, (ptr_type, None));
+            self.inv_dag.insert((tag, ptr_type), ptr);
+            // println!("dag.insert({:?}, {:?})", ptr, ptr_type);
+            ptr
+        }
+    }
+
+    fn intern_tuple3(&mut self, tag: Tag, p1: PPtr, p2: PPtr, p3: PPtr) -> PPtr {
+        let ptr_type = PPtrType::Tuple3(p1, p2, p3);
+
+        if let Some(ptr) = self.inv_dag.get(&(tag, ptr_type)) {
+            *ptr
+        } else {
+            let addr = self.allocator.alloc_addr(tag.elt(), LE::zero());
+            let ptr = PPtr(Ptr(tag.elt(), addr));
+            self.dag.insert(ptr, (ptr_type, None));
+            self.inv_dag.insert((tag, ptr_type), ptr);
+            ptr
+        }
+    }
+
+    // this is somewhat painful to write
+    fn intern_ptr(&mut self, vptr: VPtr, memory: &RawMemory) -> PPtr {
+        if let Some(ptr) = self.vptr_pptr.get(&vptr) {
+            return *ptr;
+        }
+
+        let tag = vptr.tag();
+        match tag {
+            Tag::Cons => {
+                let (vcar, vcdr) = memory
+                    .cons_rel_map
+                    .get(&vptr)
+                    .expect("dangling virtual pointer");
+
+                let car = self.intern_ptr(*vcar, memory);
+                let cdr = self.intern_ptr(*vcdr, memory);
+                let ptr = self.intern_tuple2(Tag::Cons, car, cdr);
+                self.vptr_pptr.insert(vptr, ptr);
+                // println!("v->p: {:?} -> {:?}", vptr, ptr);
+                ptr
+            }
+            Tag::Fun => {
+                let (vargs, vbody, vclosed_env) = memory
+                    .fun_rel_map
+                    .get(&vptr)
+                    .expect("dangling virtual pointer");
+
+                let args = self.intern_ptr(*vargs, memory);
+                let body = self.intern_ptr(*vbody, memory);
+                let closed_env = self.intern_ptr(*vclosed_env, memory);
+                let ptr = self.intern_tuple3(Tag::Fun, args, body, closed_env);
+                self.vptr_pptr.insert(vptr, ptr);
+                // println!("v->p: {:?} -> {:?}", vptr, ptr);
+                ptr
+            }
+            Tag::Thunk => {
+                let (vbody, vclosed_env) = memory
+                    .thunk_rel_map
+                    .get(&vptr)
+                    .expect("dangling virtual pointer");
+
+                let body = self.intern_ptr(*vbody, memory);
+                let closed_env = self.intern_ptr(*vclosed_env, memory);
+                let ptr = self.intern_tuple2(Tag::Thunk, body, closed_env);
+                self.vptr_pptr.insert(vptr, ptr);
+                // println!("v->p: {:?} -> {:?}", vptr, ptr);
+                ptr
+            }
+            Tag::Sym => PPtr(vptr.0),
+            Tag::Nil => PPtr(vptr.0),
+            Tag::Num => PPtr(vptr.0),
+            Tag::Err => PPtr(vptr.0),
+            Tag::Builtin => PPtr(vptr.0),
+            _ => panic!("unimplemented: {:?}", &vptr),
+        }
+    }
+
+    fn intern_digest(&mut self, vptr: VPtr, digest: Wide, memory: &RawMemory) -> PPtr {
+        let tag = vptr.tag();
+        let ptr = self.vptr_pptr.get(&vptr).copied().unwrap_or_else(|| {
+            // let addr = if tag == Tag::Num {
+            //     vptr.0.1
+            // } else {
+            //     self.allocator.alloc_addr(tag.elt(), LE::zero())
+            // };
+
+            let ptr = PPtr(vptr.0);
+            self.vptr_pptr.insert(vptr, ptr);
+            ptr
+        });
+
+        if let Some((_, inner)) = self.dag.get_mut(&ptr) {
+            *inner = Some(digest);
+        } else if let Some(other) = self.pptr_digest.insert(ptr, digest) {
+            assert_eq!(digest, other); // if it exists, the digest better be the same
+        }
+        ptr
+    }
+
+    fn intern_raw_memory(&mut self, memory: &RawMemory) {
+        for (_, _, cons) in &memory.cons_rel {
+            self.intern_ptr(*cons, memory);
+        }
+        for (_, _, _, fun) in &memory.fun_rel {
+            self.intern_ptr(*fun, memory);
+        }
+        for (_, _, thunk) in &memory.thunk_rel {
+            self.intern_ptr(*thunk, memory);
+        }
+
+        for (vptr, digest) in &memory.ptr_value {
+            self.intern_digest(*vptr, *digest, memory);
+        }
+    }
+
+    fn reconstuct_memory(self) -> Memory {
+        let sorted_memory = self
+            .dag
+            .into_iter()
+            .sorted_by_key(|x| x.0)
+            .collect::<Vec<_>>();
+
+        let mut memory = Memory::default();
+
+        for (ptr, (ptr_type, maybe_digest)) in sorted_memory {
+            let tag = ptr.tag();
+            match tag {
+                Tag::Cons => {
+                    let (car, cdr) = ptr_type.get2();
+                    memory.cons_mem.push((car.0, cdr.0, ptr.addr()));
+                    if let Some(digest) = maybe_digest {
+                        memory.cons_digest_mem.push((digest, ptr.addr()));
+                    }
+                }
+                Tag::Fun => {
+                    let (args, body, closed_env) = ptr_type.get3();
+                    memory
+                        .fun_mem
+                        .push((args.0, body.0, closed_env.0, ptr.addr()));
+                    if let Some(digest) = maybe_digest {
+                        memory.fun_digest_mem.push((digest, ptr.addr()));
+                    }
+                }
+                Tag::Thunk => {
+                    let (body, closed_env) = ptr_type.get2();
+                    memory.thunk_mem.push((body.0, closed_env.0, ptr.addr()));
+                    if let Some(digest) = maybe_digest {
+                        memory.thunk_digest_mem.push((digest, ptr.addr()));
+                    }
+                }
+                _ => panic!("floating pointer: {:?}", &ptr),
+            }
+        }
+
+        for (ptr, digest) in self.pptr_digest {
+            let tag = ptr.tag();
+            match tag {
+                Tag::Sym => memory.sym_digest_mem.push((digest, ptr.addr())),
+                Tag::Nil => memory.nil_digest_mem.push((digest, ptr.addr())),
+                Tag::Builtin => memory.builtin_digest_mem.push((digest, ptr.addr())),
+                Tag::Num => memory.num.push((ptr.0,)),
+                _ => panic!("unimplemented: {:?}", &ptr),
+            }
+        }
+
+        memory
+    }
+}
+
+pub fn generate_lisp_program(n: usize, op: &str) -> String {
     let mut program = String::new();
 
     let x = |i: usize| format!("x{i}");
@@ -436,7 +421,8 @@ fn generate_lisp_program(n: usize) -> String {
 
     // Generate equality check
     program.push_str(&format!(
-        "\n        (eq {} {})\n    ))\n    ",
+        "\n        ({} {} {})\n    ))\n    ",
+        op,
         a(n - 1),
         b(n - 1),
     ));
@@ -453,6 +439,94 @@ fn generate_lisp_program(n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn create_sample_raw_memory() -> RawMemory {
+        let mut memory = RawMemory::default();
+
+        let n1 = VPtr::num(1);
+        let n2 = VPtr::num(2);
+        let n4 = VPtr::num(4);
+        let n8 = VPtr::num(8);
+
+        let c12 = VPtr::cons(0);
+        let c48 = VPtr::cons(1);
+
+        let k12 = VPtr::cons(2);
+        let k48 = VPtr::cons(4);
+
+        let c12_k48 = VPtr::cons(5);
+        let k12_c48 = VPtr::cons(6);
+
+        // Add some cons relations
+        memory.cons_rel.push((n1, n2, c12));
+        memory.cons_rel.push((n4, n8, c48));
+        memory.cons_rel_map.insert(c12, (n1, n2));
+        memory.cons_rel_map.insert(c48, (n4, n8));
+
+        memory.cons_rel.push((n1, n2, k12));
+        memory.cons_rel.push((n4, n8, k48));
+        memory.cons_rel_map.insert(k12, (n1, n2));
+        memory.cons_rel_map.insert(k48, (n4, n8));
+
+        memory.cons_rel.push((c12, k48, c12_k48));
+        memory.cons_rel.push((k12, c48, k12_c48));
+        memory.cons_rel_map.insert(c12_k48, (c12, k48));
+        memory.cons_rel_map.insert(k12_c48, (k12, c48));
+
+        memory
+    }
+
+    #[test]
+    fn test_distill_raw_memory() {
+        let raw_memory = create_sample_raw_memory();
+        let distilled_memory = raw_memory.distill();
+
+        // Check that all cons relations are preserved
+        assert_eq!(distilled_memory.cons_mem.len(), 3);
+    }
+
+    #[test]
+    fn test_distill_with_duplicates() {
+        let mut raw_memory = create_sample_raw_memory();
+        
+        // Add a duplicate cons relation
+        let v1 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(1)));
+        let v2 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(2)));
+        let v3 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(3)));
+        raw_memory.cons_rel.push((v1, v2, v3));
+
+        let distilled_memory = raw_memory.distill();
+
+        // Check that duplicates are removed
+        assert_eq!(distilled_memory.cons_mem.len(), 2);
+    }
+
+    #[test]
+    fn test_distill_with_dangling_pointers() {
+        let mut raw_memory = create_sample_raw_memory();
+        
+        // Add a dangling pointer
+        let v6 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(6)));
+        raw_memory.ptr_value.insert(v6, Wide([LE::from_canonical_u32(60); 8]));
+
+        let distilled_memory = raw_memory.distill();
+
+        // Check that dangling pointers are not included in the distilled memory
+        assert_eq!(distilled_memory.cons_digest_mem.len(), 2);
+    }
+
+    #[test]
+    fn test_distill_empty_memory() {
+        let empty_memory = RawMemory::default();
+        let distilled_memory = empty_memory.distill();
+
+        assert_eq!(distilled_memory.cons_mem.len(), 0);
+        assert_eq!(distilled_memory.fun_mem.len(), 0);
+        assert_eq!(distilled_memory.thunk_mem.len(), 0);
+        assert_eq!(distilled_memory.cons_digest_mem.len(), 0);
+        assert_eq!(distilled_memory.fun_digest_mem.len(), 0);
+        assert_eq!(distilled_memory.thunk_digest_mem.len(), 0);
+    }
 
     #[test]
     fn test_generate_lisp_program_n3() {
@@ -474,7 +548,7 @@ mod tests {
     )) 
     '(1 . 2) '(3 . 4) '(5 . 6) )"#;
 
-        let result = generate_lisp_program(3);
+        let result = generate_lisp_program(3, "eq");
 
         // Normalize whitespace for comparison
         let normalize_whitespace = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");

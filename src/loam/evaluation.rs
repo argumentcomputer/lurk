@@ -7,8 +7,8 @@ use p3_baby_bear::BabyBear;
 use rustc_hash::FxHashMap;
 
 use crate::loam::allocation::Allocator;
-use crate::loam::memory::Memory;
 use crate::loam::lurk_sym_index;
+use crate::loam::memory::{generate_lisp_program, Memory, RawMemory, VPtr};
 use crate::loam::{LEWrap, Num, Ptr, PtrEq, Wide, WidePtr, LE};
 use crate::lurk::chipset::LurkChip;
 use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
@@ -199,7 +199,7 @@ impl Tag {
 // with evaluation
 #[cfg(feature = "loam")]
 ascent! {
-    #![trace]
+    // #![trace]
 
     pub struct EvaluationProgram {
         pub allocator: Allocator,
@@ -276,8 +276,8 @@ ascent! {
     lattice cons_mem(Ptr, Ptr, Dual<LEWrap>); // (car, cdr, addr)
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
-    cons_digest_mem(value, Dual(addr)) <-- 
-        alloc(tag, value), if *tag == Tag::Cons.elt(), 
+    cons_digest_mem(value, Dual(addr)) <--
+        alloc(tag, value), if *tag == Tag::Cons.elt(),
         let addr = LEWrap(_self.alloc_addr(Tag::Cons.elt(), LE::zero()));
     // Populating cons(...) triggers allocation in cons mem.
     cons_mem(car, cdr, Dual(addr)) <-- cons(car, cdr), let addr = LEWrap(_self.alloc_addr(Tag::Cons.elt(), LE::zero()));
@@ -312,8 +312,8 @@ ascent! {
     lattice fun_mem(Ptr, Ptr, Ptr, Dual<LEWrap>); // (args, body, closed-env, addr)
 
     // Populating alloc(...) triggers allocation in fun_digest_mem.
-    fun_digest_mem(value, Dual(addr)) <-- 
-        alloc(tag, value), if *tag == Tag::Fun.elt(), 
+    fun_digest_mem(value, Dual(addr)) <--
+        alloc(tag, value), if *tag == Tag::Fun.elt(),
         let addr = LEWrap(_self.alloc_addr(Tag::Fun.elt(), LE::zero()));
     // Populating cons(...) triggers allocation in cons mem.
     fun_mem(args, body, closed_env, Dual(addr)) <-- fun(args, body, closed_env), let addr = LEWrap(_self.alloc_addr(Tag::Fun.elt(), LE::zero()));
@@ -328,12 +328,12 @@ ascent! {
         fun_mem(args, body, closed_env, addr),
         ptr_value(args, args_value), ptr_value(body, body_value), ptr_value(closed_env, closed_env_value),
         hash6_rel(
-            args.wide_tag(), 
-            args_value, 
-            body.wide_tag(), 
-            body_value, 
-            closed_env.wide_tag(), 
-            closed_env_value, 
+            args.wide_tag(),
+            args_value,
+            body.wide_tag(),
+            body_value,
+            closed_env.wide_tag(),
+            closed_env_value,
             Tag::Fun.elt(),
             digest,
         );
@@ -341,12 +341,12 @@ ascent! {
     fun_mem(args, body, closed_env, addr) <--
         fun_digest_mem(digest, addr),
         hash6_rel(
-            args_tag, 
-            args_value, 
-            body_tag, 
-            body_value, 
-            closed_env_tag, 
-            closed_env_value, 
+            args_tag,
+            args_value,
+            body_tag,
+            body_value,
+            closed_env_tag,
+            closed_env_value,
             Tag::Fun.elt(),
             digest,
         ),
@@ -366,7 +366,7 @@ ascent! {
     lattice thunk_mem(Ptr, Ptr, Dual<LEWrap>); // (body, closed-env, addr)
 
     // Populating alloc(...) triggers allocation in thunk_digest_mem.
-    thunk_digest_mem(value, Dual(addr)) <-- 
+    thunk_digest_mem(value, Dual(addr)) <--
         alloc(tag, value), if *tag == Tag::Thunk.elt(),
         let addr = LEWrap(_self.alloc_addr(Tag::Thunk.elt(), LE::zero()));
     // Populating cons(...) triggers allocation in cons mem.
@@ -396,7 +396,7 @@ ascent! {
     lattice sym_digest_mem(Wide, Dual<LEWrap>); // (digest, addr)
 
     // Populating alloc(...) triggers allocation in sym_digest_mem.
-    sym_digest_mem(value, Dual(addr)) <-- 
+    sym_digest_mem(value, Dual(addr)) <--
         alloc(tag, value), if *tag == Tag::Sym.elt(),
         let addr = LEWrap(_self.alloc_addr(Tag::Sym.elt(), LE::zero()));
 
@@ -411,7 +411,7 @@ ascent! {
     lattice builtin_digest_mem(Wide, Dual<LEWrap>) = Memory::initial_builtin_relation(); // (digest, addr)
 
     // Populating alloc(...) triggers allocation in sym_digest_mem.
-    builtin_digest_mem(value, Dual(addr)) <-- 
+    builtin_digest_mem(value, Dual(addr)) <--
         alloc(tag, value), if *tag == Tag::Builtin.elt(),
         let addr = LEWrap(_self.alloc_addr(Tag::Sym.elt(), Memory::initial_builtin_addr()));
 
@@ -427,7 +427,7 @@ ascent! {
     // Can this be combined with sym_digest_mem? Can it be eliminated? (probably eventually).
     lattice nil_digest_mem(Wide, Dual<LEWrap>) = Memory::initial_nil_relation(); // (digest, addr)
 
-    nil_digest_mem(value, Dual(addr)) <-- 
+    nil_digest_mem(value, Dual(addr)) <--
         alloc(tag, value), if *tag == Tag::Nil.elt(),
         let addr = LEWrap(_self.alloc_addr(Tag::Nil.elt(), Memory::initial_nil_addr()));
 
@@ -605,11 +605,11 @@ ascent! {
     ////////////////////
     // eq op
 
-    // Signal: Query. Are these two pointers equal? 
+    // Signal: Query. Are these two pointers equal?
     relation eq(Ptr, Ptr, PtrEq);
 
-    // Final: Transitive closure of all equal pointers. But we only lazily compute this, 
-    // and update when getting a query triggered from `eq(ptr, ptr, is_eq)` call. This also memoizes the computation. 
+    // Final: Transitive closure of all equal pointers. But we only lazily compute this,
+    // and update when getting a query triggered from `eq(ptr, ptr, is_eq)` call. This also memoizes the computation.
     relation eq_rel(Ptr, Ptr, bool);
 
     // Signals for parsing
@@ -631,7 +631,7 @@ ascent! {
         eq_cont1(expr, env, tail),
         cons_rel(arg1, rest, tail),
         cons_rel(arg2, end, rest), if end.is_nil(); // TODO: otherwise error
-    
+
     // Signal
     eq_cont3(expr, env, evaled_arg1, evaled_arg2) <--
         eq_cont2(expr, env, arg1, arg2),
@@ -639,12 +639,12 @@ ascent! {
         eval(arg2, env, evaled_arg2);
 
     // Signal: Are these two pointers equal?
-    eq(evaled_arg1, evaled_arg2, is_eq) <-- 
+    eq(evaled_arg1, evaled_arg2, is_eq) <--
         eq_cont3(expr, env, evaled_arg1, evaled_arg2),
         let is_eq = evaled_arg1.is_eq(evaled_arg2);
-    
+
     // Final: Return the result
-    eval(expr, env, Ptr::lurk_bool(*is_eq)) <-- 
+    eval(expr, env, Ptr::lurk_bool(*is_eq)) <--
         eq_cont3(expr, env, evaled_arg1, evaled_arg2),
         eq_rel(evaled_arg1, evaled_arg2, is_eq);
 
@@ -654,8 +654,8 @@ ascent! {
 
     // Signal
     relation eq_rel_cont1(Ptr, Ptr, LE); // (arg1, arg2, tag)
-    
-    // Signals: To implement the short-circuiting and lazy logic, we hold the subchildren in a continuation. 
+
+    // Signals: To implement the short-circuiting and lazy logic, we hold the subchildren in a continuation.
     relation eq_rel_tuple2_cont(Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, PtrEq); // (arg1, arg2, x1, y1, x2, y2, is_eq)
     relation eq_rel_tuple3_cont(Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, Ptr, PtrEq); // (arg1, arg2, x1, y1, z1, x2, y2, z2, is_eq)
 
@@ -664,69 +664,69 @@ ascent! {
     eq_rel(arg1, arg2, false) <-- eq(arg1, arg2, PtrEq::NotEqual);
 
     // Signal: Prepare to match on the tag. I don't know if inlining the match would be more efficient.
-    ingress(arg1), ingress(arg2), eq_rel_cont1(arg1, arg2, tag) <-- 
+    ingress(arg1), ingress(arg2), eq_rel_cont1(arg1, arg2, tag) <--
         eq(arg1, arg2, PtrEq::DontKnow), let tag = arg1.0;
 
     // Signal: Match on the Cons tag and query the children
-    eq_rel_tuple2_cont(arg1, arg2, car1, cdr1, car2, cdr2, is_eq) <-- 
+    eq_rel_tuple2_cont(arg1, arg2, car1, cdr1, car2, cdr2, is_eq) <--
         eq_rel_cont1(arg1, arg2, &Tag::Cons.elt()),
         // TODO: there is a bit of an issue here: what if not both cons_rels exist?
         cons_rel(car1, cdr1, arg1),
         cons_rel(car2, cdr2, arg2),
         let is_eq = Lattice::join(car1.is_eq(car2), cdr1.is_eq(cdr2));
-    
+
     // Signal: Match on the Fun tag and query the children
-    eq_rel_tuple3_cont(arg1, arg2, args1, args2, body1, body2, closed_env1, closed_env2, is_eq) <-- 
+    eq_rel_tuple3_cont(arg1, arg2, args1, args2, body1, body2, closed_env1, closed_env2, is_eq) <--
         eq_rel_cont1(arg1, arg2, &Tag::Fun.elt()),
         fun_rel(args1, body1, closed_env1, arg1),
         fun_rel(args2, body2, closed_env2, arg2),
         let is_eq = Lattice::join(Lattice::join(args1.is_eq(args2), body1.is_eq(body2)), closed_env1.is_eq(closed_env2));
 
     // Signal: Match on the Thunk tag and query the children
-    eq_rel_tuple2_cont(arg1, arg2, body1, body2, closed_env1, closed_env2, is_eq) <-- 
+    eq_rel_tuple2_cont(arg1, arg2, body1, body2, closed_env1, closed_env2, is_eq) <--
         eq_rel_cont1(arg1, arg2, &Tag::Thunk.elt()),
         thunk_rel(body1, closed_env1, arg1),
         thunk_rel(body2, closed_env2, arg2),
         let is_eq = Lattice::join(body1.is_eq(body2), closed_env1.is_eq(closed_env2));
 
     // Signal: If both pairs are equal.
-    eq_rel(arg1, arg2, true) <-- 
+    eq_rel(arg1, arg2, true) <--
         eq_rel_tuple2_cont(arg1, arg2, x1, y1, x2, y2, PtrEq::Equal);
 
     // Signal: If at least one pair is not equal.
-    eq_rel(arg1, arg2, false) <-- 
+    eq_rel(arg1, arg2, false) <--
         eq_rel_tuple2_cont(arg1, arg2, x1, y1, x2, y2, PtrEq::NotEqual);
 
     // Signal: Recurse.
-    eq(x1, x2, x_is_eq), eq(y1, y2, y_is_eq) <-- 
+    eq(x1, x2, x_is_eq), eq(y1, y2, y_is_eq) <--
         eq_rel_tuple2_cont(arg1, arg2, x1, y1, x2, y2, PtrEq::DontKnow),
         let x_is_eq = x1.is_eq(x2),
         let y_is_eq = y1.is_eq(y2);
 
     // Signal: Finish.
-    eq_rel(arg1, arg2, is_eq) <-- 
+    eq_rel(arg1, arg2, is_eq) <--
         eq_rel_tuple2_cont(arg1, arg2, x1, y1, x2, y2, PtrEq::DontKnow),
         eq_rel(x1, x2, x_is_eq),
         eq_rel(y1, y2, y_is_eq),
         let is_eq = *x_is_eq && *y_is_eq;
 
     // Signal: If all three pairs are equal.
-    eq_rel(arg1, arg2, true) <-- 
+    eq_rel(arg1, arg2, true) <--
         eq_rel_tuple3_cont(arg1, arg2, x1, y1, z1, x2, y2, z2, PtrEq::Equal);
 
     // Signal: If at least one pair is not equal.
-    eq_rel(arg1, arg2, false) <-- 
+    eq_rel(arg1, arg2, false) <--
         eq_rel_tuple3_cont(arg1, arg2, x1, y1, z1, x2, y2, z2, PtrEq::NotEqual);
 
     // Signal: Recurse.
-    eq(x1, x2, x_is_eq), eq(y1, y2, y_is_eq), eq(z1, z2, z_is_eq) <-- 
+    eq(x1, x2, x_is_eq), eq(y1, y2, y_is_eq), eq(z1, z2, z_is_eq) <--
         eq_rel_tuple3_cont(arg1, arg2, x1, y1, z1, x2, y2, z2, PtrEq::DontKnow),
         let x_is_eq = x1.is_eq(x2),
         let y_is_eq = y1.is_eq(y2),
         let z_is_eq = z1.is_eq(z2);
 
     // Signal: Finish.
-    eq_rel(arg1, arg2, is_eq) <-- 
+    eq_rel(arg1, arg2, is_eq) <--
         eq_rel_tuple3_cont(arg1, arg2, x1, y1, z1, x2, y2, z2, PtrEq::DontKnow),
         eq_rel(x1, x2, x_is_eq),
         eq_rel(y1, y2, y_is_eq),
@@ -785,13 +785,13 @@ ascent! {
     ingress(evaled) <--
         car_cdr_cont2(expr, env, body, is_car),
         eval(body, env, evaled);
-    
+
     // Real rule matching car case
     eval(expr, env, car) <--
         car_cdr_cont2(expr, env, body, true),
         eval(body, env, evaled),
         cons_rel(car, _, evaled);
-    
+
     // Real rule matching cdr case
     eval(expr, env, cdr) <--
         car_cdr_cont2(expr, env, body, false),
@@ -1271,12 +1271,12 @@ impl EvaluationProgram {
         Wide(zptr.digest)
     }
 
-    /// Hydrate the `ptr_zptr` map. This will also intern all the relational pointers 
+    /// Hydrate the `ptr_zptr` map. This will also intern all the relational pointers
     /// into the `zstore`, but not modify the relation data itself. By "relational pointers,"
     /// I mean pointer relations like `cons_rel`, which may have been allocated, but whose hash
-    /// has yet to be computed. 
-    /// 
-    /// In order to debug and print things, we need to know what each `Ptr`'s canonical 
+    /// has yet to be computed.
+    ///
+    /// In order to debug and print things, we need to know what each `Ptr`'s canonical
     /// `ZPtr` representation is. Thus we need to hydrate the `zstore` with the out-of-sync
     /// relational pointers that running the loam program has created. This is the same as the
     /// original hydration in `lurkrs`.
@@ -1434,32 +1434,60 @@ impl EvaluationProgram {
         }
     }
 
-    pub fn export_memory(&self) -> Memory {
-        Memory {
-            cons_digest_mem: self.cons_digest_mem.clone(),
-            cons_mem: self.cons_mem.clone(),
-            fun_digest_mem: self.fun_digest_mem.clone(),
-            fun_mem: self.fun_mem.clone(),
-            thunk_digest_mem: self.thunk_digest_mem.clone(),
-            thunk_mem: self.thunk_mem.clone(),
-            sym_digest_mem: self.sym_digest_mem.clone(),
-            builtin_digest_mem: self.builtin_digest_mem.clone(),
-            nil_digest_mem: self.nil_digest_mem.clone(),
-            num: self.num.clone(),
-        }
-    }
+    pub fn export_memory(&self) -> RawMemory {
+        let ptr_value = self
+            .ptr_value
+            .iter()
+            .map(|(ptr, wide)| (VPtr(*ptr), *wide))
+            .collect();
 
-    pub fn import_memory(&mut self, memory: Memory) {
-        self.cons_digest_mem = memory.cons_digest_mem;
-        self.cons_mem = memory.cons_mem;
-        self.fun_digest_mem = memory.fun_digest_mem;
-        self.fun_mem = memory.fun_mem;
-        self.thunk_digest_mem = memory.thunk_digest_mem;
-        self.thunk_mem = memory.thunk_mem;
-        self.sym_digest_mem = memory.sym_digest_mem;
-        self.builtin_digest_mem = memory.builtin_digest_mem;
-        self.nil_digest_mem = memory.nil_digest_mem;
-        self.num = memory.num;
+        let cons_rel = self
+            .cons_rel
+            .iter()
+            .map(|(car, cdr, cons)| (VPtr(*car), VPtr(*cdr), VPtr(*cons)))
+            .collect();
+        let fun_rel = self
+            .fun_rel
+            .iter()
+            .map(|(args, body, closed_env, fun)| {
+                (VPtr(*args), VPtr(*body), VPtr(*closed_env), VPtr(*fun))
+            })
+            .collect();
+        let thunk_rel = self
+            .thunk_rel
+            .iter()
+            .map(|(body, closed_env, thunk)| (VPtr(*body), VPtr(*closed_env), VPtr(*thunk)))
+            .collect();
+        let num = self.num.iter().map(|(num,)| (VPtr(*num),)).collect();
+
+        let cons_rel_map = self
+            .cons_rel
+            .iter()
+            .map(|(car, cdr, cons)| (VPtr(*cons), (VPtr(*car), VPtr(*cdr))))
+            .collect();
+        let fun_rel_map = self
+            .fun_rel
+            .iter()
+            .map(|(args, body, closed_env, fun)| {
+                (VPtr(*fun), (VPtr(*args), VPtr(*body), VPtr(*closed_env)))
+            })
+            .collect();
+        let thunk_rel_map = self
+            .thunk_rel
+            .iter()
+            .map(|(body, closed_env, thunk)| (VPtr(*thunk), (VPtr(*body), VPtr(*closed_env))))
+            .collect();
+
+        RawMemory {
+            ptr_value,
+            cons_rel,
+            fun_rel,
+            thunk_rel,
+            num,
+            cons_rel_map,
+            fun_rel_map,
+            thunk_rel_map,
+        }
     }
 }
 
@@ -1860,109 +1888,13 @@ mod test {
         // test_aux("(eq 1 2)", "nil", None);
         // test_aux("(eq (cons 1 2) (quote (1 . 2)))", "t", None);
         // test_aux("((lambda (x) (eq (cons 1 2) x)) '(1 . 2))", "t", None);
-        test_aux("((lambda (x) (let ((a (cons 1 2))) (eq a x))) '(1 . 2))", "t", None);
-    }    
-
-    fn generate_lisp_program(n: usize, op: &str) -> String {
-        let mut program = String::new();
-    
-        let x = |i: usize| format!("x{i}");
-        let y = |i: usize| format!("y{i}");
-        let a = |i: usize| format!("a{i}");
-        let b = |i: usize| format!("b{i}");
-    
-        // Generate lambda expression and parameters
-        program.push_str("((lambda (");
-        program.push_str(&(0..n).map(|i| x(i)).join(" "));
-        program.push_str(")\n");
-    
-        // Generate let bindings
-        program.push_str("    (let (");
-        for i in 0..n {
-            program.push_str(&format!(
-                "({} (cons {} {}))\n          ",
-                y(i),
-                2 * i + 1,
-                2 * i + 2
-            ));
-        }
-        program.push('\n');
-    
-        // Generate first chain of cons
-        program.push_str("          (a0 x0)\n          ");
-        for i in 0..n - 1 {
-            let curr = if i % 2 == 0 { y(i + 1) } else { x(i + 1) };
-            program.push_str(&format!(
-                "({} (cons {} {}))\n          ",
-                a(i + 1),
-                a(i),
-                curr
-            ));
-        }
-        program.push('\n');
-    
-        // Generate second chain of cons
-        program.push_str("          (b0 y0)\n          ");
-        for i in 0..n - 1 {
-            let curr = if i % 2 == 1 { y(i + 1) } else { x(i + 1) };
-            program.push_str(&format!(
-                "({} (cons {} {}))\n          ",
-                b(i + 1),
-                b(i),
-                curr
-            ));
-        }
-        program.push_str(")\n");
-    
-        // Generate equality check
-        program.push_str(&format!(
-            "\n        ({} {} {})\n    ))\n    ",
-            op,
-            a(n - 1),
-            b(n - 1),
-        ));
-    
-        // Generate arguments
-        for i in 0..n {
-            program.push_str(&format!("'({} . {}) ", 2 * i + 1, 2 * i + 2));
-        }
-        program.push_str(")");
-    
-        program
-    }
-
-    #[test]
-    fn test_generate_lisp_program_n3() {
-        let expected = r#"((lambda (x0 x1 x2) 
-    (let ((y0 (cons 1 2))
-          (y1 (cons 3 4))
-          (y2 (cons 5 6))
-          
-          (a0 x0)
-          (a1 (cons a0 y1))
-          (a2 (cons a1 x2))
-          
-          (b0 y0)
-          (b1 (cons b0 x1))
-          (b2 (cons b1 y2))
-          )
-
-        (eq a2 b2)
-    )) 
-    '(1 . 2) '(3 . 4) '(5 . 6) )"#;
-
-        let result = generate_lisp_program(3, "eq");
-
-        // Normalize whitespace for comparison
-        let normalize_whitespace = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
-
-        assert_eq!(
-            normalize_whitespace(&result),
-            normalize_whitespace(expected)
+        test_aux(
+            "((lambda (x) (let ((a (cons 1 2))) (eq a x))) '(1 . 2))",
+            "t",
+            None,
         );
     }
-    
-    
+
     #[test]
     fn test_eq_complex() {
         let n = std::env::var("LISP_N").unwrap().parse::<usize>().unwrap();

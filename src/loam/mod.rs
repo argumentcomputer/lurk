@@ -141,7 +141,6 @@ impl Lattice for PtrEq {
     }
 }
 
-
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct Wide(pub [LE; 8]);
 
