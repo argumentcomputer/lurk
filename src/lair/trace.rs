@@ -333,7 +333,7 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_require(index, lookup.into_require());
                 }
             }
-            Op::Debug(..) => (),
+            Op::Debug(..) | Op::Print(..) => (),
             Op::RangeU8(xs) => {
                 let num_requires = (xs.len() / 2) + (xs.len() % 2);
                 for _ in 0..num_requires {

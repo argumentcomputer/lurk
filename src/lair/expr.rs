@@ -88,6 +88,7 @@ pub enum OpE<F> {
     ExternCall(VarList, Name, VarList),
     /// `Debug(s)` emits debug message `s`
     Debug(&'static str),
+    Print(Var),
     /// `RangeU8([x, ...])` makes sure `[x, ...]` are all U8 elements
     RangeU8(VarList),
 }

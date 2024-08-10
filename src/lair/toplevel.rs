@@ -484,6 +484,7 @@ impl<F: Field + Ord> OpE<F> {
                 vals.iter().for_each(|val| bind_new(val, ctx));
             }
             OpE::Debug(s) => ops.push(Op::Debug(s)),
+            OpE::Print(x) => ops.push(Op::Print(use_var(x, ctx).into())),
             OpE::Slice(pats, args) => {
                 assert_eq!(pats.total_size(), args.total_size());
                 let args: List<_> = args.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();

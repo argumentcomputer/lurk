@@ -201,6 +201,10 @@ macro_rules! block {
         $ops.push($crate::lair::expr::OpE::Debug($s));
         $crate::block!({ $($tail)* }, $ops)
     }};
+    ({ print!($s:ident); $($tail:tt)+ }, $ops:expr) => {{
+        $ops.push($crate::lair::expr::OpE::Print($s));
+        $crate::block!({ $($tail)* }, $ops)
+    }};
     // Pseudo-operations
     ({ let $tgt:ident $(: [$size:expr])? = ($($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
         let out = [$crate::var!($tgt $(, $size)?)].into();

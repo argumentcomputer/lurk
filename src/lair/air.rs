@@ -410,7 +410,7 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(img_var))
                 }
             }
-            Op::Debug(..) => (),
+            Op::Debug(..) | Op::Print(..) => (),
             Op::RangeU8(xs) => {
                 let num_requires = (xs.len() / 2) + (xs.len() % 2);
                 let requires = (0..num_requires)

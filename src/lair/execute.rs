@@ -519,6 +519,9 @@ impl<F: PrimeField32> Func<F> {
                     map.extend(chip.execute(&input, nonce as u32, queries, &mut requires));
                 }
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
+                ExecEntry::Op(Op::Print(xs)) => {
+                    println!("{:?}", xs.iter().map(|x| map[*x]).collect::<Vec<_>>())
+                }
                 ExecEntry::Op(Op::RangeU8(xs)) => {
                     let mut bytes = queries.bytes.context(nonce as u32, &mut requires);
                     let xs = xs.iter().map(|x| {
