@@ -12,6 +12,7 @@ pub struct ColumnLayout<Value, Slice> {
     pub(crate) input: Slice,
     pub(crate) aux: Slice,
     pub(crate) sel: Slice,
+    pub(crate) lookup: Slice,
 }
 
 pub type LayoutSizes = ColumnLayout<usize, usize>;
@@ -19,7 +20,7 @@ pub type LayoutSizes = ColumnLayout<usize, usize>;
 impl LayoutSizes {
     #[inline]
     fn total(&self) -> usize {
-        self.nonce + self.input + self.aux + self.sel
+        self.nonce + self.input + self.aux + self.sel + self.lookup
     }
 }
 
@@ -91,14 +92,16 @@ impl<F> Func<F> {
         let input = self.input_size;
         let mut aux = 0;
         let mut sel = 0;
+        let mut lookup = self.output_size;
         let degrees = &mut vec![1; input];
         self.body
-            .compute_layout_sizes(degrees, toplevel, &mut aux, &mut sel);
+            .compute_layout_sizes(degrees, toplevel, &mut aux, &mut sel, &mut lookup);
         LayoutSizes {
             nonce: 1,
             input,
             aux,
             sel,
+            lookup,
         }
     }
 }
@@ -110,11 +113,13 @@ impl<F> Block<F> {
         toplevel: &Toplevel<F, H>,
         aux: &mut usize,
         sel: &mut usize,
+        lookup: &mut usize,
     ) {
         self.ops
             .iter()
-            .for_each(|op| op.compute_layout_sizes(degrees, toplevel, aux));
-        self.ctrl.compute_layout_sizes(degrees, toplevel, aux, sel);
+            .for_each(|op| op.compute_layout_sizes(degrees, toplevel, aux, lookup));
+        self.ctrl
+            .compute_layout_sizes(degrees, toplevel, aux, sel, lookup);
     }
 }
 
@@ -125,6 +130,7 @@ impl<F> Ctrl<F> {
         toplevel: &Toplevel<F, H>,
         aux: &mut usize,
         sel: &mut usize,
+        lookup: &mut usize,
     ) {
         match self {
             Ctrl::Return(..) => {
@@ -138,7 +144,7 @@ impl<F> Ctrl<F> {
                 let mut max_aux = *aux;
                 let mut process = |block: &Block<_>| {
                     let block_aux = &mut aux.clone();
-                    block.compute_layout_sizes(degrees, toplevel, block_aux, sel);
+                    block.compute_layout_sizes(degrees, toplevel, block_aux, sel, lookup);
                     degrees.truncate(degrees_len);
                     max_aux = max_aux.max(*block_aux);
                 };
@@ -153,7 +159,7 @@ impl<F> Ctrl<F> {
                 let mut max_aux = *aux;
                 let mut process = |block: &Block<_>| {
                     let block_aux = &mut aux.clone();
-                    block.compute_layout_sizes(degrees, toplevel, block_aux, sel);
+                    block.compute_layout_sizes(degrees, toplevel, block_aux, sel, lookup);
                     degrees.truncate(degrees_len);
                     max_aux = max_aux.max(*block_aux);
                 };
@@ -173,6 +179,7 @@ impl<F> Op<F> {
         degrees: &mut Vec<Degree>,
         toplevel: &Toplevel<F, H>,
         aux: &mut usize,
+        _lookup: &mut usize,
     ) {
         match self {
             Op::AssertEq(..) => {}

@@ -19,20 +19,15 @@ use super::{
 
 impl ColumnIndex {
     #[inline]
-    fn save(&mut self) -> usize {
-        self.aux
+    fn save(&mut self) -> (usize, usize) {
+        (self.aux, self.lookup)
     }
 
     #[inline]
-    fn restore(&mut self, aux: usize) {
+    fn restore(&mut self, (aux, lookup): (usize, usize)) {
         self.aux = aux;
+        self.lookup = lookup;
     }
-}
-
-#[derive(Clone)]
-struct CallCtx<F, T> {
-    func_idx: F,
-    call_inp: Vec<T>,
 }
 
 pub type ColumnSlice<'a, T> = ColumnLayout<&'a T, &'a [T]>;
@@ -43,6 +38,7 @@ impl<'a, T> ColumnSlice<'a, T> {
         let (input, slice) = slice.split_at(layout_sizes.input);
         let (aux, slice) = slice.split_at(layout_sizes.aux);
         let (sel, slice) = slice.split_at(layout_sizes.sel);
+        let (lookup, slice) = slice.split_at(layout_sizes.lookup);
         assert!(slice.is_empty());
         let nonce = &nonce[0];
         Self {
@@ -50,6 +46,7 @@ impl<'a, T> ColumnSlice<'a, T> {
             input,
             aux,
             sel,
+            lookup,
         }
     }
 
@@ -68,6 +65,15 @@ impl<'a, T> ColumnSlice<'a, T> {
     {
         let t = self.aux[index.aux];
         index.aux += 1;
+        t
+    }
+
+    pub fn next_lookup(&self, index: &mut ColumnIndex) -> T
+    where
+        T: Copy,
+    {
+        let t = self.lookup[index.lookup];
+        index.lookup += 1;
         t
     }
 
@@ -156,18 +162,22 @@ impl<F: Field> Func<F> {
                 .get_index_of(&self.name)
                 .expect("Func not found on toplevel"),
         );
-        let call_ctx = CallCtx { func_idx, call_inp };
 
         let toplevel_sel = self.body.return_sel::<AB>(local);
-        self.body.eval(
-            builder,
-            local,
-            &toplevel_sel,
-            index,
-            map,
-            toplevel,
-            call_ctx,
+        let last_nonce = local.next_aux(index);
+        let last_count = local.next_aux(index);
+        let record = ProvideRecord {
+            last_nonce,
+            last_count,
+        };
+        let out = (0..self.output_size).map(|i| local.lookup[i].into());
+        builder.provide(
+            CallRelation(func_idx, call_inp, out),
+            record,
+            toplevel_sel.clone(),
         );
+        self.body
+            .eval(builder, local, &toplevel_sel, index, map, toplevel);
         builder.assert_bool(toplevel_sel.clone());
     }
 }
@@ -193,7 +203,6 @@ impl<F: Field> Block<F> {
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
-        call_ctx: CallCtx<F, AB::Expr>,
     ) where
         AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
@@ -201,8 +210,7 @@ impl<F: Field> Block<F> {
         self.ops
             .iter()
             .for_each(|op| op.eval(builder, local, sel, index, map, toplevel));
-        self.ctrl
-            .eval(builder, local, index, map, toplevel, call_ctx);
+        self.ctrl.eval(builder, local, index, map, toplevel);
     }
 }
 
@@ -433,7 +441,6 @@ impl<F: Field> Ctrl<F> {
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
-        call_ctx: CallCtx<F, AB::Expr>,
     ) where
         AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
@@ -445,7 +452,7 @@ impl<F: Field> Ctrl<F> {
 
                 let mut process = |block: &Block<F>| {
                     let sel = block.return_sel::<AB>(local);
-                    block.eval(builder, local, &sel, index, map, toplevel, call_ctx.clone());
+                    block.eval(builder, local, &sel, index, map, toplevel);
                     map.truncate(map_len);
                     index.restore(init_state);
                 };
@@ -460,7 +467,7 @@ impl<F: Field> Ctrl<F> {
 
                 let mut process = |block: &Block<F>| {
                     let sel = block.return_sel::<AB>(local);
-                    block.eval(builder, local, &sel, index, map, toplevel, call_ctx.clone());
+                    block.eval(builder, local, &sel, index, map, toplevel);
                     map.truncate(map_len);
                     index.restore(init_state);
                 };
@@ -472,14 +479,10 @@ impl<F: Field> Ctrl<F> {
             Ctrl::Return(ident, vs) => {
                 let sel = local.sel[*ident];
                 let out = vs.iter().map(|v| map[*v].to_expr());
-                let CallCtx { func_idx, call_inp } = call_ctx;
-                let last_nonce = local.next_aux(index);
-                let last_count = local.next_aux(index);
-                let record = ProvideRecord {
-                    last_nonce,
-                    last_count,
-                };
-                builder.provide(CallRelation(func_idx, call_inp, out), record, sel);
+                out.for_each(|o| {
+                    let out_var = local.next_lookup(index);
+                    builder.when(sel).assert_eq(o, out_var);
+                });
             }
         }
     }

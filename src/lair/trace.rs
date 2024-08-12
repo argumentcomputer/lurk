@@ -33,6 +33,7 @@ impl<'a, T> ColumnMutSlice<'a, T> {
         let (input, slice) = slice.split_at_mut(layout_sizes.input);
         let (aux, slice) = slice.split_at_mut(layout_sizes.aux);
         let (sel, slice) = slice.split_at_mut(layout_sizes.sel);
+        let (lookup, slice) = slice.split_at_mut(layout_sizes.lookup);
         assert!(slice.is_empty());
         let nonce = &mut nonce[0];
         Self {
@@ -40,6 +41,7 @@ impl<'a, T> ColumnMutSlice<'a, T> {
             input,
             aux,
             sel,
+            lookup,
         }
     }
 
@@ -51,6 +53,11 @@ impl<'a, T> ColumnMutSlice<'a, T> {
     pub fn push_aux(&mut self, index: &mut ColumnIndex, t: T) {
         self.aux[index.aux] = t;
         index.aux += 1;
+    }
+
+    pub fn push_lookup(&mut self, index: &mut ColumnIndex, t: T) {
+        self.lookup[index.lookup] = t;
+        index.lookup += 1;
     }
 
     pub fn push_require(&mut self, index: &mut ColumnIndex, require: RequireRecord<T>) {
@@ -83,6 +90,20 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 let requires = result.requires.iter();
                 let queries = shard.queries();
+                let query_map = &queries.func_queries()[self.func.index];
+                let lookup = query_map
+                    .get(args)
+                    .expect("Cannot find query result")
+                    .provide;
+                let provide = lookup.into_provide();
+                slice.push_aux(index, provide.last_nonce);
+                slice.push_aux(index, provide.last_count);
+                result
+                    .output
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .for_each(|&o| slice.push_lookup(index, o));
                 self.func
                     .populate_row(args, index, slice, queries, requires, self.toplevel);
             });
@@ -94,8 +115,6 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
 struct TraceCtx<'a, F: PrimeField32, H: Chipset<F>> {
     queries: &'a QueryRecord<F>,
     toplevel: &'a Toplevel<F, H>,
-    func_idx: usize,
-    call_inp: List<F>,
     requires: Iter<'a, Record>,
 }
 
@@ -114,8 +133,6 @@ impl<F: PrimeField32> Func<F> {
         let map = &mut args.iter().map(|arg| (*arg, 1)).collect();
         // Context of which function this is
         let ctx = &mut TraceCtx {
-            func_idx: self.index,
-            call_inp: args.into(),
             queries,
             requires,
             toplevel,
@@ -153,14 +170,6 @@ impl<F: PrimeField32> Ctrl<F> {
             Ctrl::Return(ident, _) => {
                 assert!(ctx.requires.next().is_none());
                 slice.sel[*ident] = F::one();
-                let query_map = &ctx.queries.func_queries()[ctx.func_idx];
-                let lookup = query_map
-                    .get(&ctx.call_inp)
-                    .expect("Cannot find query result")
-                    .provide;
-                let provide = lookup.into_provide();
-                slice.push_aux(index, provide.last_nonce);
-                slice.push_aux(index, provide.last_count);
             }
             Ctrl::Choose(var, cases, _) => {
                 let val = map[*var].0;
@@ -381,6 +390,7 @@ mod tests {
             input: 1,
             aux: 8,
             sel: 2,
+            lookup: 1,
         };
         assert_eq!(out, expected_layout_sizes);
     }
@@ -470,6 +480,7 @@ mod tests {
             input: 2,
             aux: 10,
             sel: 5,
+            lookup: 1,
         };
         assert_eq!(test_chip.layout_sizes, expected_layout_sizes);
 
@@ -534,6 +545,7 @@ mod tests {
             input: 2,
             aux: 2,
             sel: 4,
+            lookup: 1,
         };
         assert_eq!(test_chip.layout_sizes, expected_layout_sizes);
 
