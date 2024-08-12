@@ -942,7 +942,7 @@ mod test {
         lair::execute::QueryRecord,
         lurk::{
             chipset::lurk_hasher,
-            eval_direct::build_lurk_toplevel,
+            eval_compiled::build_lurk_toplevel,
             state::{lurk_sym, user_sym, State},
             symbol::Symbol,
             tag::Tag,
