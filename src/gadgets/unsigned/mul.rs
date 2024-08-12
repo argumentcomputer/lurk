@@ -155,7 +155,7 @@ impl<Var, const W: usize> Product<Var, W> {
             builder,
             lhs,
             rhs,
-            self.result.as_unchecked(),
+            self.result.into_unchecked().into(),
             record,
             is_real.clone(),
         );

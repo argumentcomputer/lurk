@@ -1,11 +1,12 @@
 use crate::gadgets::bytes::{ByteAirRecord, ByteRecord};
 use crate::gadgets::unsigned::{UncheckedWord, Word};
-use itertools::izip;
+use itertools::{enumerate, izip};
 use num_traits::ops::overflowing::{OverflowingAdd, OverflowingSub};
 use num_traits::{ToBytes, Unsigned};
 use p3_air::AirBuilder;
 use p3_field::{AbstractField, Field};
 use sphinx_derive::AlignedBorrow;
+use std::array;
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug, Default, AlignedBorrow)]
@@ -23,22 +24,36 @@ impl<Var, const W: usize> AddWitness<Var, W> {
         out: Word<AB::Expr, W>,
         is_real: impl Into<AB::Expr>,
     ) -> AB::Expr {
-        let is_real = is_real.into();
+        let builder = &mut builder.when(is_real);
 
         let base_inv = AB::F::from_canonical_u16(256).inverse();
 
+        // Initialize carry[-1] = 0
         let mut carry = AB::Expr::zero();
         for (out, in1, in2) in izip!(out, lhs, rhs) {
-            let sum = carry + in1 + in2;
+            // We compute the overflowing sum of both limbs, adding the previous carry bit.
+            //   sum[i] = in1[i] + in2[i] + carry[i-1]
+            // Due to range checks, we know
+            //   0 <= sum[i] <= 255 + 255 + 1 = 511,
+            // since we can assume carry[i-1] is always boolean.
+            let sum = in1 + in2 + carry;
 
-            // in1[i] + in2[i] + carry[i-1] = out[i] + 256 * carry[i]
-            // carry[i] = (in1[i] + in2[i] + carry[i-1] - out[i]) * 256^{-1}
+            // We expect the output to equal
+            //   out[i] = sum[i] % 256,
+            // with quotient/remainder equation
+            //   sum[i] = out[i] + carry[i] * 256.
+            // The only possible value for carry[i] is 0 or 1,
+            // since the right-hand side of the equation is at most 511 when carry[i] = 1.
+            // We can therefore compute the carry bit as
+            // carry[i] = (sum[i] - out[i])/256
             carry = (sum - out) * base_inv;
-            // if carry[i] == 0
-            //   in1[i] + in2[i] + carry[i-1] == out[i]
+
+            // By constraining carry[i] to be boolean, we ensure the modular reduction was correct
+            // if carry[i] = 0
+            //   -> sum[i] = out[i] (since out[i] < 256, no overflow happened)
             // else
-            //   in1[i] + in2[i] + carry[i-1] == out[i] + 256
-            builder.when(is_real.clone()).assert_bool(carry.clone());
+            //   -> sum[i] = out[i] + 256 (sum[i] must be >= 256, so an overflow occurred)
+            builder.assert_bool(carry.clone());
         }
         carry
     }
@@ -156,6 +171,124 @@ impl<T, const W: usize> Diff<T, W> {
     }
 }
 
+#[derive(Clone, Debug, AlignedBorrow)]
+#[repr(C)]
+pub struct AddOne<T, const W: usize> {
+    // inverses[i] = (result[i] - 256)^{-1}
+    inverses: [T; W],
+    result: [T; W],
+}
+
+impl<F: Field, const W: usize> AddOne<F, W> {
+    pub fn populate<U>(&mut self, input: &U) -> U
+    where
+        U: ToBytes<Bytes = [u8; W]> + Unsigned + OverflowingAdd,
+    {
+        let (out, _carry) = input.overflowing_add(&U::one());
+        let base = F::from_canonical_u16(256);
+
+        for (i, out) in enumerate(out.to_le_bytes()) {
+            let out = F::from_canonical_u8(out);
+            // compute (out[i] - 256)^{-1} to prove out[i] != 256
+            self.inverses[i] = (out - base).inverse();
+            self.result[i] = out;
+        }
+
+        out
+    }
+}
+
+impl<Var, const W: usize> AddOne<Var, W> {
+    /// Returns a word equal to input + 1, along with a carry bit indicating whether an overflow
+    /// occurred.
+    ///
+    /// # Detail
+    /// We assume the input word is correctly range checked, and add 1 (defined as `carry[-1]`)
+    /// We constrain
+    ///   `output[i] + carry[i] * 256 = input[i] + carry[i-1]`
+    /// Since `carry[i]` can only be boolean, the range of `output[i]` is `[0, ..., 256]`.
+    /// To avoid range checks, we simply constrain `output[i] != 256` by providing an inverse.
+    pub fn eval<AB>(
+        &self,
+        builder: &mut AB,
+        input: Word<AB::Expr, W>,
+        is_real: impl Into<AB::Expr>,
+    ) -> (Word<AB::Var, W>, AB::Expr)
+    where
+        AB: AirBuilder<Var = Var>,
+        Var: Copy + Into<AB::Expr>,
+    {
+        let builder = &mut builder.when(is_real);
+
+        let base = AB::F::from_canonical_u16(256);
+        let base_inv = base.inverse();
+
+        // Initialize carry[-1] = 1
+        let mut carry = AB::Expr::one();
+        for (input, output, inverse) in izip!(input, self.result, self.inverses) {
+            // We compute the overflowing sum of the limb and the previous carry bit.
+            //   sum[i] = input[i] + carry[i-1]
+            // Due to range checks, we know
+            //   0 <= sum[i] <= 255 + 1 = 256,
+            // since we can assume carry[i-1] is always boolean.
+            let sum = input + carry;
+
+            // We expect the output to equal
+            //   out[i] = sum[i] % 256,
+            // with quotient/remainder equation
+            //   sum[i] = out[i] + carry[i] * 256.
+            // We compute carry[i] from the given variables
+            //   carry[i] = (sum[i] - out[i])/256,
+            // and constrain carry[i] ∈ {0,1}.
+            carry = (sum - output.into()) * base_inv;
+            builder.assert_bool(carry.clone());
+
+            // We can bound out[i] = sum[i] - carry[i] * 256 as follows
+            // if carry[i] = 0
+            //   -> out[i] = sum[i]
+            //   -> out[i] ∈ [0, 255]
+            // if carry[i] = 1
+            //   -> out[i] = sum[i] - 256.
+            // In the latter case, since sum[i] ∈ [0, 256], the same applies to out[i],
+            // so need to assert that out[i] != 256.
+            // We do so by showing that
+            //   ∃ inverses[i] s.t. (out[i] - 256) * inverses[i] = 1
+            let non_zero = output.into() - base;
+            builder.assert_one(non_zero * inverse);
+        }
+
+        // We range constrain result manually by checking that none of
+        // its limbs is 256
+        let output = Word(self.result);
+        (output, carry)
+    }
+}
+
+impl<T, const W: usize> AddOne<T, W> {
+    pub const fn num_requires() -> usize {
+        0
+    }
+
+    pub const fn witness_size() -> usize {
+        size_of::<AddOne<u8, W>>()
+    }
+
+    pub fn iter_result(&self) -> impl IntoIterator<Item = T>
+    where
+        T: Clone,
+    {
+        self.result.clone()
+    }
+}
+impl<F: Default, const W: usize> Default for AddOne<F, W> {
+    fn default() -> Self {
+        Self {
+            inverses: array::from_fn(|_| F::default()),
+            result: array::from_fn(|_| F::default()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,6 +335,25 @@ mod tests {
         assert_eq!(sub_f, Word::from_unsigned(&sub));
     }
 
+    fn test_add_one<
+        const W: usize,
+        U: ToBytes<Bytes = [u8; W]> + Unsigned + OverflowingAdd + OverflowingSub + Debug,
+    >(
+        input: &U,
+    ) {
+        let mut add_one_witness = AddOne::<F, W>::default();
+        let out = add_one_witness.populate(input);
+        let (out_expected, carry_expected) = input.overflowing_add(&U::one());
+        assert_eq!(out, out_expected);
+        let (out_f, carry_f) = add_one_witness.eval(
+            &mut GadgetTester::passing(),
+            Word::<F, W>::from_unsigned(input),
+            F::one(),
+        );
+        assert_eq!(out_f, Word::from_unsigned(&out));
+        assert_eq!(carry_f, F::from_bool(carry_expected));
+    }
+
     proptest! {
 
     #[test]
@@ -212,6 +364,16 @@ mod tests {
     #[test]
     fn test_add_sub_64(a: u64, b: u64) {
         test_add_sub(&a, &b)
+    }
+
+    #[test]
+    fn test_add_one_32(a: u32) {
+        test_add_one(&a)
+    }
+
+    #[test]
+    fn test_add_one_64(a: u64) {
+        test_add_one(&a)
     }
 
     }

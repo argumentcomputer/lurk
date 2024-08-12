@@ -127,11 +127,8 @@ impl<Var, const W: usize> UncheckedWord<Var, W> {
         Word(self.0)
     }
 
-    pub fn as_unchecked<Expr: AbstractField>(&self) -> Word<Expr, W>
-    where
-        Var: Copy + Into<Expr>,
-    {
-        Word(self.0.map(Into::into))
+    pub fn into_unchecked(self) -> Word<Var, W> {
+        Word(self.0)
     }
 }
 
