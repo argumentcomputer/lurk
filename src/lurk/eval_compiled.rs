@@ -82,6 +82,7 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, 
         apply(),
         force(),
         env_lookup(),
+        u64_divmod(),
         equal(),
     ];
     let lurk_chip_map = lurk_chip_map();
@@ -307,29 +308,9 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                                     let res = store(res);
                                     return (u64_tag, res)
                                 }
-                                CTag::Div => {
-                                    let arg1: [8] = load(arg1);
-                                    let arg2: [8] = load(arg2);
-                                    let is_zero = extern_call(u64_iszero, arg2);
-                                    if is_zero {
-                                        let err = EvalErr::DivByZero;
-                                        return (err_tag, err)
-                                    }
-                                    let (q: [8], _r: [8]) = extern_call(u64_divrem, arg1, arg2);
-                                    let q = store(q);
-                                    return (u64_tag, q)
-                                }
-                                CTag::Mod => {
-                                    let arg1: [8] = load(arg1);
-                                    let arg2: [8] = load(arg2);
-                                    let is_zero = extern_call(u64_iszero, arg2);
-                                    if is_zero {
-                                        let err = EvalErr::DivByZero;
-                                        return (err_tag, err)
-                                    }
-                                    let (_q: [8], r: [8]) = extern_call(u64_divrem, arg1, arg2);
-                                    let r = store(r);
-                                    return (u64_tag, r)
+                                CTag::Div, CTag::Mod => {
+                                    let (res_tag, res) = call(u64_divmod, cexpr_tag, arg1, arg2);
+                                    return (res_tag, res)
                                 }
                                 CTag::Less => {
                                     let arg1: [8] = load(arg1);
@@ -781,6 +762,34 @@ pub fn env_lookup<F: AbstractField>() -> FuncE<F> {
     )
 }
 
+pub fn u64_divmod<F: AbstractField>() -> FuncE<F> {
+    func!(
+        fn u64_divmod(case, arg1, arg2): [2] {
+            let arg1: [8] = load(arg1);
+            let arg2: [8] = load(arg2);
+            let is_zero = extern_call(u64_iszero, arg2);
+            if is_zero {
+                let err_tag = Tag::Err;
+                let err = EvalErr::DivByZero;
+                return (err_tag, err)
+            }
+            let u64_tag = Tag::U64;
+            match case {
+                CTag::Div => {
+                    let (q: [8], _r: [8]) = extern_call(u64_divrem, arg1, arg2);
+                    let q = store(q);
+                    return (u64_tag, q)
+                }
+                CTag::Mod => {
+                    let (_q: [8], r: [8]) = extern_call(u64_divrem, arg1, arg2);
+                    let r = store(r);
+                    return (u64_tag, r)
+                }
+            }
+        }
+    )
+}
+
 #[cfg(test)]
 mod test {
     use expect_test::{expect, Expect};
@@ -805,6 +814,7 @@ mod test {
         let apply = FuncChip::from_name("apply", toplevel);
         let force = FuncChip::from_name("force", toplevel);
         let env_lookup = FuncChip::from_name("env_lookup", toplevel);
+        let u64_divmod = FuncChip::from_name("u64_divmod", toplevel);
         let equal = FuncChip::from_name("equal", toplevel);
 
         let expect_eq = |computed: usize, expected: Expect| {
@@ -818,10 +828,11 @@ mod test {
         expect_eq(compile_begin.width(), expect!["35"]);
         expect_eq(convert_data.width(), expect!["62"]);
         expect_eq(deconvert_data.width(), expect!["59"]);
-        expect_eq(eval.width(), expect!["279"]);
+        expect_eq(eval.width(), expect!["190"]);
         expect_eq(apply.width(), expect!["35"]);
         expect_eq(force.width(), expect!["20"]);
-        expect_eq(env_lookup.width(), expect!["47"]);
         expect_eq(equal.width(), expect!["52"]);
+        expect_eq(env_lookup.width(), expect!["47"]);
+        expect_eq(u64_divmod.width(), expect!["173"]);
     }
 }
