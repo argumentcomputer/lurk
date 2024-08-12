@@ -2,9 +2,25 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use p3_field::{AbstractField, PrimeField32};
 
-use crate::{func, lair::expr::FuncE, lurk::eval_direct::EvalErr};
+use crate::{func, lair::expr::FuncE};
 
 use super::{ingress::BuiltinMemo, tag::Tag};
+
+#[derive(Clone, Copy, FromPrimitive, Debug)]
+#[repr(u32)]
+pub enum CompileErr {
+    InvalidForm = 0x00001000,
+}
+
+impl CompileErr {
+    pub fn to_field<F: AbstractField>(self) -> F {
+        F::from_canonical_u32(self as u32)
+    }
+
+    pub fn from_field<F: PrimeField32>(f: &F) -> Self {
+        Self::from_u32(f.as_canonical_u32()).expect("Field element doesn't map to a CompileErr")
+    }
+}
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, FromPrimitive)]
@@ -78,7 +94,7 @@ pub fn compile<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F
     func!(
         invertible fn compile(expr_tag, expr): [2] {
             let err_tag = Tag::Err;
-            let invalid_form = EvalErr::InvalidForm;
+            let invalid_form = CompileErr::InvalidForm;
             match expr_tag {
                 Tag::Cons => {
                     let nil_tag = Tag::Nil;
@@ -356,7 +372,7 @@ pub fn compile<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F
                                             return (tag, ptr)
                                         }
                                     };
-                                    let not_env = EvalErr::InvalidForm;
+                                    let not_env = CompileErr::InvalidForm;
                                     return (err_tag, not_env)
                                 }
                                 "if" => {
@@ -445,7 +461,7 @@ pub fn compile_apply<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
         fn compile_apply(chead_tag, chead, args_tag, args): [2] {
             let err_tag = Tag::Err;
-            let invalid_form = EvalErr::InvalidForm;
+            let invalid_form = CompileErr::InvalidForm;
             match args_tag {
                 Tag::Nil => {
                     return (chead_tag, chead)
@@ -473,7 +489,7 @@ pub fn compile_lambda<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
         invertible fn compile_lambda(vars_tag, vars, cbody_tag, cbody): [2] {
             let err_tag = Tag::Err;
-            let invalid_form = EvalErr::InvalidForm;
+            let invalid_form = CompileErr::InvalidForm;
             match vars_tag {
                 Tag::Nil => {
                     return (cbody_tag, cbody)
@@ -511,7 +527,7 @@ pub fn compile_let<F: AbstractField + Ord>() -> FuncE<F> {
             contains!(let_tags, let_tag);
 
             let err_tag = Tag::Err;
-            let invalid_form = EvalErr::InvalidForm;
+            let invalid_form = CompileErr::InvalidForm;
             match binds_tag {
                 Tag::Nil => {
                     return (cbody_tag, cbody)
@@ -564,7 +580,7 @@ pub fn compile_begin<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
         fn compile_begin(exprs_tag, exprs): [2] {
             let err_tag = Tag::Err;
-            let invalid_form = EvalErr::InvalidForm;
+            let invalid_form = CompileErr::InvalidForm;
             match exprs_tag {
                 Tag::Nil => {
                     let nil_tag = Tag::Nil;

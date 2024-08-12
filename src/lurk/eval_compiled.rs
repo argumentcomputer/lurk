@@ -1,5 +1,7 @@
+use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
 use p3_baby_bear::BabyBear;
-use p3_field::AbstractField;
+use p3_field::{AbstractField, PrimeField32};
 
 use crate::{
     func,
@@ -12,7 +14,6 @@ use super::{
         compile, compile_apply, compile_begin, compile_lambda, compile_let, convert_data,
         deconvert_data, CTag,
     },
-    eval_direct::{env_lookup, EvalErr},
     ingress::{
         egress, egress_builtin, hash_24_8, hash_32_8, hash_48_8, ingress, ingress_builtin,
         BuiltinMemo,
@@ -21,6 +22,37 @@ use super::{
     tag::Tag,
     zstore::{lurk_zstore, ZStore},
 };
+
+#[derive(Clone, Copy, FromPrimitive, Debug)]
+#[repr(u32)]
+pub enum EvalErr {
+    UnboundVar = 0,
+    ApplyNonFunc,
+    ParamsNotList,
+    ParamNotSymbol,
+    ArgsNotList,
+    ArgNotNumber,
+    DivByZero,
+    NotEnv,
+    NotChar,
+    NotCons,
+    NotComm,
+    NotString,
+    CannotCastToNum,
+    NonConstantBuiltin,
+    NotU64,
+    Todo,
+}
+
+impl EvalErr {
+    pub fn to_field<F: AbstractField>(self) -> F {
+        F::from_canonical_u32(self as u32)
+    }
+
+    pub fn from_field<F: PrimeField32>(f: &F) -> Self {
+        Self::from_u32(f.as_canonical_u32()).expect("Field element doesn't map to a EvalErr")
+    }
+}
 
 /// Creates a `Toplevel` with the functions used for Lurk evaluation, also returning
 /// a `ZStore` with the Lurk builtins already interned.
@@ -728,6 +760,27 @@ pub fn equal<F: AbstractField + Ord>() -> FuncE<F> {
         }
     )
 }
+
+pub fn env_lookup<F: AbstractField>() -> FuncE<F> {
+    func!(
+        fn env_lookup(x_digest: [8], env): [2] {
+            if !env {
+                let err_tag = Tag::Err;
+                let err = EvalErr::UnboundVar;
+                return (err_tag, err)
+            }
+            let (y, val_tag, val, tail_env) = load(env);
+            let y_digest: [8] = load(y);
+            let not_eq = sub(x_digest, y_digest);
+            if !not_eq {
+                return (val_tag, val)
+            }
+            let (res_tag, res) = call(env_lookup, x_digest, tail_env);
+            return (res_tag, res)
+        }
+    )
+}
+
 #[cfg(test)]
 mod test {
     use expect_test::{expect, Expect};
