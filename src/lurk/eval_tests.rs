@@ -17,7 +17,7 @@ use crate::{
 
 use super::{
     chipset::{lurk_hasher, LurkChip},
-    eval::{build_lurk_toplevel, EvalErr},
+    eval_direct::{build_lurk_toplevel, EvalErr},
     state::{lurk_sym, user_sym},
     symbol::Symbol,
     tag::Tag,

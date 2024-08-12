@@ -24,7 +24,7 @@ use crate::{
 
 use super::{
     chipset::{lurk_hasher, LurkChip},
-    eval::EvalErr,
+    eval_direct::EvalErr,
     syntax::digest_to_biguint,
 };
 
@@ -942,7 +942,7 @@ mod test {
         lair::execute::QueryRecord,
         lurk::{
             chipset::lurk_hasher,
-            eval::build_lurk_toplevel,
+            eval_direct::build_lurk_toplevel,
             state::{lurk_sym, user_sym, State},
             symbol::Symbol,
             tag::Tag,

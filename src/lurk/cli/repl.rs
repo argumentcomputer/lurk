@@ -21,7 +21,7 @@ use crate::{
             meta::{meta_cmds, MetaCmdsMap},
             paths::{current_dir, repl_history},
         },
-        eval::build_lurk_toplevel,
+        eval_direct::build_lurk_toplevel,
         parser::{
             syntax::{parse_maybe_meta, parse_space},
             Error, Span,

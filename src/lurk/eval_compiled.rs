@@ -4,16 +4,15 @@ use p3_field::AbstractField;
 use crate::{
     func,
     lair::{expr::FuncE, toplevel::Toplevel},
-    lurk::{compile::CTag, eval::EvalErr},
 };
 
 use super::{
     chipset::{lurk_chip_map, LurkChip},
     compile::{
         compile, compile_apply, compile_begin, compile_lambda, compile_let, convert_data,
-        deconvert_data,
+        deconvert_data, CTag,
     },
-    eval::env_lookup,
+    eval_direct::{env_lookup, EvalErr},
     ingress::{
         egress, egress_builtin, hash_24_8, hash_32_8, hash_48_8, ingress, ingress_builtin,
         BuiltinMemo,

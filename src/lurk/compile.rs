@@ -2,7 +2,7 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use p3_field::{AbstractField, PrimeField32};
 
-use crate::{func, lair::expr::FuncE, lurk::eval::EvalErr};
+use crate::{func, lair::expr::FuncE, lurk::eval_direct::EvalErr};
 
 use super::{ingress::BuiltinMemo, tag::Tag};
 

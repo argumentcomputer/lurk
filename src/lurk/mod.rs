@@ -3,8 +3,8 @@
 pub mod chipset;
 pub mod cli;
 pub mod compile;
-pub mod eval;
 pub mod eval_compiled;
+pub mod eval_direct;
 #[cfg(test)]
 mod eval_tests;
 pub mod ingress;
