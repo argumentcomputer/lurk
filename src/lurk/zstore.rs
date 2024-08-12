@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use itertools::Itertools;
 use nom::{sequence::preceded, Parser};
 use once_cell::sync::OnceCell;
@@ -840,6 +840,36 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
             zptr = tail;
         }
         env
+    }
+
+    pub fn property_map<'a>(&'a self, list: &'a ZPtr<F>) -> Result<FxHashMap<String, &'a ZPtr<F>>>
+    where
+        F: PrimeField32,
+    {
+        let (elts, None) = self.fetch_list(list) else {
+            bail!("Property list must be proper");
+        };
+        let mut map = FxHashMap::default();
+        let mut i = 0;
+        loop {
+            if i >= elts.len() {
+                break;
+            }
+            let property_key = elts[i];
+            if property_key.tag != Tag::Key {
+                bail!("Property name must be a keyword");
+            }
+            let mut path = self.fetch_symbol_path(property_key);
+            let Some(property_name) = path.pop() else {
+                bail!("Property name can't be the root keyword")
+            };
+            let Some(property_val) = elts.get(i + 1) else {
+                bail!("Missing value for property {i}")
+            };
+            map.insert(property_name, *property_val);
+            i += 2;
+        }
+        Ok(map)
     }
 
     pub fn fmt_with_state(&self, state: &StateRcCell, zptr: &ZPtr<F>) -> String

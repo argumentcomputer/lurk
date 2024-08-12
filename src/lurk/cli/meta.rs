@@ -17,8 +17,8 @@ use crate::{
     },
     lurk::{
         cli::{
-            io_proof::IOProof,
             paths::{commits_dir, proofs_dir},
+            proofs::{CryptoProof, IOProof},
             repl::Repl,
         },
         state::lurk_sym,
@@ -28,7 +28,7 @@ use crate::{
     },
 };
 
-use super::{comm_data::CommData, lurk_data::LurkData};
+use super::{comm_data::CommData, lurk_data::LurkData, proofs::ProtocolProof};
 
 const INPUT_SIZE: usize = 24;
 const OUTPUT_SIZE: usize = 16;
@@ -431,6 +431,73 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             Ok(())
         },
     };
+
+    const DEFPROTOCOL: Self = Self {
+        name: "defprotocol",
+        summary: "Defines a protocol",
+        format: "!(defprotocol <symbol> <vars> <body> options...)",
+        description: &[
+            "The protocol body cannot have any free variable besides the ones",
+            "declared in the vars list. The body must return a pair such that:",
+            "* The first component is of the form ((x . e) . r), where r is the",
+            "  result of reducing x with environment e.",
+            "  The protocol can reject the proof by returning nil instead.",
+            "* The second component is a 0-arg predicate that will run after the",
+            "  proof verification to further constrain the proof, if needed.",
+            "  If this is not necessary, this component can simply be nil.",
+            "",
+            "defprotocol accepts the following options:",
+            "  :lang specifies the Lang (ignored, WIP)",
+            "  :description is a description of the protocol, defaulting to \"\"",
+        ],
+        example: &[
+            "!(defprotocol my-protocol (hash pair)",
+            "  (cons",
+            "    (if (= (+ (car pair) (cdr pair)) 30)",
+            "      (cons (cons (cons 'open (cons hash nil)) (empty-env)) pair)",
+            "      nil)",
+            "    (lambda () (> (car pair) 10)))",
+            "  :description \"hash opens to a pair (a, b) s.t. a+b=30 and a>10\")",
+        ],
+        run: |repl, args, _path| {
+            let (&name, rest) = repl.car_cdr(args);
+            let (&vars, rest) = repl.car_cdr(rest);
+            let (&body, &props) = repl.car_cdr(rest);
+            if name.tag != Tag::Sym {
+                bail!("Protocol name must be a symbol");
+            }
+            if !matches!(vars.tag, Tag::Cons | Tag::Nil) {
+                bail!("Protocol vars must be a list");
+            }
+
+            let empty_str = repl.zstore.intern_string("");
+            let property_map = repl.zstore.property_map(&props)?;
+
+            let get_prop = |key, accepts: fn(&ZPtr<F>) -> bool, def| -> Result<ZPtr<F>> {
+                let Some(val) = property_map.get(key) else {
+                    return Ok(def);
+                };
+                if accepts(val) {
+                    Ok(**val)
+                } else {
+                    bail!("Invalid value for property {key}")
+                }
+            };
+
+            // TODO: handle lang properly
+            let lang = get_prop(
+                "lang",
+                |_| true, // accept anything for now
+                repl.nil,
+            )?;
+
+            let description = get_prop("description", |val| val.tag == Tag::Str, empty_str)?;
+
+            let protocol = repl.zstore.intern_list([vars, body, lang, description]);
+            repl.env = repl.zstore.intern_env(name, protocol, repl.env);
+            Ok(())
+        },
+    };
 }
 
 type F = BabyBear;
@@ -445,6 +512,46 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         )
     }
 
+    fn prove_last_reduction(repl: &mut Repl<F, H>) -> Result<String> {
+        // make env DAG available so `IOProof` can carry it
+        repl.memoize_env_dag();
+        let Some(public_values) = repl.queries.public_values.as_ref() else {
+            bail!("No data found for latest computation");
+        };
+        let proof_key_img: &[F; DIGEST_SIZE] = &repl
+            .zstore
+            .hasher()
+            .hash(&public_values[..INPUT_SIZE])
+            .try_into()
+            .unwrap();
+        let proof_key = format!("{:x}", digest_to_biguint(proof_key_img));
+        let proof_path = proofs_dir()?.join(&proof_key);
+        let must_prove = if !proof_path.exists() {
+            true
+        } else {
+            let io_proof_bytes = std::fs::read(&proof_path)?;
+            // force an overwrite if deserialization goes wrong
+            bincode::deserialize::<IOProof>(&io_proof_bytes).is_err()
+        };
+        if must_prove {
+            let machine = Self::stark_machine(repl);
+            let (pk, vk) = machine.setup(&LairMachineProgram);
+            let challenger_p = &mut machine.config().challenger();
+            let challenger_v = &mut challenger_p.clone();
+            let shard = Shard::new(&repl.queries);
+            let opts = SphinxCoreOpts::default();
+            let machine_proof = machine.prove::<LocalProver<_, _>>(&pk, shard, challenger_p, opts);
+            machine
+                .verify(&vk, &machine_proof, challenger_v)
+                .expect("Proof verification failed");
+            let crypto_proof: CryptoProof = machine_proof.into();
+            let io_proof = IOProof::new(crypto_proof, public_values, &repl.zstore);
+            let io_proof_bytes = bincode::serialize(&io_proof)?;
+            std::fs::write(proof_path, io_proof_bytes)?;
+        }
+        Ok(proof_key)
+    }
+
     const PROVE: Self = Self {
         name: "prove",
         summary: "Proves a Lurk reduction",
@@ -456,54 +563,29 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
                 let expr = *repl.peek1(args)?;
                 repl.handle_non_meta(&expr);
             }
-            // make env DAG available so `IOProof` can carry it
-            repl.memoize_env_dag();
-            let Some(public_values) = repl.queries.public_values.as_ref() else {
-                bail!("No data found for latest computation");
-            };
-            let proof_key_img: &[F; DIGEST_SIZE] = &repl
-                .zstore
-                .hasher()
-                .hash(&public_values[..INPUT_SIZE])
-                .try_into()
-                .unwrap();
-            let proof_key = format!("{:x}", digest_to_biguint(proof_key_img));
-            let proof_path = proofs_dir()?.join(&proof_key);
-            let must_prove = if !proof_path.exists() {
-                true
-            } else {
-                let io_proof_bytes = std::fs::read(&proof_path)?;
-                // force an overwrite if deserialization goes wrong
-                bincode::deserialize::<IOProof>(&io_proof_bytes).is_err()
-            };
-            if must_prove {
-                let machine = Self::stark_machine(repl);
-                let (pk, _) = machine.setup(&LairMachineProgram);
-                let challenger = &mut machine.config().challenger();
-                let shard = Shard::new(&repl.queries);
-                let opts = SphinxCoreOpts::default();
-                let sphinx_proof = machine.prove::<LocalProver<_, _>>(&pk, shard, challenger, opts);
-                let io_proof = IOProof::new(sphinx_proof, public_values, &repl.zstore);
-                let io_proof_bytes = bincode::serialize(&io_proof)?;
-                std::fs::write(proof_path, io_proof_bytes)?;
-            }
+            let proof_key = Self::prove_last_reduction(repl)?;
             println!("Proof key: \"{proof_key}\"");
             Ok(())
         },
     };
 
-    fn load_io_proof(repl: &Repl<F, H>, args: &ZPtr<F>) -> Result<(String, IOProof)> {
+    fn load_io_proof(proof_key: &str) -> Result<IOProof> {
+        let proof_path = proofs_dir()?.join(proof_key);
+        if !proof_path.exists() {
+            bail!("Proof not found");
+        }
+        let io_proof_bytes = std::fs::read(proof_path)?;
+        let io_proof = bincode::deserialize(&io_proof_bytes)?;
+        Ok(io_proof)
+    }
+
+    fn load_io_proof_with_repl(repl: &Repl<F, H>, args: &ZPtr<F>) -> Result<(String, IOProof)> {
         let proof_key_zptr = repl.peek1(args)?;
         if proof_key_zptr.tag != Tag::Str {
             bail!("Proof key must be a string");
         }
         let proof_key = repl.zstore.fetch_string(proof_key_zptr);
-        let proof_path = proofs_dir()?.join(&proof_key);
-        if !proof_path.exists() {
-            bail!("Proof not found");
-        }
-        let io_proof_bytes = std::fs::read(proof_path)?;
-        let io_proof: IOProof = bincode::deserialize(&io_proof_bytes)?;
+        let io_proof = Self::load_io_proof(&proof_key)?;
         Ok((proof_key, io_proof))
     }
 
@@ -514,9 +596,12 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         description: &["Verifies a Lurk reduction proof by its key"],
         example: &["!(verify \"2ae20412c6f4740f409196522c15b0e42aae2338c2b5b9c524f675cba0a93e\")"],
         run: |repl, args, _path| {
-            let (proof_key, io_proof) = Self::load_io_proof(repl, args)?;
+            let (proof_key, io_proof) = Self::load_io_proof_with_repl(repl, args)?;
             let machine = Self::stark_machine(repl);
-            if io_proof.verify(&machine) {
+            let machine_proof = io_proof.into_machine_proof();
+            let (_, vk) = machine.setup(&LairMachineProgram);
+            let challenger = &mut machine.config().challenger();
+            if machine.verify(&vk, &machine_proof, challenger).is_ok() {
                 println!("✓ Proof \"{proof_key}\" verified");
             } else {
                 println!("✗ Proof \"{proof_key}\" failed on verification");
@@ -538,7 +623,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
                 result,
                 zdag,
                 ..
-            } = Self::load_io_proof(repl, args)?.1;
+            } = Self::load_io_proof_with_repl(repl, args)?.1;
             zdag.populate_zstore(&mut repl.zstore);
             println!(
                 "Expr: {}\nEnv: {}\nResult: {}",
@@ -549,6 +634,202 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
             Ok(())
         },
     };
+
+    fn get_vars_vec_and_body<'a>(
+        repl: &'a mut Repl<F, H>,
+        protocol: &'a ZPtr<F>,
+    ) -> Result<(Vec<&'a ZPtr<F>>, &'a ZPtr<F>)> {
+        let (protocol_elts, None) = repl.zstore.fetch_list(protocol) else {
+            bail!("Malformed protocol: must be a list");
+        };
+        let (Some(vars), Some(body)) = (protocol_elts.first(), protocol_elts.get(1)) else {
+            bail!("Malformed protocol: missing first or second element");
+        };
+        let (vars_vec, None) = repl.zstore.fetch_list(vars) else {
+            bail!("Malformed protocol: vars must be a list");
+        };
+        Ok((vars_vec, body))
+    }
+
+    fn get_claim_and_post_verify_predicade<'a>(
+        repl: &'a mut Repl<F, H>,
+        vars_vec: Vec<ZPtr<F>>,
+        args_vec_reduced: Vec<ZPtr<F>>,
+        body: &ZPtr<F>,
+    ) -> Result<(&'a ZPtr<F>, &'a ZPtr<F>)> {
+        let mut env = repl.zstore.intern_empty_env();
+        for (var, arg) in vars_vec.into_iter().zip(args_vec_reduced) {
+            env = repl.zstore.intern_env(var, arg, env);
+        }
+        let io_data = repl.reduce_aux_with_env(body, &env);
+        if io_data.tag != Tag::Cons {
+            bail!("Protocol body must return a pair");
+        }
+        repl.memoize_dag(Tag::Cons, &io_data.digest);
+        let (claim, post_verify_predicate) = repl.zstore.fetch_tuple2(&io_data);
+        if claim.tag == Tag::Nil {
+            bail!("Pre-verification predicate rejected the input");
+        }
+        if claim.tag != Tag::Cons {
+            bail!("Malformed protocol claim");
+        }
+        Ok((claim, post_verify_predicate))
+    }
+
+    fn post_verify_check(repl: &mut Repl<F, H>, post_verify_predicate: ZPtr<F>) -> Result<()> {
+        if post_verify_predicate.tag != Tag::Nil {
+            let post_verify_call = repl.zstore.intern_list([post_verify_predicate]);
+            let empty_env = repl.zstore.intern_empty_env();
+            let post_verify_result = repl.reduce_aux_with_env(&post_verify_call, &empty_env);
+            if post_verify_result.tag == Tag::Nil {
+                bail!("Post-verification predicate rejected the input");
+            }
+        }
+        Ok(())
+    }
+
+    const PROVE_PROTOCOL: Self = Self {
+        name: "prove-protocol",
+        summary: "Creates a proof for a protocol",
+        format: "!(prove-protocol <protocol> <string> args...)",
+        description: &[
+            "The proof is created only if the protocol can be satisfied by the",
+            "provided arguments.",
+            "The second (string) argument for this meta command is the path to",
+            "the file where the protocol proof will be saved.",
+        ],
+        example: &[
+            "(commit '(13 . 17))",
+            "!(prove-protocol my-protocol",
+            "  \"protocol-proof\"",
+            "  #0x896994f6258a01fbc7f21a81cb28a537259c3e97cc62da0a2773c63f9b4168",
+            "  '(13 . 17))",
+        ],
+        run: |repl, args, _path| {
+            let (&protocol_expr, rest) = repl.car_cdr(args);
+            let (path, &args) = repl.car_cdr(rest);
+
+            if path.tag != Tag::Str {
+                bail!("Path must be a string");
+            }
+            let path_str = repl.zstore.fetch_string(path);
+
+            let protocol = repl.reduce_aux(&protocol_expr);
+            let (vars_vec, &body) = Self::get_vars_vec_and_body(repl, &protocol)?;
+            let vars_vec = copy_inner(vars_vec);
+
+            let (args_vec, None) = repl.zstore.fetch_list(&args) else {
+                bail!("Arguments must be a list");
+            };
+            if args_vec.len() != vars_vec.len() {
+                bail!(
+                    "Mismatching arity. Protocol requires {} arguments but {} were provided",
+                    vars_vec.len(),
+                    args_vec.len()
+                );
+            }
+            let args_vec = copy_inner(args_vec);
+            let mut args_vec_reduced = Vec::with_capacity(args_vec.len());
+            for arg in args_vec.iter() {
+                args_vec_reduced.push(repl.reduce_aux(arg));
+            }
+
+            let (&claim, &post_verify_predicate) = Self::get_claim_and_post_verify_predicade(
+                repl,
+                vars_vec,
+                args_vec_reduced.clone(),
+                &body,
+            )?;
+
+            Self::post_verify_check(repl, post_verify_predicate)?;
+
+            let (expr_env, &expected_result) = repl.zstore.fetch_tuple2(&claim);
+            if expr_env.tag != Tag::Cons {
+                bail!("Malformed protocol claim");
+            }
+            let (&expr, &env) = repl.zstore.fetch_tuple2(expr_env);
+            let result = repl.reduce_with_env(&expr, &env);
+            if result != expected_result {
+                bail!("Mismatch between result and expected result");
+            }
+
+            let proof_key = Self::prove_last_reduction(repl)?;
+            let io_proof = Self::load_io_proof(&proof_key)?;
+            let crypto_proof = io_proof.crypto_proof;
+            let args_reduced = repl.zstore.intern_list(args_vec_reduced);
+            repl.memoize_dag(args_reduced.tag, &args_reduced.digest);
+            let protocol_proof = ProtocolProof::new(crypto_proof, args_reduced, &repl.zstore);
+            std::fs::write(&path_str, bincode::serialize(&protocol_proof)?)?;
+            println!("Protocol proof saved at {path_str}");
+            Ok(())
+        },
+    };
+
+    const VERIFY_PROTOCOL: Self = Self {
+        name: "verify-protocol",
+        summary: "Verifies a proof for a protocol",
+        format: "!(verify-protocol <protocol> <string>)",
+        description: &[
+            "Reconstructs the proof input with the args provided by the prover",
+            "according to the protocol and then verifies the proof.",
+            "If verification succeeds, runs the post-verification predicate,",
+            "failing if the predicate returns nil.",
+            "The second (string) argument is the path to the file containing the",
+            "protocol proof.",
+        ],
+        example: &["!(verify-protocol my-protocol \"protocol-proof\")"],
+        run: |repl, args, _path| {
+            let (&protocol_expr, path) = repl.peek2(args)?;
+            if path.tag != Tag::Str {
+                bail!("Path must be a string");
+            }
+            let path_str = repl.zstore.fetch_string(path);
+
+            let protocol = repl.reduce_aux(&protocol_expr);
+            let (vars_vec, &body) = Self::get_vars_vec_and_body(repl, &protocol)?;
+            let vars_vec = copy_inner(vars_vec);
+
+            let protocol_proof_bytes = std::fs::read(path_str)?;
+            let ProtocolProof { crypto_proof, args } = bincode::deserialize(&protocol_proof_bytes)?;
+            let args = args.populate_zstore(&mut repl.zstore);
+            let (args_vec_reduced, None) = repl.zstore.fetch_list(&args) else {
+                bail!("Arguments must be a list");
+            };
+            if args_vec_reduced.len() != vars_vec.len() {
+                bail!(
+                    "Mismatching arity. Protocol requires {} arguments but {} were provided",
+                    vars_vec.len(),
+                    args_vec_reduced.len()
+                );
+            }
+            let args_vec_reduced = copy_inner(args_vec_reduced);
+
+            let (&claim, &post_verify_predicate) =
+                Self::get_claim_and_post_verify_predicade(repl, vars_vec, args_vec_reduced, &body)?;
+
+            let (expr_env, result) = repl.zstore.fetch_tuple2(&claim);
+            if expr_env.tag != Tag::Cons {
+                bail!("Malformed protocol claim");
+            }
+            let (expr, env) = repl.zstore.fetch_tuple2(expr_env);
+            let machine_proof = crypto_proof.into_machine_proof(expr, env, result);
+            let machine = Self::stark_machine(repl);
+            let (_, vk) = machine.setup(&LairMachineProgram);
+            let challenger = &mut machine.config().challenger();
+            if machine.verify(&vk, &machine_proof, challenger).is_err() {
+                bail!("Proof verification failed");
+            }
+
+            Self::post_verify_check(repl, post_verify_predicate)?;
+
+            println!("Proof accepted by the protocol");
+            Ok(())
+        },
+    };
+}
+
+fn copy_inner<'a, T: Copy + 'a, I: IntoIterator<Item = &'a T>>(xs: I) -> Vec<T> {
+    xs.into_iter().copied().collect()
 }
 
 #[inline]
@@ -572,6 +853,9 @@ pub(crate) fn meta_cmds<H: Chipset<F>>() -> MetaCmdsMap<F, H> {
         MetaCmd::PROVE,
         MetaCmd::VERIFY,
         MetaCmd::INSPECT,
+        MetaCmd::DEFPROTOCOL,
+        MetaCmd::PROVE_PROTOCOL,
+        MetaCmd::VERIFY_PROTOCOL,
     ]
     .map(|mc| (mc.name, mc))
     .into_iter()
