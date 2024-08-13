@@ -186,7 +186,7 @@ impl<F: Field, const W: usize> AddOne<F, W> {
     {
         let (out, _carry) = input.overflowing_add(&U::one());
         let result = out.to_le_bytes().map(F::from_canonical_u8);
-        self.result = UncheckedWord(result.clone());
+        self.result = UncheckedWord(result);
 
         // compute (result[i] - 256)^{-1} to prove result[i] != 256
         let base = F::from_canonical_u16(256);
