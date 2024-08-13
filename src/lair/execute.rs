@@ -310,6 +310,7 @@ impl<F: PrimeField32> QueryRecord<F> {
         self.mem_queries.iter_mut().for_each(|mem_map| {
             *mem_map = FxIndexMap::default();
         });
+        self.bytes.clear();
     }
 
     #[inline]
@@ -758,6 +759,7 @@ mod tests {
         let double_e = func!(
             invertible fn double(x): [1] {
                 let two_x = add(x, x);
+                range_u8!(x); // this check forces us to clear the BytesRecord in this test
                 return two_x
             }
         );
