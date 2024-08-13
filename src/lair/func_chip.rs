@@ -12,6 +12,7 @@ pub struct ColumnLayout<Value, Slice> {
     pub(crate) input: Slice,
     pub(crate) aux: Slice,
     pub(crate) sel: Slice,
+    pub(crate) output: Slice,
 }
 
 pub type LayoutSizes = ColumnLayout<usize, usize>;
@@ -19,7 +20,7 @@ pub type LayoutSizes = ColumnLayout<usize, usize>;
 impl LayoutSizes {
     #[inline]
     fn total(&self) -> usize {
-        self.nonce + self.input + self.aux + self.sel
+        self.nonce + self.input + self.aux + self.sel + self.output
     }
 }
 
@@ -91,6 +92,7 @@ impl<F> Func<F> {
         let input = self.input_size;
         let mut aux = 0;
         let mut sel = 0;
+        let output = self.output_size;
         let degrees = &mut vec![1; input];
         self.body
             .compute_layout_sizes(degrees, toplevel, &mut aux, &mut sel);
@@ -99,6 +101,7 @@ impl<F> Func<F> {
             input,
             aux,
             sel,
+            output,
         }
     }
 }

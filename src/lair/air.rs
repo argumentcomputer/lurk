@@ -19,20 +19,15 @@ use super::{
 
 impl ColumnIndex {
     #[inline]
-    fn save(&mut self) -> usize {
-        self.aux
+    fn save(&mut self) -> (usize, usize) {
+        (self.aux, self.output)
     }
 
     #[inline]
-    fn restore(&mut self, aux: usize) {
+    fn restore(&mut self, (aux, output): (usize, usize)) {
         self.aux = aux;
+        self.output = output;
     }
-}
-
-#[derive(Clone)]
-struct CallCtx<F, T> {
-    func_idx: F,
-    call_inp: Vec<T>,
 }
 
 pub type ColumnSlice<'a, T> = ColumnLayout<&'a T, &'a [T]>;
@@ -41,6 +36,7 @@ impl<'a, T> ColumnSlice<'a, T> {
     pub fn from_slice(slice: &'a [T], layout_sizes: LayoutSizes) -> Self {
         let (nonce, slice) = slice.split_at(1);
         let (input, slice) = slice.split_at(layout_sizes.input);
+        let (output, slice) = slice.split_at(layout_sizes.output);
         let (aux, slice) = slice.split_at(layout_sizes.aux);
         let (sel, slice) = slice.split_at(layout_sizes.sel);
         assert!(slice.is_empty());
@@ -50,6 +46,7 @@ impl<'a, T> ColumnSlice<'a, T> {
             input,
             aux,
             sel,
+            output,
         }
     }
 
@@ -68,6 +65,15 @@ impl<'a, T> ColumnSlice<'a, T> {
     {
         let t = self.aux[index.aux];
         index.aux += 1;
+        t
+    }
+
+    pub fn next_output(&self, index: &mut ColumnIndex) -> T
+    where
+        T: Copy,
+    {
+        let t = self.output[index.output];
+        index.output += 1;
         t
     }
 
@@ -156,19 +162,23 @@ impl<F: Field> Func<F> {
                 .get_index_of(&self.name)
                 .expect("Func not found on toplevel"),
         );
-        let call_ctx = CallCtx { func_idx, call_inp };
 
         let toplevel_sel = self.body.return_sel::<AB>(local);
-        self.body.eval(
-            builder,
-            local,
-            &toplevel_sel,
-            index,
-            map,
-            toplevel,
-            call_ctx,
-        );
         builder.assert_bool(toplevel_sel.clone());
+        let last_nonce = local.next_aux(index);
+        let last_count = local.next_aux(index);
+        let record = ProvideRecord {
+            last_nonce,
+            last_count,
+        };
+        let out = (0..self.output_size).map(|i| local.output[i].into());
+        builder.provide(
+            CallRelation(func_idx, call_inp, out),
+            record,
+            toplevel_sel.clone(),
+        );
+        self.body
+            .eval(builder, local, &toplevel_sel, index, map, toplevel);
     }
 }
 
@@ -193,7 +203,6 @@ impl<F: Field> Block<F> {
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
-        call_ctx: CallCtx<F, AB::Expr>,
     ) where
         AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
@@ -201,8 +210,7 @@ impl<F: Field> Block<F> {
         self.ops
             .iter()
             .for_each(|op| op.eval(builder, local, sel, index, map, toplevel));
-        self.ctrl
-            .eval(builder, local, index, map, toplevel, call_ctx);
+        self.ctrl.eval(builder, local, index, map, toplevel);
     }
 }
 
@@ -433,7 +441,6 @@ impl<F: Field> Ctrl<F> {
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
-        call_ctx: CallCtx<F, AB::Expr>,
     ) where
         AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
@@ -445,7 +452,7 @@ impl<F: Field> Ctrl<F> {
 
                 let mut process = |block: &Block<F>| {
                     let sel = block.return_sel::<AB>(local);
-                    block.eval(builder, local, &sel, index, map, toplevel, call_ctx.clone());
+                    block.eval(builder, local, &sel, index, map, toplevel);
                     map.truncate(map_len);
                     index.restore(init_state);
                 };
@@ -460,7 +467,7 @@ impl<F: Field> Ctrl<F> {
 
                 let mut process = |block: &Block<F>| {
                     let sel = block.return_sel::<AB>(local);
-                    block.eval(builder, local, &sel, index, map, toplevel, call_ctx.clone());
+                    block.eval(builder, local, &sel, index, map, toplevel);
                     map.truncate(map_len);
                     index.restore(init_state);
                 };
@@ -472,14 +479,10 @@ impl<F: Field> Ctrl<F> {
             Ctrl::Return(ident, vs) => {
                 let sel = local.sel[*ident];
                 let out = vs.iter().map(|v| map[*v].to_expr());
-                let CallCtx { func_idx, call_inp } = call_ctx;
-                let last_nonce = local.next_aux(index);
-                let last_count = local.next_aux(index);
-                let record = ProvideRecord {
-                    last_nonce,
-                    last_count,
-                };
-                builder.provide(CallRelation(func_idx, call_inp, out), record, sel);
+                out.for_each(|o| {
+                    let out_var = local.next_output(index);
+                    builder.when(sel).assert_eq(o, out_var);
+                });
             }
         }
     }
@@ -573,12 +576,13 @@ mod tests {
         let not_trace = not_chip.generate_trace(&Shard::new(&queries));
 
         let not_width = not_chip.width();
+        #[rustfmt::skip]
         let expected_not_trace = RowMajorMatrix::new(
             [
-                0, 4, 1509949441, 0, 0, 1, 1, //
-                1, 8, 1761607681, 0, 0, 1, 1, //
-                2, 0, 0, 1, 0, 1, 1, //
-                3, 1, 1, 0, 0, 1, 1, //
+                0, 4, 0, 0, 1, 1509949441, 0, 1,
+                1, 8, 0, 0, 1, 1761607681, 0, 1,
+                2, 0, 1, 0, 1,          0, 1, 1,
+                3, 1, 0, 0, 1,          1, 0, 1,
             ]
             .into_iter()
             .map(F::from_canonical_u32)
@@ -599,12 +603,13 @@ mod tests {
         let eq_trace = eq_chip.generate_trace(&Shard::new(&queries));
 
         let eq_width = eq_chip.width();
+        #[rustfmt::skip]
         let expected_eq_trace = RowMajorMatrix::new(
             [
-                0, 4, 2, 1006632961, 0, 0, 1, 1, //
-                1, 4, 4, 0, 1, 0, 1, 1, //
-                2, 0, 3, 671088640, 0, 0, 1, 1, //
-                3, 0, 0, 0, 1, 0, 1, 1, //
+                0, 4, 2, 0, 0, 1, 1006632961, 0, 1,
+                1, 4, 4, 1, 0, 1,          0, 1, 1,
+                2, 0, 3, 0, 0, 1,  671088640, 0, 1,
+                3, 0, 0, 1, 0, 1,          0, 1, 1,
             ]
             .into_iter()
             .map(F::from_canonical_u32)
@@ -645,13 +650,14 @@ mod tests {
         let if_many_trace = if_many_chip.generate_trace(&Shard::new(&queries));
 
         let if_many_width = if_many_chip.width();
+        #[rustfmt::skip]
         let expected_trace = RowMajorMatrix::new(
             [
-                // nonce, 4 inputs, 6 coeffs, 2 selectors
-                0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, //
-                1, 1, 3, 8, 2, 1, 0, 0, 0, 0, 1, 1, 0, //
-                2, 0, 0, 4, 1, 0, 0, 1509949441, 0, 0, 1, 1, 0, //
-                3, 0, 0, 0, 9, 0, 0, 0, 447392427, 0, 1, 1, 0, //
+                // nonce, 4 inputs, 1 output, last_nonce, last_count, 6 coeffs, 2 selectors
+                0, 0, 0, 0, 0, 0, 0, 1, 0, 0,          0,         0, 0, 1,
+                1, 1, 3, 8, 2, 1, 0, 1, 1, 0,          0,         0, 1, 0,
+                2, 0, 0, 4, 1, 1, 0, 1, 0, 0, 1509949441,         0, 1, 0,
+                3, 0, 0, 0, 9, 1, 0, 1, 0, 0,          0, 447392427, 1, 0,
             ]
             .into_iter()
             .map(F::from_canonical_u32)
@@ -707,19 +713,19 @@ mod tests {
         let match_many_trace = match_many_chip.generate_trace(&Shard::new(&queries));
 
         let match_many_width = match_many_chip.width();
+        #[rustfmt::skip]
         let expected_trace = RowMajorMatrix::new(
             [
-                // nonce, 2 inputs, 10 witness coefficients, 5 selectors
-                0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, //
-                1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, //
-                2, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, //
-                3, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, //
-                4, 0, 8, 0, 1761607681, 0, 862828252, 2013265920, 0, 2013265920, 0, 0, 1, 0, 0, 0,
-                0, 1, //
-                // dummy queries
-                5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
-                7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+                // nonce, 2 inputs, 2 outputs, last_nonce, last_count, 10 witness coefficients, 5 selectors
+                0, 0, 0, 1, 0, 0, 1, 0,          0, 0,          0,         0, 0,          0, 0, 1, 0, 0, 0, 0,
+                1, 0, 1, 1, 1, 0, 1, 0,          0, 0,          0,         0, 0,          0, 0, 0, 1, 0, 0, 0,
+                2, 1, 0, 1, 2, 0, 1, 0,          0, 0,          0,         0, 0,          0, 0, 0, 0, 1, 0, 0,
+                3, 1, 1, 1, 3, 0, 1, 0,          0, 0,          0,         0, 0,          0, 0, 0, 0, 0, 1, 0,
+                4, 0, 8, 0, 0, 0, 1, 0, 1761607681, 0, 862828252, 2013265920, 0, 2013265920, 0, 0, 0, 0, 0, 1,
+                5, 0, 0, 0, 0, 0, 0, 0,          0, 0,          0,         0, 0,          0, 0, 0, 0, 0, 0, 0,
+                // dummies
+                6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             ]
             .into_iter()
             .map(F::from_canonical_u32)
@@ -756,12 +762,11 @@ mod tests {
         #[rustfmt::skip]
         let expected_trace = RowMajorMatrix::new(
             [
-                // nonce, 4 inputs, 6 multiplications for the two `contains!`, 4 coefficients for `assert_ne!`, last nonce, last count, selector
-                0, 2, 4, 6, 8, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
-                // dummies
-                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                // nonce, 4 inputs, 4 output, last nonce, last count, 6 multiplications for the two `contains!`, 4 coefficients for `assert_ne!`, selector
+                0, 2, 4, 6, 8, 2, 4, 6, 8, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1,
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             ]
             .into_iter()
             .map(F::from_canonical_u32)
@@ -801,14 +806,14 @@ mod tests {
         #[rustfmt::skip]
         let expected_trace = RowMajorMatrix::new(
             [
-                // branch case:
-                //   nonce, input, (a-2)*(a-3), (a-2)*(a-3)*(a-4), dummy, last nonce, last count, two selectors
                 // default case:
-                //   nonce, input, 1/(a-2), 1/(a-3), 1/(a-4), last nonce, last count, two selectors
-                0, 1, 2013265920, 1006632960, 671088640, 0, 1, 0, 1,
-                1, 2,          0,          0,         0, 1, 0, 1, 0,
-                2, 3,          0,          0,         0, 1, 0, 1, 0,
-                3, 4,          2,          0,         0, 1, 0, 1, 0
+                //   nonce, input, output, last nonce, last count, 1/(a-2), 1/(a-3), 1/(a-4), last nonce, last count, two selectors
+                0, 1, 1, 0, 1, 2013265920, 1006632960, 671088640, 0, 1,
+                // branch case:
+                //   nonce, input, output, last nonce, last count, (a-2)*(a-3), (a-2)*(a-3)*(a-4), dummy, two selectors
+                1, 2, 1, 0, 1, 0, 0, 0, 1, 0,
+                2, 3, 1, 0, 1, 0, 0, 0, 1, 0,
+                3, 4, 1, 0, 1, 2, 0, 0, 1, 0,
             ]
             .into_iter()
             .map(F::from_canonical_u32)
@@ -836,10 +841,10 @@ mod tests {
         let trace = range_chip.generate_trace(&Shard::new(&queries));
         #[rustfmt::skip]
         let expected_trace = [
-            0, 100, 12, 64, 0, 0, 1, 0, 0, 1, 0, 1, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            0, 100, 12, 64, 0, 1, 0, 0, 1, 0, 0, 1, 1,
+            1,   0,  0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            2,   0,  0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            3,   0,  0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ]
         .into_iter()
         .map(field_from_u32)
