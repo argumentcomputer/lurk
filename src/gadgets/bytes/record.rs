@@ -96,6 +96,10 @@ impl BytesRecord {
     pub fn is_empty(&self) -> bool {
         self.records.is_empty()
     }
+
+    pub fn clear(&mut self) {
+        self.records.clear()
+    }
 }
 
 /// Implement ByteRecord by recording all the required events
