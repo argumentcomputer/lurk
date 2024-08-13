@@ -301,8 +301,8 @@ impl<F: PrimeField32> QueryRecord<F> {
             .expect("Inverse query map not found")
     }
 
-    /// Erases the records of func and memory queries, but leaves the history of
-    /// invertible queries untouched
+    /// Erases the records of func, memory and bytes queries, but leaves the history
+    /// of invertible queries untouched
     pub fn clean(&mut self) {
         self.func_queries.iter_mut().for_each(|func_query| {
             *func_query = FxIndexMap::default();
