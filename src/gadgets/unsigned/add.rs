@@ -1,6 +1,6 @@
 use crate::gadgets::bytes::{ByteAirRecord, ByteRecord};
 use crate::gadgets::unsigned::{UncheckedWord, Word};
-use itertools::{enumerate, izip};
+use itertools::izip;
 use num_traits::ops::overflowing::{OverflowingAdd, OverflowingSub};
 use num_traits::{ToBytes, Unsigned};
 use p3_air::AirBuilder;
@@ -176,7 +176,7 @@ impl<T, const W: usize> Diff<T, W> {
 pub struct AddOne<T, const W: usize> {
     // inverses[i] = (result[i] - 256)^{-1}
     inverses: [T; W],
-    result: [T; W],
+    result: UncheckedWord<T, W>,
 }
 
 impl<F: Field, const W: usize> AddOne<F, W> {
@@ -185,15 +185,12 @@ impl<F: Field, const W: usize> AddOne<F, W> {
         U: ToBytes<Bytes = [u8; W]> + Unsigned + OverflowingAdd,
     {
         let (out, _carry) = input.overflowing_add(&U::one());
+        let result = out.to_le_bytes().map(F::from_canonical_u8);
+        self.result = UncheckedWord(result.clone());
+
+        // compute (result[i] - 256)^{-1} to prove result[i] != 256
         let base = F::from_canonical_u16(256);
-
-        for (i, out) in enumerate(out.to_le_bytes()) {
-            let out = F::from_canonical_u8(out);
-            // compute (out[i] - 256)^{-1} to prove out[i] != 256
-            self.inverses[i] = (out - base).inverse();
-            self.result[i] = out;
-        }
-
+        self.inverses = result.map(|r| (r - base).inverse());
         out
     }
 }
@@ -223,9 +220,11 @@ impl<Var, const W: usize> AddOne<Var, W> {
         let base = AB::F::from_canonical_u16(256);
         let base_inv = base.inverse();
 
+        let output = self.result.into_unchecked();
+
         // Initialize carry[-1] = 1
         let mut carry = AB::Expr::one();
-        for (input, output, inverse) in izip!(input, self.result, self.inverses) {
+        for (input, output, inverse) in izip!(input, output, self.inverses) {
             // We compute the overflowing sum of the limb and the previous carry bit.
             //   sum[i] = input[i] + carry[i-1]
             // Due to range checks, we know
@@ -259,7 +258,6 @@ impl<Var, const W: usize> AddOne<Var, W> {
 
         // We range constrain result manually by checking that none of
         // its limbs is 256
-        let output = Word(self.result);
         (output, carry)
     }
 }
@@ -277,14 +275,15 @@ impl<T, const W: usize> AddOne<T, W> {
     where
         T: Clone,
     {
-        self.result.clone()
+        self.result.0.clone()
     }
 }
+
 impl<F: Default, const W: usize> Default for AddOne<F, W> {
     fn default() -> Self {
         Self {
             inverses: array::from_fn(|_| F::default()),
-            result: array::from_fn(|_| F::default()),
+            result: Default::default(),
         }
     }
 }
