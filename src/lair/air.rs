@@ -44,9 +44,9 @@ impl<'a, T> ColumnSlice<'a, T> {
         Self {
             nonce,
             input,
+            output,
             aux,
             sel,
-            output,
         }
     }
 

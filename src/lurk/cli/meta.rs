@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use camino::Utf8Path;
+use itertools::Itertools;
 use p3_baby_bear::BabyBear;
 use p3_field::PrimeField32;
 use rustc_hash::FxHashMap;
@@ -21,6 +22,7 @@ use crate::{
             proofs::{CryptoProof, IOProof},
             repl::Repl,
         },
+        package::{Package, SymbolRef},
         state::lurk_sym,
         syntax::digest_to_biguint,
         tag::Tag,
@@ -40,7 +42,7 @@ pub(crate) struct MetaCmd<F: PrimeField32, H: Chipset<F>> {
     name: &'static str,
     summary: &'static str,
     format: &'static str,
-    description: &'static [&'static str],
+    info: &'static [&'static str],
     example: &'static [&'static str],
     pub(crate) run: fn(repl: &mut Repl<F, H>, args: &ZPtr<F>, file_path: &Utf8Path) -> Result<()>,
 }
@@ -52,7 +54,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         name: "assert",
         summary: "Asserts that an expression doesn't reduce to nil.",
         format: "!(assert <expr>)",
-        description: &[],
+        info: &[],
         example: &["!(assert t)", "!(assert (eq 3 (+ 1 2)))"],
         run: |repl, args, _path| {
             let expr = *repl.peek1(args)?;
@@ -72,7 +74,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         name: "assert-eq",
         summary: "Assert that two expressions evaluate to the same value.",
         format: "!(assert-eq <expr1> <expr2>)",
-        description: &[],
+        info: &[],
         example: &["!(assert-eq 3 (+ 1 2))"],
         run: |repl, args, _path| {
             let (&expr1, &expr2) = repl.peek2(args)?;
@@ -100,7 +102,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         name: "assert-error",
         summary: "Assert that a evaluation of <expr> fails.",
         format: "!(assert-error <expr>)",
-        description: &[],
+        info: &[],
         example: &["!(assert-error (1 1))"],
         run: |repl, args, _path| {
             let expr = *repl.peek1(args)?;
@@ -120,7 +122,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         name: "load",
         summary: "Load Lurk expressions from a file.",
         format: "!(load <string>)",
-        description: &[],
+        info: &[],
         example: &["!(load \"my_file.lurk\")"],
         run: |repl, args, path| {
             let file_name_zptr = repl.peek1(args)?;
@@ -136,7 +138,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         name: "def",
         summary: "Extends env with a non-recursive binding.",
         format: "!(def <symbol> <value>)",
-        description: &[
+        info: &[
             "Gets macroexpanded to (let ((<symbol> <value>)) (current-env)).",
             "The REPL's env is set to the result.",
         ],
@@ -162,7 +164,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         name: "defrec",
         summary: "Extends env with a recursive binding.",
         format: "!(defrec <symbol> <value>)",
-        description: &[
+        info: &[
             "Gets macroexpanded to (letrec ((<symbol> <value>)) (current-env)).",
             "The REPL's env is set to the result.",
         ],
@@ -193,10 +195,27 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         name: "clear",
         summary: "Resets the current environment to be empty.",
         format: "!(clear)",
-        description: &[],
+        info: &[],
         example: &["!(def a 1)", "(current-env)", "!(clear)", "(current-env)"],
         run: |repl, _args, _path| {
             repl.env = repl.zstore.intern_empty_env();
+            Ok(())
+        },
+    };
+
+    const SET_ENV: Self = Self {
+        name: "set-env",
+        summary: "Sets the env to the result of evaluating the argument.",
+        format: "!(set-env <expr>)",
+        info: &[],
+        example: &["!(set-env (eval '(let ((a 1)) (current-env))))", "a"],
+        run: |repl, args, _path| {
+            let env_expr = *repl.peek1(args)?;
+            let env = repl.reduce_aux(&env_expr);
+            if env.tag != Tag::Env {
+                bail!("Value must be an environment");
+            }
+            repl.env = env;
             Ok(())
         },
     };
@@ -224,7 +243,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         name: "hide",
         summary: "Persists a hiding commitment.",
         format: "!(hide <secret_expr> <payload_expr>)",
-        description: &[
+        info: &[
             "The secret is the reduction of <secret_expr>, which must be a",
             "commitment, and the payload is the reduction of <payload_expr>.",
         ],
@@ -243,7 +262,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         name: "commit",
         summary: "Persists a commitment.",
         format: "!(commit <payload_expr>)",
-        description: &[
+        info: &[
             "The secret is an opaque commitment whose digest amounts to zeros",
             "and the payload is the reduction of <payload_expr>.",
         ],
@@ -281,7 +300,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         name: "open",
         summary: "Fetches a persisted commitment and prints the payload.",
         format: "!(open <comm>)",
-        description: &[],
+        info: &[],
         example: &[
             "!(commit 123)",
             "!(open #0x3719f5d02845123a80da4f5077c803ba0ce1964e08289a9d020603c1f3c450)",
@@ -299,7 +318,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         name: "fetch",
         summary: "Fetches a persisted commitment.",
         format: "!(fetch <comm>)",
-        description: &[],
+        info: &[],
         example: &[
             "!(commit 123)",
             "!(fetch #0x3719f5d02845123a80da4f5077c803ba0ce1964e08289a9d020603c1f3c450)",
@@ -334,7 +353,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         name: "call",
         summary: "Opens a functional commitment then applies an argument to it.",
         format: "!(call <comm> <arg>)",
-        description: &["It's also capable of opening persisted commitments."],
+        info: &["It's also capable of opening persisted commitments."],
         example: &[
             "(commit (lambda (x) x))",
             "!(call #0x3f2e7102a9f8a303255b90724f24f4eb05b61e99723ca838cf30671676c86a 0)",
@@ -346,7 +365,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         name: "chain",
         summary: "Chains a functional commitment and then persists the resulting commitment",
         format: "!(chain <comm> <arg>)",
-        description: &["It's also capable of opening persisted commitments."],
+        info: &["It's also capable of opening persisted commitments."],
         example: &[
             "(commit (letrec ((add (lambda (counter x)
                        (let ((counter (+ counter x)))
@@ -380,11 +399,97 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         },
     };
 
+    const DEFPACKAGE: Self = Self {
+        name: "defpackage",
+        summary: "Add a package to the state.",
+        format: "!(defpackage <string|symbol>)",
+        info: &[],
+        example: &["!(defpackage abc)"],
+        run: |repl, args, _path| {
+            // TODO: handle args
+            let (name, _args) = repl.car_cdr(args);
+            let name = match name.tag {
+                Tag::Str => repl
+                    .state
+                    .borrow_mut()
+                    .intern(repl.zstore.fetch_string(name)),
+                Tag::Sym => repl.zstore.fetch_symbol(name).into(),
+                _ => bail!("Package name must be a string or a symbol"),
+            };
+            println!("{}", repl.state.borrow().fmt_to_string(&name));
+            let package = Package::new(name);
+            repl.state.borrow_mut().add_package(package);
+            Ok(())
+        },
+    };
+
+    const IMPORT: Self = Self {
+        name: "import",
+        summary: "Import a single or several packages.",
+        format: "!(import <string|package> ...)",
+        info: &[],
+        example: &[],
+        run: |repl, args, _path| {
+            // TODO: handle pkg
+            let (mut symbols, _pkg) = repl.car_cdr(args);
+            if symbols.tag == Tag::Sym {
+                let sym = SymbolRef::new(repl.zstore.fetch_symbol(symbols));
+                repl.state.borrow_mut().import(&[sym])?;
+            } else {
+                let mut symbols_vec = vec![];
+                loop {
+                    {
+                        let (head, tail) = repl.car_cdr(symbols);
+                        let sym = repl.zstore.fetch_symbol(head);
+                        symbols_vec.push(SymbolRef::new(sym));
+                        if tail.tag == Tag::Nil {
+                            break;
+                        }
+                        symbols = tail;
+                    }
+                }
+                repl.state.borrow_mut().import(&symbols_vec)?;
+            }
+            Ok(())
+        },
+    };
+
+    const IN_PACKAGE: Self = Self {
+        name: "in-package",
+        summary: "set the current package.",
+        format: "!(in-package <string|symbol>)",
+        info: &[],
+        example: &[
+            "!(defpackage abc)",
+            "!(in-package abc)",
+            "!(def two (.lurk.+ 1 1))",
+            "!(in-package .lurk.user)",
+            ".lurk.user.abc.two",
+        ],
+        run: |repl, args, _path| {
+            let arg = repl.peek1(args)?;
+            match arg.tag {
+                Tag::Str => {
+                    let name = repl.zstore.fetch_string(arg);
+                    let package_name = repl.state.borrow_mut().intern(name);
+                    repl.state.borrow_mut().set_current_package(package_name)
+                }
+                Tag::Sym => {
+                    let package_name = repl.zstore.fetch_symbol(arg);
+                    repl.state
+                        .borrow_mut()
+                        .set_current_package(package_name.into())
+                }
+                _ => bail!("Expected string or symbol. Got {}", repl.fmt(arg)),
+            }
+        },
+    };
+
     const DUMP_EXPR: Self = Self {
         name: "dump-expr",
         summary: "Evaluates an expression and dumps the result to the file system",
         format: "!(dump-expr <expr> <string>)",
-        description: &["Commitments are persisted opaquely."],
+        info: &["Commitments are persisted opaquely."],
         example: &["!(dump-expr (+ 1 1) \"my_file\")"],
         run: |repl, args, _path| {
             let (&expr, &path) = repl.peek2(args)?;
@@ -409,7 +514,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         name: "load-expr",
         summary: "Loads Lurk data from the file system and binds it to a symbol",
         format: "!(load-expr <symbol> <string>)",
-        description: &[],
+        info: &[],
         example: &[
             "!(dump-expr (+ 1 1) \"my_file\")",
             "!(load-expr x \"my_file\")",
@@ -436,7 +541,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         name: "defprotocol",
         summary: "Defines a protocol",
         format: "!(defprotocol <symbol> <vars> <body> options...)",
-        description: &[
+        info: &[
             "The protocol body cannot have any free variable besides the ones",
             "declared in the vars list. The body must return a pair such that:",
             "* The first component is of the form ((x . e) . r), where r is the",
@@ -444,8 +549,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             "  The protocol can reject the proof by returning nil instead.",
             "* The second component is a 0-arg predicate that will run after the",
             "  proof verification to further constrain the proof, if needed.",
-            "  If this is not necessary, this component can simply be nil.",
-            "",
+            "  If this is not necessary, this component can simply be nil.\n",
             "defprotocol accepts the following options:",
             "  :lang specifies the Lang (ignored, WIP)",
             "  :description is a description of the protocol, defaulting to \"\"",
@@ -495,6 +599,52 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
 
             let protocol = repl.zstore.intern_list([vars, body, lang, description]);
             repl.env = repl.zstore.intern_env(name, protocol, repl.env);
+            Ok(())
+        },
+    };
+
+    const HELP: Self = Self {
+        name: "help",
+        summary: "Prints a help message",
+        format: "!(help <symbol>)",
+        info: &[
+            "Without arguments it prints a summary of all available commands.",
+            "Otherwise the full help for the command in the first argument is printed.",
+        ],
+        example: &["!(help)", "!(help prove)"],
+        run: |repl, args, _path| {
+            if args.tag != Tag::Nil {
+                let arg = repl.peek1(args)?;
+                if arg.tag != Tag::Sym {
+                    bail!("Argument must be a symbol");
+                }
+                let sym_path = repl.zstore.fetch_symbol_path(arg);
+                let Some(name) = sym_path.last() else {
+                    bail!("Argument can't be the root symbol");
+                };
+                let Some(meta_cmd) = repl.meta_cmds.get(name.as_str()) else {
+                    bail!("Unknown meta command");
+                };
+                println!("{} - {}", meta_cmd.name, meta_cmd.summary);
+                if !meta_cmd.info.is_empty() {
+                    println!("  Info:");
+                }
+                for e in meta_cmd.info {
+                    println!("    {e}");
+                }
+                println!("  Usage: {}", meta_cmd.format);
+                if !meta_cmd.example.is_empty() {
+                    println!("  Example:");
+                }
+                for e in meta_cmd.example {
+                    println!("    {e}");
+                }
+            } else {
+                println!("Available commands:");
+                for (_, i) in repl.meta_cmds.iter().sorted_by_key(|x| x.0) {
+                    println!("  {} - {}", i.name, i.summary);
+                }
+            }
             Ok(())
         },
     };
@@ -556,7 +706,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         name: "prove",
         summary: "Proves a Lurk reduction",
         format: "!(prove <expr>?)",
-        description: &["Prove a Lurk reduction, persists the proof and prints its key"],
+        info: &["Prove a Lurk reduction, persists the proof and prints its key"],
         example: &["'(1 2 3)", "!(prove)", "!(prove '(1 2 3))"],
         run: |repl, args, _path| {
             if args.tag != Tag::Nil {
@@ -593,7 +743,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         name: "verify",
         summary: "Verifies Lurk reduction proof",
         format: "!(verify <string>)",
-        description: &["Verifies a Lurk reduction proof by its key"],
+        info: &["Verifies a Lurk reduction proof by its key"],
         example: &["!(verify \"2ae20412c6f4740f409196522c15b0e42aae2338c2b5b9c524f675cba0a93e\")"],
         run: |repl, args, _path| {
             let (proof_key, io_proof) = Self::load_io_proof_with_repl(repl, args)?;
@@ -614,7 +764,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         name: "inspect",
         summary: "Prints a proof claim",
         format: "!(inspect <string>)",
-        description: &[],
+        info: &[],
         example: &["!(inspect \"2ae20412c6f4740f409196522c15b0e42aae2338c2b5b9c524f675cba0a93e\")"],
         run: |repl, args, _path| {
             let IOProof {
@@ -692,7 +842,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         name: "prove-protocol",
         summary: "Creates a proof for a protocol",
         format: "!(prove-protocol <protocol> <string> args...)",
-        description: &[
+        info: &[
             "The proof is created only if the protocol can be satisfied by the",
             "provided arguments.",
             "The second (string) argument for this meta command is the path to",
@@ -769,7 +919,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         name: "verify-protocol",
         summary: "Verifies a proof for a protocol",
         format: "!(verify-protocol <protocol> <string>)",
-        description: &[
+        info: &[
             "Reconstructs the proof input with the args provided by the prover",
             "according to the protocol and then verifies the proof.",
             "If verification succeeds, runs the post-verification predicate,",
@@ -842,12 +992,16 @@ pub(crate) fn meta_cmds<H: Chipset<F>>() -> MetaCmdsMap<F, H> {
         MetaCmd::DEF,
         MetaCmd::DEFREC,
         MetaCmd::CLEAR,
+        MetaCmd::SET_ENV,
         MetaCmd::HIDE,
         MetaCmd::COMMIT,
         MetaCmd::OPEN,
         MetaCmd::FETCH,
         MetaCmd::CALL,
         MetaCmd::CHAIN,
+        MetaCmd::DEFPACKAGE,
+        MetaCmd::IMPORT,
+        MetaCmd::IN_PACKAGE,
         MetaCmd::DUMP_EXPR,
         MetaCmd::LOAD_EXPR,
         MetaCmd::PROVE,
@@ -856,6 +1010,7 @@ pub(crate) fn meta_cmds<H: Chipset<F>>() -> MetaCmdsMap<F, H> {
         MetaCmd::DEFPROTOCOL,
         MetaCmd::PROVE_PROTOCOL,
         MetaCmd::VERIFY_PROTOCOL,
+        MetaCmd::HELP,
     ]
     .map(|mc| (mc.name, mc))
     .into_iter()

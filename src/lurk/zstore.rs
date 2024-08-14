@@ -785,7 +785,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         string
     }
 
-    fn fetch_symbol_path<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> Vec<String>
+    pub fn fetch_symbol_path<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> Vec<String>
     where
         F: PrimeField32,
     {
