@@ -84,9 +84,9 @@ pub(crate) struct Repl<F: PrimeField32, H: Chipset<F>> {
     pub(crate) lurk_main_idx: usize,
     eval_idx: usize,
     pub(crate) env: ZPtr<F>,
-    state: StateRcCell,
+    pub(crate) state: StateRcCell,
     pwd_path: Utf8PathBuf,
-    meta_cmds: MetaCmdsMap<F, H>,
+    pub(crate) meta_cmds: MetaCmdsMap<F, H>,
     pub(crate) nil: ZPtr<F>,
 }
 

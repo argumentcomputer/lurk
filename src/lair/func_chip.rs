@@ -10,9 +10,9 @@ use super::{
 pub struct ColumnLayout<Value, Slice> {
     pub(crate) nonce: Value,
     pub(crate) input: Slice,
+    pub(crate) output: Slice,
     pub(crate) aux: Slice,
     pub(crate) sel: Slice,
-    pub(crate) output: Slice,
 }
 
 pub type LayoutSizes = ColumnLayout<usize, usize>;
