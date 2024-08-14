@@ -4,22 +4,14 @@ use itertools::Itertools;
 use p3_baby_bear::BabyBear;
 use p3_field::PrimeField32;
 use rustc_hash::FxHashMap;
-use sphinx_core::{
-    stark::{LocalProver, StarkGenericConfig, StarkMachine},
-    utils::{BabyBearPoseidon2, SphinxCoreOpts},
-};
+use sphinx_core::stark::StarkGenericConfig;
 
 use crate::{
-    lair::{
-        chipset::Chipset,
-        execute::Shard,
-        func_chip::FuncChip,
-        lair_chip::{build_chip_vector, LairChip, LairMachineProgram},
-    },
+    lair::{chipset::Chipset, lair_chip::LairMachineProgram},
     lurk::{
         cli::{
             paths::{commits_dir, proofs_dir},
-            proofs::{CryptoProof, IOProof},
+            proofs::IOProof,
             repl::Repl,
         },
         package::{Package, SymbolRef},
@@ -31,10 +23,6 @@ use crate::{
 };
 
 use super::{comm_data::CommData, lurk_data::LurkData, proofs::ProtocolProof};
-
-const INPUT_SIZE: usize = 24;
-const OUTPUT_SIZE: usize = 16;
-const NUM_PUBLIC_VALUES: usize = INPUT_SIZE + OUTPUT_SIZE;
 
 #[allow(dead_code)]
 #[allow(clippy::type_complexity)]
@@ -692,55 +680,6 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
 type F = BabyBear;
 
 impl<H: Chipset<F>> MetaCmd<F, H> {
-    fn stark_machine(repl: &Repl<F, H>) -> StarkMachine<BabyBearPoseidon2, LairChip<'_, F, H>> {
-        let lurk_main_chip = FuncChip::from_index(repl.lurk_main_idx, &repl.toplevel);
-        StarkMachine::new(
-            BabyBearPoseidon2::new(),
-            build_chip_vector(&lurk_main_chip),
-            NUM_PUBLIC_VALUES,
-        )
-    }
-
-    fn prove_last_reduction(repl: &mut Repl<F, H>) -> Result<String> {
-        // make env DAG available so `IOProof` can carry it
-        repl.memoize_env_dag();
-        let Some(public_values) = repl.queries.public_values.as_ref() else {
-            bail!("No data found for latest computation");
-        };
-        let proof_key_img: &[F; DIGEST_SIZE] = &repl
-            .zstore
-            .hasher()
-            .hash(&public_values[..INPUT_SIZE])
-            .try_into()
-            .unwrap();
-        let proof_key = format!("{:x}", digest_to_biguint(proof_key_img));
-        let proof_path = proofs_dir()?.join(&proof_key);
-        let must_prove = if !proof_path.exists() {
-            true
-        } else {
-            let io_proof_bytes = std::fs::read(&proof_path)?;
-            // force an overwrite if deserialization goes wrong
-            bincode::deserialize::<IOProof>(&io_proof_bytes).is_err()
-        };
-        if must_prove {
-            let machine = Self::stark_machine(repl);
-            let (pk, vk) = machine.setup(&LairMachineProgram);
-            let challenger_p = &mut machine.config().challenger();
-            let challenger_v = &mut challenger_p.clone();
-            let shard = Shard::new(&repl.queries);
-            let opts = SphinxCoreOpts::default();
-            let machine_proof = machine.prove::<LocalProver<_, _>>(&pk, shard, challenger_p, opts);
-            machine
-                .verify(&vk, &machine_proof, challenger_v)
-                .expect("Proof verification failed");
-            let crypto_proof: CryptoProof = machine_proof.into();
-            let io_proof = IOProof::new(crypto_proof, public_values, &repl.zstore);
-            let io_proof_bytes = bincode::serialize(&io_proof)?;
-            std::fs::write(proof_path, io_proof_bytes)?;
-        }
-        Ok(proof_key)
-    }
-
     const PROVE: Self = Self {
         name: "prove",
         summary: "Proves a Lurk reduction",
@@ -752,7 +691,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
                 let expr = *repl.peek1(args)?;
                 repl.handle_non_meta(&expr);
             }
-            let proof_key = Self::prove_last_reduction(repl)?;
+            let proof_key = repl.prove_last_reduction()?;
             println!("Proof key: \"{proof_key}\"");
             Ok(())
         },
@@ -786,7 +725,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         example: &["!(verify \"2ae20412c6f4740f409196522c15b0e42aae2338c2b5b9c524f675cba0a93e\")"],
         run: |repl, args, _path| {
             let (proof_key, io_proof) = Self::load_io_proof_with_repl(repl, args)?;
-            let machine = Self::stark_machine(repl);
+            let machine = repl.stark_machine();
             let machine_proof = io_proof.into_machine_proof();
             let (_, vk) = machine.setup(&LairMachineProgram);
             let challenger = &mut machine.config().challenger();
@@ -942,7 +881,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
                 bail!("Mismatch between result and expected result");
             }
 
-            let proof_key = Self::prove_last_reduction(repl)?;
+            let proof_key = repl.prove_last_reduction()?;
             let io_proof = Self::load_io_proof(&proof_key)?;
             let crypto_proof = io_proof.crypto_proof;
             let args_reduced = repl.zstore.intern_list(args_vec_reduced);
@@ -1002,7 +941,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
             }
             let (expr, env) = repl.zstore.fetch_tuple2(expr_env);
             let machine_proof = crypto_proof.into_machine_proof(expr, env, result);
-            let machine = Self::stark_machine(repl);
+            let machine = repl.stark_machine();
             let (_, vk) = machine.setup(&LairMachineProgram);
             let challenger = &mut machine.config().challenger();
             if machine.verify(&vk, &machine_proof, challenger).is_err() {

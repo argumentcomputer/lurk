@@ -10,11 +10,21 @@ use rustyline::{
     validate::{ValidationContext, ValidationResult, Validator},
     Completer, Editor, Helper, Highlighter, Hinter,
 };
+use sphinx_core::{
+    stark::{LocalProver, StarkGenericConfig, StarkMachine},
+    utils::{BabyBearPoseidon2, SphinxCoreOpts},
+};
 use std::io::Write;
 use std::{fmt::Debug, marker::PhantomData};
 
 use crate::{
-    lair::{chipset::Chipset, execute::QueryRecord, toplevel::Toplevel},
+    lair::{
+        chipset::Chipset,
+        execute::{QueryRecord, Shard},
+        func_chip::FuncChip,
+        lair_chip::{build_chip_vector, LairChip, LairMachineProgram},
+        toplevel::Toplevel,
+    },
     lurk::{
         chipset::LurkChip,
         cli::{
@@ -27,10 +37,20 @@ use crate::{
             Error, Span,
         },
         state::{State, StateRcCell},
+        syntax::digest_to_biguint,
         tag::Tag,
-        zstore::{ZPtr, ZStore},
+        zstore::{ZPtr, ZStore, DIGEST_SIZE},
     },
 };
+
+use super::{
+    paths::proofs_dir,
+    proofs::{CryptoProof, IOProof},
+};
+
+const INPUT_SIZE: usize = 24;
+const OUTPUT_SIZE: usize = 16;
+const NUM_PUBLIC_VALUES: usize = INPUT_SIZE + OUTPUT_SIZE;
 
 #[derive(Helper, Highlighter, Hinter, Completer)]
 struct InputValidator<F: Field + Debug> {
@@ -113,6 +133,59 @@ impl Repl<BabyBear, LurkChip> {
     }
 }
 
+impl<H: Chipset<BabyBear>> Repl<BabyBear, H> {
+    pub(crate) fn stark_machine(
+        &self,
+    ) -> StarkMachine<BabyBearPoseidon2, LairChip<'_, BabyBear, H>> {
+        let lurk_main_chip = FuncChip::from_index(self.lurk_main_idx, &self.toplevel);
+        StarkMachine::new(
+            BabyBearPoseidon2::new(),
+            build_chip_vector(&lurk_main_chip),
+            NUM_PUBLIC_VALUES,
+        )
+    }
+
+    pub(crate) fn prove_last_reduction(&mut self) -> Result<String> {
+        // make env DAG available so `IOProof` can carry it
+        self.memoize_env_dag();
+        let Some(public_values) = self.queries.public_values.as_ref() else {
+            bail!("No data found for latest computation");
+        };
+        let proof_key_img: &[BabyBear; DIGEST_SIZE] = &self
+            .zstore
+            .hasher()
+            .hash(&public_values[..INPUT_SIZE])
+            .try_into()
+            .unwrap();
+        let proof_key = format!("{:x}", digest_to_biguint(proof_key_img));
+        let proof_path = proofs_dir()?.join(&proof_key);
+        let must_prove = if !proof_path.exists() {
+            true
+        } else {
+            let io_proof_bytes = std::fs::read(&proof_path)?;
+            // force an overwrite if deserialization goes wrong
+            bincode::deserialize::<IOProof>(&io_proof_bytes).is_err()
+        };
+        if must_prove {
+            let machine = self.stark_machine();
+            let (pk, vk) = machine.setup(&LairMachineProgram);
+            let challenger_p = &mut machine.config().challenger();
+            let challenger_v = &mut challenger_p.clone();
+            let shard = Shard::new(&self.queries);
+            let opts = SphinxCoreOpts::default();
+            let machine_proof = machine.prove::<LocalProver<_, _>>(&pk, shard, challenger_p, opts);
+            machine
+                .verify(&vk, &machine_proof, challenger_v)
+                .expect("Proof verification failed");
+            let crypto_proof: CryptoProof = machine_proof.into();
+            let io_proof = IOProof::new(crypto_proof, public_values, &self.zstore);
+            let io_proof_bytes = bincode::serialize(&io_proof)?;
+            std::fs::write(proof_path, io_proof_bytes)?;
+        }
+        Ok(proof_key)
+    }
+}
+
 fn pretty_iterations_display(iterations: usize) -> String {
     if iterations != 1 {
         format!("{iterations} iterations")
@@ -192,13 +265,13 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
     pub(crate) fn reduce_aux_with_env(&mut self, expr: &ZPtr<F>, env: &ZPtr<F>) -> ZPtr<F> {
         self.prepare_queries();
         let mut queries = self.queries.clone();
-        let output = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
+        let result = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
             self.lurk_main_idx,
             &self.build_input(expr, env),
             &mut queries,
         ));
         self.queries.inv_func_queries = queries.inv_func_queries;
-        output
+        result
     }
 
     #[inline]
@@ -238,15 +311,15 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
     }
 
     pub(crate) fn handle_non_meta(&mut self, expr: &ZPtr<F>) -> ZPtr<F> {
-        let output = self.reduce(expr);
-        self.memoize_dag(output.tag, &output.digest);
+        let result = self.reduce(expr);
+        self.memoize_dag(result.tag, &result.digest);
         let iterations = self.queries.func_queries[self.eval_idx].len();
         println!(
             "[{}] => {}",
             pretty_iterations_display(iterations),
-            self.fmt(&output)
+            self.fmt(&result)
         );
-        output
+        result
     }
 
     fn handle_meta(&mut self, expr: &ZPtr<F>, file_dir: &Utf8Path) -> Result<()> {
@@ -296,13 +369,20 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         if is_meta {
             self.handle_meta(&zptr, file_dir)?;
         } else {
-            self.handle_non_meta(&zptr);
+            let result = self.handle_non_meta(&zptr);
+            if result.tag == Tag::Err {
+                // error out when loading a file
+                bail!("Reduction error");
+            }
         }
         Ok(new_input)
     }
 
     pub(crate) fn load_file(&mut self, file_path: &Utf8Path, demo: bool) -> Result<()> {
         let input = std::fs::read_to_string(file_path)?;
+        let Some(file_dir) = file_path.parent() else {
+            bail!("Can't get the parent of {file_path}");
+        };
         if demo {
             println!("Loading {file_path} in demo mode");
         } else {
@@ -310,10 +390,6 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         }
         let mut input = Span::new(&input);
         loop {
-            let Some(file_dir) = file_path.parent() else {
-                bail!("Can't load parent of {}", file_path);
-            };
-
             match self.handle_form(input, file_dir, demo) {
                 Ok(new_input) => input = new_input,
                 Err(e) => {
