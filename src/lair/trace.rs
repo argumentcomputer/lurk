@@ -31,6 +31,7 @@ impl<'a, T> ColumnMutSlice<'a, T> {
     pub fn from_slice(slice: &'a mut [T], layout_sizes: LayoutSizes) -> Self {
         let (nonce, slice) = slice.split_at_mut(1);
         let (input, slice) = slice.split_at_mut(layout_sizes.input);
+        let (output, slice) = slice.split_at_mut(layout_sizes.output);
         let (aux, slice) = slice.split_at_mut(layout_sizes.aux);
         let (sel, slice) = slice.split_at_mut(layout_sizes.sel);
         assert!(slice.is_empty());
@@ -40,6 +41,7 @@ impl<'a, T> ColumnMutSlice<'a, T> {
             input,
             aux,
             sel,
+            output,
         }
     }
 
@@ -51,6 +53,11 @@ impl<'a, T> ColumnMutSlice<'a, T> {
     pub fn push_aux(&mut self, index: &mut ColumnIndex, t: T) {
         self.aux[index.aux] = t;
         index.aux += 1;
+    }
+
+    pub fn push_output(&mut self, index: &mut ColumnIndex, t: T) {
+        self.output[index.output] = t;
+        index.output += 1;
     }
 
     pub fn push_require(&mut self, index: &mut ColumnIndex, require: RequireRecord<T>) {
@@ -83,6 +90,20 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 let requires = result.requires.iter();
                 let queries = shard.queries();
+                let query_map = &queries.func_queries()[self.func.index];
+                let lookup = query_map
+                    .get(args)
+                    .expect("Cannot find query result")
+                    .provide;
+                let provide = lookup.into_provide();
+                result
+                    .output
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .for_each(|&o| slice.push_output(index, o));
+                slice.push_aux(index, provide.last_nonce);
+                slice.push_aux(index, provide.last_count);
                 self.func
                     .populate_row(args, index, slice, queries, requires, self.toplevel);
             });
@@ -94,8 +115,6 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
 struct TraceCtx<'a, F: PrimeField32, H: Chipset<F>> {
     queries: &'a QueryRecord<F>,
     toplevel: &'a Toplevel<F, H>,
-    func_idx: usize,
-    call_inp: List<F>,
     requires: Iter<'a, Record>,
 }
 
@@ -114,8 +133,6 @@ impl<F: PrimeField32> Func<F> {
         let map = &mut args.iter().map(|arg| (*arg, 1)).collect();
         // Context of which function this is
         let ctx = &mut TraceCtx {
-            func_idx: self.index,
-            call_inp: args.into(),
             queries,
             requires,
             toplevel,
@@ -153,14 +170,6 @@ impl<F: PrimeField32> Ctrl<F> {
             Ctrl::Return(ident, _) => {
                 assert!(ctx.requires.next().is_none());
                 slice.sel[*ident] = F::one();
-                let query_map = &ctx.queries.func_queries()[ctx.func_idx];
-                let lookup = query_map
-                    .get(&ctx.call_inp)
-                    .expect("Cannot find query result")
-                    .provide;
-                let provide = lookup.into_provide();
-                slice.push_aux(index, provide.last_nonce);
-                slice.push_aux(index, provide.last_count);
             }
             Ctrl::Choose(var, cases, _) => {
                 let val = map[*var].0;
@@ -381,6 +390,7 @@ mod tests {
             input: 1,
             aux: 8,
             sel: 2,
+            output: 1,
         };
         assert_eq!(out, expected_layout_sizes);
     }
@@ -398,15 +408,15 @@ mod tests {
         #[rustfmt::skip]
         let expected_trace = [
             // in order: nonce, n, 1/n, fact(n-1), prev_nonce, prev_count, count_inv, n*fact(n-1), last_nonce, last_count and selectors
-            0, 5, 1610612737, 24, 0, 0, 1, 120, 0, 1, 1, 0,
-            1, 4, 1509949441,  6, 0, 0, 1,  24, 0, 1, 1, 0,
-            2, 3, 1342177281,  2, 0, 0, 1,   6, 1, 1, 1, 0,
-            3, 2, 1006632961,  1, 0, 0, 1,   2, 2, 1, 1, 0,
-            4, 1,          1,  1, 0, 0, 1,   1, 3, 1, 1, 0,
-            5, 0,          4,  1, 0, 0, 0,   0, 0, 0, 0, 1,
+            0, 5, 120, 0, 1, 1610612737, 24, 0, 0, 1, 120, 1, 0,
+            1, 4,  24, 0, 1, 1509949441,  6, 0, 0, 1,  24, 1, 0,
+            2, 3,   6, 1, 1, 1342177281,  2, 0, 0, 1,   6, 1, 0,
+            3, 2,   2, 2, 1, 1006632961,  1, 0, 0, 1,   2, 1, 0,
+            4, 1,   1, 3, 1,          1,  1, 0, 0, 1,   1, 1, 0,
+            5, 0,   1, 4, 1,          0,  0, 0, 0, 0,   0, 0, 1,
             // dummy
-            6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ]
         .into_iter()
         .map(field_from_u32)
@@ -420,15 +430,15 @@ mod tests {
 
         #[rustfmt::skip]
         let expected_trace = [
-            // in order: nonce, n, 1/n, 1/(n-1), fib(n-1), prev_nonce, prev_count, count_inv, fib(n-2), prev_nonce, prev_count, count_inv, last_nonce, last_count and selectors
-            0, 7,  862828252, 1677721601, 8, 0, 0, 1, 5, 1, 1, 1006632961, 0, 1, 0, 0, 1,
-            1, 6, 1677721601, 1610612737, 5, 0, 0, 1, 3, 2, 1, 1006632961, 0, 1, 0, 0, 1,
-            2, 5, 1610612737, 1509949441, 3, 0, 0, 1, 2, 3, 1, 1006632961, 0, 2, 0, 0, 1,
-            3, 4, 1509949441, 1342177281, 2, 0, 0, 1, 1, 4, 1, 1006632961, 1, 2, 0, 0, 1,
-            4, 3, 1342177281, 1006632961, 1, 0, 0, 1, 1, 5, 1, 1006632961, 2, 2, 0, 0, 1,
-            5, 2, 1006632961,          1, 1, 0, 0, 1, 0, 0, 0,          1, 3, 2, 0, 0, 1,
-            6, 1,          4,          2, 0, 0, 0, 0, 0, 0, 0,          0, 0, 0, 0, 1, 0,
-            7, 0,          5,          1, 0, 0, 0, 0, 0, 0, 0,          0, 0, 0, 1, 0, 0,
+            // in order: nonce, n, fib(n), last_nonce, last_count, 1/n, 1/(n-1), fib(n-1), prev_nonce, prev_count, count_inv, fib(n-2), prev_nonce, prev_count, count_inv and selectors
+            0, 7, 13, 0, 1, 862828252, 1677721601, 8, 0, 0, 1, 5, 1, 1, 1006632961, 0, 0, 1,
+            1, 6, 8, 0, 1, 1677721601, 1610612737, 5, 0, 0, 1, 3, 2, 1, 1006632961, 0, 0, 1,
+            2, 5, 5, 0, 2, 1610612737, 1509949441, 3, 0, 0, 1, 2, 3, 1, 1006632961, 0, 0, 1,
+            3, 4, 3, 1, 2, 1509949441, 1342177281, 2, 0, 0, 1, 1, 4, 1, 1006632961, 0, 0, 1,
+            4, 3, 2, 2, 2, 1342177281, 1006632961, 1, 0, 0, 1, 1, 5, 1, 1006632961, 0, 0, 1,
+            5, 2, 1, 3, 2, 1006632961,          1, 1, 0, 0, 1, 0, 0, 0,          1, 0, 0, 1,
+            6, 1, 1, 4, 2,          0,          0, 0, 0, 0, 0, 0, 0, 0,          0, 0, 1, 0,
+            7, 0, 0, 5, 1,          0,          0, 0, 0, 0, 0, 0, 0, 0,          0, 1, 0, 0,
         ]
         .into_iter()
         .map(field_from_u32)
@@ -470,6 +480,7 @@ mod tests {
             input: 2,
             aux: 10,
             sel: 5,
+            output: 1,
         };
         assert_eq!(test_chip.layout_sizes, expected_layout_sizes);
 
@@ -483,11 +494,11 @@ mod tests {
             // the inequalities that appear on the default case. Note that the branch
             // that does not follow the default will reuse the slots for the inverted
             // elements to minimize the number of columns
-            0, 5, 2, 1610612737, 1509949441, 1342177281, 1006632961, 16, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1,
-            1, 4, 2, 1509949441, 1342177281, 1006632961,          1, 16, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1,
-            2, 3, 2,          4,         16,          1,          1,  0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+            0, 5, 2, 16, 0, 1, 1610612737, 1509949441, 1342177281, 1006632961, 16, 0, 0, 1, 0, 0, 0, 0, 1,
+            1, 4, 2, 16, 0, 1, 1509949441, 1342177281, 1006632961,          1, 16, 0, 0, 1, 0, 0, 0, 0, 1,
+            2, 3, 2, 16, 1, 1,          4,         16,          0,          0,  0, 0, 0, 0, 0, 0, 0, 1, 0,
             // dummy
-            3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            3, 0, 0,  0, 0, 0,          0,          0,          0,          0,  0, 0, 0, 0, 0, 0, 0, 0, 0,
         ]
         .into_iter()
         .map(field_from_u32)
@@ -534,6 +545,7 @@ mod tests {
             input: 2,
             aux: 2,
             sel: 4,
+            output: 1,
         };
         assert_eq!(test_chip.layout_sizes, expected_layout_sizes);
 
@@ -550,11 +562,11 @@ mod tests {
         let trace = test_chip.generate_trace(&Shard::new(&queries));
 
         let expected_trace = [
-            // nonce, two inputs, last_nonce, last_count, selectors
-            0, 0, 0, 0, 1, 1, 0, 0, 0, //
-            1, 0, 1, 0, 1, 0, 1, 0, 0, //
-            2, 1, 0, 0, 1, 0, 0, 1, 0, //
-            3, 1, 1, 0, 1, 0, 0, 0, 1, //
+            // nonce, two inputs, output, last_nonce, last_count, selectors
+            0, 0, 0, 0, 0, 1, 1, 0, 0, 0, //
+            1, 0, 1, 1, 0, 1, 0, 1, 0, 0, //
+            2, 1, 0, 2, 0, 1, 0, 0, 1, 0, //
+            3, 1, 1, 3, 0, 1, 0, 0, 0, 1, //
         ]
         .into_iter()
         .map(field_from_u32)
