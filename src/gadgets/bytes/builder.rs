@@ -32,7 +32,7 @@ impl<F: AbstractField> BytesAirRecordWithContext<F> {
     ) {
         let nonce = nonce.into();
         for ((relation, is_real), record) in zip_eq(self.records, requires) {
-            builder.require(relation, nonce.clone(), record, is_real);
+            builder.require(relation, is_real);
         }
     }
 

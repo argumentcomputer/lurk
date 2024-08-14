@@ -333,11 +333,8 @@ impl<F: Field> Op<F> {
                     out.push(o.into());
                 }
                 let inp = inp.iter().map(|i| map[*i].to_expr());
-                let record = local.next_require(index);
                 builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
-                    *local.nonce,
-                    record,
                     sel.clone(),
                 );
             }
@@ -350,11 +347,8 @@ impl<F: Field> Op<F> {
                     inp.push(i.into());
                 }
                 let out = out.iter().map(|o| map[*o].to_expr());
-                let record = local.next_require(index);
                 builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
-                    *local.nonce,
-                    record,
                     sel.clone(),
                 );
             }
@@ -362,13 +356,7 @@ impl<F: Field> Op<F> {
                 let ptr = local.next_aux(index);
                 map.push(Val::Expr(ptr.into()));
                 let values = values.iter().map(|&idx| map[idx].to_expr());
-                let record = local.next_require(index);
-                builder.require(
-                    MemoryRelation(ptr, values),
-                    *local.nonce,
-                    record,
-                    sel.clone(),
-                );
+                builder.require(MemoryRelation(ptr, values), sel.clone());
             }
             Op::Load(len, ptr) => {
                 let ptr = map[*ptr].to_expr();
@@ -380,13 +368,7 @@ impl<F: Field> Op<F> {
                         o
                     })
                     .collect::<Vec<_>>();
-                let record = local.next_require(index);
-                builder.require(
-                    MemoryRelation(ptr, values),
-                    *local.nonce,
-                    record,
-                    sel.clone(),
-                );
+                builder.require(MemoryRelation(ptr, values), sel.clone());
             }
             Op::ExternCall(chip_idx, input) => {
                 let input: Vec<_> = input.iter().map(|a| map[*a].to_expr()).collect();
@@ -473,13 +455,7 @@ impl<F: Field> Ctrl<F> {
                 let sel = local.sel[*ident];
                 let out = vs.iter().map(|v| map[*v].to_expr());
                 let CallCtx { func_idx, call_inp } = call_ctx;
-                let last_nonce = local.next_aux(index);
-                let last_count = local.next_aux(index);
-                let record = ProvideRecord {
-                    last_nonce,
-                    last_count,
-                };
-                builder.provide(CallRelation(func_idx, call_inp, out), record, sel);
+                builder.provide(CallRelation(func_idx, call_inp, out), sel);
             }
         }
     }

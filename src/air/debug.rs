@@ -23,13 +23,11 @@ pub(crate) struct Record {
     nonce: u32,
 }
 
-type MemoSetAccessRecords = BTreeMap<u32, Record>;
-
 #[derive(Default, Debug)]
 pub struct TraceQueries<F> {
     sends: HashMap<Query<F>, usize>,
     receives: HashMap<Query<F>, usize>,
-    pub(crate) memoset: HashMap<Query<F>, MemoSetAccessRecords>,
+    pub(crate) memoset: HashMap<Query<F>, bool>,
 }
 
 impl<F: PrimeField32> TraceQueries<F> {
@@ -59,7 +57,8 @@ impl<F: PrimeField32> TraceQueries<F> {
         let Self {
             sends,
             receives,
-            memoset,
+            ..
+            // memoset,
         } = other;
 
         for (query, other_count) in sends {
@@ -76,16 +75,16 @@ impl<F: PrimeField32> TraceQueries<F> {
                 .or_insert(other_count);
         }
 
-        // Iterate over all memoset queries in other
-        for (query, other_records) in memoset {
-            let records = self.memoset.entry(query).or_default();
-            for (count, record) in other_records {
-                assert!(
-                    records.insert(count, record).is_none(),
-                    "memoset record already accessed"
-                );
-            }
-        }
+        // // Iterate over all memoset queries in other
+        // for (query, other_records) in memoset {
+        //     let records = self.memoset.entry(query).or_default();
+        //     for (count, record) in other_records {
+        //         assert!(
+        //             records.insert(count, record).is_none(),
+        //             "memoset record already accessed"
+        //         );
+        //     }
+        // }
     }
 
     pub fn verify(&self) {
@@ -247,62 +246,46 @@ impl<'a, F: PrimeField32> LookupBuilder for DebugConstraintBuilder<'a, F> {
 
     fn provide(
         &mut self,
-        relation: impl Relation<Self::Expr>,
-        record: ProvideRecord<impl Into<Self::Expr>>,
-        is_real_bool: impl Into<Self::Expr>,
+        _relation: impl Relation<Self::Expr>,
+        _is_real_bool: impl Into<Self::Expr>,
     ) {
-        let is_real = is_real_bool.into();
-        if is_real.is_zero() {
-            return;
-        } else {
-            assert!(is_real.is_one());
-        }
-        let query = relation.values().into_iter().collect();
-        let count = 0;
-        let ProvideRecord {
-            last_nonce,
-            last_count,
-        } = record;
-        self.queries.memoset(
-            query,
-            count,
-            Record {
-                prev_nonce: last_nonce.into().as_canonical_u32(),
-                prev_count: last_count.into().as_canonical_u32(),
-                nonce: 0,
-            },
-        )
+        // let is_real = is_real_bool.into();
+        // if is_real.is_zero() {
+        //     return;
+        // } else {
+        //     assert!(is_real.is_one());
+        // }
+        // let query = relation.values().into_iter().collect();
+        // let count = 0;
+        // let ProvideRecord {
+        //     last_nonce,
+        //     last_count,
+        // } = record;
+        // self.queries.memoset(
+        //     query,
+        //     count,
+        //     Record {
+        //         prev_nonce: last_nonce.into().as_canonical_u32(),
+        //         prev_count: last_count.into().as_canonical_u32(),
+        //         nonce: 0,
+        //     },
+        // )
     }
 
     fn require(
         &mut self,
-        relation: impl Relation<Self::Expr>,
-        nonce: impl Into<Self::Expr>,
-        record: RequireRecord<impl Into<Self::Expr>>,
-        is_real_bool: impl Into<Self::Expr>,
+        _relation: impl Relation<Self::Expr>,
+        _is_real_bool: impl Into<Self::Expr>,
     ) {
-        let is_real = is_real_bool.into();
-        if is_real.is_zero() {
-            return;
-        } else {
-            assert!(is_real.is_one());
-        }
-        let prev_nonce = record.prev_nonce.into();
-        let prev_count = record.prev_count.into();
-        let count = prev_count + F::one();
-        assert_eq!(count * record.count_inv.into(), F::one());
-
-        let query = relation.values().into_iter().collect();
-        let count = count.as_canonical_u32();
-        self.queries.memoset(
-            query,
-            count,
-            Record {
-                prev_nonce: prev_nonce.as_canonical_u32(),
-                prev_count: prev_count.as_canonical_u32(),
-                nonce: nonce.into().as_canonical_u32(),
-            },
-        )
+        // let is_real = is_real_bool.into();
+        // if is_real.is_zero() {
+        //     return;
+        // } else {
+        //     assert!(is_real.is_one());
+        // }
+        //
+        // let query = relation.values().into_iter().collect();
+        // self.queries.memoset.entry(query).or_default();
     }
 }
 

@@ -50,19 +50,12 @@ impl<F: PrimeField32> MemChip<F> {
             // .skip(range.start)
             // .take(non_dummy_height)
             .for_each(|(i, (row, (args, mem_result)))| {
-                let provide = mem_result.provide.into_provide();
-
                 // is_real
                 row[0] = F::one();
                 // ptr: We skip the address 0 as to leave room for null pointers
                 row[1] = F::from_canonical_usize(i + 1);
                 // TODO: the ptr can be "duplicated" when sharding is involved: how do we deal with this?
-
-                // last_nonce
-                row[2] = provide.last_nonce;
-                // last_count
-                row[3] = provide.last_count;
-                row[4..].copy_from_slice(args)
+                row[2..].copy_from_slice(args)
             });
         trace
     }
@@ -97,21 +90,14 @@ where
             .when(is_real_transition.clone())
             .assert_eq(ptr_local + AB::Expr::one(), ptr_next);
 
-        builder.provide(
-            MemoryRelation(ptr_local, values.iter().copied()),
-            ProvideRecord {
-                last_nonce,
-                last_count,
-            },
-            is_real,
-        );
+        builder.provide(MemoryRelation(ptr_local, values.iter().copied()), is_real);
     }
 }
 
 impl<F: Sync> BaseAir<F> for MemChip<F> {
-    /// is_real, Pointer, last_nonce, last_count, and arguments
+    /// is_real, Pointer, and arguments
     fn width(&self) -> usize {
-        4 + self.len
+        2 + self.len
     }
 }
 

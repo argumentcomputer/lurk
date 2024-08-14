@@ -57,13 +57,8 @@ impl<AB: AirBuilder + LookupBuilder> Air<AB> for DemoChip {
             .when_transition()
             .assert_eq(local.nonce + AB::Expr::one(), next.nonce);
 
-        builder.require(
-            local.query,
-            local.nonce,
-            *local.record.require(),
-            local.is_require,
-        );
-        builder.provide(local.query, *local.record.provide(), local.is_provide);
+        builder.require(local.query, local.is_require);
+        builder.provide(local.query, local.is_provide);
     }
 }
 

@@ -169,16 +169,7 @@ where
                     builder.assert_eq(a, b);
                 }
 
-                builder.require(
-                    OuterCallRelation(func_idx, public_values),
-                    AB::F::zero(),
-                    RequireRecord {
-                        prev_nonce: AB::F::zero(),
-                        prev_count: AB::F::zero(),
-                        count_inv: AB::F::one(),
-                    },
-                    AB::F::one(),
-                );
+                builder.require(OuterCallRelation(func_idx, public_values), AB::F::one());
             }
         }
     }

@@ -42,65 +42,20 @@ pub trait LookupBuilder: AirBuilder {
     fn provide(
         &mut self,
         relation: impl Relation<Self::Expr>,
-        record: ProvideRecord<impl Into<Self::Expr>>,
         is_real_bool: impl Into<Self::Expr>,
     ) {
-        let is_real = is_real_bool.into();
-
-        // Witness values corresponding to the nonce/row and final count used by the
-        // last require access.
-        let ProvideRecord {
-            last_nonce,
-            last_count,
-        } = record;
-
-        let values: Vec<_> = relation.values().into_iter().collect();
-
-        // Read the query written by the final require access.
-        self.receive(
-            chain([last_nonce.into(), last_count.into()], values.clone()),
-            is_real.clone(),
-        );
-        // Write it back with a counter initialized to 0, to be read by the first require access.
-        // The nonce can be zero since there is no security issue with providing a value multiple times.
-        self.send(
-            chain([Self::Expr::zero(), Self::Expr::zero()], values),
-            is_real.clone(),
-        );
+        // Write it back with the updated count and current nonce/row value.
+        self.send(relation, is_real_bool);
     }
 
     /// Require a query that has been provided.
     fn require(
         &mut self,
         relation: impl Relation<Self::Expr>,
-        nonce: impl Into<Self::Expr>,
-        record: RequireRecord<impl Into<Self::Expr>>,
         is_real_bool: impl Into<Self::Expr>,
     ) {
-        let is_real = is_real_bool.into();
-
-        // Witness values used when writing the query to the set in the previous access.
-
-        let prev_nonce = record.prev_nonce.into();
-        let prev_count = record.prev_count.into();
-        let count_inv = record.count_inv.into();
-
-        // The count to be written through this access.
-        let count = prev_count.clone() + Self::Expr::one();
-
-        // Ensure that we are not writing back a query with a count = 0.
-        self.when(is_real.clone())
-            .assert_one(count.clone() * count_inv);
-
-        let values: Vec<_> = relation.values().into_iter().collect();
-
-        // Read the query from the set with the provided nonce and count
-        self.receive(
-            chain([prev_nonce, prev_count], values.clone()),
-            is_real.clone(),
-        );
         // Write it back with the updated count and current nonce/row value.
-        self.send(chain([nonce.into(), count], values), is_real.clone());
+        self.send(relation, is_real_bool);
     }
 }
 

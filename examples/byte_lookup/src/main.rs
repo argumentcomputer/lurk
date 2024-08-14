@@ -87,7 +87,7 @@ impl<AB: AirBuilder + LookupBuilder> Air<AB> for Chip {
 
         builder.assert_bool(local.is_real);
 
-        builder.require([local.value], local.nonce, local.record, local.is_real);
+        builder.require([local.value], local.is_real);
     }
 }
 
@@ -100,7 +100,7 @@ impl<AB: AirBuilder + LookupBuilder + PairBuilder> Air<AB> for RangeChip {
         let local = main.row_slice(0);
         let local: &RangeMainCols<AB::Var> = (*local).borrow();
 
-        builder.provide([preprocessed.value], local.record, local.is_real);
+        builder.provide([preprocessed.value], local.is_real);
     }
 }
 

@@ -36,7 +36,7 @@ const NUM_PROVIDES: usize = 6;
 #[repr(C)]
 pub struct MainBytesCols<T> {
     is_real: T,
-    provides: [ProvideRecord<T>; NUM_PROVIDES],
+    // provides: [ProvideRecord<T>; NUM_PROVIDES],
 }
 
 const MAIN_BYTES_NUM_COLS: usize = size_of::<MainBytesCols<u8>>();
@@ -83,18 +83,18 @@ impl<F: PrimeField32> BytesChip<F> {
             return trace;
         }
         trace.par_rows_mut().enumerate().for_each(|(index, row)| {
-            let index = index as u16;
-            let input = ByteInput::from_u16(index);
+            // let index = index as u16;
+            // let input = ByteInput::from_u16(index);
             let row: &mut MainBytesCols<F> = row.borrow_mut();
 
             row.is_real = F::from_bool(is_real);
 
-            if let Some(row_records) = bytes_record.get(input) {
-                for (record, provide) in zip_eq(row_records.iter_records(), row.provides.iter_mut())
-                {
-                    provide.populate(record);
-                }
-            }
+            // if let Some(row_records) = bytes_record.get(input) {
+            //     for (record, provide) in zip_eq(row_records.iter_records(), row.provides.iter_mut())
+            //     {
+            //         provide.populate(record);
+            //     }
+            // }
         });
 
         trace
@@ -136,8 +136,8 @@ impl<AB: LookupBuilder + PairBuilder> Air<AB> for BytesChip<AB::F> {
             ByteRelation::or(prep.input.0, prep.input.1, prep.or),
         ];
 
-        for (relation, provide) in relations.into_iter().zip_eq(main.provides.into_iter()) {
-            builder.provide(relation, provide, main.is_real);
+        for relation in relations {
+            builder.provide(relation, main.is_real);
         }
     }
 }
