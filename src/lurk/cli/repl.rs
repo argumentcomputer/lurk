@@ -87,6 +87,7 @@ pub(crate) struct Repl<F: PrimeField32, H: Chipset<F>> {
     state: StateRcCell,
     pwd_path: Utf8PathBuf,
     meta_cmds: MetaCmdsMap<F, H>,
+    pub(crate) nil: ZPtr<F>,
 }
 
 impl Repl<BabyBear, LurkChip> {
@@ -96,6 +97,7 @@ impl Repl<BabyBear, LurkChip> {
         let lurk_main_idx = toplevel.get_by_name("lurk_main").index;
         let eval_idx = toplevel.get_by_name("eval").index;
         let env = zstore.intern_empty_env();
+        let nil = zstore.intern_nil();
         Self {
             zstore,
             queries,
@@ -106,6 +108,7 @@ impl Repl<BabyBear, LurkChip> {
             state: State::init_lurk_state().rccell(),
             pwd_path: current_dir().expect("Couldn't get current directory"),
             meta_cmds: meta_cmds(),
+            nil,
         }
     }
 }
@@ -145,6 +148,14 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         Ok((arg1, arg2))
     }
 
+    pub(crate) fn car_cdr(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>) {
+        match zptr.tag {
+            Tag::Cons => self.zstore.fetch_tuple2(zptr),
+            Tag::Nil => (&self.nil, &self.nil),
+            _ => panic!("Invalid ZPtr"),
+        }
+    }
+
     fn input_marker(&self) -> String {
         let state = self.state.borrow();
         format!(
@@ -168,26 +179,32 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             .inject_inv_queries("hash_48_8", &self.toplevel, &self.zstore.hashes6);
     }
 
-    fn build_input(&self, expr: &ZPtr<F>) -> [F; 24] {
+    fn build_input(&self, expr: &ZPtr<F>, env: &ZPtr<F>) -> [F; 24] {
         let mut input = [F::zero(); 24];
         input[..16].copy_from_slice(&expr.flatten());
-        input[16..].copy_from_slice(&self.env.digest);
+        input[16..].copy_from_slice(&env.digest);
         input
     }
 
     /// Reduces a Lurk expression with a clone of the REPL's queries so the latest
     /// provable computation isn't affected. After the reduction is over, retrieve
     /// the (potentially enriched) inverse query maps so commitments aren't lost.
-    pub(crate) fn reduce_aux(&mut self, expr: &ZPtr<F>) -> ZPtr<F> {
+    pub(crate) fn reduce_aux_with_env(&mut self, expr: &ZPtr<F>, env: &ZPtr<F>) -> ZPtr<F> {
         self.prepare_queries();
         let mut queries = self.queries.clone();
         let output = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
             self.lurk_main_idx,
-            &self.build_input(expr),
+            &self.build_input(expr, env),
             &mut queries,
         ));
         self.queries.inv_func_queries = queries.inv_func_queries;
         output
+    }
+
+    #[inline]
+    pub(crate) fn reduce_aux(&mut self, expr: &ZPtr<F>) -> ZPtr<F> {
+        let env = self.env;
+        self.reduce_aux_with_env(expr, &env)
     }
 
     pub(crate) fn memoize_dag(&mut self, tag: Tag, digest: &[F]) {
@@ -205,13 +222,23 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         self.memoize_dag(Tag::Env, &self.env.digest.clone())
     }
 
-    pub(crate) fn handle_non_meta(&mut self, expr: &ZPtr<F>) {
+    pub(crate) fn reduce_with_env(&mut self, expr: &ZPtr<F>, env: &ZPtr<F>) -> ZPtr<F> {
         self.prepare_queries();
-        let output = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
+        ZPtr::from_flat_data(&self.toplevel.execute_by_index(
             self.lurk_main_idx,
-            &self.build_input(expr),
+            &self.build_input(expr, env),
             &mut self.queries,
-        ));
+        ))
+    }
+
+    #[inline]
+    pub(crate) fn reduce(&mut self, expr: &ZPtr<F>) -> ZPtr<F> {
+        let env = self.env;
+        self.reduce_with_env(expr, &env)
+    }
+
+    pub(crate) fn handle_non_meta(&mut self, expr: &ZPtr<F>) {
+        let output = self.reduce(expr);
         self.memoize_dag(output.tag, &output.digest);
         let iterations = self.queries.func_queries[self.eval_idx].len();
         println!(

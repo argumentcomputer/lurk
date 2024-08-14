@@ -1,9 +1,9 @@
 mod comm_data;
 mod config;
-mod io_proof;
 mod lurk_data;
 mod meta;
 mod paths;
+mod proofs;
 pub mod repl;
 mod zdag;
 
