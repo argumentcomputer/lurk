@@ -8,8 +8,8 @@ use ascent::{ascent, Dual};
 use p3_field::{AbstractField, Field, PrimeField32};
 use rustc_hash::FxHashMap;
 
+use crate::loam::memory::{Memory, VPtr, VirtualMemory};
 use crate::loam::{LEWrap, Ptr, Wide, WidePtr, LE};
-use crate::loam::memory::{Memory, RawMemory, VPtr};
 
 use crate::lurk::chipset::{lurk_hasher, LurkHasher};
 use crate::lurk::tag::Tag;
@@ -411,7 +411,7 @@ impl AllocationProgram {
         }
     }
 
-    pub fn export_memory(&self) -> RawMemory {
+    pub fn export_memory(&self) -> VirtualMemory {
         let ptr_value = self
             .ptr_value
             .iter()
@@ -430,7 +430,7 @@ impl AllocationProgram {
             .map(|(car, cdr, cons)| (VPtr(*cons), (VPtr(*car), VPtr(*cdr))))
             .collect();
 
-        RawMemory {
+        VirtualMemory {
             ptr_value,
             cons_rel,
             fun_rel: Default::default(),

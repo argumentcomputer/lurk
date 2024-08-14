@@ -7,6 +7,7 @@ use crate::{
     loam::{allocation::Allocator, LEWrap, Num, Ptr, PtrEq, Wide, WidePtr, LE},
     lurk::{
         chipset::LurkChip,
+        eval::EvalErr,
         state::{StateRcCell, LURK_PACKAGE_SYMBOLS_NAMES},
         tag::Tag,
         zstore::{self, builtin_vec, lurk_zstore, ZPtr, ZStore},
@@ -93,7 +94,7 @@ impl VPtr {
     }
 
     fn addr(&self) -> LE {
-        self.0.1
+        self.0 .1
     }
 }
 
@@ -101,8 +102,6 @@ impl VPtr {
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 /// Physical pointer
 struct PPtr(Ptr);
-
-
 
 impl PPtr {
     fn new(tag: Tag, addr: u32) -> Self {
@@ -126,7 +125,7 @@ impl PPtr {
     }
 
     fn addr(&self) -> LE {
-        self.0.1
+        self.0 .1
     }
 }
 
@@ -153,7 +152,7 @@ impl PPtrType {
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
-pub struct RawMemory {
+pub struct VirtualMemory {
     pub ptr_value: FxHashMap<VPtr, Wide>,
 
     pub cons_rel: Vec<(VPtr, VPtr, VPtr)>,
@@ -166,11 +165,105 @@ pub struct RawMemory {
     pub thunk_rel_map: FxHashMap<VPtr, (VPtr, VPtr)>,
 }
 
-impl RawMemory {
+impl VirtualMemory {
     pub fn distill(&self) -> Memory {
         let mut store = Store::default();
-        store.intern_raw_memory(&self);
+        store.intern_virtual_memory(&self);
         store.reconstuct_memory()
+    }
+
+    #[inline]
+    pub fn fetch_tuple2(&self, vptr: &VPtr) -> (&VPtr, &VPtr) {
+        match vptr.tag() {
+            Tag::Cons => {
+                if let Some((a, b)) = self.cons_rel_map.get(vptr) {
+                    (a, b)
+                } else {
+                    panic!("Tuple2 data not found: {:?}", vptr)
+                }
+            }
+            Tag::Thunk => {
+                if let Some((a, b)) = self.thunk_rel_map.get(vptr) {
+                    (a, b)
+                } else {
+                    panic!("Tuple2 data not found: {:?}", vptr)
+                }
+            }
+            x => panic!("fetch_tuple2 not possible for {:?}", x),
+        }
+    }
+
+    #[inline]
+    pub fn fetch_tuple3(&self, vptr: &VPtr) -> (&VPtr, &VPtr, &VPtr) {
+        match vptr.tag() {
+            Tag::Fun => {
+                if let Some((a, b, c)) = self.fun_rel_map.get(vptr) {
+                    (a, b, c)
+                } else {
+                    panic!("Tuple3 data not found: {:?}", vptr)
+                }
+            }
+            x => panic!("fetch_tuple2 not possible for {:?}", x),
+        }
+    }
+
+    pub fn fetch_list<'a>(&'a self, mut ptr: &'a VPtr) -> (Vec<&VPtr>, Option<&'a VPtr>) {
+        assert!(matches!(ptr.tag(), Tag::Cons | Tag::Nil));
+        let mut elts = vec![];
+        while ptr.tag() == Tag::Cons {
+            let (car, cdr) = self.fetch_tuple2(ptr);
+            elts.push(car);
+            ptr = cdr;
+        }
+        if ptr.tag() == Tag::Nil {
+            (elts, None)
+        } else {
+            (elts, Some(ptr))
+        }
+    }
+
+    pub fn fmt(&self, zstore: &ZStore<LE, LurkChip>, ptr: &VPtr) -> String {
+        match ptr.tag() {
+            Tag::Num => format!("{}n", ptr.addr()),
+            Tag::Builtin | Tag::Sym | Tag::Key | Tag::Nil => self
+                .ptr_value
+                .get(ptr)
+                .map(|digest| {
+                    let zptr = ZPtr {
+                        tag: ptr.tag(),
+                        digest: digest.0,
+                    };
+                    zstore.fmt(&zptr)
+                })
+                .unwrap_or(format!("<Opaque {:?}>", ptr.0)),
+            Tag::Cons => {
+                let (elts, last) = self.fetch_list(ptr);
+                let elts_str = elts.iter().map(|z| self.fmt(zstore, z)).join(" ");
+                if let Some(last) = last {
+                    format!("({elts_str} . {})", self.fmt(zstore, last))
+                } else {
+                    format!("({elts_str})")
+                }
+            }
+            Tag::Fun => {
+                let (args, body, _) = self.fetch_tuple3(ptr);
+                if args.tag() == Tag::Nil {
+                    format!("<Fun () {}>", self.fmt(zstore, body))
+                } else {
+                    format!(
+                        "<Fun {} {}>",
+                        self.fmt(zstore, args),
+                        self.fmt(zstore, body)
+                    )
+                }
+            }
+            Tag::Thunk => {
+                let (body, _) = self.fetch_tuple2(ptr);
+                format!("<Thunk {}>", self.fmt(zstore, body))
+            }
+            Tag::Err => format!("<Err {:?}>", EvalErr::from_field(&ptr.addr())),
+            Tag::U64 | Tag::Char | Tag::Comm | Tag::Str | Tag::Env => unimplemented!(),
+        }
     }
 }
 
@@ -220,7 +313,7 @@ impl Store {
     }
 
     // this is somewhat painful to write
-    fn intern_ptr(&mut self, vptr: VPtr, memory: &RawMemory) -> PPtr {
+    fn intern_ptr(&mut self, vptr: VPtr, memory: &VirtualMemory) -> PPtr {
         if let Some(ptr) = self.vptr_pptr.get(&vptr) {
             return *ptr;
         }
@@ -276,7 +369,7 @@ impl Store {
         }
     }
 
-    fn intern_digest(&mut self, vptr: VPtr, digest: Wide, memory: &RawMemory) -> PPtr {
+    fn intern_digest(&mut self, vptr: VPtr, digest: Wide, memory: &VirtualMemory) -> PPtr {
         let tag = vptr.tag();
         let ptr = self.vptr_pptr.get(&vptr).copied().unwrap_or_else(|| {
             // let addr = if tag == Tag::Num {
@@ -298,7 +391,7 @@ impl Store {
         ptr
     }
 
-    fn intern_raw_memory(&mut self, memory: &RawMemory) {
+    fn intern_virtual_memory(&mut self, memory: &VirtualMemory) {
         for (_, _, cons) in &memory.cons_rel {
             self.intern_ptr(*cons, memory);
         }
@@ -365,6 +458,81 @@ impl Store {
         }
 
         memory
+    }
+
+    #[inline]
+    pub fn fetch_tuple2(&self, ptr: &PPtr) -> (&PPtr, &PPtr) {
+        let Some((PPtrType::Tuple2(a, b), _)) = self.dag.get(ptr) else {
+            panic!("Tuple2 data not found on DAG: {:?}", ptr)
+        };
+        (a, b)
+    }
+
+    #[inline]
+    pub fn fetch_tuple3(&self, ptr: &PPtr) -> (&PPtr, &PPtr, &PPtr) {
+        let Some((PPtrType::Tuple3(a, b, c), _)) = self.dag.get(ptr) else {
+            panic!("Tuple3 data not found on DAG: {:?}", ptr)
+        };
+        (a, b, c)
+    }
+
+    pub fn fetch_list<'a>(&'a self, mut ptr: &'a PPtr) -> (Vec<&PPtr>, Option<&'a PPtr>) {
+        assert!(matches!(ptr.tag(), Tag::Cons | Tag::Nil));
+        let mut elts = vec![];
+        while ptr.tag() == Tag::Cons {
+            let (car, cdr) = self.fetch_tuple2(ptr);
+            elts.push(car);
+            ptr = cdr;
+        }
+        if ptr.tag() == Tag::Nil {
+            (elts, None)
+        } else {
+            (elts, Some(ptr))
+        }
+    }
+
+    pub fn fmt(&self, zstore: &ZStore<LE, LurkChip>, ptr: &PPtr) -> String {
+        match ptr.tag() {
+            Tag::Num => format!("{}n", ptr.addr()),
+            Tag::Builtin | Tag::Sym | Tag::Key | Tag::Nil => self
+                .pptr_digest
+                .get(ptr)
+                .map(|digest| {
+                    let zptr = ZPtr {
+                        tag: ptr.tag(),
+                        digest: digest.0,
+                    };
+                    zstore.fmt(&zptr)
+                })
+                .unwrap_or(format!("<Opaque {:?}>", ptr.0)),
+            Tag::Cons => {
+                let (elts, last) = self.fetch_list(ptr);
+                let elts_str = elts.iter().map(|z| self.fmt(zstore, z)).join(" ");
+                if let Some(last) = last {
+                    format!("({elts_str} . {})", self.fmt(zstore, last))
+                } else {
+                    format!("({elts_str})")
+                }
+            }
+            Tag::Fun => {
+                let (args, body, _) = self.fetch_tuple3(ptr);
+                if args.tag() == Tag::Nil {
+                    format!("<Fun () {}>", self.fmt(zstore, body))
+                } else {
+                    format!(
+                        "<Fun {} {}>",
+                        self.fmt(zstore, args),
+                        self.fmt(zstore, body)
+                    )
+                }
+            }
+            Tag::Thunk => {
+                let (body, _) = self.fetch_tuple2(ptr);
+                format!("<Thunk {}>", self.fmt(zstore, body))
+            }
+            Tag::Err => format!("<Err {:?}>", EvalErr::from_field(&ptr.addr())),
+            Tag::U64 | Tag::Char | Tag::Comm | Tag::Str | Tag::Env => unimplemented!(),
+        }
     }
 }
 
@@ -440,8 +608,8 @@ pub fn generate_lisp_program(n: usize, op: &str) -> String {
 mod tests {
     use super::*;
 
-    fn create_sample_raw_memory() -> RawMemory {
-        let mut memory = RawMemory::default();
+    fn create_sample_raw_memory() -> VirtualMemory {
+        let mut memory = VirtualMemory::default();
 
         let n1 = VPtr::num(1);
         let n2 = VPtr::num(2);
@@ -488,7 +656,7 @@ mod tests {
     #[test]
     fn test_distill_with_duplicates() {
         let mut raw_memory = create_sample_raw_memory();
-        
+
         // Add a duplicate cons relation
         let v1 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(1)));
         let v2 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(2)));
@@ -504,10 +672,12 @@ mod tests {
     #[test]
     fn test_distill_with_dangling_pointers() {
         let mut raw_memory = create_sample_raw_memory();
-        
+
         // Add a dangling pointer
         let v6 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(6)));
-        raw_memory.ptr_value.insert(v6, Wide([LE::from_canonical_u32(60); 8]));
+        raw_memory
+            .ptr_value
+            .insert(v6, Wide([LE::from_canonical_u32(60); 8]));
 
         let distilled_memory = raw_memory.distill();
 
@@ -517,7 +687,7 @@ mod tests {
 
     #[test]
     fn test_distill_empty_memory() {
-        let empty_memory = RawMemory::default();
+        let empty_memory = VirtualMemory::default();
         let distilled_memory = empty_memory.distill();
 
         assert_eq!(distilled_memory.cons_mem.len(), 0);

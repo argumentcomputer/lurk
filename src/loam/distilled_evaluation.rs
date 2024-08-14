@@ -251,15 +251,15 @@ ascent! {
     // idk the compiler needs to be smart enough to find this rule
     eval_input(car, env), eval_input(cdr, env), eval_cons_op(expr, env, car, cdr) <--
         eval_input(expr, env), cons_rel(op, tail, expr), if op.is_cons_op(),
-        cons_rel(car, cdr_nil, tail),
-        cons_rel(cdr, end, cdr_nil), if end.is_nil();
+        cons_rel(car, rest, tail),
+        cons_rel(cdr, end, rest), if end.is_nil();
 
     // register a cons created from a cons expression as its evaluation
     eval(expr, env, evaled_cons) <--
         // here, this "signal" stands in for the same 3 lines on the top:
         //      eval_input(expr, env), cons_rel(op, tail, expr), if op.is_cons_op(),
-        //      cons_rel(car, cdr_nil, tail),
-        //      cons_rel(cdr, end, cdr_nil), if end.is_nil(),
+        //      cons_rel(car, rest, tail),
+        //      cons_rel(cdr, end, rest), if end.is_nil(),
         // but it's more efficient because less lookups
         eval_cons_op(expr, env, car, cdr),
         eval(car, env, evaled_car),
@@ -561,7 +561,7 @@ ascent! {
         eval_input(expr, env), cons_rel(head, tail, expr), if head.is_left_foldable();
 
     // When left-folding with tail that is a cons, ingress its car and cdr, and eval the car.
-    eval_input(car, env) <-- fold(expr, env, op, _, tail), cons_rel(car, cdr, tail);
+    eval_input(car, env) <-- fold(expr, env, _, _, tail), cons_rel(car, cdr, tail);
 
     // When left-folding, if car has been evaled and is F, apply the op to it and the acc, then recursively
     // fold acc and new tail. TODO: error if car is not f.
@@ -569,7 +569,7 @@ ascent! {
         fold(expr, env, op, acc, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car), if evaled_car.is_num();
 
     // left-folding operation with an empty (nil) tail
-    eval(expr, env, Ptr(Tag::Num.elt(), acc.0)) <-- fold(expr, env, op, acc, tail), if tail.is_nil();
+    eval(expr, env, Ptr(Tag::Num.elt(), acc.0)) <-- fold(expr, env, _, acc, tail), if tail.is_nil();
 
     ////////////////////
     // fold_right
@@ -624,7 +624,7 @@ ascent! {
     bool_fold(expr, env, op, Num(evaled_car.1), cdr) <--
         bool_fold0(expr, env, op, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car);
 
-    eval_input(car, env) <-- bool_fold(expr, env, op, _, tail), cons_rel(car, cdr, tail);
+    eval_input(car, env) <-- bool_fold(expr, env, _, _, tail), cons_rel(car, cdr, tail);
 
     eval(expr, env, op.apply_relop(*acc,  Num(evaled_car.1))) <--
         bool_fold(expr, env, op, acc, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car),
@@ -662,7 +662,7 @@ mod test {
     use p3_baby_bear::BabyBear;
 
     use crate::{
-        loam::{evaluation::EvaluationProgram, memory::generate_lisp_program},
+        loam::{evaluation::EvaluationProgram, memory::generate_lisp_program, LoamProgram},
         lurk::{
             chipset::LurkChip,
             zstore::{lurk_zstore, ZPtr, ZStore},
@@ -695,8 +695,6 @@ mod test {
         prog.zstore = zstore;
         prog.toplevel_input = vec![(input, env.unwrap_or(WidePtr::empty_env()))];
         prog.run();
-
-        prog.hydrate();
 
         // println!("\n{}", prog.relation_sizes_summary());
         println!("cons_digest_mem size: {}", prog.cons_digest_mem.len());
@@ -837,7 +835,6 @@ mod test {
         let prog = test_aux("(= 1n 1n 2n)", "nil", None);
         test_distilled(&prog);
 
-
         // TODO: handle these type errors
         // test_aux1("(= nil)", err(), None);
         // test_aux1("(= 1 nil)", err(), None);
@@ -877,8 +874,8 @@ mod test {
         test_aux("(let ((x 9n)(y 10n)) y)", "10n", None);
         test_aux("(let ((x (+ 1n 1n))) x)", "2n", None);
         test_aux("(let ((y 9n) (x (+ 1n 1n))) x)", "2n", None);
-    }    
-    
+    }
+
     #[test]
     fn test_letrec_plain() {
         test_aux("(letrec ((x 9n)) x)", "9n", None);

@@ -8,8 +8,8 @@ use rustc_hash::FxHashMap;
 
 use crate::loam::allocation::Allocator;
 use crate::loam::lurk_sym_index;
-use crate::loam::memory::{generate_lisp_program, Memory, RawMemory, VPtr};
-use crate::loam::{LEWrap, Num, Ptr, PtrEq, Wide, WidePtr, LE};
+use crate::loam::memory::{generate_lisp_program, Memory, VPtr, VirtualMemory};
+use crate::loam::{LEWrap, LoamProgram, Num, Ptr, PtrEq, Wide, WidePtr, LE};
 use crate::lurk::chipset::LurkChip;
 use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
 use crate::lurk::tag::Tag;
@@ -744,15 +744,15 @@ ascent! {
         eval_input(expr, env), cons_rel(op, tail, expr), if op.is_cons_op();
 
     // Signal: eval car
-    eval_input(car, env), ingress(cdr_nil) <--
+    eval_input(car, env), ingress(rest) <--
         cons_cont1(expr, env, tail),
-        cons_rel(car, cdr_nil, tail);
+        cons_rel(car, rest, tail);
 
     // Signal: eval cdr
     eval_input(cdr, env), cons_cont2(expr, env, car, cdr) <--
         cons_cont1(expr, env, tail),
-        cons_rel(car, cdr_nil, tail),
-        cons_rel(cdr, end, cdr_nil), if end.is_nil(); // TODO: otherwise error
+        cons_rel(car, rest, tail),
+        cons_rel(cdr, end, rest), if end.is_nil(); // TODO: otherwise error
 
     // Signal:
     cons(evaled_car, evaled_cdr) <--
@@ -1122,7 +1122,7 @@ ascent! {
         eval_input(expr, env), cons_rel(head, tail, expr), if head.is_left_foldable();
 
     // When left-folding with tail that is a cons, ingress its car and cdr, and eval the car.
-    eval_input(car, env), ingress(car) <-- fold(expr, env, op, _, tail), cons_rel(car, cdr, tail);
+    eval_input(car, env), ingress(car) <-- fold(expr, env, _, _, tail), cons_rel(car, cdr, tail);
 
     // When left-folding, if car has been evaled and is F, apply the op to it and the acc, then recursively
     // fold acc and new tail. TODO: error if car is not f.
@@ -1130,7 +1130,7 @@ ascent! {
         fold(expr, env, op, acc, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car), if evaled_car.is_num();
 
     // left-folding operation with an empty (nil) tail
-    eval(expr, env, Ptr(Tag::Num.elt(), acc.0)) <-- fold(expr, env, op, acc, tail), if tail.is_nil();
+    eval(expr, env, Ptr(Tag::Num.elt(), acc.0)) <-- fold(expr, env, _, acc, tail), if tail.is_nil();
 
     ////////////////////
     // fold_right
@@ -1185,14 +1185,14 @@ ascent! {
     ingress(tail), bool_fold(expr, env, op, Num(evaled_car.1), cdr) <--
         bool_fold0(expr, env, op, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car);
 
-    eval_input(car, env), ingress(car), ingress(cdr) <-- bool_fold(expr, env, op, _, tail), cons_rel(car, cdr, tail);
+    eval_input(car, env), ingress(car), ingress(cdr) <-- bool_fold(expr, env, _, _, tail), cons_rel(car, cdr, tail);
 
     eval(expr, env, op.apply_relop(*acc,  Num(evaled_car.1))) <--
         bool_fold(expr, env, op, acc, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car),
         if cdr.is_nil();
 
     ingress(cdr), bool_fold(expr, env, op, Num(evaled_car.1), cdr) <--
-    bool_fold(expr, env, op, acc, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car),
+        bool_fold(expr, env, op, acc, tail), cons_rel(car, cdr, tail), eval(car, env, evaled_car),
         if cdr.is_cons(),
         let x = op.apply_relop(*acc, Num(evaled_car.1)),
         if x.is_t();
@@ -1202,292 +1202,34 @@ ascent! {
 }
 
 // #[cfg(feature = "loam")]
-impl EvaluationProgram {
-    fn alloc_addr(&mut self, tag: LE, initial_addr: LE) -> LE {
-        self.allocator.alloc_addr(tag, initial_addr)
+impl LoamProgram for EvaluationProgram {
+    fn allocator(&self) -> &Allocator {
+        &self.allocator
+    }
+    fn allocator_mut(&mut self) -> &mut Allocator {
+        &mut self.allocator
+    }
+    fn zstore(&self) -> &ZStore<LE, LurkChip> {
+        &self.zstore
+    }
+    fn zstore_mut(&mut self) -> &mut ZStore<LE, LurkChip> {
+        &mut self.zstore
     }
 
-    fn unhash4(&mut self, tag: LE, digest: Wide) -> [Wide; 4] {
-        let zptr = ZPtr {
-            tag: Tag::from_field(&tag),
-            digest: digest.0,
-        };
-        let (a, b) = self.zstore.fetch_tuple2(&zptr);
-        [
-            Wide::widen(a.tag.elt()),
-            Wide(a.digest),
-            Wide::widen(b.tag.elt()),
-            Wide(b.digest),
-        ]
+    fn ptr_value(&self) -> &Vec<(Ptr, Wide)> {
+        &self.ptr_value
     }
-
-    fn hash4(&mut self, tag: LE, a: Wide, b: Wide, c: Wide, d: Wide) -> Wide {
-        let a_zptr = ZPtr {
-            tag: Tag::from_field(&a.f()),
-            digest: b.0,
-        };
-        let b_zptr = ZPtr {
-            tag: Tag::from_field(&c.f()),
-            digest: d.0,
-        };
-        let zptr = self
-            .zstore
-            .intern_tuple2(Tag::from_field(&tag), a_zptr, b_zptr);
-        Wide(zptr.digest)
+    fn cons_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)> {
+        &self.cons_rel
     }
-
-    fn unhash6(&mut self, tag: LE, digest: Wide) -> [Wide; 6] {
-        let zptr = ZPtr {
-            tag: Tag::from_field(&tag),
-            digest: digest.0,
-        };
-        let (a, b, c) = self.zstore.fetch_tuple3(&zptr);
-        [
-            a.tag.value(),
-            Wide(a.digest),
-            b.tag.value(),
-            Wide(b.digest),
-            c.tag.value(),
-            Wide(c.digest),
-        ]
+    fn fun_rel(&self) -> &Vec<(Ptr, Ptr, Ptr, Ptr)> {
+        &self.fun_rel
     }
-
-    fn hash6(&mut self, tag: LE, a: Wide, b: Wide, c: Wide, d: Wide, e: Wide, f: Wide) -> Wide {
-        let a_zptr = ZPtr {
-            tag: Tag::from_field(&a.f()),
-            digest: b.0,
-        };
-        let b_zptr = ZPtr {
-            tag: Tag::from_field(&c.f()),
-            digest: d.0,
-        };
-        let c_zptr = ZPtr {
-            tag: Tag::from_field(&e.f()),
-            digest: f.0,
-        };
-        let zptr = self
-            .zstore
-            .intern_tuple3(Tag::from_field(&tag), a_zptr, b_zptr, c_zptr);
-        Wide(zptr.digest)
+    fn thunk_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)> {
+        &self.thunk_rel
     }
-
-    /// Hydrate the `ptr_zptr` map. This will also intern all the relational pointers
-    /// into the `zstore`, but not modify the relation data itself. By "relational pointers,"
-    /// I mean pointer relations like `cons_rel`, which may have been allocated, but whose hash
-    /// has yet to be computed.
-    ///
-    /// In order to debug and print things, we need to know what each `Ptr`'s canonical
-    /// `ZPtr` representation is. Thus we need to hydrate the `zstore` with the out-of-sync
-    /// relational pointers that running the loam program has created. This is the same as the
-    /// original hydration in `lurkrs`.
-    pub fn hydrate(&mut self) {
-        let mut ptr_zptr = FxHashMap::default();
-        for (ptr, Wide(digest)) in &self.ptr_value {
-            let tag = Tag::from_field(&ptr.0);
-            let digest = *digest;
-            let zptr = ZPtr { tag, digest };
-            ptr_zptr.insert(*ptr, zptr);
-        }
-
-        self.ptr_zptr = ptr_zptr;
-
-        self.intern_all();
-    }
-
-    // this is somewhat painful to write
-    fn intern_ptr(&mut self, ptr: Ptr) -> ZPtr<LE> {
-        if let Some(zptr) = self.deref(&ptr) {
-            return zptr;
-        }
-
-        let tag = Tag::from_field(&ptr.0);
-        match tag {
-            Tag::Cons => {
-                let data = self.cons_rel_indices_2.0.get(&(ptr,)).unwrap();
-                assert_eq!(data.len(), 1);
-                let (car, cdr) = data[0];
-                let car = self.intern_ptr(car);
-                let cdr = self.intern_ptr(cdr);
-                let zptr = self.zstore.intern_tuple2(Tag::Cons, car, cdr);
-                self.ptr_zptr.insert(ptr, zptr);
-                zptr
-            }
-            Tag::Fun => {
-                let data = self.fun_rel_indices_3.0.get(&(ptr,)).unwrap();
-                assert_eq!(data.len(), 1);
-                let (args, body, closed_env) = data[0];
-                let args = self.intern_ptr(args);
-                let body = self.intern_ptr(body);
-                let closed_env = self.intern_ptr(closed_env);
-                let zptr = self.zstore.intern_tuple3(Tag::Fun, args, body, closed_env);
-                self.ptr_zptr.insert(ptr, zptr);
-                zptr
-            }
-            Tag::Thunk => {
-                let thunk_map = self
-                    .thunk_rel
-                    .iter()
-                    .map(|x| (x.2, (x.0, x.1)))
-                    .collect::<FxHashMap<_, _>>();
-                let (body, closed_env) = thunk_map.get(&ptr).unwrap();
-                let body = self.intern_ptr(*body);
-                let closed_env = self.intern_ptr(*closed_env);
-                let zptr = self.zstore.intern_tuple2(Tag::Thunk, body, closed_env);
-                self.ptr_zptr.insert(ptr, zptr);
-                zptr
-            }
-            Tag::Sym => self.deref(&ptr).unwrap(), // these should already exist
-            Tag::Nil => self.deref(&ptr).unwrap(),
-            Tag::Num => self.deref_imm(&ptr),
-            Tag::Err => self.deref(&ptr).unwrap(),
-            Tag::Builtin => self.deref(&ptr).unwrap(),
-            _ => panic!("unimplemented: {:?}", &ptr),
-        }
-    }
-
-    fn intern_all(&mut self) {
-        for (_, _, ptr) in self.cons_rel.clone() {
-            let zptr = self.intern_ptr(ptr);
-        }
-        for (_, _, _, ptr) in self.fun_rel.clone() {
-            self.intern_ptr(ptr);
-        }
-        for (body, closed_env, ptr) in self.thunk_rel.clone() {
-            self.intern_ptr(ptr);
-        }
-    }
-
-    fn fmt(&self, tag: Tag, digest: &Wide) -> String {
-        let zptr = ZPtr {
-            tag,
-            digest: digest.0,
-        };
-        self.zstore.fmt(&zptr)
-    }
-
-    pub fn fmt_ptr(&self, ptr: &Ptr) -> Option<String> {
-        let zptr = self.deref(ptr)?;
-        Some(self.zstore.fmt(&zptr))
-    }
-
-    pub fn deref(&self, ptr: &Ptr) -> Option<ZPtr<LE>> {
-        self.ptr_zptr.get(ptr).copied()
-    }
-
-    pub fn deref_imm(&self, ptr: &Ptr) -> ZPtr<LE> {
-        let tag = ptr.tag();
-        let digest = Wide::widen(ptr.1).0;
-        ZPtr { tag, digest }
-    }
-
-    pub fn print_memory_tables(&self) {
-        const FULL_SEP: &str = "=====================================================================================================";
-
-        println!("{}", FULL_SEP);
-        println!("== cons memory digest");
-
-        for (i, (digest, Dual(LEWrap(ptr)))) in self.cons_digest_mem.iter().enumerate() {
-            println!("#{}, cons={}:", i, ptr.as_canonical_u32());
-            println!("\t{}", self.fmt(Tag::Cons, digest));
-            println!("\n");
-        }
-
-        println!("{}", FULL_SEP);
-        println!("== cons memory");
-
-        for (i, (car, cdr, Dual(LEWrap(ptr)))) in self.cons_mem.iter().enumerate() {
-            println!(
-                "#{}, cons={}, car={}, cdr={}:",
-                i,
-                ptr.as_canonical_u32(),
-                car.1.as_canonical_u32(),
-                cdr.1.as_canonical_u32()
-            );
-            println!("\t{:?}", self.fmt_ptr(car));
-            println!("\t{:?}", self.fmt_ptr(cdr));
-            println!("\n");
-        }
-
-        println!("{}", FULL_SEP);
-        println!("== sym");
-
-        for (i, (digest, Dual(LEWrap(ptr)))) in self.sym_digest_mem.iter().enumerate() {
-            println!("#{}, sym={}:", i, ptr.as_canonical_u32());
-            println!("\t{}", self.fmt(Tag::Sym, digest));
-            println!("\n");
-        }
-    }
-
-    pub fn print_unevaled(&self) {
-        const FULL_SEP: &str = "=====================================================================================================";
-
-        println!("{}", FULL_SEP);
-        println!("== unevaled");
-        for key in &self.eval_input {
-            let not_evaled = self.eval_indices_0_1.0.get(key).is_none();
-            if not_evaled {
-                println!("{:?}", key);
-                println!("\texpr: {:?}", self.fmt_ptr(&key.0));
-                println!("\t env: {:?}", self.fmt_ptr(&key.1));
-                println!();
-            }
-        }
-    }
-
-    pub fn export_memory(&self) -> RawMemory {
-        let ptr_value = self
-            .ptr_value
-            .iter()
-            .map(|(ptr, wide)| (VPtr(*ptr), *wide))
-            .collect();
-
-        let cons_rel = self
-            .cons_rel
-            .iter()
-            .map(|(car, cdr, cons)| (VPtr(*car), VPtr(*cdr), VPtr(*cons)))
-            .collect();
-        let fun_rel = self
-            .fun_rel
-            .iter()
-            .map(|(args, body, closed_env, fun)| {
-                (VPtr(*args), VPtr(*body), VPtr(*closed_env), VPtr(*fun))
-            })
-            .collect();
-        let thunk_rel = self
-            .thunk_rel
-            .iter()
-            .map(|(body, closed_env, thunk)| (VPtr(*body), VPtr(*closed_env), VPtr(*thunk)))
-            .collect();
-        let num = self.num.iter().map(|(num,)| (VPtr(*num),)).collect();
-
-        let cons_rel_map = self
-            .cons_rel
-            .iter()
-            .map(|(car, cdr, cons)| (VPtr(*cons), (VPtr(*car), VPtr(*cdr))))
-            .collect();
-        let fun_rel_map = self
-            .fun_rel
-            .iter()
-            .map(|(args, body, closed_env, fun)| {
-                (VPtr(*fun), (VPtr(*args), VPtr(*body), VPtr(*closed_env)))
-            })
-            .collect();
-        let thunk_rel_map = self
-            .thunk_rel
-            .iter()
-            .map(|(body, closed_env, thunk)| (VPtr(*thunk), (VPtr(*body), VPtr(*closed_env))))
-            .collect();
-
-        RawMemory {
-            ptr_value,
-            cons_rel,
-            fun_rel,
-            thunk_rel,
-            num,
-            cons_rel_map,
-            fun_rel_map,
-            thunk_rel_map,
-        }
+    fn num(&self) -> &Vec<(Ptr,)> {
+        &self.num
     }
 }
 
@@ -1525,8 +1267,6 @@ mod test {
         prog.zstore = zstore;
         prog.toplevel_input = vec![(input, env.unwrap_or(WidePtr::empty_env()))];
         prog.run();
-
-        prog.hydrate();
 
         println!("\n\n\n{}", prog.relation_sizes_summary());
         // prog.print_memory_tables();

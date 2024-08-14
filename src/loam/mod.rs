@@ -3,10 +3,14 @@
 #![allow(warnings)]
 use std::cmp::Ordering;
 
+use allocation::Allocator;
 use ascent::Lattice;
+use memory::{Memory, VPtr, VirtualMemory};
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField32};
+use rustc_hash::FxHashMap;
 
+use crate::lurk::chipset::LurkChip;
 use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
 use crate::lurk::tag::Tag;
 use crate::lurk::zstore::{self, lurk_zstore, ZPtr, ZStore};
@@ -206,6 +210,145 @@ impl From<&Num> for WidePtr {
 impl From<Num> for WidePtr {
     fn from(f: Num) -> Self {
         (&f).into()
+    }
+}
+
+/// TODO: Figure out how to organize the relationships between the types here correctly.
+/// Also is this even needed if there's going to be exactly one Loam program? (Maybe that's wrong.)
+trait LoamProgram {
+    fn allocator(&self) -> &Allocator;
+    fn allocator_mut(&mut self) -> &mut Allocator;
+    fn zstore(&self) -> &ZStore<LE, LurkChip>;
+    fn zstore_mut(&mut self) -> &mut ZStore<LE, LurkChip>;
+
+    fn ptr_value(&self) -> &Vec<(Ptr, Wide)>;
+    fn cons_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)>;
+    fn fun_rel(&self) -> &Vec<(Ptr, Ptr, Ptr, Ptr)>;
+    fn thunk_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)>;
+    fn num(&self) -> &Vec<(Ptr,)>;
+
+    fn alloc_addr(&mut self, tag: LE, initial_addr: LE) -> LE {
+        self.allocator_mut().alloc_addr(tag, initial_addr)
+    }
+
+    fn unhash4(&mut self, tag: LE, digest: Wide) -> [Wide; 4] {
+        let zptr = ZPtr {
+            tag: Tag::from_field(&tag),
+            digest: digest.0,
+        };
+        let (a, b) = self.zstore_mut().fetch_tuple2(&zptr);
+        [
+            Wide::widen(a.tag.elt()),
+            Wide(a.digest),
+            Wide::widen(b.tag.elt()),
+            Wide(b.digest),
+        ]
+    }
+
+    fn hash4(&mut self, tag: LE, a: Wide, b: Wide, c: Wide, d: Wide) -> Wide {
+        let a_zptr = ZPtr {
+            tag: Tag::from_field(&a.f()),
+            digest: b.0,
+        };
+        let b_zptr = ZPtr {
+            tag: Tag::from_field(&c.f()),
+            digest: d.0,
+        };
+        let zptr = self
+            .zstore_mut()
+            .intern_tuple2(Tag::from_field(&tag), a_zptr, b_zptr);
+        Wide(zptr.digest)
+    }
+
+    fn unhash6(&mut self, tag: LE, digest: Wide) -> [Wide; 6] {
+        let zptr = ZPtr {
+            tag: Tag::from_field(&tag),
+            digest: digest.0,
+        };
+        let (a, b, c) = self.zstore_mut().fetch_tuple3(&zptr);
+        [
+            a.tag.value(),
+            Wide(a.digest),
+            b.tag.value(),
+            Wide(b.digest),
+            c.tag.value(),
+            Wide(c.digest),
+        ]
+    }
+
+    fn hash6(&mut self, tag: LE, a: Wide, b: Wide, c: Wide, d: Wide, e: Wide, f: Wide) -> Wide {
+        let a_zptr = ZPtr {
+            tag: Tag::from_field(&a.f()),
+            digest: b.0,
+        };
+        let b_zptr = ZPtr {
+            tag: Tag::from_field(&c.f()),
+            digest: d.0,
+        };
+        let c_zptr = ZPtr {
+            tag: Tag::from_field(&e.f()),
+            digest: f.0,
+        };
+        let zptr = self
+            .zstore_mut()
+            .intern_tuple3(Tag::from_field(&tag), a_zptr, b_zptr, c_zptr);
+        Wide(zptr.digest)
+    }
+
+    fn export_memory(&self) -> VirtualMemory {
+        let ptr_value = self
+            .ptr_value()
+            .iter()
+            .map(|(ptr, wide)| (VPtr(*ptr), *wide))
+            .collect();
+
+        let cons_rel = self
+            .cons_rel()
+            .iter()
+            .map(|(car, cdr, cons)| (VPtr(*car), VPtr(*cdr), VPtr(*cons)))
+            .collect();
+        let fun_rel = self
+            .fun_rel()
+            .iter()
+            .map(|(args, body, closed_env, fun)| {
+                (VPtr(*args), VPtr(*body), VPtr(*closed_env), VPtr(*fun))
+            })
+            .collect();
+        let thunk_rel = self
+            .thunk_rel()
+            .iter()
+            .map(|(body, closed_env, thunk)| (VPtr(*body), VPtr(*closed_env), VPtr(*thunk)))
+            .collect();
+        let num = self.num().iter().map(|(num,)| (VPtr(*num),)).collect();
+
+        let cons_rel_map = self
+            .cons_rel()
+            .iter()
+            .map(|(car, cdr, cons)| (VPtr(*cons), (VPtr(*car), VPtr(*cdr))))
+            .collect();
+        let fun_rel_map = self
+            .fun_rel()
+            .iter()
+            .map(|(args, body, closed_env, fun)| {
+                (VPtr(*fun), (VPtr(*args), VPtr(*body), VPtr(*closed_env)))
+            })
+            .collect();
+        let thunk_rel_map = self
+            .thunk_rel()
+            .iter()
+            .map(|(body, closed_env, thunk)| (VPtr(*thunk), (VPtr(*body), VPtr(*closed_env))))
+            .collect();
+
+        VirtualMemory {
+            ptr_value,
+            cons_rel,
+            fun_rel,
+            thunk_rel,
+            num,
+            cons_rel_map,
+            fun_rel_map,
+            thunk_rel_map,
+        }
     }
 }
 
