@@ -237,7 +237,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         self.reduce_with_env(expr, &env)
     }
 
-    pub(crate) fn handle_non_meta(&mut self, expr: &ZPtr<F>) {
+    pub(crate) fn handle_non_meta(&mut self, expr: &ZPtr<F>) -> ZPtr<F> {
         let output = self.reduce(expr);
         self.memoize_dag(output.tag, &output.digest);
         let iterations = self.queries.func_queries[self.eval_idx].len();
@@ -246,6 +246,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             pretty_iterations_display(iterations),
             self.fmt(&output)
         );
+        output
     }
 
     fn handle_meta(&mut self, expr: &ZPtr<F>, file_dir: &Utf8Path) -> Result<()> {
@@ -358,7 +359,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
                                     eprintln!("!Error: {e}");
                                 }
                             } else {
-                                self.handle_non_meta(&zptr)
+                                self.handle_non_meta(&zptr);
                             }
                         }
                         Err(Error::NoInput) => {

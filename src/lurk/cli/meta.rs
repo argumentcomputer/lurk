@@ -332,8 +332,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         },
     };
 
-    fn call(repl: &mut Repl<F, H>, args: &ZPtr<F>) -> Result<()> {
-        let (&comm, &arg) = repl.peek2(args)?;
+    fn call(repl: &mut Repl<F, H>, comm: ZPtr<F>, arg: ZPtr<F>) -> Result<ZPtr<F>> {
         if comm.tag != Tag::Comm {
             bail!("Expected a commitment");
         }
@@ -345,8 +344,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         let open = repl.zstore.intern_symbol(&lurk_sym("open"));
         let open_expr = repl.zstore.intern_list([open, comm]);
         let call_expr = repl.zstore.intern_list([open_expr, arg]);
-        repl.handle_non_meta(&call_expr);
-        Ok(())
+        Ok(repl.handle_non_meta(&call_expr))
     }
 
     const CALL: Self = Self {
@@ -358,8 +356,30 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             "(commit (lambda (x) x))",
             "!(call #0x3f2e7102a9f8a303255b90724f24f4eb05b61e99723ca838cf30671676c86a 0)",
         ],
-        run: |repl, args, _path| Self::call(repl, args),
+        run: |repl, args, _path| {
+            let (&comm, &arg) = repl.peek2(args)?;
+            Self::call(repl, comm, arg)?;
+            Ok(())
+        },
     };
+
+    fn persist_chain_result(repl: &mut Repl<F, H>, cons: &ZPtr<F>) -> Result<()> {
+        if cons.tag != Tag::Cons {
+            bail!("Chain result must be a pair");
+        }
+        let (_, comm) = repl.zstore.fetch_tuple2(cons);
+        if comm.tag != Tag::Comm {
+            bail!("Expected a commitment as the second pair component");
+        }
+        let inv_hashes3 = repl.queries.get_inv_queries("hash_24_8", &repl.toplevel);
+        let preimg = inv_hashes3
+            .get(comm.digest.as_slice())
+            .expect("Preimage must be known");
+        let (secret, payload) = preimg.split_at(DIGEST_SIZE);
+        let secret = ZPtr::from_flat_digest(Tag::Comm, secret);
+        let payload = ZPtr::from_flat_data(payload);
+        Self::persist_comm_data(secret, payload, repl)
+    }
 
     const CHAIN: Self = Self {
         name: "chain",
@@ -374,28 +394,47 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             "!(chain #0x8ef25bc2228ca9799db65fd2b137a7b0ebccbfc04cf8530133e60087d403db 1)",
         ],
         run: |repl, args, _path| {
-            Self::call(repl, args)?;
-            let public_values = repl
-                .queries
-                .public_values
-                .as_ref()
-                .expect("Computation must have finished");
-            let cons = ZPtr::from_flat_data(&public_values[INPUT_SIZE..]);
-            if cons.tag != Tag::Cons {
-                bail!("Chain result must be a pair");
+            let (&comm, &arg) = repl.peek2(args)?;
+            let cons = Self::call(repl, comm, arg)?;
+            Self::persist_chain_result(repl, &cons)
+        },
+    };
+
+    const TRANSITION: Self = Self {
+        name: "transition",
+        summary: "Chains a functional commitment and binds the next state to a variable",
+        format: "!(transition <symbol> <state_expr> <input>)",
+        info: &[
+            "If only two arguments are provided, then the first argument must",
+            "be a symbol bound to the current state.",
+        ],
+        example: &[
+            "!(transition new-state old-state input0)",
+            "!(transition new-state input1)",
+            "!(transition new-state input2)",
+        ],
+        run: |repl, args, _path| {
+            let (args_vec, _) = repl.zstore.fetch_list(args);
+            let args_vec = copy_inner(args_vec);
+            let (new_state_sym, current_state_expr, input) = match args_vec.len() {
+                2 => (&args_vec[0], &args_vec[0], &args_vec[1]),
+                3 => (&args_vec[0], &args_vec[1], &args_vec[2]),
+                _ => bail!("Invalid number of arguments"),
+            };
+            if new_state_sym.tag != Tag::Sym {
+                bail!("First argument must be a symbol");
             }
-            let (_, comm) = repl.zstore.fetch_tuple2(&cons);
-            if comm.tag != Tag::Comm {
-                bail!("Expected a commitment as the second pair component");
+            let current_state = repl.reduce_aux(current_state_expr);
+            if current_state.tag != Tag::Cons {
+                bail!("Current state must reduce to a pair");
             }
-            let inv_hashes3 = repl.queries.get_inv_queries("hash_24_8", &repl.toplevel);
-            let preimg = inv_hashes3
-                .get(comm.digest.as_slice())
-                .expect("Preimage must be known");
-            let (secret, payload) = preimg.split_at(DIGEST_SIZE);
-            let secret = ZPtr::from_flat_digest(Tag::Comm, secret);
-            let payload = ZPtr::from_flat_data(payload);
-            Self::persist_comm_data(secret, payload, repl)
+            repl.memoize_dag(current_state.tag, &current_state.digest);
+            let (_, &comm) = repl.zstore.fetch_tuple2(&current_state);
+            let cons = Self::call(repl, comm, *input)?;
+            Self::persist_chain_result(repl, &cons)?;
+            println!("{}", repl.fmt(new_state_sym));
+            repl.env = repl.zstore.intern_env(*new_state_sym, cons, repl.env);
+            Ok(())
         },
     };
 
@@ -999,6 +1038,7 @@ pub(crate) fn meta_cmds<H: Chipset<F>>() -> MetaCmdsMap<F, H> {
         MetaCmd::FETCH,
         MetaCmd::CALL,
         MetaCmd::CHAIN,
+        MetaCmd::TRANSITION,
         MetaCmd::DEFPACKAGE,
         MetaCmd::IMPORT,
         MetaCmd::IN_PACKAGE,
