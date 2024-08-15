@@ -12,7 +12,6 @@ pub struct LessThanWitness<T, const W: usize> {
     is_comp: [T; W],
     lhs_comp_limb: T,
     rhs_comp_limb: T,
-    diff_comp_inv: T,
 }
 
 impl<F: PrimeField, const W: usize> LessThanWitness<F, W> {
@@ -32,7 +31,6 @@ impl<F: PrimeField, const W: usize> LessThanWitness<F, W> {
                     self.is_comp[i] = F::one();
                     self.lhs_comp_limb = F::from_canonical_u8(lhs[i]);
                     self.rhs_comp_limb = F::from_canonical_u8(rhs[i]);
-                    self.diff_comp_inv = (self.lhs_comp_limb - self.rhs_comp_limb).inverse();
 
                     return byte_record.less_than(lhs[i], rhs[i]);
                 }
@@ -96,16 +94,16 @@ impl<Var, const W: usize> LessThanWitness<Var, W> {
         builder.assert_eq(lhs_comp, self.lhs_comp_limb);
         builder.assert_eq(rhs_comp, self.rhs_comp_limb);
 
-        // If the words are not equal, then the comparison limbs must be different,
-        // so their difference must have an inverse.
-        let diff_comp = self.lhs_comp_limb.into() - self.rhs_comp_limb.into();
-        // Active if all the comparison flags were off
-        let is_not_eq = AB::Expr::one() - is_equal.clone();
-        // Is a comparison happened, the difference should be non-zero and we check the inverse.
-        // Otherwise, the inverse is unconstrained and may be set to 0.
-        builder.assert_eq(diff_comp * self.diff_comp_inv.into(), is_not_eq.clone());
-
-        // Check the comparison of the `less_than` flag
+        // if is_equal == 0
+        //   -> ∃! i s.t. is_comp[i] = 1
+        //   -> {lhs, rhs}_comp_limb == {lhs, rhs}[i]
+        //   -> is_less_than == (lhs[i] < rhs[i])
+        // if is_equal == 1
+        //   -> ∀i is_comp[i] = 0
+        //   -> ∀i lhs[i] == rhs[i]
+        //   -> {lhs, rhs}_comp_limb == 0
+        //   -> is_less_than == 0
+        // -> is_equal + is_less_than ∈ {0, 1}
         record.less_than(
             self.lhs_comp_limb,
             self.rhs_comp_limb,
@@ -117,6 +115,33 @@ impl<Var, const W: usize> LessThanWitness<Var, W> {
         // If is_equal == 1, then both comparison limbs will be 0, so is_less_than will be 0
         // If is_less_than = 1, then is_equal will have been set by one of the comparison flags
         is_equal
+    }
+}
+
+pub struct CompareResult<E: AbstractField> {
+    is_less_than: E,
+    is_equal: E,
+}
+
+impl<E: AbstractField> CompareResult<E> {
+    pub fn is_less_than(&self) -> E {
+        self.is_less_than.clone()
+    }
+
+    pub fn is_equal(&self) -> E {
+        self.is_equal.clone()
+    }
+
+    pub fn is_less_than_or_equal(&self) -> E {
+        self.is_less_than() + self.is_equal()
+    }
+
+    pub fn is_greater_than(&self) -> E {
+        E::one() - self.is_less_than_or_equal()
+    }
+
+    pub fn is_greater_than_or_equal(&self) -> E {
+        E::one() - self.is_less_than()
     }
 }
 
@@ -228,7 +253,6 @@ impl<T: Default, const W: usize> Default for LessThanWitness<T, W> {
             is_comp: array::from_fn(|_| T::default()),
             lhs_comp_limb: T::default(),
             rhs_comp_limb: T::default(),
-            diff_comp_inv: T::default(),
         }
     }
 }
