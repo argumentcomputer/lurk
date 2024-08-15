@@ -115,15 +115,14 @@ impl<'a, F: fmt::Debug> fmt::Display for ParseError<Span<'a>, F> {
         }
 
         let mut errs = self.errors.iter().filter(|x| !x.is_nom_err()).peekable();
-        match errs.peek() {
-            // TODO: Better handling of Nom errors, such as by using nom_supreme:
-            // https://docs.rs/nom-supreme/latest/nom_supreme/ or similar
-            None => writeln!(&mut res, "Internal parser error")?,
-            Some(_) => {
-                writeln!(&mut res, "Reported errors:")?;
-                for kind in errs {
-                    writeln!(&mut res, "- {kind}")?;
-                }
+        // TODO: Better handling of Nom errors, such as by using nom_supreme:
+        // https://docs.rs/nom-supreme/latest/nom_supreme/ or similar
+        if errs.peek().is_none() {
+            writeln!(&mut res, "Internal parser error")?;
+        } else {
+            writeln!(&mut res, "Reported errors:")?;
+            for kind in errs {
+                writeln!(&mut res, "- {kind}")?;
             }
         }
 
