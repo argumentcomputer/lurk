@@ -124,6 +124,9 @@ loam-macros = { workspace = true }
 criterion = { workspace = true }
 proptest = { workspace = true }
 
+[build-dependencies]
+vergen = { version = "8", features = ["build", "git", "gitcl"] }
+
 [[bench]]
 name = "fib"
 harness = false
