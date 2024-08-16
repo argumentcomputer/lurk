@@ -11,8 +11,8 @@ use crate::{
         bytes::{builder::BytesAirRecordWithContext, record::DummyBytesRecord},
         unsigned::{
             add::{Diff, Sum},
+            cmp::CompareWitness,
             div_rem::DivRem,
-            less_than::IsLessThan,
             mul::Product,
             Word64,
         },
@@ -23,7 +23,7 @@ use crate::{
 pub type Sum64<T> = Sum<T, 8>;
 pub type Diff64<T> = Diff<T, 8>;
 pub type DivRem64<T> = DivRem<T, 8>;
-pub type IsLessThan64<T> = IsLessThan<T, 8>;
+pub type Compare64<T> = CompareWitness<T, 8>;
 pub type IsZero64<T> = IsZero<T, 8>;
 pub type Product64<T> = Product<T, 8>;
 
@@ -65,7 +65,7 @@ impl<F: PrimeField32> Chipset<F> for U64 {
             U64::Sub => Diff64::<F>::witness_size(),
             U64::Mul => Product64::<F>::witness_size(),
             U64::DivRem => DivRem64::<F>::witness_size(),
-            U64::LessThan => IsLessThan64::<F>::witness_size(),
+            U64::LessThan => Compare64::<F>::witness_size(),
             U64::IsZero => IsZero64::<F>::witness_size(),
         }
     }
@@ -76,7 +76,7 @@ impl<F: PrimeField32> Chipset<F> for U64 {
             U64::Sub => Diff64::<F>::num_requires(),
             U64::Mul => Product64::<F>::num_requires(),
             U64::DivRem => DivRem64::<F>::num_requires(),
-            U64::LessThan => IsLessThan64::<F>::num_requires(),
+            U64::LessThan => Compare64::<F>::num_requires(),
             U64::IsZero => IsZero64::<F>::num_requires(),
         }
     }
@@ -116,8 +116,8 @@ impl<F: PrimeField32> Chipset<F> for U64 {
                 witness.iter_result().into_iter().collect()
             }
             U64::LessThan => {
-                let mut witness = IsLessThan64::<F>::default();
-                witness.populate_less_than(&in1, &in2, bytes);
+                let mut witness = Compare64::<F>::default();
+                witness.populate(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
             U64::IsZero => {
@@ -157,8 +157,8 @@ impl<F: PrimeField32> Chipset<F> for U64 {
                 witness.iter_result().into_iter().collect()
             }
             U64::LessThan => {
-                let witness: &mut IsLessThan64<F> = witness.borrow_mut();
-                witness.populate_less_than(&in1, &in2, bytes);
+                let witness: &mut Compare64<F> = witness.borrow_mut();
+                witness.populate(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
             U64::IsZero => {
@@ -206,10 +206,9 @@ impl<F: PrimeField32> Chipset<F> for U64 {
                 [q, r].into_iter().flatten().map(Into::into).collect()
             }
             U64::LessThan => {
-                let witness: &IsLessThan64<AB::Var> = witness.borrow();
-                let out =
-                    witness.eval_less_than(builder, &in1, &in2, &mut air_record, is_real.clone());
-                vec![out]
+                let witness: &Compare64<AB::Var> = witness.borrow();
+                let cmp = witness.eval(builder, &in1, &in2, &mut air_record, is_real.clone());
+                vec![cmp.is_less_than()]
             }
             U64::IsZero => {
                 let witness: &IsZero64<AB::Var> = witness.borrow();

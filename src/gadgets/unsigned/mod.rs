@@ -9,6 +9,7 @@ use std::iter::zip;
 use std::ops::{Index, IndexMut};
 
 pub mod add;
+pub mod cmp;
 pub mod div_rem;
 pub mod is_zero;
 pub mod less_than;
@@ -95,7 +96,7 @@ impl<F: AbstractField, const W: usize> Word<F, W> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, AlignedBorrow)]
 #[repr(C)]
 pub struct UncheckedWord<T, const W: usize>([T; W]);
 

@@ -292,11 +292,35 @@ impl<F: Default, const W: usize> Default for AddOne<F, W> {
 mod tests {
     use super::*;
     use crate::gadgets::debug::{ByteRecordTester, GadgetTester};
+    use expect_test::expect;
     use p3_baby_bear::BabyBear;
     use proptest::prelude::*;
     use std::fmt::Debug;
 
     type F = BabyBear;
+
+    #[test]
+    fn test_witness_size() {
+        expect!["4"].assert_eq(&Sum::<u8, 4>::witness_size().to_string());
+        expect!["8"].assert_eq(&Sum::<u8, 8>::witness_size().to_string());
+
+        expect!["4"].assert_eq(&Diff::<u8, 4>::witness_size().to_string());
+        expect!["8"].assert_eq(&Diff::<u8, 8>::witness_size().to_string());
+
+        expect!["8"].assert_eq(&AddOne::<u8, 4>::witness_size().to_string());
+        expect!["16"].assert_eq(&AddOne::<u8, 8>::witness_size().to_string());
+    }
+    #[test]
+    fn test_num_requires() {
+        expect!["2"].assert_eq(&Sum::<u8, 4>::num_requires().to_string());
+        expect!["4"].assert_eq(&Sum::<u8, 8>::num_requires().to_string());
+
+        expect!["2"].assert_eq(&Diff::<u8, 4>::num_requires().to_string());
+        expect!["4"].assert_eq(&Diff::<u8, 8>::num_requires().to_string());
+
+        expect!["0"].assert_eq(&AddOne::<u8, 4>::num_requires().to_string());
+        expect!["0"].assert_eq(&AddOne::<u8, 8>::num_requires().to_string());
+    }
 
     fn test_add_sub<
         const W: usize,
