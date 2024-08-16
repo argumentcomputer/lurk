@@ -79,6 +79,7 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, 
         eval_binop_num(&builtins),
         eval_binop_misc(&builtins),
         eval_begin(&builtins),
+        open_comm(),
         equal(&builtins),
         equal_inner(),
         car_cdr(),
@@ -767,11 +768,29 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                         }
                     };
                     let (head_tag, head) = call(eval, head_tag, head, env);
+                    match head_tag {
+                        Tag::Comm => {
+                            let (head_tag, head) = call(open_comm, head);
+                            let (res_tag, res) = call(apply, head_tag, head, rest_tag, rest, env);
+                            return (res_tag, res)
+                        }
+                    };
                     let (res_tag, res) = call(apply, head_tag, head, rest_tag, rest, env);
                     return (res_tag, res)
                 }
             };
             return (expr_tag, expr)
+        }
+    )
+}
+
+pub fn open_comm<F: AbstractField + Ord>() -> FuncE<F> {
+    func!(
+        fn open_comm(hash_ptr): [2] {
+            let comm_hash: [8] = load(hash_ptr);
+            let (_secret: [8], payload_tag, padding: [7], val_digest: [8]) = preimg(hash_24_8, comm_hash);
+            let payload_ptr = call(ingress, payload_tag, padding, val_digest);
+            return (payload_tag, payload_ptr)
         }
     )
 }
@@ -1576,6 +1595,7 @@ mod test {
         let eval_begin = FuncChip::from_name("eval_begin", toplevel);
         let eval_let = FuncChip::from_name("eval_let", toplevel);
         let eval_letrec = FuncChip::from_name("eval_letrec", toplevel);
+        let open_comm = FuncChip::from_name("open_comm", toplevel);
         let equal = FuncChip::from_name("equal", toplevel);
         let equal_inner = FuncChip::from_name("equal_inner", toplevel);
         let car_cdr = FuncChip::from_name("car_cdr", toplevel);
@@ -1599,7 +1619,7 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["68"]);
-        expect_eq(eval.width(), expect!["96"]);
+        expect_eq(eval.width(), expect!["97"]);
         expect_eq(eval_comm_unop.width(), expect!["73"]);
         expect_eq(eval_hide.width(), expect!["78"]);
         expect_eq(eval_unop.width(), expect!["35"]);
@@ -1608,6 +1628,7 @@ mod test {
         expect_eq(eval_begin.width(), expect!["36"]);
         expect_eq(eval_let.width(), expect!["56"]);
         expect_eq(eval_letrec.width(), expect!["60"]);
+        expect_eq(open_comm.width(), expect!["49"]);
         expect_eq(equal.width(), expect!["46"]);
         expect_eq(equal_inner.width(), expect!["54"]);
         expect_eq(car_cdr.width(), expect!["38"]);

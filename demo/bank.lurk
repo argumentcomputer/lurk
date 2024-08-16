@@ -202,7 +202,7 @@ ledger2
 
 ;; We can verify the proof..
 
-!(verify "184b271f69c4fefce7d065fa3f54bcbf3dfa48350e9e9108abf54e48e810b5")
+!(verify "5723c335ca7728b128b17874b5d76e4ecb7a6019a367ac030009985a3c44b0")
 
 ;; Unfortunately, this functional commitment doesn't let us maintain state.
 ;; Let's turn our single-transaction function into a chained function.
@@ -223,7 +223,7 @@ ledger2
 
 !(prove)
 
-!(verify "80acd89ac50dd36f40b44c85eeb8f7cc23a5d63d348f49e88cdf69a8db6833")
+!(verify "8c6f220f36d3d3627e53730fb4e56234028d1b83dd539edb79c6c6d89f4397")
 
 ;; Then we can transfer 5 more, proceeding from the new head of the chain.
 
@@ -231,7 +231,7 @@ ledger2
 
 !(prove)
 
-!(verify "4ce237460fa2f565d89e94acac4675e1dd87e7650807ea50a4baf02e9e6a88")
+!(verify "435f669b37ca7ff3dd90e0d625d8cdb87b72eeb1182e4d019f57842588b82e")
 
 ;; And once more, this time we'll transfer 20 from Turing to Church.
 
@@ -239,4 +239,4 @@ ledger2
 
 !(prove)
 
-!(verify "1bd6c9bfc2737c71c83230cc662f729b9dce4f85efffb6678c4c79f8c462e3")
+!(verify "9781d2e93cd9fa7103fa10952ed116b53c88ef8300deefe51a33d48244ab8e")

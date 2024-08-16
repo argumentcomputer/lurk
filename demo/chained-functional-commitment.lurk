@@ -21,7 +21,7 @@
 
 ;; We can verify the proof.
 
-!(verify "625c4982a35e7944defda517f91c3d19c30066a9dba6ab551b38dd6f9d734d")
+!(verify "8930a611d0dcc7af859ea47e9c36cc418f8bbf039333e44325cb1d1e7fdbd4")
 
 ;; Now let's chain another call to the new head, adding 12 to the counter.
 
@@ -35,7 +35,7 @@
 
 ;; And verify.
 
-!(verify "4aba13454094a0aa3eb99300b2987313b3de1b002bfef91b4979b2a0b023d0")
+!(verify "59bb86e6b8c460ef3742629c876fbeadea0ddcbb8bc6a5fdaec86dfc1c5dfb")
 
 ;; One more time, we'll add 14 to the head commitment's internal state.
 
@@ -49,7 +49,7 @@
 
 ;; Verify.
 
-!(verify "34ea707e0f593f8d8639b5bd85fdc57584fea433b216e43cfa078f28649333")
+!(verify "7a36cc7454fbf3b0880b798eb21dcad540ab028a63ac45ebaac7c0a3198c80")
 
 ;; Repeat indefinitely.
 

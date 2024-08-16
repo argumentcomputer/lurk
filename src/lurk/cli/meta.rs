@@ -320,60 +320,62 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         },
     };
 
-    fn call(repl: &mut Repl<F, H>, comm: ZPtr<F>, arg: ZPtr<F>) -> Result<ZPtr<F>> {
-        if comm.tag != Tag::Comm {
-            bail!("Expected a commitment");
+    fn call(repl: &mut Repl<F, H>, call_expr: &ZPtr<F>) -> Result<ZPtr<F>> {
+        if call_expr.tag == Tag::Nil {
+            bail!("Missing callable object");
         }
-        let inv_hashes3 = repl.queries.get_inv_queries("hash_24_8", &repl.toplevel);
-        if !inv_hashes3.contains_key(comm.digest.as_slice()) {
-            // try to fetch a persisted commitment
-            Self::fetch_comm_data(repl, &comm, None)?;
+        let (&callable, _) = repl.zstore.fetch_tuple2(call_expr);
+        if callable.tag == Tag::Comm {
+            let inv_hashes3 = repl.queries.get_inv_queries("hash_24_8", &repl.toplevel);
+            if !inv_hashes3.contains_key(callable.digest.as_slice()) {
+                // try to fetch a persisted commitment
+                Self::fetch_comm_data(repl, &callable, None)?;
+            }
         }
-        let open = repl.zstore.intern_symbol(&lurk_sym("open"));
-        let open_expr = repl.zstore.intern_list([open, comm]);
-        let call_expr = repl.zstore.intern_list([open_expr, arg]);
-        Ok(repl.handle_non_meta(&call_expr))
+        Ok(repl.handle_non_meta(call_expr))
     }
 
     const CALL: Self = Self {
         name: "call",
-        summary: "Opens a functional commitment then applies an argument to it.",
-        format: "!(call <comm> <arg>)",
+        summary: "Applies arguments to a callable object",
+        format: "!(call <callable> <call_args>)",
         info: &["It's also capable of opening persisted commitments."],
         example: &[
             "(commit (lambda (x) x))",
             "!(call #0x3f2e7102a9f8a303255b90724f24f4eb05b61e99723ca838cf30671676c86a 0)",
         ],
         run: |repl, args, _path| {
-            let (&comm, &arg) = repl.peek2(args)?;
-            Self::call(repl, comm, arg)?;
+            Self::call(repl, args)?;
             Ok(())
         },
     };
 
-    fn persist_chain_result(repl: &mut Repl<F, H>, cons: &ZPtr<F>) -> Result<()> {
+    fn persist_chain_comm(repl: &mut Repl<F, H>, cons: &ZPtr<F>) -> Result<()> {
         if cons.tag != Tag::Cons {
             bail!("Chain result must be a pair");
         }
-        let (_, comm) = repl.zstore.fetch_tuple2(cons);
-        if comm.tag != Tag::Comm {
-            bail!("Expected a commitment as the second pair component");
+        let (_, next_callable) = repl.zstore.fetch_tuple2(cons);
+        if next_callable.tag == Tag::Comm {
+            let inv_hashes3 = repl.queries.get_inv_queries("hash_24_8", &repl.toplevel);
+            let preimg = inv_hashes3
+                .get(next_callable.digest.as_slice())
+                .expect("Preimage must be known");
+            let (secret, payload) = preimg.split_at(DIGEST_SIZE);
+            let secret = ZPtr::from_flat_digest(Tag::Comm, secret);
+            let payload = ZPtr::from_flat_data(payload);
+            Self::persist_comm_data(secret, payload, repl)?;
         }
-        let inv_hashes3 = repl.queries.get_inv_queries("hash_24_8", &repl.toplevel);
-        let preimg = inv_hashes3
-            .get(comm.digest.as_slice())
-            .expect("Preimage must be known");
-        let (secret, payload) = preimg.split_at(DIGEST_SIZE);
-        let secret = ZPtr::from_flat_digest(Tag::Comm, secret);
-        let payload = ZPtr::from_flat_data(payload);
-        Self::persist_comm_data(secret, payload, repl)
+        Ok(())
     }
 
     const CHAIN: Self = Self {
         name: "chain",
-        summary: "Chains a functional commitment and then persists the resulting commitment",
-        format: "!(chain <comm> <arg>)",
-        info: &["It's also capable of opening persisted commitments."],
+        summary: "Chains a callable object",
+        format: "!(chain <callable> <call_args>)",
+        info: &[
+            "It's also capable of opening persisted commitments.",
+            "If the next callable is a commitment, it's persisted.",
+        ],
         example: &[
             "(commit (letrec ((add (lambda (counter x)
                        (let ((counter (+ counter x)))
@@ -382,46 +384,34 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             "!(chain #0x8ef25bc2228ca9799db65fd2b137a7b0ebccbfc04cf8530133e60087d403db 1)",
         ],
         run: |repl, args, _path| {
-            let (&comm, &arg) = repl.peek2(args)?;
-            let cons = Self::call(repl, comm, arg)?;
-            Self::persist_chain_result(repl, &cons)
+            let cons = Self::call(repl, args)?;
+            Self::persist_chain_comm(repl, &cons)
         },
     };
 
     const TRANSITION: Self = Self {
         name: "transition",
-        summary: "Chains a functional commitment and binds the next state to a variable",
-        format: "!(transition <symbol> <state_expr> <input>)",
-        info: &[
-            "If only two arguments are provided, then the first argument must",
-            "be a symbol bound to the current state.",
-        ],
-        example: &[
-            "!(transition new-state old-state input0)",
-            "!(transition new-state input1)",
-            "!(transition new-state input2)",
-        ],
+        summary: "Chains a callable object and binds the next state to a variable",
+        format: "!(transition <symbol> <state_expr> <call_args>)",
+        info: &["It has the same side effects of the `chain` meta command."],
+        example: &["!(transition new-state old-state input0)"],
         run: |repl, args, _path| {
-            let (args_vec, _) = repl.zstore.fetch_list(args);
-            let args_vec = copy_inner(args_vec);
-            let (new_state_sym, current_state_expr, input) = match args_vec.len() {
-                2 => (&args_vec[0], &args_vec[0], &args_vec[1]),
-                3 => (&args_vec[0], &args_vec[1], &args_vec[2]),
-                _ => bail!("Invalid number of arguments"),
-            };
+            let (&new_state_sym, rest) = repl.car_cdr(args);
+            let (&current_state_expr, &call_args) = repl.car_cdr(rest);
             if new_state_sym.tag != Tag::Sym {
                 bail!("First argument must be a symbol");
             }
-            let current_state = repl.reduce_aux(current_state_expr);
+            let current_state = repl.reduce_aux(&current_state_expr);
             if current_state.tag != Tag::Cons {
                 bail!("Current state must reduce to a pair");
             }
             repl.memoize_dag(current_state.tag, &current_state.digest);
-            let (_, &comm) = repl.zstore.fetch_tuple2(&current_state);
-            let cons = Self::call(repl, comm, *input)?;
-            Self::persist_chain_result(repl, &cons)?;
-            println!("{}", repl.fmt(new_state_sym));
-            repl.env = repl.zstore.intern_env(*new_state_sym, cons, repl.env);
+            let (_, &callable) = repl.zstore.fetch_tuple2(&current_state);
+            let call_expr = repl.zstore.intern_cons(callable, call_args);
+            let cons = Self::call(repl, &call_expr)?;
+            Self::persist_chain_comm(repl, &cons)?;
+            println!("{}", repl.fmt(&new_state_sym));
+            repl.env = repl.zstore.intern_env(new_state_sym, cons, repl.env);
             Ok(())
         },
     };

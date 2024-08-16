@@ -312,6 +312,11 @@ test!(
 test!(test_secret, "(secret (commit 123))", |_| ZPtr::comm(
     [F::zero(); 8]
 ));
+test!(
+    test_func_comm_app,
+    "(begin (commit (lambda (x) x)) (#0x3f2e7102a9f8a303255b90724f24f4eb05b61e99723ca838cf30671676c86a 42))",
+    |_| uint(42)
+);
 
 // errors
 test!(test_unbound_var, "a", |_| ZPtr::err(EvalErr::UnboundVar));
