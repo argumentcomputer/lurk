@@ -141,7 +141,7 @@ impl EvalErr {
 
 pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
     func!(
-        fn lurk_main(full_expr_tag: [8], expr_digest: [8], env_digest: [8]): [16] {
+        partial fn lurk_main(full_expr_tag: [8], expr_digest: [8], env_digest: [8]): [16] {
             // Ingress on expr
             let expr = call(ingress, full_expr_tag, expr_digest);
             // Ingress on env
@@ -544,7 +544,7 @@ pub fn comm_lessthan<F>() -> FuncE<F> {
 
 pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
-        fn eval(expr_tag, expr, env): [2] {
+        partial fn eval(expr_tag, expr, env): [2] {
             // Constants, tags, etc
             let t = builtins.index("t");
             let nil_tag = Tag::Nil;
@@ -881,7 +881,7 @@ pub fn open_comm<F: AbstractField + Ord>() -> FuncE<F> {
 
 pub fn car_cdr<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
-        fn car_cdr(rest_tag, rest, env): [4] {
+        partial fn car_cdr(rest_tag, rest, env): [4] {
             let nil = 0;
             let nil_tag = Tag::Nil;
             let err_tag = Tag::Err;
@@ -928,7 +928,7 @@ pub fn car_cdr<F: AbstractField + Ord>() -> FuncE<F> {
 
 pub fn equal<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
-        fn equal(rest_tag, rest, env): [2] {
+        partial fn equal(rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let nil_tag = Tag::Nil;
@@ -1067,7 +1067,7 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
 
 pub fn eval_begin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
-        fn eval_begin(rest_tag, rest, env): [2] {
+        partial fn eval_begin(rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let invalid_form = EvalErr::InvalidForm;
@@ -1107,7 +1107,7 @@ pub fn eval_begin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Func
 
 pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
-        fn eval_binop_num(head, exp1_tag, exp1, exp2_tag, exp2, env): [2] {
+        partial fn eval_binop_num(head, exp1_tag, exp1, exp2_tag, exp2, env): [2] {
             let err_tag = Tag::Err;
             let num_tag = Tag::Num;
             let u64_tag = Tag::U64;
@@ -1263,7 +1263,7 @@ pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
 
 pub fn eval_binop_misc<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
-        fn eval_binop_misc(head, exp1_tag, exp1, exp2_tag, exp2, env): [2] {
+        partial fn eval_binop_misc(head, exp1_tag, exp1, exp2_tag, exp2, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
@@ -1306,7 +1306,7 @@ pub fn eval_binop_misc<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) ->
 
 pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
-        fn eval_unop(head, rest_tag, rest, env): [2] {
+        partial fn eval_unop(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let nil_tag = Tag::Nil;
@@ -1380,7 +1380,7 @@ pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE
 
 pub fn eval_comm_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
-        fn eval_comm_unop(head, rest_tag, rest, env): [2] {
+        partial fn eval_comm_unop(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let comm_tag = Tag::Comm;
@@ -1440,7 +1440,7 @@ pub fn eval_comm_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
 
 pub fn eval_hide<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
-        fn eval_hide(rest_tag, rest, env): [2] {
+        partial fn eval_hide(rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let nil_tag = Tag::Nil;
@@ -1489,7 +1489,7 @@ pub fn eval_hide<F: AbstractField + Ord>() -> FuncE<F> {
 
 pub fn eval_let<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
-        fn eval_let(binds_tag, binds, body_tag, body, env): [2] {
+        partial fn eval_let(binds_tag, binds, body_tag, body, env): [2] {
             let err_tag = Tag::Err;
             let invalid_form = EvalErr::InvalidForm;
             match binds_tag {
@@ -1547,7 +1547,7 @@ pub fn eval_let<F: AbstractField + Ord>() -> FuncE<F> {
 
 pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
-        fn eval_letrec(binds_tag, binds, body_tag, body, env): [2] {
+        partial fn eval_letrec(binds_tag, binds, body_tag, body, env): [2] {
             let err_tag = Tag::Err;
             let invalid_form = EvalErr::InvalidForm;
             match binds_tag {
@@ -1610,7 +1610,7 @@ pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
 
 pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
-        fn apply(head_tag, head, args_tag, args, args_env): [2] {
+        partial fn apply(head_tag, head, args_tag, args, args_env): [2] {
             // Constants, tags, etc
             let err_tag = Tag::Err;
             let fun_tag = Tag::Fun;
