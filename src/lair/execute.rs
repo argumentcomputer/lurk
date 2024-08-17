@@ -257,6 +257,18 @@ impl<F: PrimeField32> QueryRecord<F> {
     }
 
     #[inline]
+    pub fn from_cloned_mem_and_emitted(queries: &Self) -> Self {
+        Self {
+            public_values: None,
+            func_queries: vec![Default::default(); queries.func_queries.len()],
+            inv_func_queries: vec![Default::default(); queries.inv_func_queries.len()],
+            mem_queries: queries.mem_queries.clone(),
+            bytes: Default::default(),
+            emitted: queries.emitted.clone(),
+        }
+    }
+
+    #[inline]
     pub fn get_output(&self, func: &Func<F>, inp: &[F]) -> &[F] {
         self.func_queries[func.index]
             .get(inp)

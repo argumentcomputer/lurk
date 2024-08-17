@@ -103,6 +103,7 @@ pub(crate) struct Repl<F: PrimeField32, H: Chipset<F>> {
     pub(crate) toplevel: Toplevel<F, H>,
     pub(crate) lurk_main_idx: usize,
     eval_idx: usize,
+    egress_idx: usize,
     pub(crate) env: ZPtr<F>,
     pub(crate) state: StateRcCell,
     pwd_path: Utf8PathBuf,
@@ -116,6 +117,7 @@ impl Repl<BabyBear, LurkChip> {
         let queries = QueryRecord::new(&toplevel);
         let lurk_main_idx = toplevel.get_by_name("lurk_main").index;
         let eval_idx = toplevel.get_by_name("eval").index;
+        let egress_idx = toplevel.get_by_name("egress").index;
         let env = zstore.intern_empty_env();
         let nil = zstore.intern_nil();
         Self {
@@ -124,6 +126,7 @@ impl Repl<BabyBear, LurkChip> {
             toplevel,
             lurk_main_idx,
             eval_idx,
+            egress_idx,
             env,
             state: State::init_lurk_state().rccell(),
             pwd_path: current_dir().expect("Couldn't get current directory"),
@@ -252,11 +255,25 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             .inject_inv_queries("hash_48_8", &self.toplevel, &self.zstore.hashes6);
     }
 
-    fn build_input(&self, expr: &ZPtr<F>, env: &ZPtr<F>) -> [F; 24] {
-        let mut input = [F::zero(); 24];
+    fn build_input(&self, expr: &ZPtr<F>, env: &ZPtr<F>) -> [F; INPUT_SIZE] {
+        let mut input = [F::zero(); INPUT_SIZE];
         input[..16].copy_from_slice(&expr.flatten());
         input[16..].copy_from_slice(&env.digest);
         input
+    }
+
+    fn retrieve_emitted(&self, queries_tmp: &mut QueryRecord<F>) -> Vec<ZPtr<F>> {
+        let mut emitted = Vec::with_capacity(queries_tmp.emitted.len());
+        for emitted_raw in queries_tmp.emitted.clone() {
+            let digest = self
+                .toplevel
+                .execute_by_index(self.egress_idx, &emitted_raw, queries_tmp);
+            emitted.push(ZPtr::from_flat_digest(
+                Tag::from_field(&emitted_raw[0]),
+                &digest,
+            ));
+        }
+        emitted
     }
 
     /// Reduces a Lurk expression with a clone of the REPL's queries so the latest
@@ -268,23 +285,18 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         env: &ZPtr<F>,
     ) -> (ZPtr<F>, Vec<ZPtr<F>>) {
         self.prepare_queries();
-        let mut queries = self.queries.clone();
+        let mut queries_tmp = self.queries.clone();
         let result = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
             self.lurk_main_idx,
             &self.build_input(expr, env),
-            &mut queries,
+            &mut queries_tmp,
         ));
-        let QueryRecord {
-            inv_func_queries,
-            emitted,
-            ..
-        } = queries;
-        self.queries.inv_func_queries = inv_func_queries;
-        self.queries.emitted = emitted;
-        let emitted = self.retrieve_emitted();
+        let emitted = self.retrieve_emitted(&mut queries_tmp);
         for zptr in &emitted {
+            self.memoize_dag(zptr.tag, &zptr.digest);
             println!("{}", self.fmt(zptr));
         }
+        self.queries.inv_func_queries = queries_tmp.inv_func_queries;
         (result, emitted)
     }
 
@@ -309,17 +321,6 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         self.memoize_dag(Tag::Env, &self.env.digest.clone())
     }
 
-    fn retrieve_emitted(&mut self) -> Vec<ZPtr<F>> {
-        let mut emitted = Vec::with_capacity(self.queries.emitted.len());
-        for raw_emitted_values in &self.queries.emitted {
-            emitted.push(ZPtr::from_flat_data(raw_emitted_values));
-        }
-        for zptr in &emitted {
-            self.memoize_dag(zptr.tag, &zptr.digest);
-        }
-        emitted
-    }
-
     pub(crate) fn reduce_with_env(&mut self, expr: &ZPtr<F>, env: &ZPtr<F>) -> ZPtr<F> {
         self.prepare_queries();
         let result = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
@@ -327,9 +328,13 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             &self.build_input(expr, env),
             &mut self.queries,
         ));
-        let emitted = self.retrieve_emitted();
-        for zptr in &emitted {
-            println!("{}", self.fmt(zptr));
+        if !self.queries.emitted.is_empty() {
+            let queries_tmp = &mut QueryRecord::from_cloned_mem_and_emitted(&self.queries);
+            let emitted = self.retrieve_emitted(queries_tmp);
+            for zptr in &emitted {
+                self.memoize_dag(zptr.tag, &zptr.digest);
+                println!("{}", self.fmt(zptr));
+            }
         }
         result
     }
@@ -365,7 +370,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         if let Some(meta_cmd) = self.meta_cmds.get(cmd.as_str()) {
             (meta_cmd.run)(self, &args, file_dir)
         } else {
-            bail!("Invalid meta command")
+            bail!("Invalid meta command: {cmd}")
         }
     }
 
