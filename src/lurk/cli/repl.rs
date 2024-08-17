@@ -262,7 +262,11 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
     /// Reduces a Lurk expression with a clone of the REPL's queries so the latest
     /// provable computation isn't affected. After the reduction is over, retrieve
     /// the (potentially enriched) inverse query maps so commitments aren't lost.
-    pub(crate) fn reduce_aux_with_env(&mut self, expr: &ZPtr<F>, env: &ZPtr<F>) -> ZPtr<F> {
+    pub(crate) fn reduce_aux_with_env(
+        &mut self,
+        expr: &ZPtr<F>,
+        env: &ZPtr<F>,
+    ) -> (ZPtr<F>, Vec<ZPtr<F>>) {
         self.prepare_queries();
         let mut queries = self.queries.clone();
         let result = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
@@ -270,12 +274,22 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             &self.build_input(expr, env),
             &mut queries,
         ));
-        self.queries.inv_func_queries = queries.inv_func_queries;
-        result
+        let QueryRecord {
+            inv_func_queries,
+            emitted,
+            ..
+        } = queries;
+        self.queries.inv_func_queries = inv_func_queries;
+        self.queries.emitted = emitted;
+        let emitted = self.retrieve_emitted();
+        for zptr in &emitted {
+            println!("{}", self.fmt(zptr));
+        }
+        (result, emitted)
     }
 
     #[inline]
-    pub(crate) fn reduce_aux(&mut self, expr: &ZPtr<F>) -> ZPtr<F> {
+    pub(crate) fn reduce_aux(&mut self, expr: &ZPtr<F>) -> (ZPtr<F>, Vec<ZPtr<F>>) {
         let env = self.env;
         self.reduce_aux_with_env(expr, &env)
     }
@@ -295,13 +309,29 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         self.memoize_dag(Tag::Env, &self.env.digest.clone())
     }
 
+    fn retrieve_emitted(&mut self) -> Vec<ZPtr<F>> {
+        let mut emitted = Vec::with_capacity(self.queries.emitted.len());
+        for raw_emitted_values in &self.queries.emitted {
+            emitted.push(ZPtr::from_flat_data(raw_emitted_values));
+        }
+        for zptr in &emitted {
+            self.memoize_dag(zptr.tag, &zptr.digest);
+        }
+        emitted
+    }
+
     pub(crate) fn reduce_with_env(&mut self, expr: &ZPtr<F>, env: &ZPtr<F>) -> ZPtr<F> {
         self.prepare_queries();
-        ZPtr::from_flat_data(&self.toplevel.execute_by_index(
+        let result = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
             self.lurk_main_idx,
             &self.build_input(expr, env),
             &mut self.queries,
-        ))
+        ));
+        let emitted = self.retrieve_emitted();
+        for zptr in &emitted {
+            println!("{}", self.fmt(zptr));
+        }
+        result
     }
 
     #[inline]

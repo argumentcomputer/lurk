@@ -181,6 +181,11 @@ macro_rules! block {
         let $tgt = $crate::var!($tgt $(, $size)?);
         $crate::block!({ $($tail)* }, $ops)
     }};
+    ({ emit($($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+        let inp = [$($arg),*].into();
+        $ops.push($crate::lair::expr::OpE::Emit(inp));
+        $crate::block!({ $($tail)* }, $ops)
+    }};
     ({ let ($($tgt:ident $(: [$size:expr])?),*) = preimg($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
         let func = $crate::lair::Name(stringify!($func));
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();

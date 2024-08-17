@@ -506,6 +506,10 @@ impl<F: Field + Ord> OpE<F> {
                 ops.push(Op::ExternCall(name_idx, inp));
                 out.iter().for_each(|t| bind_new(t, ctx));
             }
+            OpE::Emit(vars) => {
+                let vars = vars.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
+                ops.push(Op::Emit(vars));
+            }
             OpE::RangeU8(xs) => {
                 let xs = xs.iter().flat_map(|x| use_var(x, ctx).to_vec()).collect();
                 ops.push(Op::RangeU8(xs));

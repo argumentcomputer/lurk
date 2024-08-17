@@ -49,6 +49,7 @@ pub struct QueryRecord<F: PrimeField32> {
     pub(crate) inv_func_queries: Vec<Option<InvQueryMap<F>>>,
     pub(crate) mem_queries: Vec<MemMap<F>>,
     pub(crate) bytes: BytesRecord,
+    pub(crate) emitted: Vec<List<F>>,
 }
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
@@ -251,6 +252,7 @@ impl<F: PrimeField32> QueryRecord<F> {
             inv_func_queries,
             mem_queries,
             bytes: BytesRecord::default(),
+            emitted: vec![],
         }
     }
 
@@ -311,6 +313,7 @@ impl<F: PrimeField32> QueryRecord<F> {
             *mem_map = FxIndexMap::default();
         });
         self.bytes.clear();
+        self.emitted = vec![];
     }
 
     #[inline]
@@ -518,6 +521,9 @@ impl<F: PrimeField32> Func<F> {
                     let input: List<_> = input.iter().map(|a| map[*a]).collect();
                     let chip = toplevel.get_chip_by_index(*chip_idx);
                     map.extend(chip.execute(&input, nonce as u32, queries, &mut requires));
+                }
+                ExecEntry::Op(Op::Emit(xs)) => {
+                    queries.emitted.push(xs.iter().map(|a| map[*a]).collect())
                 }
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
                 ExecEntry::Op(Op::RangeU8(xs)) => {

@@ -35,7 +35,7 @@ pub enum Op<F> {
     /// (beware of non-injectivity) of the function of index `i` when called with
     /// arguments at positions `[a, b, ...]` in the stack
     PreImg(usize, List<usize>),
-    /// `Store([y, ...])` pushes to the stack the pointer to `[y, ...]`
+    /// `Store([y, ...])` pushes the pointer to `[y, ...]` to the stack
     Store(List<usize>),
     /// `Load(len, y)` extends the stack with the `len` values that is pointed by `y`
     Load(usize, usize),
@@ -43,6 +43,8 @@ pub enum Op<F> {
     /// chip at index `i` in the toplevel when applied to the arguments at positions
     /// `[a, b, ...]` in the stack
     ExternCall(usize, List<usize>),
+    /// `Emit([x, ...])` pushes `x, ...` to`QueryRecord::emitted` during execution
+    Emit(List<usize>),
     /// `Debug(s)` emits debug message `s`
     Debug(&'static str),
     /// `RangeU8(x)` makes sure `xs` is a list of only U8 elements

@@ -1218,7 +1218,9 @@ pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE
                     return (nil_tag, nil)
                 }
                 "emit" => {
-                    // TODO emit
+                    let val_digest: [8] = call(egress, val_tag, val);
+                    let padding = [0; 7];
+                    emit(val_tag, padding, val_digest);
                     return (val_tag, val)
                 }
                 "u64" => {
@@ -1622,7 +1624,7 @@ mod test {
         expect_eq(eval.width(), expect!["97"]);
         expect_eq(eval_comm_unop.width(), expect!["73"]);
         expect_eq(eval_hide.width(), expect!["78"]);
-        expect_eq(eval_unop.width(), expect!["35"]);
+        expect_eq(eval_unop.width(), expect!["43"]);
         expect_eq(eval_binop_num.width(), expect!["56"]);
         expect_eq(eval_binop_misc.width(), expect!["34"]);
         expect_eq(eval_begin.width(), expect!["36"]);
