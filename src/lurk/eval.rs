@@ -1218,7 +1218,7 @@ pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE
                     return (nil_tag, nil)
                 }
                 "emit" => {
-                    // TODO emit
+                    emit(val_tag, val);
                     return (val_tag, val)
                 }
                 "u64" => {

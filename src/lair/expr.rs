@@ -1,4 +1,4 @@
-//! Defines a frontend for Lair using named references for variables and functions.
+//! Lair's IR, which uses named references for variables and functions.
 
 use super::{List, Name};
 
@@ -86,6 +86,8 @@ pub enum OpE<F> {
     /// `ExternCall([x, ...], foo, [y, ...])` binds `x, ...` to the output of extern
     /// chip `foo` when applied to the arguments `y, ...`
     ExternCall(VarList, Name, VarList),
+    /// `Emit([x, ...])` pushes `x, ...` to `QueryRecord::emitted` during execution
+    Emit(VarList),
     /// `Debug(s)` emits debug message `s`
     Debug(&'static str),
     /// `RangeU8([x, ...])` makes sure `[x, ...]` are all U8 elements
