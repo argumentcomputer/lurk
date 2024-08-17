@@ -293,6 +293,7 @@ fn ingress_builtin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Fun
     FuncE {
         name: Name("ingress_builtin"),
         invertible: false,
+        partial: false,
         input_params: [input_var].into(),
         output_size: 1,
         body: BlockE { ops, ctrl },
@@ -426,6 +427,7 @@ fn egress_builtin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Func
     FuncE {
         name: Name("egress_builtin"),
         invertible: false,
+        partial: false,
         input_params: [input_var].into(),
         output_size: 8,
         body: BlockE { ops, ctrl },

@@ -133,6 +133,7 @@ impl<K, F> Cases<K, F> {
 pub struct Func<F> {
     pub(crate) name: Name,
     pub(crate) invertible: bool,
+    pub(crate) partial: bool,
     pub(crate) index: usize,
     pub(crate) input_size: usize,
     pub(crate) output_size: usize,
