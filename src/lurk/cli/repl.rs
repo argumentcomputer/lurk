@@ -262,6 +262,21 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         input
     }
 
+    pub(crate) fn memoize_dag(&mut self, tag: Tag, digest: &[F]) {
+        self.zstore.memoize_dag(
+            tag,
+            digest,
+            self.queries.get_inv_queries("hash_24_8", &self.toplevel),
+            self.queries.get_inv_queries("hash_32_8", &self.toplevel),
+            self.queries.get_inv_queries("hash_48_8", &self.toplevel),
+        )
+    }
+
+    #[inline]
+    pub(crate) fn memoize_env_dag(&mut self) {
+        self.memoize_dag(Tag::Env, &self.env.digest.clone())
+    }
+
     fn retrieve_emitted(&self, queries_tmp: &mut QueryRecord<F>) -> Vec<ZPtr<F>> {
         let mut emitted = Vec::with_capacity(queries_tmp.emitted.len());
         for emitted_raw in queries_tmp.emitted.clone() {
@@ -292,11 +307,11 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             &mut queries_tmp,
         ));
         let emitted = self.retrieve_emitted(&mut queries_tmp);
+        self.queries.inv_func_queries = queries_tmp.inv_func_queries;
         for zptr in &emitted {
             self.memoize_dag(zptr.tag, &zptr.digest);
             println!("{}", self.fmt(zptr));
         }
-        self.queries.inv_func_queries = queries_tmp.inv_func_queries;
         (result, emitted)
     }
 
@@ -306,19 +321,38 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         self.reduce_aux_with_env(expr, &env)
     }
 
-    pub(crate) fn memoize_dag(&mut self, tag: Tag, digest: &[F]) {
-        self.zstore.memoize_dag(
-            tag,
-            digest,
-            self.queries.get_inv_queries("hash_24_8", &self.toplevel),
-            self.queries.get_inv_queries("hash_32_8", &self.toplevel),
-            self.queries.get_inv_queries("hash_48_8", &self.toplevel),
-        )
+    /// Produces a minimal `QueryRecord` with just enough data to manually execute
+    /// the `egress` chip and to register inverse queries that might be needed for
+    /// later DAG memoization
+    fn tmp_queries_for_emitted_retrieval(&self) -> QueryRecord<F> {
+        let mut inv_func_queries = Vec::with_capacity(self.queries.inv_func_queries.len());
+        for inv_query_map in &self.queries.inv_func_queries {
+            if inv_query_map.is_some() {
+                inv_func_queries.push(Some(Default::default()));
+            } else {
+                inv_func_queries.push(None);
+            }
+        }
+        QueryRecord {
+            public_values: None,
+            func_queries: vec![Default::default(); self.queries.func_queries.len()],
+            inv_func_queries,
+            mem_queries: self.queries.mem_queries.clone(),
+            bytes: Default::default(),
+            emitted: self.queries.emitted.clone(),
+        }
     }
 
-    #[inline]
-    pub(crate) fn memoize_env_dag(&mut self) {
-        self.memoize_dag(Tag::Env, &self.env.digest.clone())
+    /// Extends the inverse query maps with data from a `QueryRecord`
+    fn retrieve_inv_query_data_from_tmp_queries(&mut self, queries_tmp: QueryRecord<F>) {
+        for (func_idx, inv_queries_tmp) in queries_tmp.inv_func_queries.into_iter().enumerate() {
+            if let Some(inv_queries) = &mut self.queries.inv_func_queries[func_idx] {
+                inv_queries.extend(
+                    inv_queries_tmp
+                        .expect("Inv map corresponds to an invertible func and shouldn't be None"),
+                );
+            }
+        }
     }
 
     pub(crate) fn reduce_with_env(&mut self, expr: &ZPtr<F>, env: &ZPtr<F>) -> ZPtr<F> {
@@ -329,8 +363,9 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             &mut self.queries,
         ));
         if !self.queries.emitted.is_empty() {
-            let queries_tmp = &mut QueryRecord::from_cloned_mem_and_emitted(&self.queries);
-            let emitted = self.retrieve_emitted(queries_tmp);
+            let mut queries_tmp = self.tmp_queries_for_emitted_retrieval();
+            let emitted = self.retrieve_emitted(&mut queries_tmp);
+            self.retrieve_inv_query_data_from_tmp_queries(queries_tmp);
             for zptr in &emitted {
                 self.memoize_dag(zptr.tag, &zptr.digest);
                 println!("{}", self.fmt(zptr));
