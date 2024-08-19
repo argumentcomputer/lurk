@@ -16,18 +16,18 @@ license = "MIT"
 [workspace.dependencies]
 rayon = "1.10.0"
 itertools = "0.13.0"
-p3-air = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1-new" }
-p3-baby-bear = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1-new" }
-p3-field = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1-new" }
-p3-matrix = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1-new" }
-p3-mds = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1-new" }
-p3-commit = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1-new" }
-p3-challenger = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1-new" }
-p3-maybe-rayon = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1-new" }
-p3-poseidon2 = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1-new" }
-p3-symmetric = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1-new" }
-p3-uni-stark = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1-new" }
-p3-util = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1-new" }
+p3-air = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-baby-bear = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-field = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-matrix = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-mds = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-commit = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-challenger = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-maybe-rayon = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-poseidon2 = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-symmetric = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-uni-stark = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
+p3-util = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
 sphinx-core = { git = "https://github.com/argumentcomputer/sphinx.git", branch = "dev"}
 sphinx-derive = { git = "https://github.com/argumentcomputer/sphinx.git", branch = "dev" }
 anyhow = "1.0.72"
