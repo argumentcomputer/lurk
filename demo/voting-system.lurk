@@ -1,0 +1,141 @@
+;; A ZK voting system POC
+;;
+;; The idea is that when someone votes for a candidate, a vote hash is printed
+;; so the voter can have it. The function that computes the sum of all votes
+;; receives a list of vote hashes. Then, when the vote counting ends, a proof of
+;; that computation can be generated and be made available online. Its claim
+;; will contain all vote hashes from all voters so everyone can check that their
+;; vote was indeed accounted for.
+;;
+;; "Can I trust that my vote hash was generated correctly?"
+;; Unfortunately, the data used to generate the vote hash can't be disclosed,
+;; otherwise it would be possible to recover the original votes. But any voter
+;; can try to simulate vote for different candidates before confirming their
+;; choices to check that vote hashes are stable.
+
+;;;;;;;;;;;;;;;;;; Urn source
+
+;; Builds chainable functions for the urns. A function built with mk-urn-fn
+;; generates a vote hash at chaining time (and emits it) and accumulates all
+;; vote hashes in a list as the chaining result.
+!(def mk-urn-fn (lambda (urn-secret)
+  (letrec (
+      (chain-vote (lambda (vote-hashes current-secret candidate-code)
+        (let (
+            (vote-hash (emit (hide current-secret candidate-code)))
+            (new-secret (hide current-secret vote-hash))
+            (new-vote-hashes (cons vote-hash vote-hashes)))
+          (cons new-vote-hashes (chain-vote new-vote-hashes new-secret))))))
+    (chain-vote nil urn-secret))))
+
+;;;;;;;;;;;;;;;;;; Vote aggregation
+
+;; Takes a list of candidates and creates a list containing 0 as the number of
+;; votes for each candidate code.
+!(defrec init-vote-sums (lambda (candidates)
+  (if candidates
+    (cons
+      (cons (car (car candidates)) 0)
+      (init-vote-sums (cdr candidates)))
+    nil)))
+
+;; Appends l+ at the end of l-.
+!(defrec append (lambda (l- l+)
+  (if l-
+    (cons (car l-) (append (cdr l-) l+))
+    l+)))
+
+;; Takes a list containing the sums of votes for each candidate and a candidate
+;; code and then returns a list representing the new sums of votes, for which
+;; the number of votes for the candidate code provided is incremented by 1.
+;; Note: the resulting list can have a different ordering of candidates.
+!(def vote-sum++ (lambda (vote-sums candidate-code)
+  (letrec (
+      (aux (lambda (vote-sums tail-acc)
+        (let (
+            (head-pair (car vote-sums)))
+          (if (= candidate-code (car head-pair))
+            (cons (cons candidate-code (+ (cdr head-pair) 1)) (append (cdr vote-sums) tail-acc))
+            (aux (cdr vote-sums) (cons head-pair tail-acc)))))))
+    (aux vote-sums nil))))
+
+;; Finally counts all votes from a list of vote hashes
+!(defrec compute-votes (lambda (vote-hashes vote-sums)
+  (if vote-hashes
+    (compute-votes
+      (cdr vote-hashes) ; tail argument
+      (vote-sum++       ; vote-sums updated by the head vote
+        vote-sums
+        (open (car vote-hashes))))
+    vote-sums)))
+
+;;;;;;;;;;;;;;;;;; Showcase
+
+;; Each candidate is a pair (<candidate-code> . <candidate-name>)
+!(def candidates (cons (cons 1 "First Cadidate")
+                 (cons (cons 2 "Second Candidate")
+                 (cons (cons 3 "Third Candidate")
+                       nil))))
+
+;; Prepare to chain votes for urn 1
+!(def state (cons nil (mk-urn-fn (commit "secret password for urn 1"))))
+!(transition state state 1)
+!(transition state state 2)
+!(transition state state 3)
+!(transition state state 1)
+
+!(def urn1-vote-hashes (car state))
+
+;; Prepare to chain votes for urn 2
+!(def state (cons nil (mk-urn-fn (commit "secret password for urn 2"))))
+!(transition state state 1)
+!(transition state state 2)
+!(transition state state 3)
+
+!(def urn2-vote-hashes (car state))
+
+;; Remove private data from the env
+!(erase-from-env state)
+
+!(def initial-vote-sums (init-vote-sums candidates))
+
+;; Aggregation proof for urn 1
+
+!(assert-eq
+  (compute-votes urn1-vote-hashes initial-vote-sums)
+  '((1 . 2) (3 . 1) (2 . 1)))
+
+(compute-votes urn1-vote-hashes initial-vote-sums)
+
+!(prove)
+
+!(verify "4dd5137a6467e707b30a49df89aa2a1c97f53ed919b3852d64b69bf7dca614")
+
+;; Aggregation proof for urn 2
+
+!(assert-eq
+  (compute-votes urn2-vote-hashes initial-vote-sums)
+  '((1 . 1) (3 . 1) (2 . 1)))
+
+(compute-votes urn2-vote-hashes initial-vote-sums)
+
+!(prove)
+
+!(verify "63dd0aaf5e482e1d64fba5dccfeea4a3b9b3505721252ef1a23c5d70505106")
+
+;; Aggregation proof for both urns
+
+!(def vote-hashes (append urn1-vote-hashes urn2-vote-hashes))
+
+;; All seven votes
+vote-hashes
+
+!(assert-eq
+  (compute-votes vote-hashes (init-vote-sums candidates))
+  '((1 . 3) (3 . 2) (2 . 2)))
+
+(compute-votes vote-hashes (init-vote-sums candidates))
+
+!(prove)
+
+!(verify "8b8ff0a4db0883700db2d6db14e19f44edda31238a1b550c3770f806ee6a6e")
