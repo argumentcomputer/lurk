@@ -8,7 +8,7 @@ use crate::gadgets::unsigned::{UncheckedWord, Word};
 use num_traits::ops::overflowing::OverflowingSub;
 use num_traits::{FromBytes, ToBytes, Unsigned};
 use p3_air::AirBuilder;
-use p3_field::{AbstractField, PrimeField};
+use p3_field::PrimeField;
 use sphinx_derive::AlignedBorrow;
 use std::cmp::Ordering;
 use std::ops::Div;
@@ -129,6 +129,7 @@ mod tests {
     use crate::gadgets::debug::{ByteRecordTester, GadgetTester};
     use expect_test::expect;
     use p3_baby_bear::BabyBear;
+    use p3_field::AbstractField;
     use proptest::prelude::*;
     use std::fmt::Debug;
 

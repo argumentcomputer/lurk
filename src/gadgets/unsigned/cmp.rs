@@ -188,18 +188,21 @@ mod tests {
 
     type F = BabyBear;
 
-    fn test_compare<const W: usize, U: ToBytes<Bytes = [u8; W]> + Unsigned + Ord>(lhs: U, rhs: U) {
-        let cmp_expected = lhs.cmp(&rhs);
+    fn test_compare<const W: usize, U: ToBytes<Bytes = [u8; W]> + Unsigned + Ord>(
+        lhs: &U,
+        rhs: &U,
+    ) {
+        let cmp_expected = lhs.cmp(rhs);
 
         let record = &mut ByteRecordTester::default();
 
         let mut cmp_witness = CompareWitness::<F, W>::default();
-        let cmp = cmp_witness.populate(&lhs, &rhs, record);
+        let cmp = cmp_witness.populate(lhs, rhs, record);
         assert_eq!(cmp, cmp_expected);
         let cmp_f = cmp_witness.eval(
             &mut GadgetTester::passing(),
-            &Word::<F, W>::from_unsigned(&lhs),
-            &Word::<F, W>::from_unsigned(&rhs),
+            &Word::<F, W>::from_unsigned(lhs),
+            &Word::<F, W>::from_unsigned(rhs),
             &mut record.passing(CompareWitness::<F, W>::num_requires()),
             F::one(),
         );
@@ -223,12 +226,12 @@ mod tests {
 
     #[test]
     fn test_compare_32(a: u32, b: u32) {
-        test_compare::<4, _>(a, b);
+        test_compare::<4, _>(&a, &b);
     }
 
     #[test]
     fn test_compare_64(a: u64, b: u64) {
-        test_compare::<8, _>(a, b);
+        test_compare::<8, _>(&a, &b);
     }
 
     }

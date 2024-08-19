@@ -77,8 +77,7 @@ pub fn eval_max<AB: AirBuilder>(
         0 => Depth::zero(),
         1 => {
             let add_one_witness: &DepthAddOne<AB::Var> = witness.borrow();
-            let (depth, carry) =
-                add_one_witness.eval(builder, depths[0].clone().into(), is_real.clone());
+            let (depth, carry) = add_one_witness.eval(builder, &depths[0].into(), is_real.clone());
             builder.when(is_real).assert_zero(carry);
             depth.into()
         }
@@ -140,13 +139,13 @@ mod tests {
 
     type F = BabyBear;
 
-    fn test_depth_vec<F: PrimeField>(depths: Vec<u32>) {
+    fn test_depth_vec<F: PrimeField>(depths: &[u32]) {
         let record = &mut ByteRecordTester::default();
 
         let witness_size = witness_size(depths.len());
         let num_requires = num_requires(depths.len());
         let mut witness = vec![F::zero(); witness_size];
-        let depth = populate_max(&depths, &mut witness, record);
+        let depth = populate_max(depths, &mut witness, record);
 
         let depths_f = depths
             .iter()
@@ -164,11 +163,11 @@ mod tests {
 
     #[test]
     fn test_depth() {
-        test_depth_vec::<F>(vec![]);
-        test_depth_vec::<F>(vec![0]);
-        test_depth_vec::<F>(vec![1]);
-        test_depth_vec::<F>(vec![0, 1, 2]);
-        test_depth_vec::<F>(vec![0, 2]);
-        test_depth_vec::<F>(vec![0, 2, 2, 5]);
+        test_depth_vec::<F>(&[]);
+        test_depth_vec::<F>(&[0]);
+        test_depth_vec::<F>(&[1]);
+        test_depth_vec::<F>(&[0, 1, 2]);
+        test_depth_vec::<F>(&[0, 2]);
+        test_depth_vec::<F>(&[0, 2, 2, 5]);
     }
 }
