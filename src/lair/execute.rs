@@ -31,6 +31,7 @@ pub struct QueryResult<F> {
     pub(crate) output: Option<List<F>>,
     pub(crate) provide: Record,
     pub(crate) requires: Vec<Record>,
+    pub(crate) depth: u32,
 }
 
 impl<F: PrimeField32> QueryResult<F> {
@@ -399,6 +400,8 @@ struct CallerState<F> {
     nonce: usize,
     map: Vec<F>,
     requires: Vec<Record>,
+    depth: u32,
+    partial: bool,
 }
 
 impl<F: PrimeField32> Func<F> {
@@ -416,6 +419,8 @@ impl<F: PrimeField32> Func<F> {
             queries.func_queries[func_index].insert_full(args.into(), query_result);
         let mut map = args.to_vec();
         let mut requires = Vec::new();
+        let mut depth = 0;
+        let mut partial = self.partial;
 
         let mut exec_entries_stack = vec![];
         let mut callers_states_stack = vec![];
@@ -467,6 +472,9 @@ impl<F: PrimeField32> Func<F> {
                         let Some(out) = result.output.as_ref() else {
                             bail!("Loop detected");
                         };
+                        if partial && toplevel.get_by_index(*callee_index).partial {
+                            depth = depth.max(result.depth + 1);
+                        }
                         map.extend(out);
                         result.new_lookup(nonce, &mut requires);
                         if dbg_func_idx == Some(*callee_index) {
@@ -494,11 +502,15 @@ impl<F: PrimeField32> Func<F> {
                             nonce,
                             map: map_buffer,
                             requires: requires_buffer,
+                            partial,
+                            depth,
                         });
                         // prepare outer variables to go into the new func scope
                         func_index = *callee_index;
                         nonce = callee_nonce;
-                        push_block_exec_entries!(&toplevel.get_by_index(func_index).body);
+                        let func = toplevel.get_by_index(func_index);
+                        partial = func.partial;
+                        depth = 0;
                         if dbg_func_idx == Some(func_index) {
                             queries.debug_data.entries.push(DebugEntry {
                                 dbg_depth,
@@ -507,6 +519,7 @@ impl<F: PrimeField32> Func<F> {
                             });
                             dbg_depth += 1;
                         }
+                        push_block_exec_entries!(&func.body);
                     }
                 }
                 ExecEntry::Op(Op::PreImg(callee_index, out)) => {
@@ -526,6 +539,9 @@ impl<F: PrimeField32> Func<F> {
                             bail!("Loop detected");
                         };
                         assert_eq!(out_memoized, &out);
+                        if partial && toplevel.get_by_index(*callee_index).partial {
+                            depth = depth.max(result.depth + 1);
+                        }
                         map.extend(inp);
                         result.new_lookup(nonce, &mut requires);
                         if dbg_func_idx == Some(*callee_index) {
@@ -548,10 +564,14 @@ impl<F: PrimeField32> Func<F> {
                             nonce,
                             map: map_buffer,
                             requires: requires_buffer,
+                            partial,
+                            depth,
                         });
                         func_index = *callee_index;
                         nonce = callee_nonce;
-                        push_block_exec_entries!(&toplevel.get_by_index(func_index).body);
+                        let func = toplevel.get_by_index(func_index);
+                        partial = func.partial;
+                        depth = 0;
                         if dbg_func_idx == Some(func_index) {
                             queries.debug_data.entries.push(DebugEntry {
                                 dbg_depth,
@@ -560,6 +580,7 @@ impl<F: PrimeField32> Func<F> {
                             });
                             dbg_depth += 1;
                         }
+                        push_block_exec_entries!(&func.body);
                     }
                 }
                 ExecEntry::Op(Op::Const(c)) => map.push(*c),
@@ -635,12 +656,15 @@ impl<F: PrimeField32> Func<F> {
                     }
                     result.output = Some(out_list);
                     result.requires = requires;
+                    result.depth = depth;
                     if let Some(CallerState {
                         preimg,
                         func_index: caller_func_index,
                         nonce: caller_nonce,
                         map: caller_map,
                         requires: caller_requires,
+                        partial: caller_partial,
+                        depth: caller_depth,
                     }) = callers_states_stack.pop()
                     {
                         if dbg_func_idx == Some(func_index) {
@@ -656,6 +680,12 @@ impl<F: PrimeField32> Func<F> {
                         nonce = caller_nonce;
                         map = caller_map;
                         requires = caller_requires;
+                        if caller_partial && partial {
+                            depth = caller_depth.max(depth + 1);
+                        } else {
+                            depth = caller_depth;
+                        }
+                        partial = caller_partial;
 
                         if preimg {
                             map.extend(inp);
