@@ -1,0 +1,3 @@
+!(load "loaded-nested.lurk")
+!(assert-eq loaded-nested :loaded-nested)
+!(def loaded :loaded)

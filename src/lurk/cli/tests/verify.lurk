@@ -1,0 +1,4 @@
+!(verify "5eb9efba6f028b458dbaa0cdb059711342e7f35031de89f5c6c6e5891a3136")
+
+!(load-expr my-protocol "repl-test-protocol")
+!(verify-protocol my-protocol "repl-test-protocol-proof")

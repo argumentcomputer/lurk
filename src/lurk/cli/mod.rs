@@ -5,6 +5,8 @@ mod meta;
 mod paths;
 mod proofs;
 pub mod repl;
+#[cfg(test)]
+mod tests;
 mod zdag;
 
 use anyhow::{bail, Result};

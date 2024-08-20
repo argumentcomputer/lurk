@@ -1,0 +1,20 @@
+!(prove (cons 1 2))
+!(verify "5eb9efba6f028b458dbaa0cdb059711342e7f35031de89f5c6c6e5891a3136")
+
+!(defprotocol my-protocol (hash pair)
+  (cons
+    (if (= (+ (car pair) (cdr pair)) 30)
+      (cons (cons (cons 'open (cons hash nil)) (empty-env)) pair)
+      nil)
+    (lambda () (> (car pair) 10)))
+  :description "hash opens to a pair (a, b) s.t. a+b=30 and a>10")
+
+(commit '(13 . 17))
+
+!(prove-protocol my-protocol
+  "repl-test-protocol-proof"
+  #0x896994f6258a01fbc7f21a81cb28a537259c3e97cc62da0a2773c63f9b4168
+  '(13 . 17))
+
+!(verify-protocol my-protocol "repl-test-protocol-proof")
+!(dump-expr my-protocol "repl-test-protocol")
