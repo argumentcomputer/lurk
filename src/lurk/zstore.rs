@@ -827,7 +827,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         }
     }
 
-    fn fetch_env<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> Vec<(&ZPtr<F>, &ZPtr<F>)>
+    pub fn fetch_env<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> Vec<(&ZPtr<F>, &ZPtr<F>)>
     where
         F: PrimeField32,
     {
