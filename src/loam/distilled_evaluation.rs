@@ -6,7 +6,7 @@ use num_traits::FromPrimitive;
 use p3_baby_bear::BabyBear;
 
 use crate::loam::lurk_sym_index;
-use crate::loam::memory::Memory;
+use crate::loam::memory::{initial_tag_relation, Memory};
 use crate::loam::{LEWrap, Num, Ptr, Wide, WidePtr, LE};
 use crate::lurk::chipset::LurkChip;
 use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
@@ -33,7 +33,7 @@ ascent! {
     // Final relations must be present in the second pass..
 
     // Final: The standard tag mapping.
-    relation tag(LE, Wide) = Memory::initial_tag_relation(); // (short-tag, wide-tag)
+    relation tag(LE, Wide) = initial_tag_relation(); // (short-tag, wide-tag)
 
     // Final
     relation ptr_value(Ptr, Wide); // (ptr, value)
@@ -133,10 +133,9 @@ ascent! {
     // Num
 
     // Final
-    // not sure how this is supposed to work as Num is immediate... but hey it works
-    relation num(Ptr);
+    relation num_mem(Ptr);
 
-    ptr_value(ptr, Wide::widen(ptr.1)) <-- num(ptr);
+    ptr_value(ptr, Wide::widen(ptr.1)) <-- num_mem(ptr);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Ingress path
@@ -646,12 +645,13 @@ impl DistilledEvaluationProgram {
         self.cons_mem = memory.cons_mem;
         self.fun_digest_mem = memory.fun_digest_mem;
         self.fun_mem = memory.fun_mem;
+        self.num_mem = memory.num_mem;
+
         self.thunk_digest_mem = memory.thunk_digest_mem;
         self.thunk_mem = memory.thunk_mem;
         self.sym_digest_mem = memory.sym_digest_mem;
         self.builtin_digest_mem = memory.builtin_digest_mem;
         self.nil_digest_mem = memory.nil_digest_mem;
-        self.num = memory.num;
     }
 }
 
@@ -662,7 +662,11 @@ mod test {
     use p3_baby_bear::BabyBear;
 
     use crate::{
-        loam::{evaluation::EvaluationProgram, memory::generate_lisp_program, LoamProgram},
+        loam::{
+            evaluation::EvaluationProgram,
+            memory::{generate_lisp_program, DistillationOptions},
+            LoamProgram,
+        },
         lurk::{
             chipset::LurkChip,
             zstore::{lurk_zstore, ZPtr, ZStore},
@@ -713,7 +717,8 @@ mod test {
 
         // transfer over the memory (assume it's been distilled)
         let raw_memory = original_program.export_memory();
-        let memory = raw_memory.distill();
+        let options = DistillationOptions::new().with_summary(0.5);
+        let memory = raw_memory.distill(&options);
 
         prog.import_memory(memory);
         prog.run();

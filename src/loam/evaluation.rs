@@ -8,7 +8,10 @@ use rustc_hash::FxHashMap;
 
 use crate::loam::allocation::Allocator;
 use crate::loam::lurk_sym_index;
-use crate::loam::memory::{generate_lisp_program, Memory, VPtr, VirtualMemory};
+use crate::loam::memory::{
+    generate_lisp_program, initial_builtin_addr, initial_builtin_relation, initial_nil_addr,
+    initial_nil_relation, initial_tag_relation, Memory, VPtr, VirtualMemory,
+};
 use crate::loam::{LEWrap, LoamProgram, Num, Ptr, PtrEq, Wide, WidePtr, LE};
 use crate::lurk::chipset::LurkChip;
 use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
@@ -94,7 +97,7 @@ impl Ptr {
             return false;
         }
 
-        self.1 < Memory::initial_builtin_addr()
+        self.1 < initial_builtin_addr()
     }
 
     pub fn is_non_built_in(&self) -> bool {
@@ -215,7 +218,7 @@ ascent! {
     // Final relations must be present in the second pass..
 
     // Final: The standard tag mapping.
-    relation tag(LE, Wide) = Memory::initial_tag_relation(); // (short-tag, wide-tag)
+    relation tag(LE, Wide) = initial_tag_relation(); // (short-tag, wide-tag)
 
     // Final
     relation ptr_value(Ptr, Wide); // (ptr, value)
@@ -408,12 +411,12 @@ ascent! {
     // Builtin
 
     // Final
-    lattice builtin_digest_mem(Wide, Dual<LEWrap>) = Memory::initial_builtin_relation(); // (digest, addr)
+    lattice builtin_digest_mem(Wide, Dual<LEWrap>) = initial_builtin_relation(); // (digest, addr)
 
     // Populating alloc(...) triggers allocation in sym_digest_mem.
     builtin_digest_mem(value, Dual(addr)) <--
         alloc(tag, value), if *tag == Tag::Builtin.elt(),
-        let addr = LEWrap(_self.alloc_addr(Tag::Sym.elt(), Memory::initial_builtin_addr()));
+        let addr = LEWrap(_self.alloc_addr(Tag::Sym.elt(), initial_builtin_addr()));
 
     // Convert addr to ptr and register ptr relations.
     ptr_value(ptr, value) <-- builtin_digest_mem(value, addr), let ptr = Ptr(Tag::Builtin.elt(), addr.0.0);
@@ -425,11 +428,11 @@ ascent! {
 
     // Final
     // Can this be combined with sym_digest_mem? Can it be eliminated? (probably eventually).
-    lattice nil_digest_mem(Wide, Dual<LEWrap>) = Memory::initial_nil_relation(); // (digest, addr)
+    lattice nil_digest_mem(Wide, Dual<LEWrap>) = initial_nil_relation(); // (digest, addr)
 
     nil_digest_mem(value, Dual(addr)) <--
         alloc(tag, value), if *tag == Tag::Nil.elt(),
-        let addr = LEWrap(_self.alloc_addr(Tag::Nil.elt(), Memory::initial_nil_addr()));
+        let addr = LEWrap(_self.alloc_addr(Tag::Nil.elt(), initial_nil_addr()));
 
     ptr_value(ptr, value) <-- nil_digest_mem(value, addr), let ptr = Ptr(Tag::Nil.elt(), addr.0.0);
 
@@ -438,10 +441,10 @@ ascent! {
 
     // Final
     // not sure how this is supposed to work as Num is immediate... but hey it works
-    relation num(Ptr);
+    relation num_mem(Ptr);
 
-    num(Ptr(Tag::Num.elt(), value.f())) <-- alloc(&Tag::Num.elt(), value);
-    ptr_value(ptr, Wide::widen(ptr.1)) <-- num(ptr);
+    num_mem(Ptr(Tag::Num.elt(), value.f())) <-- alloc(&Tag::Num.elt(), value);
+    ptr_value(ptr, Wide::widen(ptr.1)) <-- num_mem(ptr);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Ingress path
@@ -488,7 +491,7 @@ ascent! {
     egress(args), egress(body), egress(closed_env) <-- egress(fun), fun_rel(args, body, closed_env, fun);
 
     // Num: FIXME: change this when F becomes u32.
-    num(ptr) <-- egress(ptr), if ptr.is_num();
+    num_mem(ptr) <-- egress(ptr), if ptr.is_num();
 
     // Err
     ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_err();
@@ -1228,8 +1231,8 @@ impl LoamProgram for EvaluationProgram {
     fn thunk_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)> {
         &self.thunk_rel
     }
-    fn num(&self) -> &Vec<(Ptr,)> {
-        &self.num
+    fn num_mem(&self) -> &Vec<(Ptr,)> {
+        &self.num_mem
     }
 }
 

@@ -225,7 +225,7 @@ trait LoamProgram {
     fn cons_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)>;
     fn fun_rel(&self) -> &Vec<(Ptr, Ptr, Ptr, Ptr)>;
     fn thunk_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)>;
-    fn num(&self) -> &Vec<(Ptr,)>;
+    fn num_mem(&self) -> &Vec<(Ptr,)>;
 
     fn alloc_addr(&mut self, tag: LE, initial_addr: LE) -> LE {
         self.allocator_mut().alloc_addr(tag, initial_addr)
@@ -302,52 +302,32 @@ trait LoamProgram {
             .map(|(ptr, wide)| (VPtr(*ptr), *wide))
             .collect();
 
-        let cons_rel = self
-            .cons_rel()
-            .iter()
-            .map(|(car, cdr, cons)| (VPtr(*car), VPtr(*cdr), VPtr(*cons)))
-            .collect();
-        let fun_rel = self
-            .fun_rel()
-            .iter()
-            .map(|(args, body, closed_env, fun)| {
-                (VPtr(*args), VPtr(*body), VPtr(*closed_env), VPtr(*fun))
-            })
-            .collect();
-        let thunk_rel = self
-            .thunk_rel()
-            .iter()
-            .map(|(body, closed_env, thunk)| (VPtr(*body), VPtr(*closed_env), VPtr(*thunk)))
-            .collect();
-        let num = self.num().iter().map(|(num,)| (VPtr(*num),)).collect();
-
-        let cons_rel_map = self
+        let cons_mem = self
             .cons_rel()
             .iter()
             .map(|(car, cdr, cons)| (VPtr(*cons), (VPtr(*car), VPtr(*cdr))))
             .collect();
-        let fun_rel_map = self
+        let fun_mem = self
             .fun_rel()
             .iter()
             .map(|(args, body, closed_env, fun)| {
                 (VPtr(*fun), (VPtr(*args), VPtr(*body), VPtr(*closed_env)))
             })
             .collect();
-        let thunk_rel_map = self
+        let thunk_mem = self
             .thunk_rel()
             .iter()
             .map(|(body, closed_env, thunk)| (VPtr(*thunk), (VPtr(*body), VPtr(*closed_env))))
             .collect();
 
+        let num_mem = self.num_mem().iter().map(|(num,)| (VPtr(*num),)).collect();
+
         VirtualMemory {
             ptr_value,
-            cons_rel,
-            fun_rel,
-            thunk_rel,
-            num,
-            cons_rel_map,
-            fun_rel_map,
-            thunk_rel_map,
+            cons_mem,
+            fun_mem,
+            thunk_mem,
+            num_mem,
         }
     }
 }

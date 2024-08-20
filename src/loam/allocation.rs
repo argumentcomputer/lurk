@@ -418,13 +418,7 @@ impl AllocationProgram {
             .map(|(ptr, wide)| (VPtr(*ptr), *wide))
             .collect();
 
-        let cons_rel = self
-            .cons_rel
-            .iter()
-            .map(|(car, cdr, cons)| (VPtr(*car), VPtr(*cdr), VPtr(*cons)))
-            .collect();
-
-        let cons_rel_map = self
+        let cons_mem = self
             .cons_rel
             .iter()
             .map(|(car, cdr, cons)| (VPtr(*cons), (VPtr(*car), VPtr(*cdr))))
@@ -432,13 +426,10 @@ impl AllocationProgram {
 
         VirtualMemory {
             ptr_value,
-            cons_rel,
-            fun_rel: Default::default(),
-            thunk_rel: Default::default(),
-            num: Default::default(),
-            cons_rel_map,
-            fun_rel_map: Default::default(),
-            thunk_rel_map: Default::default(),
+            cons_mem,
+            fun_mem: Default::default(),
+            thunk_mem: Default::default(),
+            num_mem: Default::default(),
         }
     }
 }
@@ -546,9 +537,12 @@ impl DistilledAllocationProgram {
 mod test {
     use p3_baby_bear::BabyBear;
 
-    use crate::lurk::{
-        chipset::LurkChip,
-        zstore::{lurk_zstore, ZPtr, ZStore},
+    use crate::{
+        loam::memory::DistillationOptions,
+        lurk::{
+            chipset::LurkChip,
+            zstore::{lurk_zstore, ZPtr, ZStore},
+        },
     };
 
     use super::*;
@@ -601,7 +595,8 @@ mod test {
 
         // transfer over the memory (assume it's been distilled)
         let raw_memory = original_program.export_memory();
-        let memory = raw_memory.distill();
+        let options = DistillationOptions::new().with_summary(0.9);
+        let memory = raw_memory.distill(&options);
 
         prog.import_memory(memory);
         prog.run();

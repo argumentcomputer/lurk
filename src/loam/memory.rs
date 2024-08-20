@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use ascent::Dual;
 use itertools::Itertools;
 use p3_field::{AbstractField, PrimeField32};
@@ -27,39 +29,15 @@ pub struct Memory {
     pub builtin_digest_mem: Vec<(Wide, LE)>,
     pub nil_digest_mem: Vec<(Wide, LE)>,
 
-    pub num: Vec<(Ptr,)>,
+    pub num_mem: Vec<(Ptr,)>,
 }
 
 impl Memory {
-    pub fn initial_builtin_relation() -> Vec<(Wide, Dual<LEWrap>)> {
-        let zstore = &mut lurk_zstore();
-        builtin_vec()
-            .iter()
-            .enumerate()
-            .map(|(i, name)| {
-                let ZPtr { tag, digest } = zstore.intern_symbol(name);
-
-                (Wide(digest), Dual(LEWrap(LE::from_canonical_u64(i as u64))))
-            })
-            .collect()
-    }
-
-    pub fn initial_builtin_addr() -> LE {
-        LE::from_canonical_u64(LURK_PACKAGE_SYMBOLS_NAMES.len() as u64)
-    }
-
-    pub fn initial_nil_relation() -> Vec<(Wide, Dual<LEWrap>)> {
-        let zstore = &mut lurk_zstore();
-        let ZPtr { tag: _, digest } = zstore.intern_nil();
-        vec![(Wide(digest), Dual(LEWrap(LE::from_canonical_u64(0u64))))]
-    }
-
-    pub fn initial_nil_addr() -> LE {
-        LE::from_canonical_u64(1)
-    }
-
-    pub fn initial_tag_relation() -> Vec<(LE, Wide)> {
-        Tag::wide_relation()
+    fn report_sizes(&self, summary: &mut DistillationSummary) {
+        summary.set_distilled_size(Tag::Cons, self.cons_mem.len());
+        summary.set_distilled_size(Tag::Fun, self.fun_mem.len());
+        summary.set_distilled_size(Tag::Thunk, self.thunk_mem.len());
+        summary.set_distilled_size(Tag::Num, self.num_mem.len());
     }
 }
 
@@ -151,118 +129,117 @@ impl PPtrType {
     }
 }
 
-#[derive(Clone, Default, Debug, PartialEq, Eq)]
+#[derive(Clone, Default, Debug)]
 pub struct VirtualMemory {
     pub ptr_value: FxHashMap<VPtr, Wide>,
 
-    pub cons_rel: Vec<(VPtr, VPtr, VPtr)>,
-    pub fun_rel: Vec<(VPtr, VPtr, VPtr, VPtr)>,
-    pub thunk_rel: Vec<(VPtr, VPtr, VPtr)>,
-    pub num: Vec<(VPtr,)>,
-
-    pub cons_rel_map: FxHashMap<VPtr, (VPtr, VPtr)>,
-    pub fun_rel_map: FxHashMap<VPtr, (VPtr, VPtr, VPtr)>,
-    pub thunk_rel_map: FxHashMap<VPtr, (VPtr, VPtr)>,
+    pub cons_mem: FxHashMap<VPtr, (VPtr, VPtr)>,
+    pub fun_mem: FxHashMap<VPtr, (VPtr, VPtr, VPtr)>,
+    pub thunk_mem: FxHashMap<VPtr, (VPtr, VPtr)>,
+    pub num_mem: Vec<(VPtr,)>,
 }
 
 impl VirtualMemory {
-    pub fn distill(&self) -> Memory {
+    fn report_sizes(&self, summary: &mut DistillationSummary) {
+        summary.set_original_size(Tag::Cons, self.cons_mem.len());
+        summary.set_original_size(Tag::Fun, self.fun_mem.len());
+        summary.set_original_size(Tag::Thunk, self.thunk_mem.len());
+        summary.set_original_size(Tag::Num, self.num_mem.len());
+    }
+
+    pub fn distill(&self, options: &DistillationOptions) -> Memory {
         let mut store = Store::default();
         store.intern_virtual_memory(&self);
-        store.reconstuct_memory()
+        let distilled_memory = store.reconstruct_memory();
+
+        if let Some(threshold) = options.summary_threshold {
+            let mut summary = DistillationSummary::new(threshold);
+            self.report_sizes(&mut summary);
+            distilled_memory.report_sizes(&mut summary);
+            summary.report();
+        }
+
+        distilled_memory
+    }
+}
+
+///
+#[derive(Clone, Default, Debug)]
+pub struct DistillationOptions {
+    /// If this is `Some`, report a summary that reports the percentage reduction in distillation.
+    /// This should alert the user if the percentage ever rises above the given threshold.
+    pub summary_threshold: Option<f64>,
+}
+
+impl DistillationOptions {
+    pub fn new() -> Self {
+        DistillationOptions::default()
     }
 
-    #[inline]
-    pub fn fetch_tuple2(&self, vptr: &VPtr) -> (&VPtr, &VPtr) {
-        match vptr.tag() {
-            Tag::Cons => {
-                if let Some((a, b)) = self.cons_rel_map.get(vptr) {
-                    (a, b)
-                } else {
-                    panic!("Tuple2 data not found: {:?}", vptr)
-                }
-            }
-            Tag::Thunk => {
-                if let Some((a, b)) = self.thunk_rel_map.get(vptr) {
-                    (a, b)
-                } else {
-                    panic!("Tuple2 data not found: {:?}", vptr)
-                }
-            }
-            x => panic!("fetch_tuple2 not possible for {:?}", x),
+    pub fn with_summary(mut self, threshold: f64) -> Self {
+        self.summary_threshold = Some(threshold);
+        self
+    }
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct DistillationSummary {
+    threshold: f64,
+    original_sizes: FxHashMap<Tag, usize>,
+    distilled_sizes: FxHashMap<Tag, usize>,
+}
+
+impl DistillationSummary {
+    pub fn new(threshold: f64) -> Self {
+        DistillationSummary {
+            threshold,
+            original_sizes: FxHashMap::default(),
+            distilled_sizes: FxHashMap::default(),
         }
     }
 
-    #[inline]
-    pub fn fetch_tuple3(&self, vptr: &VPtr) -> (&VPtr, &VPtr, &VPtr) {
-        match vptr.tag() {
-            Tag::Fun => {
-                if let Some((a, b, c)) = self.fun_rel_map.get(vptr) {
-                    (a, b, c)
-                } else {
-                    panic!("Tuple3 data not found: {:?}", vptr)
-                }
-            }
-            x => panic!("fetch_tuple2 not possible for {:?}", x),
-        }
+    pub fn set_original_size(&mut self, tag: Tag, size: usize) {
+        self.original_sizes.insert(tag, size);
     }
 
-    pub fn fetch_list<'a>(&'a self, mut ptr: &'a VPtr) -> (Vec<&VPtr>, Option<&'a VPtr>) {
-        assert!(matches!(ptr.tag(), Tag::Cons | Tag::Nil));
-        let mut elts = vec![];
-        while ptr.tag() == Tag::Cons {
-            let (car, cdr) = self.fetch_tuple2(ptr);
-            elts.push(car);
-            ptr = cdr;
-        }
-        if ptr.tag() == Tag::Nil {
-            (elts, None)
-        } else {
-            (elts, Some(ptr))
-        }
+    pub fn set_distilled_size(&mut self, tag: Tag, size: usize) {
+        self.distilled_sizes.insert(tag, size);
     }
 
-    pub fn fmt(&self, zstore: &ZStore<LE, LurkChip>, ptr: &VPtr) -> String {
-        match ptr.tag() {
-            Tag::Num => format!("{}n", ptr.addr()),
-            Tag::Builtin | Tag::Sym | Tag::Key | Tag::Nil => self
-                .ptr_value
-                .get(ptr)
-                .map(|digest| {
-                    let zptr = ZPtr {
-                        tag: ptr.tag(),
-                        digest: digest.0,
-                    };
-                    zstore.fmt(&zptr)
-                })
-                .unwrap_or(format!("<Opaque {:?}>", ptr.0)),
-            Tag::Cons => {
-                let (elts, last) = self.fetch_list(ptr);
-                let elts_str = elts.iter().map(|z| self.fmt(zstore, z)).join(" ");
-                if let Some(last) = last {
-                    format!("({elts_str} . {})", self.fmt(zstore, last))
-                } else {
-                    format!("({elts_str})")
-                }
-            }
-            Tag::Fun => {
-                let (args, body, _) = self.fetch_tuple3(ptr);
-                if args.tag() == Tag::Nil {
-                    format!("<Fun () {}>", self.fmt(zstore, body))
-                } else {
-                    format!(
-                        "<Fun {} {}>",
-                        self.fmt(zstore, args),
-                        self.fmt(zstore, body)
-                    )
-                }
-            }
-            Tag::Thunk => {
-                let (body, _) = self.fetch_tuple2(ptr);
-                format!("<Thunk {}>", self.fmt(zstore, body))
-            }
-            Tag::Err => format!("<Err {:?}>", EvalErr::from_field(&ptr.addr())),
-            Tag::U64 | Tag::Char | Tag::Comm | Tag::Str | Tag::Env => unimplemented!(),
+    pub fn report(&self) {
+        println!("-----------------------------------");
+        println!("      Memory Reduction Report      ");
+        println!("-----------------------------------");
+
+        let mut total_original = 0;
+        let mut total_distilled = 0;
+
+        for (tag, &original) in &self.original_sizes {
+            let distilled = self.distilled_sizes[tag];
+            let reduction = 1.0 - (distilled as f64 / original as f64);
+
+            println!("{:?}: {:.2}% reduction", tag, reduction * 100.0);
+            println!("  Original: {}, Distilled: {}", original, distilled);
+
+            total_original += original;
+            total_distilled += distilled;
+        }
+
+        let total_reduction = 1.0 - (total_distilled as f64 / total_original as f64);
+
+        println!("\nMem Relations Reduction: {:.2}%", total_reduction * 100.0);
+        println!(
+            "  Original: {}, Distilled: {}",
+            total_original, total_distilled
+        );
+        println!("-----------------------------------");
+
+        if total_reduction > self.threshold {
+            eprintln!(
+                "\nWARNING: Memory reduction ({:.2}%) exceeds threshold ({:.2}%)!",
+                total_reduction * 100.0,
+                self.threshold * 100.0
+            );
         }
     }
 }
@@ -322,7 +299,7 @@ impl Store {
         match tag {
             Tag::Cons => {
                 let (vcar, vcdr) = memory
-                    .cons_rel_map
+                    .cons_mem
                     .get(&vptr)
                     .expect("dangling virtual pointer");
 
@@ -334,10 +311,8 @@ impl Store {
                 ptr
             }
             Tag::Fun => {
-                let (vargs, vbody, vclosed_env) = memory
-                    .fun_rel_map
-                    .get(&vptr)
-                    .expect("dangling virtual pointer");
+                let (vargs, vbody, vclosed_env) =
+                    memory.fun_mem.get(&vptr).expect("dangling virtual pointer");
 
                 let args = self.intern_ptr(*vargs, memory);
                 let body = self.intern_ptr(*vbody, memory);
@@ -349,7 +324,7 @@ impl Store {
             }
             Tag::Thunk => {
                 let (vbody, vclosed_env) = memory
-                    .thunk_rel_map
+                    .thunk_mem
                     .get(&vptr)
                     .expect("dangling virtual pointer");
 
@@ -392,13 +367,13 @@ impl Store {
     }
 
     fn intern_virtual_memory(&mut self, memory: &VirtualMemory) {
-        for (_, _, cons) in &memory.cons_rel {
+        for (cons, _) in &memory.cons_mem {
             self.intern_ptr(*cons, memory);
         }
-        for (_, _, _, fun) in &memory.fun_rel {
+        for (fun, _) in &memory.fun_mem {
             self.intern_ptr(*fun, memory);
         }
-        for (_, _, thunk) in &memory.thunk_rel {
+        for (thunk, _) in &memory.thunk_mem {
             self.intern_ptr(*thunk, memory);
         }
 
@@ -407,7 +382,7 @@ impl Store {
         }
     }
 
-    fn reconstuct_memory(self) -> Memory {
+    fn reconstruct_memory(self) -> Memory {
         let sorted_memory = self
             .dag
             .into_iter()
@@ -452,7 +427,7 @@ impl Store {
                 Tag::Sym => memory.sym_digest_mem.push((digest, ptr.addr())),
                 Tag::Nil => memory.nil_digest_mem.push((digest, ptr.addr())),
                 Tag::Builtin => memory.builtin_digest_mem.push((digest, ptr.addr())),
-                Tag::Num => memory.num.push((ptr.0,)),
+                Tag::Num => memory.num_mem.push((ptr.0,)),
                 _ => panic!("unimplemented: {:?}", &ptr),
             }
         }
@@ -534,6 +509,37 @@ impl Store {
             Tag::U64 | Tag::Char | Tag::Comm | Tag::Str | Tag::Env => unimplemented!(),
         }
     }
+}
+
+pub fn initial_builtin_relation() -> Vec<(Wide, Dual<LEWrap>)> {
+    let zstore = &mut lurk_zstore();
+    builtin_vec()
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let ZPtr { tag, digest } = zstore.intern_symbol(name);
+
+            (Wide(digest), Dual(LEWrap(LE::from_canonical_u64(i as u64))))
+        })
+        .collect()
+}
+
+pub fn initial_builtin_addr() -> LE {
+    LE::from_canonical_u64(LURK_PACKAGE_SYMBOLS_NAMES.len() as u64)
+}
+
+pub fn initial_nil_relation() -> Vec<(Wide, Dual<LEWrap>)> {
+    let zstore = &mut lurk_zstore();
+    let ZPtr { tag: _, digest } = zstore.intern_nil();
+    vec![(Wide(digest), Dual(LEWrap(LE::from_canonical_u64(0u64))))]
+}
+
+pub fn initial_nil_addr() -> LE {
+    LE::from_canonical_u64(1)
+}
+
+pub fn initial_tag_relation() -> Vec<(LE, Wide)> {
+    Tag::wide_relation()
 }
 
 pub fn generate_lisp_program(n: usize, op: &str) -> String {
@@ -626,20 +632,14 @@ mod tests {
         let k12_c48 = VPtr::cons(6);
 
         // Add some cons relations
-        memory.cons_rel.push((n1, n2, c12));
-        memory.cons_rel.push((n4, n8, c48));
-        memory.cons_rel_map.insert(c12, (n1, n2));
-        memory.cons_rel_map.insert(c48, (n4, n8));
+        memory.cons_mem.insert(c12, (n1, n2));
+        memory.cons_mem.insert(c48, (n4, n8));
 
-        memory.cons_rel.push((n1, n2, k12));
-        memory.cons_rel.push((n4, n8, k48));
-        memory.cons_rel_map.insert(k12, (n1, n2));
-        memory.cons_rel_map.insert(k48, (n4, n8));
+        memory.cons_mem.insert(k12, (n1, n2));
+        memory.cons_mem.insert(k48, (n4, n8));
 
-        memory.cons_rel.push((c12, k48, c12_k48));
-        memory.cons_rel.push((k12, c48, k12_c48));
-        memory.cons_rel_map.insert(c12_k48, (c12, k48));
-        memory.cons_rel_map.insert(k12_c48, (k12, c48));
+        memory.cons_mem.insert(c12_k48, (c12, k48));
+        memory.cons_mem.insert(k12_c48, (k12, c48));
 
         memory
     }
@@ -647,7 +647,8 @@ mod tests {
     #[test]
     fn test_distill_raw_memory() {
         let raw_memory = create_sample_raw_memory();
-        let distilled_memory = raw_memory.distill();
+        let options = DistillationOptions::new().with_summary(0.9);
+        let distilled_memory = raw_memory.distill(&options);
 
         // Check that all cons relations are preserved
         assert_eq!(distilled_memory.cons_mem.len(), 3);
@@ -661,9 +662,10 @@ mod tests {
         let v1 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(1)));
         let v2 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(2)));
         let v3 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(3)));
-        raw_memory.cons_rel.push((v1, v2, v3));
+        raw_memory.cons_mem.insert(v3, (v1, v2));
 
-        let distilled_memory = raw_memory.distill();
+        let options = DistillationOptions::new().with_summary(0.9);
+        let distilled_memory = raw_memory.distill(&options);
 
         // Check that duplicates are removed
         assert_eq!(distilled_memory.cons_mem.len(), 2);
@@ -679,7 +681,8 @@ mod tests {
             .ptr_value
             .insert(v6, Wide([LE::from_canonical_u32(60); 8]));
 
-        let distilled_memory = raw_memory.distill();
+        let options = DistillationOptions::new().with_summary(0.9);
+        let distilled_memory = raw_memory.distill(&options);
 
         // Check that dangling pointers are not included in the distilled memory
         assert_eq!(distilled_memory.cons_digest_mem.len(), 2);
@@ -688,7 +691,8 @@ mod tests {
     #[test]
     fn test_distill_empty_memory() {
         let empty_memory = VirtualMemory::default();
-        let distilled_memory = empty_memory.distill();
+        let options = DistillationOptions::new().with_summary(0.9);
+        let distilled_memory = empty_memory.distill(&options);
 
         assert_eq!(distilled_memory.cons_mem.len(), 0);
         assert_eq!(distilled_memory.fun_mem.len(), 0);
