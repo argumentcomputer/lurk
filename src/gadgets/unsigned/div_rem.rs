@@ -1,14 +1,16 @@
 use crate::gadgets::bytes::{ByteAirRecord, ByteRecord};
 use crate::gadgets::unsigned::add::Diff;
+use crate::gadgets::unsigned::cmp::CompareWitness;
 use crate::gadgets::unsigned::is_zero::IsZeroWitness;
-use crate::gadgets::unsigned::less_than::{IsLessThan, LessThanWitness};
+use crate::gadgets::unsigned::less_than::LessThanWitness;
 use crate::gadgets::unsigned::mul::Product;
 use crate::gadgets::unsigned::{UncheckedWord, Word};
 use num_traits::ops::overflowing::OverflowingSub;
 use num_traits::{FromBytes, ToBytes, Unsigned};
 use p3_air::AirBuilder;
-use p3_field::{AbstractField, PrimeField};
+use p3_field::PrimeField;
 use sphinx_derive::AlignedBorrow;
+use std::cmp::Ordering;
 use std::ops::Div;
 
 #[derive(Clone, Default, AlignedBorrow)]
@@ -22,9 +24,9 @@ pub struct DivRem<T, const W: usize> {
     /// r = a % b = a - q * b
     r: Diff<T, W>,
     /// is_r_lt_b = r < b
-    is_r_lt_b: LessThanWitness<T, W>,
+    r_lt_b: LessThanWitness<T, W>,
     /// is_qb_lte_a = qb <= a
-    is_qb_lte_a: IsLessThan<T, W>,
+    qb_cmp_a: CompareWitness<T, W>,
 }
 
 impl<F: PrimeField, const W: usize> DivRem<F, W> {
@@ -35,7 +37,8 @@ impl<F: PrimeField, const W: usize> DivRem<F, W> {
             + Unsigned
             + Div
             + Copy
-            + OverflowingSub,
+            + OverflowingSub
+            + Ord,
     {
         // b != 0
         self.b_non_zero.populate_non_zero(b);
@@ -48,13 +51,10 @@ impl<F: PrimeField, const W: usize> DivRem<F, W> {
         // r = a - qb
         let r = self.r.populate(a, &qb, byte_record);
         // r < b
-        let is_r_lt_b = self.is_r_lt_b.populate(&r, b, byte_record);
-        debug_assert!(is_r_lt_b);
+        self.r_lt_b.populate(&r, b, byte_record);
         // qb <= a
-        let is_qb_lte_a = self
-            .is_qb_lte_a
-            .populate_less_than_or_equal(&qb, a, byte_record);
-        debug_assert!(is_qb_lte_a);
+        let is_qb_lte_a = self.qb_cmp_a.populate(&qb, a, byte_record);
+        assert!(matches!(is_qb_lte_a, Ordering::Less | Ordering::Equal));
         (q, r)
     }
 }
@@ -89,25 +89,16 @@ impl<Var, const W: usize> DivRem<Var, W> {
             .eval(builder, a.clone(), qb.into(), record, is_real.clone());
 
         // r < b
-        let is_r_lt_b = AB::F::one();
-        self.is_r_lt_b.assert_is_less_than(
-            builder,
-            &r.into(),
-            b,
-            is_r_lt_b,
-            record,
-            is_real.clone(),
-        );
+        self.r_lt_b
+            .assert_less_than(builder, &r.into(), b, record, is_real.clone());
 
         // q * b <= a
-        let is_qb_lte_a = self.is_qb_lte_a.eval_less_than_or_equal(
-            builder,
-            &qb.into(),
-            a,
-            record,
-            is_real.clone(),
-        );
-        builder.when(is_real.clone()).assert_one(is_qb_lte_a);
+        let qb_cmp_a = self
+            .qb_cmp_a
+            .eval(builder, &qb.into(), a, record, is_real.clone());
+        builder
+            .when(is_real.clone())
+            .assert_one(qb_cmp_a.is_less_than_or_equal());
         (q, r)
     }
 }
@@ -117,7 +108,7 @@ impl<T, const W: usize> DivRem<T, W> {
             + Diff::<T, W>::num_requires()
             + Product::<T, W>::num_requires()
             + LessThanWitness::<T, W>::num_requires()
-            + IsLessThan::<T, W>::num_requires()
+            + CompareWitness::<T, W>::num_requires()
     }
 
     pub const fn witness_size() -> usize {
@@ -136,11 +127,24 @@ impl<T, const W: usize> DivRem<T, W> {
 mod tests {
     use super::*;
     use crate::gadgets::debug::{ByteRecordTester, GadgetTester};
+    use expect_test::expect;
     use p3_baby_bear::BabyBear;
+    use p3_field::AbstractField;
     use proptest::prelude::*;
     use std::fmt::Debug;
 
     type F = BabyBear;
+
+    #[test]
+    fn test_witness_size() {
+        expect!["34"].assert_eq(&DivRem::<u8, 4>::witness_size().to_string());
+        expect!["62"].assert_eq(&DivRem::<u8, 8>::witness_size().to_string());
+    }
+    #[test]
+    fn test_num_requires() {
+        expect!["12"].assert_eq(&DivRem::<u8, 4>::num_requires().to_string());
+        expect!["22"].assert_eq(&DivRem::<u8, 8>::num_requires().to_string());
+    }
 
     fn test_div_rem<
         const W: usize,

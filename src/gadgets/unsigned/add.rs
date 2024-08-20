@@ -53,6 +53,7 @@ impl<Var, const W: usize> AddWitness<Var, W> {
             //   -> sum[i] = out[i] (since out[i] < 256, no overflow happened)
             // else
             //   -> sum[i] = out[i] + 256 (sum[i] must be >= 256, so an overflow occurred)
+            //   -> sum[i] ∈ [256, 511]
             builder.assert_bool(carry.clone());
         }
         carry
@@ -208,7 +209,7 @@ impl<Var, const W: usize> AddOne<Var, W> {
     pub fn eval<AB>(
         &self,
         builder: &mut AB,
-        input: Word<AB::Expr, W>,
+        input: &Word<AB::Expr, W>,
         is_real: impl Into<AB::Expr>,
     ) -> (Word<AB::Var, W>, AB::Expr)
     where
@@ -230,7 +231,7 @@ impl<Var, const W: usize> AddOne<Var, W> {
             // Due to range checks, we know
             //   0 <= sum[i] <= 255 + 1 = 256,
             // since we can assume carry[i-1] is always boolean.
-            let sum = input + carry;
+            let sum = carry + input.clone();
 
             // We expect the output to equal
             //   out[i] = sum[i] % 256,
@@ -245,15 +246,17 @@ impl<Var, const W: usize> AddOne<Var, W> {
             // We can bound out[i] = sum[i] - carry[i] * 256 as follows
             // if carry[i] = 0
             //   -> out[i] = sum[i]
-            //   -> out[i] ∈ [0, 255]
-            // if carry[i] = 1
-            //   -> out[i] = sum[i] - 256.
-            // In the latter case, since sum[i] ∈ [0, 256], the same applies to out[i],
-            // so need to assert that out[i] != 256.
+            //   -> out[i] ∈ [0, 256]
+            // Therefore, we need to ensure that out[i] != 256 to show that no overflow happened
             // We do so by showing that
             //   ∃ inverses[i] s.t. (out[i] - 256) * inverses[i] = 1
             let non_zero = output.into() - base;
             builder.assert_one(non_zero * inverse);
+            // if carry[i] = 1
+            //   -> out[i] = sum[i] - 256.
+            // In this case, the only possibility is out[i] == 0, implying that sum[i] == 256
+            // which confirms that an overflow happened.
+            builder.when(carry.clone()).assert_zero(output);
         }
 
         // We range constrain result manually by checking that none of
@@ -292,11 +295,35 @@ impl<F: Default, const W: usize> Default for AddOne<F, W> {
 mod tests {
     use super::*;
     use crate::gadgets::debug::{ByteRecordTester, GadgetTester};
+    use expect_test::expect;
     use p3_baby_bear::BabyBear;
     use proptest::prelude::*;
     use std::fmt::Debug;
 
     type F = BabyBear;
+
+    #[test]
+    fn test_witness_size() {
+        expect!["4"].assert_eq(&Sum::<u8, 4>::witness_size().to_string());
+        expect!["8"].assert_eq(&Sum::<u8, 8>::witness_size().to_string());
+
+        expect!["4"].assert_eq(&Diff::<u8, 4>::witness_size().to_string());
+        expect!["8"].assert_eq(&Diff::<u8, 8>::witness_size().to_string());
+
+        expect!["8"].assert_eq(&AddOne::<u8, 4>::witness_size().to_string());
+        expect!["16"].assert_eq(&AddOne::<u8, 8>::witness_size().to_string());
+    }
+    #[test]
+    fn test_num_requires() {
+        expect!["2"].assert_eq(&Sum::<u8, 4>::num_requires().to_string());
+        expect!["4"].assert_eq(&Sum::<u8, 8>::num_requires().to_string());
+
+        expect!["2"].assert_eq(&Diff::<u8, 4>::num_requires().to_string());
+        expect!["4"].assert_eq(&Diff::<u8, 8>::num_requires().to_string());
+
+        expect!["0"].assert_eq(&AddOne::<u8, 4>::num_requires().to_string());
+        expect!["0"].assert_eq(&AddOne::<u8, 8>::num_requires().to_string());
+    }
 
     fn test_add_sub<
         const W: usize,
@@ -343,12 +370,10 @@ mod tests {
         let mut add_one_witness = AddOne::<F, W>::default();
         let out = add_one_witness.populate(input);
         let (out_expected, carry_expected) = input.overflowing_add(&U::one());
+        let input_f = Word::<F, W>::from_unsigned(input);
         assert_eq!(out, out_expected);
-        let (out_f, carry_f) = add_one_witness.eval(
-            &mut GadgetTester::passing(),
-            Word::<F, W>::from_unsigned(input),
-            F::one(),
-        );
+        let (out_f, carry_f) =
+            add_one_witness.eval(&mut GadgetTester::passing(), &input_f, F::one());
         assert_eq!(out_f, Word::from_unsigned(&out));
         assert_eq!(carry_f, F::from_bool(carry_expected));
     }

@@ -2,18 +2,20 @@ use crate::gadgets::bytes::{ByteAirRecord, ByteRecord};
 use core::slice;
 use num_traits::{ToBytes, Unsigned};
 use p3_field::AbstractField;
+use sphinx_derive::AlignedBorrow;
 use std::array;
 use std::fmt::Debug;
 use std::iter::zip;
 use std::ops::{Index, IndexMut};
 
 pub mod add;
+pub mod cmp;
 pub mod div_rem;
 pub mod is_zero;
 pub mod less_than;
 pub mod mul;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, AlignedBorrow)]
 #[repr(C)]
 pub struct Word<T, const W: usize>([T; W]);
 
@@ -94,7 +96,7 @@ impl<F: AbstractField, const W: usize> Word<F, W> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, AlignedBorrow)]
 #[repr(C)]
 pub struct UncheckedWord<T, const W: usize>([T; W]);
 

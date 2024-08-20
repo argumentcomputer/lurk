@@ -184,6 +184,7 @@ impl<T, const W: usize> Product<T, W> {
 mod tests {
     use super::*;
     use crate::gadgets::debug::{ByteRecordTester, GadgetTester};
+    use expect_test::expect;
     use num_traits::ops::overflowing::OverflowingMul;
     use num_traits::AsPrimitive;
     use p3_baby_bear::BabyBear;
@@ -192,6 +193,18 @@ mod tests {
     use std::iter::zip;
 
     type F = BabyBear;
+
+    #[test]
+    fn test_witness_size() {
+        expect!["8"].assert_eq(&Product::<u8, 4>::witness_size().to_string());
+        expect!["16"].assert_eq(&Product::<u8, 8>::witness_size().to_string());
+    }
+
+    #[test]
+    fn test_num_requires() {
+        expect!["6"].assert_eq(&Product::<u8, 4>::num_requires().to_string());
+        expect!["12"].assert_eq(&Product::<u8, 8>::num_requires().to_string());
+    }
 
     fn test_mul<
         const W_L: usize,

@@ -136,21 +136,6 @@ impl<F: Field, const W: usize> IsZeroOrEqual<F, W> {
             false
         }
     }
-
-    pub const fn witness_size() -> usize {
-        size_of::<IsZeroOrEqual<u8, W>>()
-    }
-
-    pub const fn num_requires() -> usize {
-        0
-    }
-
-    pub fn iter_result(&self) -> impl IntoIterator<Item = F>
-    where
-        F: Clone,
-    {
-        [self.result]
-    }
 }
 
 impl<Var, const W: usize> IsZeroOrEqual<Var, W> {
@@ -192,15 +177,44 @@ impl<Var, const W: usize> IsZeroOrEqual<Var, W> {
     }
 }
 
+impl<T, const W: usize> IsZeroOrEqual<T, W> {
+    pub const fn witness_size() -> usize {
+        size_of::<IsZeroOrEqual<u8, W>>()
+    }
+
+    pub const fn num_requires() -> usize {
+        0
+    }
+
+    pub fn iter_result(&self) -> impl IntoIterator<Item = T>
+    where
+        T: Clone,
+    {
+        [self.result.clone()]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::gadgets::debug::GadgetTester;
+    use expect_test::expect;
     use num_traits::Unsigned;
     use p3_baby_bear::BabyBear;
     use proptest::prelude::*;
 
     type F = BabyBear;
+
+    #[test]
+    fn test_witness_size() {
+        expect!["5"].assert_eq(&IsZeroOrEqual::<u8, 4>::witness_size().to_string());
+        expect!["9"].assert_eq(&IsZeroOrEqual::<u8, 8>::witness_size().to_string());
+    }
+    #[test]
+    fn test_num_requires() {
+        expect!["0"].assert_eq(&IsZeroOrEqual::<u8, 4>::num_requires().to_string());
+        expect!["0"].assert_eq(&IsZeroOrEqual::<u8, 8>::num_requires().to_string());
+    }
 
     fn test_non_zero<const W: usize, U: ToBytes<Bytes = [u8; W]> + Unsigned>(input: &U) {
         let mut witness = IsZero::<F, W>::default();

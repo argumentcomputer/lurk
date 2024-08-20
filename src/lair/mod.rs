@@ -14,6 +14,7 @@ pub mod lair_chip;
 mod macros;
 pub mod map;
 pub mod memory;
+pub mod provenance;
 pub mod relations;
 pub mod toplevel;
 pub mod trace;
