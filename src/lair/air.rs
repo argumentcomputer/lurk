@@ -764,9 +764,6 @@ mod tests {
             [
                 // nonce, 4 inputs, 4 output, last nonce, last count, 6 multiplications for the two `contains!`, 4 coefficients for `assert_ne!`, selector
                 0, 2, 4, 6, 8, 2, 4, 6, 8, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1,
-                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             ]
             .into_iter()
             .map(F::from_canonical_u32)
@@ -842,9 +839,6 @@ mod tests {
         #[rustfmt::skip]
         let expected_trace = [
             0, 100, 12, 64, 0, 1, 0, 0, 1, 0, 0, 1, 1,
-            1,   0,  0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            2,   0,  0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            3,   0,  0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ]
         .into_iter()
         .map(field_from_u32)

@@ -74,7 +74,7 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
         let range = shard.get_func_range(self.func.index);
         let width = self.width();
         let non_dummy_height = range.len();
-        let height = non_dummy_height.next_power_of_two().max(4);
+        let height = non_dummy_height.next_power_of_two();
         let mut rows = vec![F::zero(); height * width];
         // initializing nonces
         rows.chunks_mut(width)
