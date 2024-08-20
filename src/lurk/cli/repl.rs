@@ -162,17 +162,24 @@ impl<H: Chipset<BabyBear>> Repl<BabyBear, H> {
             .unwrap();
         let proof_key = format!("{:x}", digest_to_biguint(proof_key_img));
         let proof_path = proofs_dir()?.join(&proof_key);
+        let machine = self.stark_machine();
+        let (pk, vk) = machine.setup(&LairMachineProgram);
+        let challenger_p = &mut machine.config().challenger();
         let must_prove = if !proof_path.exists() {
             true
         } else {
             let io_proof_bytes = std::fs::read(&proof_path)?;
-            // force an overwrite if deserialization goes wrong
-            bincode::deserialize::<IOProof>(&io_proof_bytes).is_err()
+            if let Ok(io_proof) = bincode::deserialize::<IOProof>(&io_proof_bytes) {
+                let machine_proof = io_proof.into_machine_proof();
+                let challenger_v = &mut challenger_p.clone();
+                // force an overwrite if verification goes wrong
+                machine.verify(&vk, &machine_proof, challenger_v).is_err()
+            } else {
+                // force an overwrite if deserialization goes wrong
+                true
+            }
         };
         if must_prove {
-            let machine = self.stark_machine();
-            let (pk, vk) = machine.setup(&LairMachineProgram);
-            let challenger_p = &mut machine.config().challenger();
             let challenger_v = &mut challenger_p.clone();
             let shard = Shard::new(&self.queries);
             let opts = SphinxCoreOpts::default();

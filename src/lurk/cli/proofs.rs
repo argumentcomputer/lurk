@@ -29,6 +29,7 @@ struct CryptoShardProof {
 #[derive(Serialize, Deserialize)]
 pub(crate) struct CryptoProof {
     shard_proofs: Vec<CryptoShardProof>,
+    verifier_version: String,
 }
 
 type F = BabyBear;
@@ -66,6 +67,11 @@ impl CryptoProof {
             .collect();
         MachineProof { shard_proofs }
     }
+
+    #[inline]
+    pub(crate) fn has_same_verifier_version(&self) -> bool {
+        self.verifier_version == env!("VERGEN_GIT_SHA")
+    }
 }
 
 impl From<MachineProof<BabyBearPoseidon2>> for CryptoProof {
@@ -90,7 +96,10 @@ impl From<MachineProof<BabyBearPoseidon2>> for CryptoProof {
                 }
             })
             .collect();
-        Self { shard_proofs }
+        Self {
+            shard_proofs,
+            verifier_version: env!("VERGEN_GIT_SHA").to_string(),
+        }
     }
 }
 

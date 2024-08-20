@@ -773,16 +773,21 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         example: &["!(verify \"2ae20412c6f4740f409196522c15b0e42aae2338c2b5b9c524f675cba0a93e\")"],
         run: |repl, args, _path| {
             let (proof_key, io_proof) = Self::load_io_proof_with_repl(repl, args)?;
+            let has_same_verifier_version = io_proof.crypto_proof.has_same_verifier_version();
             let machine = repl.stark_machine();
             let machine_proof = io_proof.into_machine_proof();
             let (_, vk) = machine.setup(&LairMachineProgram);
             let challenger = &mut machine.config().challenger();
             if machine.verify(&vk, &machine_proof, challenger).is_ok() {
                 println!("✓ Proof \"{proof_key}\" verified");
+                Ok(())
             } else {
-                println!("✗ Proof \"{proof_key}\" failed on verification");
+                let mut msg = format!("✗ Proof \"{proof_key}\" failed on verification");
+                if !has_same_verifier_version {
+                    msg.push_str("\nWarning: proof was created for a different verifier version");
+                }
+                bail!(msg);
             }
-            Ok(())
         },
     };
 
@@ -988,12 +993,17 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
                 bail!("Malformed protocol claim");
             }
             let (expr, env) = repl.zstore.fetch_tuple2(expr_env);
+            let has_same_verifier_version = crypto_proof.has_same_verifier_version();
             let machine_proof = crypto_proof.into_machine_proof(expr, env, result);
             let machine = repl.stark_machine();
             let (_, vk) = machine.setup(&LairMachineProgram);
             let challenger = &mut machine.config().challenger();
             if machine.verify(&vk, &machine_proof, challenger).is_err() {
-                bail!("Proof verification failed");
+                let mut msg = "Proof verification failed".to_string();
+                if !has_same_verifier_version {
+                    msg.push_str("\nWarning: proof was created for a different verifier version");
+                }
+                bail!(msg);
             }
 
             Self::post_verify_check(repl, post_verify_predicate)?;
