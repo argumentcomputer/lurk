@@ -278,7 +278,7 @@ pub(crate) const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 36] = [
     ">=",
 ];
 
-const META_PACKAGE_SYMBOLS_NAMES: [&str; 27] = [
+const META_PACKAGE_SYMBOLS_NAMES: [&str; 29] = [
     "def",
     "defrec",
     "load",
@@ -292,6 +292,7 @@ const META_PACKAGE_SYMBOLS_NAMES: [&str; 27] = [
     "open",
     "clear",
     "set-env",
+    "erase-from-env",
     "prove",
     "verify",
     "defpackage",
@@ -300,6 +301,7 @@ const META_PACKAGE_SYMBOLS_NAMES: [&str; 27] = [
     "help",
     "call",
     "chain",
+    "transition",
     "inspect",
     "dump-expr",
     "load-expr",

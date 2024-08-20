@@ -75,6 +75,8 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
                 bail!("RHS reduction error: {}", repl.fmt(&result2));
             }
             if result1 != result2 {
+                repl.memoize_dag(result1.tag, &result1.digest);
+                repl.memoize_dag(result2.tag, &result2.digest);
                 eprintln!(
                     "`assert-eq` failed. {} ≠ {}",
                     repl.fmt(&result1),
@@ -124,6 +126,8 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             }
             let emitted = repl.zstore.intern_list(emitted);
             if expected != emitted {
+                repl.memoize_dag(expected.tag, &expected.digest);
+                // DAG for `emitted` has already been memoized
                 eprintln!(
                     "`assert-emitted` failed. Expected {} but got {}",
                     repl.fmt(&expected),
@@ -231,6 +235,31 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             let (env, _) = repl.reduce_aux(&env_expr);
             if env.tag != Tag::Env {
                 bail!("Value must be an environment");
+            }
+            repl.env = env;
+            Ok(())
+        },
+    };
+
+    const ERASE_FROM_ENV: Self = Self {
+        name: "erase-from-env",
+        summary: "Erases all bindings for the provided variables from the environment.",
+        format: "!(erase-from-env <var1> <var2> ...)",
+        info: &["If a variable is not present in the environment, it's ignored."],
+        example: &["!(erase-from-env foo bar)"],
+        run: |repl, args, _path| {
+            repl.memoize_env_dag();
+            let (args_vec, _) = repl.zstore.fetch_list(args);
+            let new_env_vec = repl
+                .zstore
+                .fetch_env(&repl.env)
+                .into_iter()
+                .filter(|(var, _)| !args_vec.contains(var))
+                .map(|(var, val)| (*var, *val))
+                .collect::<Vec<_>>();
+            let mut env = repl.zstore.intern_empty_env();
+            for (var, val) in new_env_vec.into_iter().rev() {
+                env = repl.zstore.intern_env(var, val, env);
             }
             repl.env = env;
             Ok(())
@@ -991,6 +1020,7 @@ pub(crate) fn meta_cmds<H: Chipset<F>>() -> MetaCmdsMap<F, H> {
         MetaCmd::DEFREC,
         MetaCmd::CLEAR,
         MetaCmd::SET_ENV,
+        MetaCmd::ERASE_FROM_ENV,
         MetaCmd::HIDE,
         MetaCmd::COMMIT,
         MetaCmd::OPEN,
