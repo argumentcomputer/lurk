@@ -48,9 +48,9 @@ impl<F> Syntax<F> {
 }
 
 /// Returns a `BigUint` from a digest of field elements stored in little-endian order.
-pub fn digest_to_biguint<F: PrimeField>(digest: &[F; DIGEST_SIZE]) -> BigUint {
-    let mut num = digest[DIGEST_SIZE - 1].as_canonical_biguint();
-    for l in digest[..DIGEST_SIZE - 1].iter().rev() {
+pub fn digest_to_biguint<F: PrimeField>(digest: &[F]) -> BigUint {
+    let mut num = digest[digest.len() - 1].as_canonical_biguint();
+    for l in digest[..digest.len() - 1].iter().rev() {
         num *= F::order();
         num += l.as_canonical_biguint();
     }

@@ -1,3 +1,4 @@
+use anyhow::{bail, Result};
 use hashbrown::HashMap;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -9,6 +10,7 @@ use std::ops::Range;
 use crate::{
     air::builder::Record,
     gadgets::bytes::{record::BytesRecord, ByteRecord},
+    lurk::syntax::digest_to_biguint,
 };
 
 use super::{
@@ -323,13 +325,18 @@ impl<F: PrimeField32> QueryRecord<F> {
 }
 
 impl<F: PrimeField32, H: Chipset<F>> Toplevel<F, H> {
-    pub fn execute(&self, func: &Func<F>, args: &[F], queries: &mut QueryRecord<F>) -> List<F> {
-        let out = func.execute(args, self, queries);
+    pub fn execute(
+        &self,
+        func: &Func<F>,
+        args: &[F],
+        queries: &mut QueryRecord<F>,
+    ) -> Result<List<F>> {
+        let out = func.execute(args, self, queries)?;
         let mut public_values = Vec::with_capacity(args.len() + out.len());
         public_values.extend(args);
         public_values.extend(out.iter());
         queries.public_values = Some(public_values);
-        out
+        Ok(out)
     }
 
     #[inline]
@@ -338,7 +345,7 @@ impl<F: PrimeField32, H: Chipset<F>> Toplevel<F, H> {
         name: &'static str,
         args: &[F],
         queries: &mut QueryRecord<F>,
-    ) -> List<F> {
+    ) -> Result<List<F>> {
         let func = self.get_by_name(name);
         self.execute(func, args, queries)
     }
@@ -349,7 +356,7 @@ impl<F: PrimeField32, H: Chipset<F>> Toplevel<F, H> {
         func_idx: usize,
         args: &[F],
         record: &mut QueryRecord<F>,
-    ) -> List<F> {
+    ) -> Result<List<F>> {
         let func = self.get_by_index(func_idx);
         self.execute(func, args, record)
     }
@@ -374,7 +381,7 @@ impl<F: PrimeField32> Func<F> {
         args: &[F],
         toplevel: &Toplevel<F, H>,
         queries: &mut QueryRecord<F>,
-    ) -> List<F> {
+    ) -> Result<List<F>> {
         let mut func_index = self.index;
         let mut query_result = QueryResult::default();
         query_result.provide.count = 1;
@@ -452,12 +459,14 @@ impl<F: PrimeField32> Func<F> {
                 }
                 ExecEntry::Op(Op::PreImg(callee_index, out)) => {
                     let out = out.iter().map(|v| map[*v]).collect::<List<_>>();
-                    let inp = queries.inv_func_queries[*callee_index]
+                    let Some(inp) = queries.inv_func_queries[*callee_index]
                         .as_ref()
                         .expect("Missing inverse map")
                         .get(&out)
-                        .expect("Preimg not found")
-                        .to_vec();
+                    else {
+                        bail!("Preimg not found for #{:#x}", digest_to_biguint(&out))
+                    };
+                    let inp = inp.to_vec();
                     if let Some(result) =
                         queries.func_queries[*callee_index].get_mut(inp.as_slice())
                     {
@@ -587,7 +596,7 @@ impl<F: PrimeField32> Func<F> {
                 }
             }
         }
-        map.into()
+        Ok(map.into())
     }
 }
 
@@ -616,17 +625,17 @@ mod tests {
         let factorial = toplevel.get_by_name("factorial");
         let args = &[F::from_canonical_u32(5)];
         let queries = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(factorial, args, queries);
+        let out = toplevel.execute(factorial, args, queries).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(120)]);
 
         let even = toplevel.get_by_name("even");
         let args = &[F::from_canonical_u32(7)];
-        let out = toplevel.execute(even, args, queries);
+        let out = toplevel.execute(even, args, queries).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(0)]);
 
         let odd = toplevel.get_by_name("odd");
         let args = &[F::from_canonical_u32(4)];
-        let out = toplevel.execute(odd, args, queries);
+        let out = toplevel.execute(odd, args, queries).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(0)]);
     }
 
@@ -637,7 +646,7 @@ mod tests {
         let fib = toplevel.get_by_name("fib");
         let args = &[F::from_canonical_u32(100000)];
         let queries = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(fib, args, queries);
+        let out = toplevel.execute(fib, args, queries).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(1123328132)]);
     }
 
@@ -653,7 +662,7 @@ mod tests {
         let test = toplevel.get_by_name("test");
         let args = &[F::from_canonical_u32(20), F::from_canonical_u32(4)];
         let queries = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(test, args, queries);
+        let out = toplevel.execute(test, args, queries).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(5)]);
     }
 
@@ -671,7 +680,7 @@ mod tests {
         let test = toplevel.get_by_name("test");
         let args = &[F::from_canonical_u32(10)];
         let queries = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(test, args, queries);
+        let out = toplevel.execute(test, args, queries).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(80)]);
     }
 
@@ -705,9 +714,9 @@ mod tests {
             .map(field_from_u32)
             .collect::<List<_>>();
         let queries = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(polynomial, &args, queries);
+        let out = toplevel.execute(polynomial, &args, queries).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(58061)]);
-        let inp = toplevel.execute(inverse, &out, queries);
+        let inp = toplevel.execute(inverse, &out, queries).unwrap();
         assert_eq!(inp, args);
     }
 
@@ -743,14 +752,14 @@ mod tests {
         let f = F::from_canonical_u32;
         let args = &[f(1), f(2), f(3), f(4), f(5), f(6), f(7)];
         let queries = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(test, args, queries);
+        let out = toplevel.execute(test, args, queries).unwrap();
         assert_eq!(out.as_ref(), [f(5), f(7), f(9)]);
 
         let test = toplevel.get_by_name("test3");
         let f = F::from_canonical_u32;
         let args = &[f(4), f(9), f(21), f(10)];
         let queries = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(test, args, queries);
+        let out = toplevel.execute(test, args, queries).unwrap();
         assert_eq!(out.as_ref(), [f(1), f(2), f(3), f(4)]);
     }
 
@@ -780,8 +789,7 @@ mod tests {
         queries.inject_inv_queries("double", &toplevel, [(&[f(1)], &[f(2)])]);
         let args = &[f(2)];
 
-        toplevel.execute(half, args, &mut queries);
-        let res1 = queries.get_output(half, args).to_vec();
+        let res1 = toplevel.execute(half, args, &mut queries).unwrap();
         let shard = Shard::new(&queries);
         let traces1 = (
             half_chip.generate_trace(&shard),
@@ -790,8 +798,7 @@ mod tests {
 
         // even after `clean`, the preimg of `double(1)` can still be recovered
         queries.clean();
-        toplevel.execute(half, args, &mut queries);
-        let res2 = queries.get_output(half, args).to_vec();
+        let res2 = toplevel.execute(half, args, &mut queries).unwrap();
         let shard = Shard::new(&queries);
         let traces2 = (
             half_chip.generate_trace(&shard),
@@ -801,8 +808,7 @@ mod tests {
         assert_eq!(traces1, traces2);
 
         queries.clean();
-        toplevel.execute(half, args, &mut queries);
-        let res3 = queries.get_output(half, args).to_vec();
+        let res3 = toplevel.execute(half, args, &mut queries).unwrap();
         let shard = Shard::new(&queries);
         let traces3 = (
             half_chip.generate_trace(&shard),

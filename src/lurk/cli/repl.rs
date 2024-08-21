@@ -284,18 +284,18 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         self.memoize_dag(Tag::Env, &self.env.digest.clone())
     }
 
-    fn retrieve_emitted(&self, queries_tmp: &mut QueryRecord<F>) -> Vec<ZPtr<F>> {
+    fn retrieve_emitted(&self, queries_tmp: &mut QueryRecord<F>) -> Result<Vec<ZPtr<F>>> {
         let mut emitted = Vec::with_capacity(queries_tmp.emitted.len());
         for emitted_raw in queries_tmp.emitted.clone() {
-            let digest = self
-                .toplevel
-                .execute_by_index(self.egress_idx, &emitted_raw, queries_tmp);
+            let digest =
+                self.toplevel
+                    .execute_by_index(self.egress_idx, &emitted_raw, queries_tmp)?;
             emitted.push(ZPtr::from_flat_digest(
                 Tag::from_field(&emitted_raw[0]),
                 &digest,
             ));
         }
-        emitted
+        Ok(emitted)
     }
 
     /// Reduces a Lurk expression with a clone of the REPL's queries so the latest
@@ -305,25 +305,25 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         &mut self,
         expr: &ZPtr<F>,
         env: &ZPtr<F>,
-    ) -> (ZPtr<F>, Vec<ZPtr<F>>) {
+    ) -> Result<(ZPtr<F>, Vec<ZPtr<F>>)> {
         self.prepare_queries();
         let mut queries_tmp = self.queries.clone();
         let result = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
             self.lurk_main_idx,
             &self.build_input(expr, env),
             &mut queries_tmp,
-        ));
-        let emitted = self.retrieve_emitted(&mut queries_tmp);
+        )?);
+        let emitted = self.retrieve_emitted(&mut queries_tmp)?;
         self.queries.inv_func_queries = queries_tmp.inv_func_queries;
         for zptr in &emitted {
             self.memoize_dag(zptr.tag, &zptr.digest);
             println!("{}", self.fmt(zptr));
         }
-        (result, emitted)
+        Ok((result, emitted))
     }
 
     #[inline]
-    pub(crate) fn reduce_aux(&mut self, expr: &ZPtr<F>) -> (ZPtr<F>, Vec<ZPtr<F>>) {
+    pub(crate) fn reduce_aux(&mut self, expr: &ZPtr<F>) -> Result<(ZPtr<F>, Vec<ZPtr<F>>)> {
         let env = self.env;
         self.reduce_aux_with_env(expr, &env)
     }
@@ -362,33 +362,33 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         }
     }
 
-    pub(crate) fn reduce_with_env(&mut self, expr: &ZPtr<F>, env: &ZPtr<F>) -> ZPtr<F> {
+    pub(crate) fn reduce_with_env(&mut self, expr: &ZPtr<F>, env: &ZPtr<F>) -> Result<ZPtr<F>> {
         self.prepare_queries();
         let result = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
             self.lurk_main_idx,
             &self.build_input(expr, env),
             &mut self.queries,
-        ));
+        )?);
         if !self.queries.emitted.is_empty() {
             let mut queries_tmp = self.tmp_queries_for_emitted_retrieval();
-            let emitted = self.retrieve_emitted(&mut queries_tmp);
+            let emitted = self.retrieve_emitted(&mut queries_tmp)?;
             self.retrieve_inv_query_data_from_tmp_queries(queries_tmp);
             for zptr in &emitted {
                 self.memoize_dag(zptr.tag, &zptr.digest);
                 println!("{}", self.fmt(zptr));
             }
         }
-        result
+        Ok(result)
     }
 
     #[inline]
-    pub(crate) fn reduce(&mut self, expr: &ZPtr<F>) -> ZPtr<F> {
+    pub(crate) fn reduce(&mut self, expr: &ZPtr<F>) -> Result<ZPtr<F>> {
         let env = self.env;
         self.reduce_with_env(expr, &env)
     }
 
-    pub(crate) fn handle_non_meta(&mut self, expr: &ZPtr<F>) -> ZPtr<F> {
-        let result = self.reduce(expr);
+    pub(crate) fn handle_non_meta(&mut self, expr: &ZPtr<F>) -> Result<ZPtr<F>> {
+        let result = self.reduce(expr)?;
         self.memoize_dag(result.tag, &result.digest);
         let iterations = self.queries.func_queries[self.eval_idx].len();
         println!(
@@ -396,7 +396,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             pretty_iterations_display(iterations),
             self.fmt(&result)
         );
-        result
+        Ok(result)
     }
 
     fn handle_meta(&mut self, expr: &ZPtr<F>, file_dir: &Utf8Path) -> Result<()> {
@@ -446,10 +446,10 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         if is_meta {
             self.handle_meta(&zptr, file_dir)?;
         } else {
-            let result = self.handle_non_meta(&zptr);
+            let result = self.handle_non_meta(&zptr)?;
             if result.tag == Tag::Err {
                 // error out when loading a file
-                bail!("Reduction error");
+                bail!("Reduction error: {}", self.fmt(&result));
             }
         }
         Ok(new_input)
@@ -511,8 +511,8 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
                                 if let Err(e) = self.handle_meta(&zptr, &self.pwd_path.clone()) {
                                     eprintln!("!Error: {e}");
                                 }
-                            } else {
-                                self.handle_non_meta(&zptr);
+                            } else if let Err(e) = self.handle_non_meta(&zptr) {
+                                eprintln!("Error: {e}");
                             }
                         }
                         Err(Error::NoInput) => {

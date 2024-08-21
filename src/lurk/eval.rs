@@ -1673,11 +1673,13 @@ mod test {
             ingress_args[0] = tag;
             ingress_args[8..].copy_from_slice(&digest);
 
-            toplevel.execute(ingress, &ingress_args, &mut queries);
+            toplevel
+                .execute(ingress, &ingress_args, &mut queries)
+                .unwrap();
             let ingress_out_ptr = queries.get_output(ingress, &ingress_args)[0];
 
             let egress_args = &[tag, ingress_out_ptr];
-            toplevel.execute(egress, egress_args, &mut queries);
+            toplevel.execute(egress, egress_args, &mut queries).unwrap();
             let egress_out = queries.get_output(egress, egress_args);
 
             assert_eq!(

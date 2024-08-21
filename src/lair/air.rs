@@ -525,13 +525,17 @@ mod tests {
 
         let mut queries = QueryRecord::new(&toplevel);
         let factorial_chip = FuncChip::from_name("factorial", &toplevel);
-        toplevel.execute_by_name("factorial", &[F::from_canonical_usize(5)], &mut queries);
+        toplevel
+            .execute_by_name("factorial", &[F::from_canonical_usize(5)], &mut queries)
+            .unwrap();
         let factorial_trace = factorial_chip.generate_trace(&Shard::new(&queries));
         let _ = debug_constraints_collecting_queries(&factorial_chip, &[], None, &factorial_trace);
 
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
-        toplevel.execute_by_name("fib", &[F::from_canonical_usize(7)], &mut queries);
+        toplevel
+            .execute_by_name("fib", &[F::from_canonical_usize(7)], &mut queries)
+            .unwrap();
         let fib_trace = fib_chip.generate_trace(&Shard::new(&queries));
         let _ = debug_constraints_collecting_queries(&fib_chip, &[], None, &fib_trace);
     }
@@ -542,7 +546,7 @@ mod tests {
         let fib_chip = FuncChip::from_name("fib", &toplevel);
         let args = &[field_from_u32(20000)];
         let mut queries = QueryRecord::new(&toplevel);
-        toplevel.execute_by_name("fib", args, &mut queries);
+        toplevel.execute_by_name("fib", args, &mut queries).unwrap();
         let fib_trace = fib_chip.generate_trace(&Shard::new(&queries));
 
         let _ = debug_constraints_collecting_queries(&fib_chip, &[], None, &fib_trace);
@@ -566,13 +570,13 @@ mod tests {
 
         let mut queries = QueryRecord::new(&toplevel);
         let args = &[field_from_u32(4)];
-        toplevel.execute_by_name("not", args, &mut queries);
+        toplevel.execute_by_name("not", args, &mut queries).unwrap();
         let args = &[field_from_u32(8)];
-        toplevel.execute_by_name("not", args, &mut queries);
+        toplevel.execute_by_name("not", args, &mut queries).unwrap();
         let args = &[field_from_u32(0)];
-        toplevel.execute_by_name("not", args, &mut queries);
+        toplevel.execute_by_name("not", args, &mut queries).unwrap();
         let args = &[field_from_u32(1)];
-        toplevel.execute_by_name("not", args, &mut queries);
+        toplevel.execute_by_name("not", args, &mut queries).unwrap();
         let not_trace = not_chip.generate_trace(&Shard::new(&queries));
 
         let not_width = not_chip.width();
@@ -593,13 +597,13 @@ mod tests {
 
         let mut queries = QueryRecord::new(&toplevel);
         let args = &[field_from_u32(4), field_from_u32(2)];
-        toplevel.execute_by_name("eq", args, &mut queries);
+        toplevel.execute_by_name("eq", args, &mut queries).unwrap();
         let args = &[field_from_u32(4), field_from_u32(4)];
-        toplevel.execute_by_name("eq", args, &mut queries);
+        toplevel.execute_by_name("eq", args, &mut queries).unwrap();
         let args = &[field_from_u32(0), field_from_u32(3)];
-        toplevel.execute_by_name("eq", args, &mut queries);
+        toplevel.execute_by_name("eq", args, &mut queries).unwrap();
         let args = &[field_from_u32(0), field_from_u32(0)];
-        toplevel.execute_by_name("eq", args, &mut queries);
+        toplevel.execute_by_name("eq", args, &mut queries).unwrap();
         let eq_trace = eq_chip.generate_trace(&Shard::new(&queries));
 
         let eq_width = eq_chip.width();
@@ -639,13 +643,21 @@ mod tests {
         let mut queries = QueryRecord::new(&toplevel);
         let f = field_from_u32;
         let args = &[f(0), f(0), f(0), f(0)];
-        toplevel.execute_by_name("if_many", args, &mut queries);
+        toplevel
+            .execute_by_name("if_many", args, &mut queries)
+            .unwrap();
         let args = &[f(1), f(3), f(8), f(2)];
-        toplevel.execute_by_name("if_many", args, &mut queries);
+        toplevel
+            .execute_by_name("if_many", args, &mut queries)
+            .unwrap();
         let args = &[f(0), f(0), f(4), f(1)];
-        toplevel.execute_by_name("if_many", args, &mut queries);
+        toplevel
+            .execute_by_name("if_many", args, &mut queries)
+            .unwrap();
         let args = &[f(0), f(0), f(0), f(9)];
-        toplevel.execute_by_name("if_many", args, &mut queries);
+        toplevel
+            .execute_by_name("if_many", args, &mut queries)
+            .unwrap();
 
         let if_many_trace = if_many_chip.generate_trace(&Shard::new(&queries));
 
@@ -700,15 +712,25 @@ mod tests {
         let mut queries = QueryRecord::new(&toplevel);
         let f = field_from_u32;
         let args = &[f(0), f(0)];
-        toplevel.execute_by_name("match_many", args, &mut queries);
+        toplevel
+            .execute_by_name("match_many", args, &mut queries)
+            .unwrap();
         let args = &[f(0), f(1)];
-        toplevel.execute_by_name("match_many", args, &mut queries);
+        toplevel
+            .execute_by_name("match_many", args, &mut queries)
+            .unwrap();
         let args = &[f(1), f(0)];
-        toplevel.execute_by_name("match_many", args, &mut queries);
+        toplevel
+            .execute_by_name("match_many", args, &mut queries)
+            .unwrap();
         let args = &[f(1), f(1)];
-        toplevel.execute_by_name("match_many", args, &mut queries);
+        toplevel
+            .execute_by_name("match_many", args, &mut queries)
+            .unwrap();
         let args = &[f(0), f(8)];
-        toplevel.execute_by_name("match_many", args, &mut queries);
+        toplevel
+            .execute_by_name("match_many", args, &mut queries)
+            .unwrap();
 
         let match_many_trace = match_many_chip.generate_trace(&Shard::new(&queries));
 
@@ -755,7 +777,9 @@ mod tests {
         let mut queries = QueryRecord::new(&toplevel);
         let f = field_from_u32;
         let args = &[f(2), f(4), f(6), f(8)];
-        toplevel.execute_by_name("assert", args, &mut queries);
+        toplevel
+            .execute_by_name("assert", args, &mut queries)
+            .unwrap();
         let chip = FuncChip::from_name("assert", &toplevel);
         let trace = chip.generate_trace(&Shard::new(&queries));
 
@@ -790,13 +814,21 @@ mod tests {
         let mut queries = QueryRecord::new(&toplevel);
         let f = field_from_u32;
         let args = &[f(1)];
-        toplevel.execute_by_name("test", args, &mut queries);
+        toplevel
+            .execute_by_name("test", args, &mut queries)
+            .unwrap();
         let args = &[f(2)];
-        toplevel.execute_by_name("test", args, &mut queries);
+        toplevel
+            .execute_by_name("test", args, &mut queries)
+            .unwrap();
         let args = &[f(3)];
-        toplevel.execute_by_name("test", args, &mut queries);
+        toplevel
+            .execute_by_name("test", args, &mut queries)
+            .unwrap();
         let args = &[f(4)];
-        toplevel.execute_by_name("test", args, &mut queries);
+        toplevel
+            .execute_by_name("test", args, &mut queries)
+            .unwrap();
         let chip = FuncChip::from_name("test", &toplevel);
         let trace = chip.generate_trace(&Shard::new(&queries));
 
@@ -834,7 +866,9 @@ mod tests {
 
         let f = F::from_canonical_usize;
         let args = &[f(100), f(12), f(64)];
-        toplevel.execute_by_name("range_test", args, &mut queries);
+        toplevel
+            .execute_by_name("range_test", args, &mut queries)
+            .unwrap();
         let trace = range_chip.generate_trace(&Shard::new(&queries));
         #[rustfmt::skip]
         let expected_trace = [

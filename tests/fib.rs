@@ -78,7 +78,9 @@ fn fib_e2e() {
     let (args, lurk_main, mut record) = setup(arg, &toplevel);
     let start_time = Instant::now();
 
-    toplevel.execute(lurk_main.func(), &args, &mut record);
+    toplevel
+        .execute(lurk_main.func(), &args, &mut record)
+        .unwrap();
     let config = BabyBearPoseidon2::new();
     let machine = StarkMachine::new(
         config,
