@@ -17,7 +17,7 @@ use p3_field::{AbstractField, Field, PrimeField32};
 
 use ascent::{ascent, Dual};
 
-// #[cfg(feature = "loam")]
+#[cfg(feature = "loam")]
 ascent! {
     // #![trace]
 
@@ -55,10 +55,7 @@ ascent! {
 
     // Final: The canonical cons Ptr relation.
     relation cons_rel(Ptr, Ptr, Ptr); // (car, cdr, cons)
-
-    // Final: Memory to support conses allocated by digest or contents.
     relation cons_digest_mem(Wide, LE); // (value, addr)
-    // Final
     relation cons_mem(Ptr, Ptr, LE); // (car, cdr, addr)
 
     // Register cons value.
@@ -69,13 +66,9 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
     // Fun
 
-    // TODO: this was copied directly from the cons memory, so we should be able to formalize with a macro.
-
-    // Final
+    // Final: The canonical fun Ptr relation.
     relation fun_rel(Ptr, Ptr, Ptr, Ptr); // (args, body, closed-env, fun)
-    // Final
     relation fun_digest_mem(Wide, LE); // (value, addr)
-    // Final
     relation fun_mem(Ptr, Ptr, Ptr, LE); // (args, body, closed-env, addr)
 
     // Register fun value.
@@ -86,13 +79,9 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
     // Thunk
 
-    // TODO: this was copied directly from the fun memory, so we should be able to formalize with a macro.
-
-    // Final
+    // Final: The canonical thunk Ptr relation.
     relation thunk_rel(Ptr, Ptr, Ptr); // (body, closed-env, thunk)
-    // Final
     relation thunk_digest_mem(Wide, LE); // (value, addr)
-    // Final
     relation thunk_mem(Ptr, Ptr, LE); // (body, closed-env, addr)
 
     // Register thunk value.
@@ -536,16 +525,11 @@ ascent! {
     ////////////////////
     // lambda
 
-    // // Signal (for now)
-    // relation lambda_parse(Ptr, Ptr, Ptr); // (expr, env, args-and-body)
-
-    // lambda_parse(expr, env, tail) <--
-    //     eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
-    //     if head.is_lambda();
-
     // register a fun created from a lambda expression as its evaluation
     eval(expr, env, fun) <--
         eval_input(expr, env), cons_rel(head, tail, expr), if head.is_lambda(),
+        cons_rel(args, rest, tail),
+        cons_rel(body, end, rest), if end.is_nil(),
         fun_rel(args, body, env, fun);
 
     ////////////////////
@@ -638,7 +622,7 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
 }
 
-// #[cfg(feature = "loam")]
+#[cfg(feature = "loam")]
 impl DistilledEvaluationProgram {
     pub fn import_memory(&mut self, memory: Memory) {
         self.cons_digest_mem = memory.cons_digest_mem;
@@ -656,7 +640,7 @@ impl DistilledEvaluationProgram {
 }
 
 #[cfg(test)]
-// #[cfg(feature = "loam")]
+#[cfg(feature = "loam")]
 mod test {
     use hashbrown::raw;
     use p3_baby_bear::BabyBear;
@@ -892,16 +876,16 @@ mod test {
     }
 
     #[test]
-    fn test_cons_mem_distilled() {
-        let fibonacci_twice = |n| {
+    fn test_letrec_complex() {
+        let fibonacci = |n| {
             format!(
                 "
 (letrec ((fibonacci (lambda (n) (if (< n 2n) 1n (+ (fibonacci (- n 2n)) (fibonacci (- n 1n)))))))
-  (fibonacci {n}))
+  (fibonacci {n}n))
 "
             )
         };
-        let prog = test_aux(&fibonacci_twice(2), "2n", None);
+        let prog = test_aux(&fibonacci(7), "21n", None);
         test_distilled(&prog);
     }
 
@@ -929,7 +913,10 @@ mod test {
 
     #[test]
     fn test_eq_complex_distilled() {
-        let n = std::env::var("LISP_N").unwrap().parse::<usize>().unwrap();
+        let n = std::env::var("LISP_N")
+            .unwrap_or("4".to_owned())
+            .parse::<usize>()
+            .unwrap_or(4);
         let prog = test_aux(&generate_lisp_program(n, "eq"), "t", None);
         test_distilled(&prog)
     }

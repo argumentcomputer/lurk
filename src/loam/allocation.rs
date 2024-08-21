@@ -52,7 +52,7 @@ impl Allocator {
     }
 }
 
-// #[cfg(feature = "loam")]
+#[cfg(feature = "loam")]
 ascent! {
     // #![trace]
     struct AllocationProgram {
@@ -287,7 +287,7 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
 }
 
-// #[cfg(feature = "loam")]
+#[cfg(feature = "loam")]
 impl AllocationProgram {
     fn cons_mem_is_contiguous(&self) -> bool {
         println!("{:?}", self.cons_mem);
@@ -524,7 +524,7 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
 }
 
-// #[cfg(feature = "loam")]
+#[cfg(feature = "loam")]
 impl DistilledAllocationProgram {
     pub fn import_memory(&mut self, memory: Memory) {
         self.cons_digest_mem = memory.cons_digest_mem;
@@ -533,7 +533,7 @@ impl DistilledAllocationProgram {
 }
 
 #[cfg(test)]
-// #[cfg(feature = "loam")]
+#[cfg(feature = "loam")]
 mod test {
     use p3_baby_bear::BabyBear;
 
@@ -608,10 +608,10 @@ mod test {
 
     #[test]
     fn new_test_cons() {
-        let prog = test_aux("((1 . 2) . (2 . 4))", "((2 . 4) . (4 . 8))");
+        let prog = test_aux("((1n . 2n) . (2n . 4n))", "((2n . 4n) . (4n . 8n))");
         test_distilled(&prog);
 
-        // let prog = test_aux("((1 . 2) . (2 . 3))", "((2 . 4) . (4 . 6))");
-        // test_distilled(&prog);
+        let prog = test_aux("((1n . 2n) . (2n . 3n))", "((2n . 4n) . (4n . 6n))");
+        test_distilled(&prog);
     }
 }

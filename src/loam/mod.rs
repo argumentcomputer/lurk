@@ -115,7 +115,17 @@ impl Ptr {
             PtrEq::NotEqual
         } else {
             // The pointers' addresses are not equal, must check for deep equality
-            PtrEq::DontKnow
+            match self.tag() {
+                // unless the pointers are immediate values
+                Tag::Num | Tag::Err => {
+                    if self.1 == other.1 {
+                        PtrEq::Equal
+                    } else {
+                        PtrEq::NotEqual
+                    }
+                }
+                _ => PtrEq::DontKnow,
+            }
         }
     }
 }
@@ -191,6 +201,10 @@ impl WidePtr {
 
     fn empty_env() -> Self {
         Self::nil()
+    }
+
+    fn tag(&self) -> Tag {
+        Tag::from_field(&self.0.f())
     }
 
     fn to_zptr(&self) -> ZPtr<LE> {

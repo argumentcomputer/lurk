@@ -200,7 +200,7 @@ impl Tag {
 
 // Because it's hard to share code between ascent programs, this is a copy of `AllocationProgam`, replacing the `map_double` function
 // with evaluation
-// #[cfg(feature = "loam")]
+#[cfg(feature = "loam")]
 ascent! {
     // #![trace]
 
@@ -456,7 +456,8 @@ ascent! {
     input_ptr(expr_ptr, env_ptr) <--
         toplevel_input(expr, env),
         ptr_value(expr_ptr, expr.1),
-        ptr_value(env_ptr, env.1);
+        ptr_value(env_ptr, env.1),
+        if expr_ptr.tag() == expr.tag() && env_ptr.tag() == env.tag();
 
     // mark ingress conses for unhashing.
     unhash4(Tag::Cons.elt(), digest) <-- ingress(ptr), if ptr.is_cons(), ptr_value(ptr, digest);
@@ -1091,26 +1092,26 @@ ascent! {
     // lambda
 
     // Signal
-    relation lambda_parse(Ptr, Ptr, Ptr); // (expr, env, args-and-body)
+    relation lambda_cont1(Ptr, Ptr, Ptr); // (expr, env, args-and-body)
+    relation lambda_cont2(Ptr, Ptr, Ptr, Ptr); // (expr, env, args, body)
 
-    ingress(tail), lambda_parse(expr, env, tail) <--
-        eval_input(expr, env), cons_rel(head, tail, expr), ptr_value(head, head_value),
-        if head.is_lambda();
+    ingress(tail), lambda_cont1(expr, env, tail) <--
+        eval_input(expr, env), cons_rel(head, tail, expr), if head.is_lambda();
 
     // Signal
     ingress(rest) <--
-        lambda_parse(expr, env, tail),
+        lambda_cont1(expr, env, tail),
         cons_rel(args, rest, tail);
 
     // Signal: create a fun from a parsed lambda evaluation
-    fun(args, body, env) <--
-        lambda_parse(expr, env, tail),
+    fun(args, body, env), lambda_cont2(expr, env, args, body) <--
+        lambda_cont1(expr, env, tail),
         cons_rel(args, rest, tail),
         cons_rel(body, end, rest), if end.is_nil(); // TODO: otherwise error
 
     // register a fun created from a lambda expression as its evaluation
     eval(expr, env, fun) <--
-        eval_input(expr, env), cons_rel(head, tail, expr), if head.is_lambda(),
+        lambda_cont2(expr, env, args, body),
         fun_rel(args, body, env, fun);
 
     ////////////////////
@@ -1204,7 +1205,7 @@ ascent! {
 
 }
 
-// #[cfg(feature = "loam")]
+#[cfg(feature = "loam")]
 impl LoamProgram for EvaluationProgram {
     fn allocator(&self) -> &Allocator {
         &self.allocator
@@ -1237,7 +1238,7 @@ impl LoamProgram for EvaluationProgram {
 }
 
 #[cfg(test)]
-// #[cfg(feature = "loam")]
+#[cfg(feature = "loam")]
 mod test {
     use itertools::Itertools;
     use p3_baby_bear::BabyBear;
@@ -1581,58 +1582,58 @@ mod test {
         let fibonacci_twice = |n| {
             format!(
                 "
-(letrec ((fibonacci (lambda (n) (if (< n 2) 1 (let ((a (fibonacci (- n 1))) (b (fibonacci (- n 2)))) (+ a b))))))
-  (+ (fibonacci {n}) (fibonacci {n})))
+(letrec ((fibonacci (lambda (n) (if (< n 2n) 1n (let ((a (fibonacci (- n 1n))) (b (fibonacci (- n 2n)))) (+ a b))))))
+  (+ (fibonacci {n}n) (fibonacci {n}n)))
 "
             )
         };
-        test_aux(&fibonacci_twice(7), "42", None);
+        test_aux(&fibonacci_twice(7), "42n", None);
     }
 
     #[test]
     fn test_cons_simple() {
-        test_aux("(cons 1 2)", "(1 . 2)", None);
+        test_aux("(cons 1n 2n)", "(1n . 2n)", None);
     }
 
     #[test]
     fn test_car_cdr_cons_simple() {
-        test_aux("(car (cons 1 2))", "1", None);
-        test_aux("(cdr (cons 1 2))", "2", None);
+        test_aux("(car (cons 1n 2n))", "1n", None);
+        test_aux("(cdr (cons 1n 2n))", "2n", None);
     }
 
     #[test]
     fn test_atom_simple() {
-        test_aux("(atom 1)", "t", None);
+        test_aux("(atom 1n)", "t", None);
         test_aux("(atom nil)", "t", None);
-        test_aux("(atom (cons 1 2))", "nil", None);
+        test_aux("(atom (cons 1n 2n))", "nil", None);
     }
 
     #[test]
     fn test_quote_simple() {
-        // test_aux("(quote 1)", "1", None);
-        // test_aux("(quote (1 . 2))", "(1 . 2)", None);
-        // test_aux("(quote (cons 1 2))", "(cons 1 2)", None);
-        test_aux("(car (quote (1 . 2)))", "1", None);
+        test_aux("(quote 1n)", "1n", None);
+        test_aux("(quote (1n . 2n))", "(1n . 2n)", None);
+        test_aux("(quote (cons 1n 2n))", "(cons 1n 2n)", None);
+        test_aux("(car (quote (1n . 2n)))", "1n", None);
     }
 
     #[test]
     fn test_map_double_cons() {
         let map_double = "
-(letrec ((input (quote ((1 . 2) . (2 . 4))))
+(letrec ((input (quote ((1n . 2n) . (2n . 4n))))
          (map-double (lambda (x) (if (atom x) (+ x x) (cons (map-double (car x))  (map-double (cdr x)))))))
     (map-double input))
         ";
-        test_aux(map_double, "((2 . 4) . (4 . 8))", None);
+        test_aux(map_double, "((2n . 4n) . (4n . 8n))", None);
     }
 
     #[test]
     fn test_eq_simple() {
-        // test_aux("(eq 1 1)", "t", None);
-        // test_aux("(eq 1 2)", "nil", None);
-        // test_aux("(eq (cons 1 2) (quote (1 . 2)))", "t", None);
-        // test_aux("((lambda (x) (eq (cons 1 2) x)) '(1 . 2))", "t", None);
+        test_aux("(eq 1n 1n)", "t", None);
+        test_aux("(eq 1n 2n)", "nil", None);
+        test_aux("(eq (cons 1n 2n) (quote (1n . 2n)))", "t", None);
+        test_aux("((lambda (x) (eq (cons 1n 2n) x)) '(1n . 2n))", "t", None);
         test_aux(
-            "((lambda (x) (let ((a (cons 1 2))) (eq a x))) '(1 . 2))",
+            "((lambda (x) (let ((a (cons 1n 2n))) (eq a x))) '(1n . 2n))",
             "t",
             None,
         );
@@ -1640,8 +1641,11 @@ mod test {
 
     #[test]
     fn test_eq_complex() {
-        let n = std::env::var("LISP_N").unwrap().parse::<usize>().unwrap();
-        test_aux(&generate_lisp_program(n, "cons"), "t", None);
+        let n = std::env::var("LISP_N")
+            .unwrap_or("4".to_owned())
+            .parse::<usize>()
+            .unwrap_or(4);
+        test_aux(&generate_lisp_program(n, "eq"), "t", None);
     }
 
     #[test]

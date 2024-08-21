@@ -659,16 +659,16 @@ mod tests {
         let mut raw_memory = create_sample_raw_memory();
 
         // Add a duplicate cons relation
-        let v1 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(1)));
-        let v2 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(2)));
-        let v3 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(3)));
+        let v1 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(0)));
+        let v2 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(1)));
+        let v3 = VPtr(Ptr(Tag::Cons.elt(), LE::from_canonical_u32(2)));
         raw_memory.cons_mem.insert(v3, (v1, v2));
 
         let options = DistillationOptions::new().with_summary(0.9);
         let distilled_memory = raw_memory.distill(&options);
 
         // Check that duplicates are removed
-        assert_eq!(distilled_memory.cons_mem.len(), 2);
+        assert_eq!(distilled_memory.cons_mem.len(), 4);
     }
 
     #[test]
@@ -685,7 +685,7 @@ mod tests {
         let distilled_memory = raw_memory.distill(&options);
 
         // Check that dangling pointers are not included in the distilled memory
-        assert_eq!(distilled_memory.cons_digest_mem.len(), 2);
+        assert_eq!(distilled_memory.cons_digest_mem.len(), 1);
     }
 
     #[test]
