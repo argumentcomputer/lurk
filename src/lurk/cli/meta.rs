@@ -46,7 +46,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         example: &["!(assert t)", "!(assert (eq 3 (+ 1 2)))"],
         run: |repl, args, _path| {
             let expr = *repl.peek1(args)?;
-            let (result, _) = repl.reduce_aux(&expr);
+            let (result, _) = repl.reduce_aux(&expr)?;
             if result.tag == Tag::Err {
                 bail!("Reduction error: {}", repl.fmt(&result));
             }
@@ -66,11 +66,11 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         example: &["!(assert-eq 3 (+ 1 2))"],
         run: |repl, args, _path| {
             let (&expr1, &expr2) = repl.peek2(args)?;
-            let (result1, _) = repl.reduce_aux(&expr1);
+            let (result1, _) = repl.reduce_aux(&expr1)?;
             if result1.tag == Tag::Err {
                 bail!("LHS reduction error: {}", repl.fmt(&result1));
             }
-            let (result2, _) = repl.reduce_aux(&expr2);
+            let (result2, _) = repl.reduce_aux(&expr2)?;
             if result2.tag == Tag::Err {
                 bail!("RHS reduction error: {}", repl.fmt(&result2));
             }
@@ -96,7 +96,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         example: &["!(assert-error (1 1))"],
         run: |repl, args, _path| {
             let expr = *repl.peek1(args)?;
-            let (result, _) = repl.reduce_aux(&expr);
+            let (result, _) = repl.reduce_aux(&expr)?;
             if result.tag != Tag::Err {
                 eprintln!(
                     "`assert-error` failed. {} doesn't result on evaluation error.",
@@ -119,8 +119,8 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         example: &["!(assert-emitted '(1 2) (begin (emit 1) (emit 2)))"],
         run: |repl, args, _path| {
             let (&expected_expr, &expr) = repl.peek2(args)?;
-            let (expected, _) = repl.reduce_aux(&expected_expr);
-            let (result, emitted) = repl.reduce_aux(&expr);
+            let (expected, _) = repl.reduce_aux(&expected_expr)?;
+            let (result, emitted) = repl.reduce_aux(&expr)?;
             if result.tag == Tag::Err {
                 bail!("Reduction error: {}", repl.fmt(&result));
             }
@@ -171,7 +171,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             let current_env = repl.zstore.intern_symbol(&lurk_sym("current-env"));
             let current_env_call = repl.zstore.intern_list([current_env]);
             let expr = repl.zstore.intern_list([let_, bindings, current_env_call]);
-            let (output, _) = repl.reduce_aux(&expr);
+            let (output, _) = repl.reduce_aux(&expr)?;
             if output.tag != Tag::Env {
                 bail!("Reduction resulted in {}", repl.fmt(&output));
             }
@@ -202,7 +202,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             let expr = repl
                 .zstore
                 .intern_list([letrec, bindings, current_env_call]);
-            let (output, _) = repl.reduce_aux(&expr);
+            let (output, _) = repl.reduce_aux(&expr)?;
             if output.tag != Tag::Env {
                 bail!("Reduction resulted in {}", repl.fmt(&output));
             }
@@ -232,7 +232,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         example: &["!(set-env (eval '(let ((a 1)) (current-env))))", "a"],
         run: |repl, args, _path| {
             let env_expr = *repl.peek1(args)?;
-            let (env, _) = repl.reduce_aux(&env_expr);
+            let (env, _) = repl.reduce_aux(&env_expr)?;
             if env.tag != Tag::Env {
                 bail!("Value must be an environment");
             }
@@ -278,7 +278,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
     }
 
     fn hide(secret: ZPtr<F>, payload_expr: &ZPtr<F>, repl: &mut Repl<F, H>) -> Result<()> {
-        let (payload, _) = repl.reduce_aux(payload_expr);
+        let (payload, _) = repl.reduce_aux(payload_expr)?;
         if payload.tag == Tag::Err {
             bail!("Payload reduction error: {}", repl.fmt(&payload));
         }
@@ -296,7 +296,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         example: &["!(hide (commit 123) 42)"],
         run: |repl, args, _path| {
             let (&secret_expr, &payload_expr) = repl.peek2(args)?;
-            let (secret, _) = repl.reduce_aux(&secret_expr);
+            let (secret, _) = repl.reduce_aux(&secret_expr)?;
             if secret.tag != Tag::Comm {
                 bail!("Secret must reduce to a commitment");
             }
@@ -390,7 +390,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
                 Self::fetch_comm_data(repl, &callable, None)?;
             }
         }
-        Ok(repl.handle_non_meta(call_expr))
+        repl.handle_non_meta(call_expr)
     }
 
     const CALL: Self = Self {
@@ -459,7 +459,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             if new_state_sym.tag != Tag::Sym {
                 bail!("First argument must be a symbol");
             }
-            let (current_state, _) = repl.reduce_aux(&current_state_expr);
+            let (current_state, _) = repl.reduce_aux(&current_state_expr)?;
             if current_state.tag != Tag::Cons {
                 bail!("Current state must reduce to a pair");
             }
@@ -571,7 +571,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             if path.tag != Tag::Str {
                 bail!("Path must be a string");
             }
-            let (result, _) = repl.reduce_aux(&expr);
+            let (result, _) = repl.reduce_aux(&expr)?;
             if result.tag == Tag::Err {
                 bail!("Reduction error: {}", repl.fmt(&result));
             }
@@ -737,7 +737,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         run: |repl, args, _path| {
             if args.tag != Tag::Nil {
                 let expr = *repl.peek1(args)?;
-                repl.handle_non_meta(&expr);
+                repl.handle_non_meta(&expr)?;
             }
             let proof_key = repl.prove_last_reduction()?;
             println!("Proof key: \"{proof_key}\"");
@@ -842,7 +842,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         for (var, arg) in vars_vec.into_iter().zip(args_vec_reduced) {
             env = repl.zstore.intern_env(var, arg, env);
         }
-        let (io_data, _) = repl.reduce_aux_with_env(body, &env);
+        let (io_data, _) = repl.reduce_aux_with_env(body, &env)?;
         if io_data.tag != Tag::Cons {
             bail!("Protocol body must return a pair");
         }
@@ -861,7 +861,8 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         if post_verify_predicate.tag != Tag::Nil {
             let post_verify_call = repl.zstore.intern_list([post_verify_predicate]);
             let empty_env = repl.zstore.intern_empty_env();
-            let (post_verify_result, _) = repl.reduce_aux_with_env(&post_verify_call, &empty_env);
+            let (post_verify_result, _) =
+                repl.reduce_aux_with_env(&post_verify_call, &empty_env)?;
             if post_verify_result.tag == Tag::Nil {
                 bail!("Post-verification predicate rejected the input");
             }
@@ -895,7 +896,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
             }
             let path_str = repl.zstore.fetch_string(path);
 
-            let (protocol, _) = repl.reduce_aux(&protocol_expr);
+            let (protocol, _) = repl.reduce_aux(&protocol_expr)?;
             let (vars_vec, &body) = Self::get_vars_vec_and_body(repl, &protocol)?;
             let vars_vec = copy_inner(vars_vec);
 
@@ -912,7 +913,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
             let args_vec = copy_inner(args_vec);
             let mut args_vec_reduced = Vec::with_capacity(args_vec.len());
             for arg in args_vec.iter() {
-                args_vec_reduced.push(repl.reduce_aux(arg).0);
+                args_vec_reduced.push(repl.reduce_aux(arg)?.0);
             }
 
             let (&claim, &post_verify_predicate) = Self::get_claim_and_post_verify_predicade(
@@ -929,7 +930,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
                 bail!("Malformed protocol claim");
             }
             let (&expr, &env) = repl.zstore.fetch_tuple2(expr_env);
-            let result = repl.reduce_with_env(&expr, &env);
+            let result = repl.reduce_with_env(&expr, &env)?;
             if result != expected_result {
                 bail!("Mismatch between result and expected result");
             }
@@ -966,7 +967,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
             }
             let path_str = repl.zstore.fetch_string(path);
 
-            let (protocol, _) = repl.reduce_aux(&protocol_expr);
+            let (protocol, _) = repl.reduce_aux(&protocol_expr)?;
             let (vars_vec, &body) = Self::get_vars_vec_and_body(repl, &protocol)?;
             let vars_vec = copy_inner(vars_vec);
 

@@ -61,7 +61,9 @@ fn run_test(
     input[16..].copy_from_slice(&env.digest);
 
     let lurk_main = FuncChip::from_name("lurk_main", toplevel);
-    let result = toplevel.execute(lurk_main.func, &input, &mut record);
+    let result = toplevel
+        .execute(lurk_main.func, &input, &mut record)
+        .unwrap();
 
     assert_eq!(result.as_ref(), &expected_cloj(zstore).flatten());
 

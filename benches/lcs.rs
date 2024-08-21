@@ -80,7 +80,9 @@ fn evaluation(c: &mut Criterion) {
         b.iter_batched(
             || (args.clone(), record.clone()),
             |(args, mut queries)| {
-                toplevel.execute(lurk_main.func(), &args, &mut queries);
+                toplevel
+                    .execute(lurk_main.func(), &args, &mut queries)
+                    .unwrap();
             },
             BatchSize::SmallInput,
         )
@@ -92,7 +94,9 @@ fn trace_generation(c: &mut Criterion) {
     c.bench_function("trace-generation", |b| {
         let (toplevel, _) = build_lurk_toplevel();
         let (args, lurk_main, mut record) = setup(args.0, args.1, &toplevel);
-        toplevel.execute(lurk_main.func(), &args, &mut record);
+        toplevel
+            .execute(lurk_main.func(), &args, &mut record)
+            .unwrap();
         let lair_chips = build_lair_chip_vector(&lurk_main);
         b.iter(|| {
             lair_chips.par_iter().for_each(|func_chip| {
@@ -112,7 +116,9 @@ fn e2e(c: &mut Criterion) {
         b.iter_batched(
             || (record.clone(), args.clone()),
             |(mut record, args)| {
-                toplevel.execute(lurk_main.func(), &args, &mut record);
+                toplevel
+                    .execute(lurk_main.func(), &args, &mut record)
+                    .unwrap();
                 let config = BabyBearPoseidon2::new();
                 let machine = StarkMachine::new(
                     config,

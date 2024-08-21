@@ -274,7 +274,7 @@ mod test {
             f(0),
             f(0),
         ];
-        let out = toplevel.execute_by_name("add", args, &mut queries);
+        let out = toplevel.execute_by_name("add", args, &mut queries).unwrap();
         assert_eq!(
             out.as_ref(),
             &[f(0), f(1), f(0), f(0), f(0), f(0), f(0), f(0)]
@@ -330,7 +330,7 @@ mod test {
             f(0),
             f(0),
         ];
-        let out = toplevel.execute_by_name("sub", args, &mut queries);
+        let out = toplevel.execute_by_name("sub", args, &mut queries).unwrap();
         assert_eq!(
             out.as_ref(),
             &[f(255), f(0), f(0), f(0), f(0), f(0), f(0), f(0)]
@@ -390,7 +390,7 @@ mod test {
             f(0),
             f(0),
         ];
-        let out = toplevel.execute_by_name("mul", args, &mut queries);
+        let out = toplevel.execute_by_name("mul", args, &mut queries).unwrap();
         assert_eq!(
             out.as_ref(),
             &[f(0), f(0), f(0), f(0), f(1), f(0), f(0), f(0)]
@@ -446,7 +446,9 @@ mod test {
             f(0),
             f(0),
         ];
-        let out = toplevel.execute_by_name("divrem", args, &mut queries);
+        let out = toplevel
+            .execute_by_name("divrem", args, &mut queries)
+            .unwrap();
         assert_eq!(
             out.as_ref(),
             &[
@@ -520,7 +522,9 @@ mod test {
             f(0),
             f(0),
         ];
-        let out = toplevel.execute_by_name("lessthan", args, &mut queries);
+        let out = toplevel
+            .execute_by_name("lessthan", args, &mut queries)
+            .unwrap();
         assert_eq!(out.as_ref(), &[f(1)]);
 
         let lair_chips = build_lair_chip_vector(&lessthan_chip);
@@ -555,7 +559,9 @@ mod test {
         let f = F::from_canonical_usize;
         // Little endian
         let args = &[f(0), f(0), f(0), f(0), f(0), f(0), f(0), f(0)];
-        let out = toplevel.execute_by_name("iszero", args, &mut queries);
+        let out = toplevel
+            .execute_by_name("iszero", args, &mut queries)
+            .unwrap();
         assert_eq!(out.as_ref(), &[f(1)]);
 
         let lair_chips = build_lair_chip_vector(&iszero_chip);
@@ -574,7 +580,9 @@ mod test {
 
         let mut queries = QueryRecord::new(&toplevel);
         let args = &[f(0), f(0), f(0), f(123), f(0), f(0), f(0), f(0)];
-        let out = toplevel.execute_by_name("iszero", args, &mut queries);
+        let out = toplevel
+            .execute_by_name("iszero", args, &mut queries)
+            .unwrap();
         assert_eq!(out.as_ref(), &[f(0)]);
 
         let lair_chips = build_lair_chip_vector(&iszero_chip);

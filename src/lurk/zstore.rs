@@ -998,7 +998,9 @@ mod test {
         input[0] = expr_tag.to_field();
         input[8..16].copy_from_slice(&expr_digest);
 
-        let output = toplevel.execute_by_name("lurk_main", &input, record);
+        let output = toplevel
+            .execute_by_name("lurk_main", &input, record)
+            .unwrap();
 
         let output_tag = Tag::from_field(&output[0]);
         let output_digest = &output[8..];

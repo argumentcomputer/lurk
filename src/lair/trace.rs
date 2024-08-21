@@ -403,7 +403,9 @@ mod tests {
         let mut queries = QueryRecord::new(&toplevel);
 
         let args = &[F::from_canonical_u32(5)];
-        toplevel.execute_by_name("factorial", args, &mut queries);
+        toplevel
+            .execute_by_name("factorial", args, &mut queries)
+            .unwrap();
         let trace = factorial_chip.generate_trace(&Shard::new(&queries));
         #[rustfmt::skip]
         let expected_trace = [
@@ -425,7 +427,7 @@ mod tests {
 
         let mut queries = QueryRecord::new(&toplevel);
         let args = &[F::from_canonical_u32(7)];
-        toplevel.execute_by_name("fib", args, &mut queries);
+        toplevel.execute_by_name("fib", args, &mut queries).unwrap();
         let trace = fib_chip.generate_trace(&Shard::new(&queries));
 
         #[rustfmt::skip]
@@ -486,7 +488,9 @@ mod tests {
 
         let args = &[F::from_canonical_u32(5), F::from_canonical_u32(2)];
         let mut queries = QueryRecord::new(&toplevel);
-        toplevel.execute_by_name("test", args, &mut queries);
+        toplevel
+            .execute_by_name("test", args, &mut queries)
+            .unwrap();
         let trace = test_chip.generate_trace(&Shard::new(&queries));
         #[rustfmt::skip]
         let expected_trace = [
@@ -555,10 +559,10 @@ mod tests {
         let three = &[F::from_canonical_u32(1), F::from_canonical_u32(1)];
         let mut queries = QueryRecord::new(&toplevel);
         let test_func = toplevel.get_by_name("test");
-        toplevel.execute(test_func, zero, &mut queries);
-        toplevel.execute(test_func, one, &mut queries);
-        toplevel.execute(test_func, two, &mut queries);
-        toplevel.execute(test_func, three, &mut queries);
+        toplevel.execute(test_func, zero, &mut queries).unwrap();
+        toplevel.execute(test_func, one, &mut queries).unwrap();
+        toplevel.execute(test_func, two, &mut queries).unwrap();
+        toplevel.execute(test_func, three, &mut queries).unwrap();
         let trace = test_chip.generate_trace(&Shard::new(&queries));
 
         let expected_trace = [
@@ -608,7 +612,9 @@ mod tests {
         // These inputs should perform enough recursive calls (5242889) to
         // generate 2 shards with the default shard size of 1 << 22
         let inp = &[f(3), f(18)];
-        let out = toplevel.execute_by_name("ackermann", inp, &mut queries);
+        let out = toplevel
+            .execute_by_name("ackermann", inp, &mut queries)
+            .unwrap();
         // For constant m = 3, A(3, n) = 2^(n + 3) - 3
         assert_eq!(out[0], f(2097149));
 

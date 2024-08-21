@@ -241,7 +241,9 @@ mod tests {
         let chip = FuncChip::from_name("factorial", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
 
-        toplevel.execute_by_name("factorial", &[F::from_canonical_u8(5)], &mut queries);
+        toplevel
+            .execute_by_name("factorial", &[F::from_canonical_u8(5)], &mut queries)
+            .unwrap();
 
         let config = BabyBearPoseidon2::new();
         let machine = StarkMachine::new(
