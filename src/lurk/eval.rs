@@ -162,10 +162,13 @@ pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
 pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
         fn ingress(tag_full: [8], digest: [8]): [1] {
-            let (tag, _rest: [7]) = tag_full;
+            let zeros = [0; 7];
+            let (tag, rest: [7]) = tag_full;
+            assert_eq!(rest, zeros);
             match tag {
                 Tag::Num, Tag::Char, Tag::Err => {
-                    let (x, _rest: [7]) = digest;
+                    let (x, rest: [7]) = digest;
+                    assert_eq!(rest, zeros);
                     return x
                 }
                 Tag::Nil => {
@@ -211,9 +214,10 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
                 }
                 Tag::Thunk => {
                     let (fst_tag, padding: [7], fst_digest: [8], snd_digest: [8]) = preimg(hash_24_8, digest);
-                    let snd_tag = Tag::Env;
+                    assert_eq!(padding, zeros);
+                    let env_tag = Tag::Env;
                     let fst_ptr = call(ingress, fst_tag, padding, fst_digest);
-                    let snd_ptr = call(ingress, snd_tag, padding, snd_digest);
+                    let snd_ptr = call(ingress, env_tag, padding, snd_digest);
                     let ptr = store(fst_tag, fst_ptr, snd_ptr);
                     return ptr
                 }
@@ -226,7 +230,6 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
                     let trd_ptr = call(ingress, trd_tag_full, trd_digest);
                     let (fst_tag, _rest: [7]) = fst_tag_full;
                     let (snd_tag, _rest: [7]) = snd_tag_full;
-                    let (_trd_tag, _rest: [7]) = trd_tag_full;
                     let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr, trd_ptr);
                     return ptr
                 }
@@ -239,6 +242,7 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
                          val_tag, padding: [7],
                          val_digest: [8],
                          env_digest: [8]) = preimg(hash_32_8, digest);
+                    assert_eq!(padding, zeros);
                     let sym_tag = Tag::Sym;
                     let env_tag = Tag::Env;
                     let sym_ptr = call(ingress, sym_tag, padding, sym_digest);
