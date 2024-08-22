@@ -239,7 +239,7 @@ const LURK_PACKAGE_SYMBOL_NAME: &str = "lurk";
 const USER_PACKAGE_SYMBOL_NAME: &str = "user";
 const META_PACKAGE_SYMBOL_NAME: &str = "meta";
 
-pub(crate) const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 36] = [
+pub(crate) const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 37] = [
     "atom",
     "begin",
     "car",
@@ -276,9 +276,10 @@ pub(crate) const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 36] = [
     ">",
     "<=",
     ">=",
+    "breakpoint",
 ];
 
-const META_PACKAGE_SYMBOLS_NAMES: [&str; 29] = [
+const META_PACKAGE_SYMBOLS_NAMES: [&str; 30] = [
     "def",
     "defrec",
     "load",
@@ -286,6 +287,7 @@ const META_PACKAGE_SYMBOLS_NAMES: [&str; 29] = [
     "assert-eq",
     "assert-emitted",
     "assert-error",
+    "debug",
     "commit",
     "hide",
     "fetch",

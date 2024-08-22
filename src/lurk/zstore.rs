@@ -1009,7 +1009,7 @@ mod test {
         input[8..16].copy_from_slice(&expr_digest);
 
         let output = toplevel
-            .execute_by_name("lurk_main", &input, record)
+            .execute_by_name("lurk_main", &input, record, None)
             .unwrap();
 
         let output_tag = Tag::from_field(&output[0]);

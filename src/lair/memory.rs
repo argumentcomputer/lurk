@@ -142,7 +142,9 @@ mod tests {
         let toplevel = Toplevel::<F, Nochip>::new_pure(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
-        toplevel.execute_by_name("test", &[], &mut queries).unwrap();
+        toplevel
+            .execute_by_name("test", &[], &mut queries, None)
+            .unwrap();
         let func_trace = test_chip.generate_trace(&Shard::new(&queries));
 
         #[rustfmt::skip]

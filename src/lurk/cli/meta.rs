@@ -22,7 +22,7 @@ use crate::{
     },
 };
 
-use super::{comm_data::CommData, lurk_data::LurkData, proofs::ProtocolProof};
+use super::{comm_data::CommData, debug::debug_mode, lurk_data::LurkData, proofs::ProtocolProof};
 
 #[allow(dead_code)]
 #[allow(clippy::type_complexity)]
@@ -135,6 +135,40 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
                 );
                 std::process::exit(1);
             }
+            Ok(())
+        },
+    };
+
+    const DEBUG: Self = Self {
+        name: "debug",
+        summary: "Enters the debug mode for a reduction",
+        format: "!(debug <expr>?)",
+        info: &[
+            "There are three kinds of lines shown in debug mode:",
+            " ?<d>: <e>       - at depth <d>, <e> will be evaluated",
+            "  <d>: <e> ↦ <r> - at depth <d>, <e> evaluated to <r>",
+            " !<d>: <e> ↦ <r> - at depth <d>, <e> evaluated to <r> (memoized)",
+            "You can use the following keys to navigate:",
+            " ↓            - next line",
+            " ↑            - previous line",
+            " →            - line for the next entry in the same depth",
+            " ←            - line for the previous entry in the same depth",
+            " ^↓/PgDn      - scroll down",
+            " ^↑/PgUp      - scroll up",
+            " ^→/Space     - next breakpoint",
+            " ^←/Backspace - previous breakpoint",
+            " Home         - first line",
+            " End          - last line",
+            " Esc/q        - quit debug mode",
+        ],
+        example: &["(+ 1 1)", "!(debug)", "!(debug (+ 1 1))"],
+        run: |repl, args, _path| {
+            if args.tag != Tag::Nil {
+                let expr = *repl.peek1(args)?;
+                repl.handle_non_meta(&expr)?;
+            }
+            let formatted_debug_data = repl.format_debug_data();
+            debug_mode(&formatted_debug_data)?;
             Ok(())
         },
     };
@@ -1026,6 +1060,7 @@ pub(crate) fn meta_cmds<H: Chipset<F>>() -> MetaCmdsMap<F, H> {
         MetaCmd::ASSERT_EQ,
         MetaCmd::ASSERT_ERROR,
         MetaCmd::ASSERT_EMITTED,
+        MetaCmd::DEBUG,
         MetaCmd::LOAD,
         MetaCmd::DEF,
         MetaCmd::DEFREC,

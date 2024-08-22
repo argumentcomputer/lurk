@@ -1,5 +1,6 @@
 mod comm_data;
 mod config;
+mod debug;
 mod lurk_data;
 mod meta;
 mod paths;

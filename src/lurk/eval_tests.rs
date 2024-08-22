@@ -62,7 +62,7 @@ fn run_test(
 
     let lurk_main = FuncChip::from_name("lurk_main", toplevel);
     let result = toplevel
-        .execute(lurk_main.func, &input, &mut record)
+        .execute(lurk_main.func, &input, &mut record, None)
         .unwrap();
 
     assert_eq!(result.as_ref(), &expected_cloj(zstore).flatten());
@@ -255,6 +255,7 @@ test!(test_type_eq2, "(type-eq (+ 1 1) 'a')", |z| z.intern_nil());
 test!(test_type_eqq1, "(type-eqq (nil) (cons 1 2))", |z| z
     .intern_symbol(&lurk_sym("t")));
 test!(test_type_eqq2, "(type-eqq 2 'a')", |z| z.intern_nil());
+test!(test_breakpoint, "(breakpoint)", |z| z.intern_nil());
 
 // coercions
 test!(test_char1, "(char 'a')", |z| z.intern_char('a'));

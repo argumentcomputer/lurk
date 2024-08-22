@@ -4,6 +4,7 @@ use nom::sequence::delimited;
 use nom::Parser;
 use p3_baby_bear::BabyBear;
 use p3_field::{Field, PrimeField32};
+use rustc_hash::FxHashMap;
 use rustyline::{
     error::ReadlineError,
     history::DefaultHistory,
@@ -20,7 +21,7 @@ use std::{fmt::Debug, marker::PhantomData};
 use crate::{
     lair::{
         chipset::Chipset,
-        execute::{QueryRecord, Shard},
+        execute::{DebugEntry, DebugEntryKind, QueryRecord, QueryResult, Shard},
         func_chip::FuncChip,
         lair_chip::{build_chip_vector, LairChip, LairMachineProgram},
         toplevel::Toplevel,
@@ -44,6 +45,7 @@ use crate::{
 };
 
 use super::{
+    debug::{FormattedDebugData, FormattedDebugEntry},
     paths::proofs_dir,
     proofs::{CryptoProof, IOProof},
 };
@@ -95,6 +97,17 @@ impl<F: Field + Debug> Validator for InputValidator<F> {
             Ok(result)
         }
     }
+}
+
+enum ProcessedDebugEntryKind<F> {
+    Push(ZPtr<F>),
+    Pop(ZPtr<F>, ZPtr<F>),
+    Memoized(ZPtr<F>, ZPtr<F>),
+}
+
+struct ProcessedDebugEntry<F> {
+    dbg_depth: usize,
+    kind: ProcessedDebugEntryKind<F>,
 }
 
 pub(crate) struct Repl<F: PrimeField32, H: Chipset<F>> {
@@ -241,10 +254,8 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
 
     fn input_marker(&self) -> String {
         let state = self.state.borrow();
-        format!(
-            "{}> ",
-            state.fmt_to_string(state.get_current_package_name())
-        )
+        let current_package_name = state.fmt_to_string(state.get_current_package_name());
+        format!("{current_package_name}> ")
     }
 
     #[inline]
@@ -254,6 +265,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
 
     fn prepare_queries(&mut self) {
         self.queries.clean();
+        // TODO: figure out a way to get rid of these increasingly costier operations
         self.queries
             .inject_inv_queries("hash_24_8", &self.toplevel, &self.zstore.hashes3);
         self.queries
@@ -269,6 +281,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         input
     }
 
+    #[inline]
     pub(crate) fn memoize_dag(&mut self, tag: Tag, digest: &[F]) {
         self.zstore.memoize_dag(
             tag,
@@ -284,18 +297,93 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         self.memoize_dag(Tag::Env, &self.env.digest.clone())
     }
 
-    fn retrieve_emitted(&self, queries_tmp: &mut QueryRecord<F>) -> Result<Vec<ZPtr<F>>> {
-        let mut emitted = Vec::with_capacity(queries_tmp.emitted.len());
-        for emitted_raw in queries_tmp.emitted.clone() {
-            let digest =
-                self.toplevel
-                    .execute_by_index(self.egress_idx, &emitted_raw, queries_tmp)?;
-            emitted.push(ZPtr::from_flat_digest(
-                Tag::from_field(&emitted_raw[0]),
-                &digest,
-            ));
+    fn manual_egression(&self, egress_input: &[F], queries_tmp: &mut QueryRecord<F>) -> ZPtr<F> {
+        let digest = self
+            .toplevel
+            .execute_by_index(self.egress_idx, egress_input, queries_tmp, None)
+            .expect("Egression failed");
+        ZPtr::from_flat_digest(Tag::from_field(&egress_input[0]), &digest)
+    }
+
+    pub(crate) fn format_debug_data(&mut self) -> FormattedDebugData<'_> {
+        let mut dbg_depth_map: FxHashMap<usize, Vec<usize>> = FxHashMap::default();
+        let mut processed_debug_entries = Vec::with_capacity(self.queries.debug_data.entries.len());
+        let mut queries_tmp = self.tmp_queries_for_egression();
+        for debug_data_entry in &self.queries.debug_data.entries {
+            let DebugEntry {
+                dbg_depth,
+                query_idx,
+                kind,
+            } = debug_data_entry;
+            if let Some(depth_indices) = dbg_depth_map.get_mut(dbg_depth) {
+                depth_indices.push(processed_debug_entries.len());
+            } else {
+                dbg_depth_map.insert(*dbg_depth, vec![processed_debug_entries.len()]);
+            }
+            let (input, QueryResult { output, .. }) = &self.queries.func_queries[self.eval_idx]
+                .get_index(*query_idx)
+                .expect("Missing query");
+            let input_zptr = self.manual_egression(&input[..2], &mut queries_tmp);
+            match kind {
+                DebugEntryKind::Push => {
+                    processed_debug_entries.push(ProcessedDebugEntry {
+                        dbg_depth: *dbg_depth,
+                        kind: ProcessedDebugEntryKind::Push(input_zptr),
+                    });
+                }
+                DebugEntryKind::Pop => {
+                    let output = output.as_ref().expect("Missing query result");
+                    let output_zptr = self.manual_egression(output, &mut queries_tmp);
+                    processed_debug_entries.push(ProcessedDebugEntry {
+                        dbg_depth: *dbg_depth,
+                        kind: ProcessedDebugEntryKind::Pop(input_zptr, output_zptr),
+                    });
+                }
+                DebugEntryKind::Memoized => {
+                    let output = output.as_ref().expect("Missing query result");
+                    let output_zptr = self.manual_egression(output, &mut queries_tmp);
+                    processed_debug_entries.push(ProcessedDebugEntry {
+                        dbg_depth: *dbg_depth,
+                        kind: ProcessedDebugEntryKind::Memoized(input_zptr, output_zptr),
+                    });
+                }
+            }
         }
-        Ok(emitted)
+        self.retrieve_inv_query_data_from_tmp_queries(queries_tmp);
+        let mut formatted_debug_entries = Vec::with_capacity(processed_debug_entries.len());
+        for processed_debug_entry in processed_debug_entries {
+            let ProcessedDebugEntry { dbg_depth, kind } = processed_debug_entry;
+            match &kind {
+                ProcessedDebugEntryKind::Push(inp) => {
+                    self.memoize_dag(inp.tag, &inp.digest);
+                    formatted_debug_entries.push(FormattedDebugEntry {
+                        dbg_depth,
+                        formatted: format!("?{dbg_depth}: {}", self.fmt(inp)),
+                    });
+                }
+                ProcessedDebugEntryKind::Pop(inp, out) => {
+                    self.memoize_dag(inp.tag, &inp.digest);
+                    self.memoize_dag(out.tag, &out.digest);
+                    formatted_debug_entries.push(FormattedDebugEntry {
+                        dbg_depth,
+                        formatted: format!(" {dbg_depth}: {} ↦ {}", self.fmt(inp), self.fmt(out)),
+                    });
+                }
+                ProcessedDebugEntryKind::Memoized(inp, out) => {
+                    self.memoize_dag(inp.tag, &inp.digest);
+                    self.memoize_dag(out.tag, &out.digest);
+                    formatted_debug_entries.push(FormattedDebugEntry {
+                        dbg_depth,
+                        formatted: format!("!{dbg_depth}: {} ↦ {}", self.fmt(inp), self.fmt(out)),
+                    });
+                }
+            }
+        }
+        FormattedDebugData {
+            entries: formatted_debug_entries,
+            dbg_depth_map,
+            breakpoints: &self.queries.debug_data.breakpoints,
+        }
     }
 
     /// Reduces a Lurk expression with a clone of the REPL's queries so the latest
@@ -312,8 +400,13 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             self.lurk_main_idx,
             &self.build_input(expr, env),
             &mut queries_tmp,
+            None,
         )?);
-        let emitted = self.retrieve_emitted(&mut queries_tmp)?;
+        let emitted_raw_vec = std::mem::take(&mut queries_tmp.emitted);
+        let mut emitted = Vec::with_capacity(emitted_raw_vec.len());
+        for emitted_raw in &emitted_raw_vec {
+            emitted.push(self.manual_egression(emitted_raw, &mut queries_tmp));
+        }
         self.queries.inv_func_queries = queries_tmp.inv_func_queries;
         for zptr in &emitted {
             self.memoize_dag(zptr.tag, &zptr.digest);
@@ -331,7 +424,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
     /// Produces a minimal `QueryRecord` with just enough data to manually execute
     /// the `egress` chip and to register inverse queries that might be needed for
     /// later DAG memoization
-    fn tmp_queries_for_emitted_retrieval(&self) -> QueryRecord<F> {
+    fn tmp_queries_for_egression(&self) -> QueryRecord<F> {
         let mut inv_func_queries = Vec::with_capacity(self.queries.inv_func_queries.len());
         for inv_query_map in &self.queries.inv_func_queries {
             if inv_query_map.is_some() {
@@ -346,7 +439,8 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             inv_func_queries,
             mem_queries: self.queries.mem_queries.clone(),
             bytes: Default::default(),
-            emitted: self.queries.emitted.clone(),
+            emitted: Default::default(),
+            debug_data: Default::default(),
         }
     }
 
@@ -368,10 +462,14 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             self.lurk_main_idx,
             &self.build_input(expr, env),
             &mut self.queries,
+            Some(self.eval_idx),
         )?);
         if !self.queries.emitted.is_empty() {
-            let mut queries_tmp = self.tmp_queries_for_emitted_retrieval();
-            let emitted = self.retrieve_emitted(&mut queries_tmp)?;
+            let mut queries_tmp = self.tmp_queries_for_egression();
+            let mut emitted = Vec::with_capacity(self.queries.emitted.len());
+            for emitted_raw in &self.queries.emitted {
+                emitted.push(self.manual_egression(emitted_raw, &mut queries_tmp));
+            }
             self.retrieve_inv_query_data_from_tmp_queries(queries_tmp);
             for zptr in &emitted {
                 self.memoize_dag(zptr.tag, &zptr.digest);
