@@ -93,9 +93,10 @@ impl<F> Func<F> {
         let input = self.input_size;
         // last nonce, last count
         let mut aux = 2;
-        // provenance
+        // provenance and range check
         if self.partial {
-            aux += DEPTH_W;
+            let num_requires = (DEPTH_W / 2) + (DEPTH_W % 2);
+            aux += DEPTH_W + 3 * num_requires;
         }
         let mut sel = 0;
         let output = self.output_size;

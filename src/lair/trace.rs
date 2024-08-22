@@ -89,7 +89,13 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
                 let (args, result) = func_queries.get_index(range.start + i).unwrap();
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-                let requires = result.requires.iter();
+                let num_requires = (DEPTH_W / 2) + (DEPTH_W % 2);
+                let requires_len = result.requires.len();
+                let requires = if self.func.partial {
+                    result.requires[0..requires_len - num_requires].iter()
+                } else {
+                    result.requires.iter()
+                };
                 let queries = shard.queries();
                 let query_map = &queries.func_queries()[self.func.index];
                 let lookup = query_map
@@ -105,11 +111,17 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
                     .for_each(|&o| slice.push_output(index, o));
                 slice.push_aux(index, provide.last_nonce);
                 slice.push_aux(index, provide.last_count);
-                // provenance
+                // provenance and range check
                 if self.func.partial {
-                    for _ in 0..DEPTH_W {
-                        // TODO
-                        slice.push_aux(index, F::zero());
+                    let depth = result.depth.to_le_bytes();
+                    for b in depth.into_iter().take(DEPTH_W) {
+                        slice.push_aux(index, F::from_canonical_u8(b));
+                    }
+                    let mut requires =
+                        result.requires[requires_len - num_requires..requires_len].iter();
+                    for _ in 0..num_requires {
+                        let lookup = requires.next().expect("Not enough require hints");
+                        slice.push_require(index, lookup.into_require());
                     }
                 }
                 self.func
@@ -119,7 +131,6 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
     }
 }
 
-#[derive(Clone)]
 struct TraceCtx<'a, F: PrimeField32, H: Chipset<F>> {
     queries: &'a QueryRecord<F>,
     toplevel: &'a Toplevel<F, H>,
@@ -290,9 +301,9 @@ impl<F: PrimeField32> Op<F> {
                 }
                 // dependency provenance
                 if func.partial {
-                    for _ in 0..DEPTH_W {
-                        // TODO
-                        slice.push_aux(index, F::zero());
+                    let depth = result.depth.to_le_bytes();
+                    for b in depth.into_iter().take(DEPTH_W) {
+                        slice.push_aux(index, F::from_canonical_u8(b));
                     }
                 }
                 let lookup = ctx.requires.next().expect("Not enough require hints");
@@ -318,9 +329,11 @@ impl<F: PrimeField32> Op<F> {
                 }
                 // dependency provenance
                 if func.partial {
-                    for _ in 0..DEPTH_W {
-                        // TODO
-                        slice.push_aux(index, F::zero());
+                    let query_map = &ctx.queries.func_queries()[*idx];
+                    let result = query_map.get(inp).expect("Cannot find query result");
+                    let depth = result.depth.to_le_bytes();
+                    for b in depth.into_iter().take(DEPTH_W) {
+                        slice.push_aux(index, F::from_canonical_u8(b));
                     }
                 }
                 let lookup = ctx.requires.next().expect("Not enough require hints");

@@ -654,6 +654,10 @@ impl<F: PrimeField32> Func<F> {
                     if let Some(inv_map) = &mut queries.inv_func_queries[func_index] {
                         inv_map.insert(out_list.clone(), inp.clone());
                     }
+                    if partial {
+                        let mut bytes = queries.bytes.context(nonce as u32, &mut requires);
+                        bytes.range_check_u8_iter(depth.to_le_bytes());
+                    }
                     result.output = Some(out_list);
                     result.requires = requires;
                     result.depth = depth;

@@ -168,13 +168,19 @@ impl<F: Field> Func<F> {
         builder.assert_bool(toplevel_sel.clone());
         let last_nonce = local.next_aux(index);
         let last_count = local.next_aux(index);
-        // provenance
+        // provenance and range check
         if self.partial {
-            for _ in 0..DEPTH_W {
-                // TODO
-                let _ = local.next_aux(index);
-            }
-        }
+            let bs = (0..DEPTH_W)
+                .map(|_| local.next_aux(index))
+                .collect::<Vec<_>>();
+            let num_requires = (DEPTH_W / 2) + (DEPTH_W % 2);
+            let requires = (0..num_requires)
+                .map(|_| local.next_require(index))
+                .collect::<Vec<_>>();
+            let mut air_record = BytesAirRecordWithContext::default();
+            air_record.range_check_u8_iter(bs, toplevel_sel.clone());
+            air_record.require_all(builder, (*local.nonce).into(), requires);
+        };
         let record = ProvideRecord {
             last_nonce,
             last_count,
