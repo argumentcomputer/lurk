@@ -3,6 +3,7 @@ use p3_air::BaseAir;
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
     chipset::Chipset,
+    provenance::{DEPTH_LESS_THAN_SIZE, DEPTH_W},
     toplevel::Toplevel,
 };
 
@@ -90,7 +91,12 @@ pub type Degree = u8;
 impl<F> Func<F> {
     pub fn compute_layout_sizes<H: Chipset<F>>(&self, toplevel: &Toplevel<F, H>) -> LayoutSizes {
         let input = self.input_size;
-        let mut aux = 0;
+        // last nonce, last count
+        let mut aux = 2;
+        // provenance
+        if self.partial {
+            aux += DEPTH_W;
+        }
         let mut sel = 0;
         let output = self.output_size;
         let degrees = &mut vec![1; input];
@@ -133,8 +139,6 @@ impl<F> Ctrl<F> {
             Ctrl::Return(..) => {
                 // exactly one selector per return
                 *sel += 1;
-                // last nonce, last count
-                *aux += 2;
             }
             Ctrl::Choose(_, cases, branches) => {
                 let degrees_len = degrees.len();
@@ -225,6 +229,10 @@ impl<F> Op<F> {
                 let out_size = func.output_size;
                 // output of function, prev_nonce, prev_count, count_inv
                 *aux += out_size + 3;
+                // dependency provenance and witness
+                if func.partial {
+                    *aux += DEPTH_W + DEPTH_LESS_THAN_SIZE;
+                }
                 degrees.extend(vec![1; out_size]);
             }
             Op::PreImg(f_idx, ..) => {
@@ -232,6 +240,10 @@ impl<F> Op<F> {
                 let inp_size = func.input_size;
                 // input of function, prev_nonce, prev_count, count_inv
                 *aux += inp_size + 3;
+                // dependency provenance and witness
+                if func.partial {
+                    *aux += DEPTH_W + DEPTH_LESS_THAN_SIZE;
+                }
                 degrees.extend(vec![1; inp_size]);
             }
             Op::Store(..) => {

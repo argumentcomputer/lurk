@@ -17,6 +17,7 @@ use super::{
     chipset::Chipset,
     execute::{QueryRecord, Shard},
     func_chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
+    provenance::{DEPTH_LESS_THAN_SIZE, DEPTH_W},
     toplevel::Toplevel,
     List,
 };
@@ -104,6 +105,13 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
                     .for_each(|&o| slice.push_output(index, o));
                 slice.push_aux(index, provide.last_nonce);
                 slice.push_aux(index, provide.last_count);
+                // provenance
+                if self.func.partial {
+                    for _ in 0..DEPTH_W {
+                        // TODO
+                        slice.push_aux(index, F::zero());
+                    }
+                }
                 self.func
                     .populate_row(args, index, slice, queries, requires, self.toplevel);
             });
@@ -272,6 +280,7 @@ impl<F: PrimeField32> Op<F> {
                 }
             }
             Op::Call(idx, inp) => {
+                let func = ctx.toplevel.get_by_index(*idx);
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let query_map = &ctx.queries.func_queries()[*idx];
                 let result = query_map.get(&args).expect("Cannot find query result");
@@ -279,10 +288,25 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
+                // dependency provenance
+                if func.partial {
+                    for _ in 0..DEPTH_W {
+                        // TODO
+                        slice.push_aux(index, F::zero());
+                    }
+                }
                 let lookup = ctx.requires.next().expect("Not enough require hints");
                 slice.push_require(index, lookup.into_require());
+                // provenance constraint witness
+                if func.partial {
+                    for _ in 0..DEPTH_LESS_THAN_SIZE {
+                        // TODO
+                        slice.push_aux(index, F::zero());
+                    }
+                }
             }
             Op::PreImg(idx, out) => {
+                let func = ctx.toplevel.get_by_index(*idx);
                 let out = out.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let inv_map = ctx.queries.inv_func_queries[*idx]
                     .as_ref()
@@ -292,8 +316,22 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
+                // dependency provenance
+                if func.partial {
+                    for _ in 0..DEPTH_W {
+                        // TODO
+                        slice.push_aux(index, F::zero());
+                    }
+                }
                 let lookup = ctx.requires.next().expect("Not enough require hints");
                 slice.push_require(index, lookup.into_require());
+                // provenance constraint witness
+                if func.partial {
+                    for _ in 0..DEPTH_LESS_THAN_SIZE {
+                        // TODO
+                        slice.push_aux(index, F::zero());
+                    }
+                }
             }
             Op::Store(args) => {
                 let mem_idx = mem_index_from_len(args.len());

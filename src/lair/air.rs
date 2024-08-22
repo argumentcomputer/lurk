@@ -12,6 +12,7 @@ use super::{
     bytecode::{Block, Ctrl, Func, Op},
     chipset::Chipset,
     func_chip::{ColumnLayout, FuncChip, LayoutSizes},
+    provenance::{DEPTH_LESS_THAN_SIZE, DEPTH_W},
     relations::{CallRelation, MemoryRelation},
     toplevel::Toplevel,
     trace::ColumnIndex,
@@ -167,6 +168,13 @@ impl<F: Field> Func<F> {
         builder.assert_bool(toplevel_sel.clone());
         let last_nonce = local.next_aux(index);
         let last_count = local.next_aux(index);
+        // provenance
+        if self.partial {
+            for _ in 0..DEPTH_W {
+                // TODO
+                let _ = local.next_aux(index);
+            }
+        }
         let record = ProvideRecord {
             last_nonce,
             last_count,
@@ -340,6 +348,13 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(o.into()));
                     out.push(o.into());
                 }
+                // dependency provenance
+                if func.partial {
+                    for _ in 0..DEPTH_W {
+                        // TODO
+                        let _ = local.next_aux(index);
+                    }
+                }
                 let inp = inp.iter().map(|i| map[*i].to_expr());
                 let record = local.next_require(index);
                 builder.require(
@@ -348,6 +363,13 @@ impl<F: Field> Op<F> {
                     record,
                     sel.clone(),
                 );
+                // provenance constraint witness
+                if func.partial {
+                    for _ in 0..DEPTH_LESS_THAN_SIZE {
+                        // TODO
+                        let _ = local.next_aux(index);
+                    }
+                }
             }
             Op::PreImg(idx, out) => {
                 let func = toplevel.get_by_index(*idx);
@@ -357,6 +379,13 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(i.into()));
                     inp.push(i.into());
                 }
+                // dependency provenance
+                if func.partial {
+                    for _ in 0..DEPTH_W {
+                        // TODO
+                        let _ = local.next_aux(index);
+                    }
+                }
                 let out = out.iter().map(|o| map[*o].to_expr());
                 let record = local.next_require(index);
                 builder.require(
@@ -365,6 +394,13 @@ impl<F: Field> Op<F> {
                     record,
                     sel.clone(),
                 );
+                // provenance constraint witness
+                if func.partial {
+                    for _ in 0..DEPTH_LESS_THAN_SIZE {
+                        // TODO
+                        let _ = local.next_aux(index);
+                    }
+                }
             }
             Op::Store(values) => {
                 let ptr = local.next_aux(index);
