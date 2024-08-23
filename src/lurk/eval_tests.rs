@@ -232,6 +232,7 @@ test!(test_eval, "(eval '(+ 1 2) (empty-env))", |_| uint(3));
 test!(test_eval2, "(eval 'x (let ((x 1)) (current-env)))", |_| {
     uint(1)
 });
+test!(test_eval3, "(let ((a '(+ 1 1))) (eval a))", |_| uint(2));
 test!(test_cons, "(cons 0n 1n)", |z| {
     z.intern_cons(ZPtr::num(F::zero()), ZPtr::num(F::one()))
 });

@@ -660,14 +660,15 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                     let (expr_tag, expr, rest_tag, rest) = load(rest);
                                     match rest_tag {
                                         Tag::Nil => {
-                                            let env = 0;
-                                            // Eval must be called twice
+                                            // Eval must be called twice, first with the original env and then
+                                            // with an empty env
                                             let (res_tag, res) = call(eval, expr_tag, expr, env);
                                             match res_tag {
                                                 Tag::Err => {
                                                     return (res_tag, res)
                                                 }
                                             };
+                                            let env = 0;
                                             let (res_tag, res) = call(eval, res_tag, res, env);
                                             return (res_tag, res)
                                         }
