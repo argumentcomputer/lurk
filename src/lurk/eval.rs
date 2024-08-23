@@ -611,8 +611,8 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                                     return (snd_tag, snd)
                                                 }
                                             };
-                                            let type_not_eqq = sub(fst_tag, snd_tag);
-                                            if type_not_eqq {
+                                            let type_not_eq = sub(fst_tag, snd_tag);
+                                            if type_not_eq {
                                                 let nil = 0;
                                                 return (nil_tag, nil)
                                             }
