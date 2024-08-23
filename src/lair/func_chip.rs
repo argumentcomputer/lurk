@@ -3,7 +3,7 @@ use p3_air::BaseAir;
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
     chipset::Chipset,
-    provenance::{DEPTH_LESS_THAN_SIZE, DEPTH_W},
+    provenance::{DepthLessThan, DEPTH_LESS_THAN_SIZE, DEPTH_W},
     toplevel::Toplevel,
 };
 
@@ -232,7 +232,8 @@ impl<F> Op<F> {
                 *aux += out_size + 3;
                 // dependency provenance and witness
                 if func.partial {
-                    *aux += DEPTH_W + DEPTH_LESS_THAN_SIZE;
+                    let require_size = DepthLessThan::<F>::num_requires();
+                    *aux += DEPTH_W + DEPTH_LESS_THAN_SIZE + 3 * require_size;
                 }
                 degrees.extend(vec![1; out_size]);
             }
@@ -243,7 +244,8 @@ impl<F> Op<F> {
                 *aux += inp_size + 3;
                 // dependency provenance and witness
                 if func.partial {
-                    *aux += DEPTH_W + DEPTH_LESS_THAN_SIZE;
+                    let require_size = DepthLessThan::<F>::num_requires();
+                    *aux += DEPTH_W + DEPTH_LESS_THAN_SIZE + 3 * require_size;
                 }
                 degrees.extend(vec![1; inp_size]);
             }

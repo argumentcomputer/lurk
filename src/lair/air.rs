@@ -363,14 +363,6 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(o.into()));
                     out.push(o.into());
                 }
-                // dependency provenance
-                let dep_depth: &[_] = if func.partial {
-                    &(0..DEPTH_W)
-                        .map(|_| local.next_aux(index).into())
-                        .collect::<Vec<_>>()
-                } else {
-                    &[]
-                };
                 let inp = inp.iter().map(|i| map[*i].to_expr());
                 let record = local.next_require(index);
                 builder.require(
@@ -379,8 +371,11 @@ impl<F: Field> Op<F> {
                     record,
                     sel.clone(),
                 );
-                // provenance constraint witness
+                // dependency provenance and constraints
                 if func.partial {
+                    let dep_depth: &[_] = &(0..DEPTH_W)
+                        .map(|_| local.next_aux(index).into())
+                        .collect::<Vec<_>>();
                     let witness: &[_] = &(0..DEPTH_LESS_THAN_SIZE)
                         .map(|_| local.next_aux(index))
                         .collect::<Vec<_>>();
@@ -395,9 +390,11 @@ impl<F: Field> Op<F> {
                         &mut air_record,
                         sel.clone(),
                     );
-                    // TODO
-                    // air_record.require_all(builder, (*local.nonce).into(), requires);
-                }
+                    let requires = (0..DepthLessThan::<F>::num_requires())
+                        .map(|_| local.next_require(index))
+                        .collect::<Vec<_>>();
+                    air_record.require_all(builder, (*local.nonce).into(), requires);
+                };
             }
             Op::PreImg(idx, out) => {
                 let func = toplevel.get_by_index(*idx);
@@ -407,14 +404,6 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(i.into()));
                     inp.push(i.into());
                 }
-                // dependency provenance
-                let dep_depth: &[_] = if func.partial {
-                    &(0..DEPTH_W)
-                        .map(|_| local.next_aux(index).into())
-                        .collect::<Vec<_>>()
-                } else {
-                    &[]
-                };
                 let out = out.iter().map(|o| map[*o].to_expr());
                 let record = local.next_require(index);
                 builder.require(
@@ -423,8 +412,11 @@ impl<F: Field> Op<F> {
                     record,
                     sel.clone(),
                 );
-                // provenance constraint witness
+                // dependency provenance and constraints
                 if func.partial {
+                    let dep_depth: &[_] = &(0..DEPTH_W)
+                        .map(|_| local.next_aux(index).into())
+                        .collect::<Vec<_>>();
                     let witness: &[_] = &(0..DEPTH_LESS_THAN_SIZE)
                         .map(|_| local.next_aux(index))
                         .collect::<Vec<_>>();
@@ -439,9 +431,11 @@ impl<F: Field> Op<F> {
                         &mut air_record,
                         sel.clone(),
                     );
-                    // TODO
-                    // air_record.require_all(builder, (*local.nonce).into(), requires);
-                }
+                    let requires = (0..DepthLessThan::<F>::num_requires())
+                        .map(|_| local.next_require(index))
+                        .collect::<Vec<_>>();
+                    air_record.require_all(builder, (*local.nonce).into(), requires);
+                };
             }
             Op::Store(values) => {
                 let ptr = local.next_aux(index);

@@ -90,13 +90,8 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
                 let (args, result) = func_queries.get_index(range.start + i).unwrap();
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
-                let num_requires = (DEPTH_W / 2) + (DEPTH_W % 2);
-                let requires_len = result.requires.len();
-                let requires = if self.func.partial {
-                    result.requires[0..requires_len - num_requires].iter()
-                } else {
-                    result.requires.iter()
-                };
+                let requires = result.requires.iter();
+                let mut depth_requires = result.depth_requires.iter();
                 let queries = shard.queries();
                 let query_map = &queries.func_queries()[self.func.index];
                 let lookup = query_map
@@ -114,14 +109,13 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
                 slice.push_aux(index, provide.last_count);
                 // provenance and range check
                 if self.func.partial {
+                    let num_requires = (DEPTH_W / 2) + (DEPTH_W % 2);
                     let depth = result.depth.to_le_bytes();
                     for b in depth.into_iter().take(DEPTH_W) {
                         slice.push_aux(index, F::from_canonical_u8(b));
                     }
-                    let mut requires =
-                        result.requires[requires_len - num_requires..requires_len].iter();
                     for _ in 0..num_requires {
-                        let lookup = requires.next().expect("Not enough require hints");
+                        let lookup = depth_requires.next().expect("Not enough require hints");
                         slice.push_require(index, lookup.into_require());
                     }
                 }
@@ -133,6 +127,7 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
                     requires,
                     self.toplevel,
                     result.depth,
+                    depth_requires,
                 );
             });
         RowMajorMatrix::new(rows, width)
@@ -144,6 +139,7 @@ struct TraceCtx<'a, F: PrimeField32, H: Chipset<F>> {
     toplevel: &'a Toplevel<F, H>,
     requires: Iter<'a, Record>,
     depth: u32,
+    depth_requires: Iter<'a, Record>,
 }
 
 impl<F: PrimeField32> Func<F> {
@@ -157,6 +153,7 @@ impl<F: PrimeField32> Func<F> {
         requires: Iter<'_, Record>,
         toplevel: &Toplevel<F, H>,
         depth: u32,
+        depth_requires: Iter<'_, Record>,
     ) {
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
         // Variable to value map
@@ -167,6 +164,7 @@ impl<F: PrimeField32> Func<F> {
             requires,
             toplevel,
             depth,
+            depth_requires,
         };
         // One column per input
         args.iter().for_each(|arg| slice.push_input(index, *arg));
@@ -200,6 +198,7 @@ impl<F: PrimeField32> Ctrl<F> {
         match self {
             Ctrl::Return(ident, _) => {
                 assert!(ctx.requires.next().is_none());
+                assert!(ctx.depth_requires.next().is_none());
                 slice.sel[*ident] = F::one();
             }
             Ctrl::Choose(var, cases, _) => {
@@ -311,22 +310,23 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                // dependency provenance
-                if func.partial {
-                    let depth = result.depth.to_le_bytes();
-                    for b in depth.into_iter().take(DEPTH_W) {
-                        slice.push_aux(index, F::from_canonical_u8(b));
-                    }
-                }
                 let lookup = ctx.requires.next().expect("Not enough require hints");
                 slice.push_require(index, lookup.into_require());
-                // provenance constraint witness
+                // dependency provenance and constrants
                 if func.partial {
+                    let dep_depth = result.depth.to_le_bytes();
+                    for b in dep_depth.into_iter().take(DEPTH_W) {
+                        slice.push_aux(index, F::from_canonical_u8(b));
+                    }
                     let bytes = &mut DummyBytesRecord;
                     let witness: &mut [F] = &mut [F::zero(); DEPTH_LESS_THAN_SIZE];
                     let less_than: &mut DepthLessThan<F> = witness.borrow_mut();
                     less_than.populate(&result.depth, &ctx.depth, bytes);
                     witness.iter().for_each(|w| slice.push_aux(index, *w));
+                    for _ in 0..DepthLessThan::<F>::num_requires() {
+                        let lookup = ctx.depth_requires.next().expect("Not enough require hints");
+                        slice.push_require(index, lookup.into_require());
+                    }
                 }
             }
             Op::PreImg(idx, out) => {
@@ -336,31 +336,30 @@ impl<F: PrimeField32> Op<F> {
                     .as_ref()
                     .expect("Function not invertible");
                 let inp = inv_map.get(&out).expect("Cannot find preimage");
+                // dependency provenance and constrants
                 for f in inp.iter() {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                // dependency provenance
-                let depth = if func.partial {
+                let lookup = ctx.requires.next().expect("Not enough require hints");
+                slice.push_require(index, lookup.into_require());
+                if func.partial {
                     let query_map = &ctx.queries.func_queries()[*idx];
                     let result = query_map.get(inp).expect("Cannot find query result");
                     let depth = result.depth.to_le_bytes();
                     for b in depth.into_iter().take(DEPTH_W) {
                         slice.push_aux(index, F::from_canonical_u8(b));
                     }
-                    result.depth
-                } else {
-                    0
-                };
-                let lookup = ctx.requires.next().expect("Not enough require hints");
-                slice.push_require(index, lookup.into_require());
-                // provenance constraint witness
-                if func.partial {
                     let bytes = &mut DummyBytesRecord;
                     let witness: &mut [F] = &mut [F::zero(); DEPTH_LESS_THAN_SIZE];
                     let less_than: &mut DepthLessThan<F> = witness.borrow_mut();
-                    less_than.populate(&depth, &ctx.depth, bytes);
-                }
+                    less_than.populate(&result.depth, &ctx.depth, bytes);
+                    witness.iter().for_each(|w| slice.push_aux(index, *w));
+                    for _ in 0..DepthLessThan::<F>::num_requires() {
+                        let lookup = ctx.depth_requires.next().expect("Not enough require hints");
+                        slice.push_require(index, lookup.into_require());
+                    }
+                };
             }
             Op::Store(args) => {
                 let mem_idx = mem_index_from_len(args.len());

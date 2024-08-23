@@ -33,6 +33,7 @@ pub struct QueryResult<F> {
     pub(crate) provide: Record,
     pub(crate) requires: Vec<Record>,
     pub(crate) depth: u32,
+    pub(crate) depth_requires: Vec<Record>,
 }
 
 impl<F: PrimeField32> QueryResult<F> {
@@ -401,8 +402,9 @@ struct CallerState<F> {
     nonce: usize,
     map: Vec<F>,
     requires: Vec<Record>,
-    depth: u32,
     partial: bool,
+    depths: Vec<u32>,
+    depth_requires: Vec<Record>,
 }
 
 impl<F: PrimeField32> Func<F> {
@@ -420,8 +422,9 @@ impl<F: PrimeField32> Func<F> {
             queries.func_queries[func_index].insert_full(args.into(), query_result);
         let mut map = args.to_vec();
         let mut requires = Vec::new();
-        let mut depth = 0;
         let mut partial = self.partial;
+        let mut depths = Vec::new();
+        let mut depth_requires = Vec::new();
 
         let mut exec_entries_stack = vec![];
         let mut callers_states_stack = vec![];
@@ -473,14 +476,11 @@ impl<F: PrimeField32> Func<F> {
                         let Some(out) = result.output.as_ref() else {
                             bail!("Loop detected");
                         };
-                        if partial && toplevel.get_by_index(*callee_index).partial {
-                            depth = depth.max(result.depth + 1);
-                            let mut bytes = queries.bytes.context(nonce as u32, &mut requires);
-                            let mut witness = DepthLessThan::<F>::default();
-                            witness.populate(&result.depth, &depth, &mut bytes);
-                        }
                         map.extend(out);
                         result.new_lookup(nonce, &mut requires);
+                        if partial && toplevel.get_by_index(*callee_index).partial {
+                            depths.push(result.depth);
+                        }
                         if dbg_func_idx == Some(*callee_index) {
                             queries.debug_data.entries.push(DebugEntry {
                                 dbg_depth,
@@ -495,10 +495,14 @@ impl<F: PrimeField32> Func<F> {
                         // `map_buffer` will become the map for the called function
                         let mut map_buffer = inp;
                         let mut requires_buffer = Vec::new();
+                        let mut depth_requires_buffer = Vec::new();
+                        let mut depths_buffer = Vec::new();
                         // swap so we can save the old map in `map_buffer` and move on
                         // with `map` already set
                         std::mem::swap(&mut map_buffer, &mut map);
                         std::mem::swap(&mut requires_buffer, &mut requires);
+                        std::mem::swap(&mut depths_buffer, &mut depths);
+                        std::mem::swap(&mut depth_requires_buffer, &mut depth_requires);
                         // save the current caller state
                         callers_states_stack.push(CallerState {
                             preimg: false,
@@ -507,14 +511,14 @@ impl<F: PrimeField32> Func<F> {
                             map: map_buffer,
                             requires: requires_buffer,
                             partial,
-                            depth,
+                            depths: depths_buffer,
+                            depth_requires: depth_requires_buffer,
                         });
                         // prepare outer variables to go into the new func scope
                         func_index = *callee_index;
                         nonce = callee_nonce;
                         let func = toplevel.get_by_index(func_index);
                         partial = func.partial;
-                        depth = 0;
                         if dbg_func_idx == Some(func_index) {
                             queries.debug_data.entries.push(DebugEntry {
                                 dbg_depth,
@@ -543,14 +547,11 @@ impl<F: PrimeField32> Func<F> {
                             bail!("Loop detected");
                         };
                         assert_eq!(out_memoized, &out);
-                        if partial && toplevel.get_by_index(*callee_index).partial {
-                            depth = depth.max(result.depth + 1);
-                            let mut bytes = queries.bytes.context(nonce as u32, &mut requires);
-                            let mut witness = DepthLessThan::<F>::default();
-                            witness.populate(&result.depth, &depth, &mut bytes);
-                        }
                         map.extend(inp);
                         result.new_lookup(nonce, &mut requires);
+                        if partial && toplevel.get_by_index(*callee_index).partial {
+                            depths.push(result.depth);
+                        }
                         if dbg_func_idx == Some(*callee_index) {
                             queries.debug_data.entries.push(DebugEntry {
                                 dbg_depth,
@@ -563,8 +564,12 @@ impl<F: PrimeField32> Func<F> {
                             .insert_full(inp.clone().into(), QueryResult::default());
                         let mut map_buffer = inp;
                         let mut requires_buffer = Vec::new();
+                        let mut depth_requires_buffer = Vec::new();
+                        let mut depths_buffer = Vec::new();
                         std::mem::swap(&mut map_buffer, &mut map);
                         std::mem::swap(&mut requires_buffer, &mut requires);
+                        std::mem::swap(&mut depths_buffer, &mut depths);
+                        std::mem::swap(&mut depth_requires_buffer, &mut depth_requires);
                         callers_states_stack.push(CallerState {
                             preimg: true,
                             func_index,
@@ -572,13 +577,13 @@ impl<F: PrimeField32> Func<F> {
                             map: map_buffer,
                             requires: requires_buffer,
                             partial,
-                            depth,
+                            depths: depths_buffer,
+                            depth_requires: depth_requires_buffer,
                         });
                         func_index = *callee_index;
                         nonce = callee_nonce;
                         let func = toplevel.get_by_index(func_index);
                         partial = func.partial;
-                        depth = 0;
                         if dbg_func_idx == Some(func_index) {
                             queries.debug_data.entries.push(DebugEntry {
                                 dbg_depth,
@@ -662,12 +667,18 @@ impl<F: PrimeField32> Func<F> {
                         inv_map.insert(out_list.clone(), inp.clone());
                     }
                     if partial {
-                        let mut bytes = queries.bytes.context(nonce as u32, &mut requires);
+                        let mut bytes = queries.bytes.context(nonce as u32, &mut depth_requires);
+                        let depth = depths.iter().map(|&a| a + 1).max().unwrap_or(0);
                         bytes.range_check_u8_iter(depth.to_le_bytes());
-                    }
+                        for dep_depth in depths.iter() {
+                            let mut witness = DepthLessThan::<F>::default();
+                            witness.populate(dep_depth, &depth, &mut bytes);
+                        }
+                        result.depth = depth;
+                    };
                     result.output = Some(out_list);
                     result.requires = requires;
-                    result.depth = depth;
+                    result.depth_requires = depth_requires;
                     if let Some(CallerState {
                         preimg,
                         func_index: caller_func_index,
@@ -675,7 +686,8 @@ impl<F: PrimeField32> Func<F> {
                         map: caller_map,
                         requires: caller_requires,
                         partial: caller_partial,
-                        depth: caller_depth,
+                        depths: caller_depths,
+                        depth_requires: caller_depth_requires,
                     }) = callers_states_stack.pop()
                     {
                         if dbg_func_idx == Some(func_index) {
@@ -686,17 +698,15 @@ impl<F: PrimeField32> Func<F> {
                                 kind: DebugEntryKind::Pop,
                             });
                         }
+                        let callee_partial = partial;
                         // recover the state of the caller
                         func_index = caller_func_index;
                         nonce = caller_nonce;
                         map = caller_map;
                         requires = caller_requires;
-                        if caller_partial && partial {
-                            depth = caller_depth.max(depth + 1);
-                        } else {
-                            depth = caller_depth;
-                        }
                         partial = caller_partial;
+                        depths = caller_depths;
+                        depth_requires = caller_depth_requires;
 
                         if preimg {
                             map.extend(inp);
@@ -704,6 +714,10 @@ impl<F: PrimeField32> Func<F> {
                             map.extend(out);
                         }
                         result.new_lookup(nonce, &mut requires);
+
+                        if partial && callee_partial {
+                            depths.push(result.depth);
+                        }
                     } else {
                         // no outer caller... about to exit
                         assert!(exec_entries_stack.is_empty());
