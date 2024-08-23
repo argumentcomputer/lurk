@@ -248,6 +248,9 @@ test!(
        (car ((cdr ones))))",
     |_| uint(1)
 );
+test!(test_type_eq1, "(type-eq '(nil) (cons 1 2))", |z| z
+    .intern_symbol(&lurk_sym("t")));
+test!(test_type_eq2, "(type-eq (+ 1 1) 'a')", |z| z.intern_nil());
 test!(test_type_eqq1, "(type-eqq (nil) (cons 1 2))", |z| z
     .intern_symbol(&lurk_sym("t")));
 test!(test_type_eqq2, "(type-eqq 2 'a')", |z| z.intern_nil());
