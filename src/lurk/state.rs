@@ -239,7 +239,7 @@ const LURK_PACKAGE_SYMBOL_NAME: &str = "lurk";
 const USER_PACKAGE_SYMBOL_NAME: &str = "user";
 const META_PACKAGE_SYMBOL_NAME: &str = "meta";
 
-pub(crate) const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 37] = [
+pub(crate) const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 38] = [
     "atom",
     "begin",
     "car",
@@ -253,6 +253,7 @@ pub(crate) const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 37] = [
     "empty-env",
     "eval",
     "eq",
+    "type-eq",
     "type-eqq",
     "hide",
     "if",

@@ -556,7 +556,7 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                     match head_tag {
                         Tag::Builtin => {
                             match head [|sym| builtins.index(sym).to_field()] {
-                                "let", "letrec", "lambda", "cons", "strcons", "type-eqq" => {
+                                "let", "letrec", "lambda", "cons", "strcons", "type-eq", "type-eqq" => {
                                     let rest_not_cons = sub(rest_tag, cons_tag);
                                     if rest_not_cons {
                                         return (err_tag, invalid_form)
@@ -597,6 +597,26 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                         "cons", "strcons" => {
                                             let (res_tag, res) = call(eval_binop_misc, head, fst_tag, fst, snd_tag, snd, env);
                                             return (res_tag, res)
+                                        }
+                                        "type-eq" => {
+                                            let (fst_tag, fst) = call(eval, fst_tag, fst, env);
+                                            match fst_tag {
+                                                Tag::Err => {
+                                                    return (fst_tag, fst)
+                                                }
+                                            };
+                                            let (snd_tag, snd) = call(eval, snd_tag, snd, env);
+                                            match snd_tag {
+                                                Tag::Err => {
+                                                    return (snd_tag, snd)
+                                                }
+                                            };
+                                            let type_not_eqq = sub(fst_tag, snd_tag);
+                                            if type_not_eqq {
+                                                let nil = 0;
+                                                return (nil_tag, nil)
+                                            }
+                                            return (head_tag, t) // head_tag is Tag::Builtin
                                         }
                                         "type-eqq" => {
                                             let (snd_tag, snd) = call(eval, snd_tag, snd, env);
@@ -1637,7 +1657,7 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["68"]);
-        expect_eq(eval.width(), expect!["100"]);
+        expect_eq(eval.width(), expect!["104"]);
         expect_eq(eval_comm_unop.width(), expect!["73"]);
         expect_eq(eval_hide.width(), expect!["78"]);
         expect_eq(eval_unop.width(), expect!["35"]);
@@ -1653,9 +1673,9 @@ mod test {
         expect_eq(apply.width(), expect!["62"]);
         expect_eq(env_lookup.width(), expect!["49"]);
         expect_eq(ingress.width(), expect!["99"]);
-        expect_eq(ingress_builtin.width(), expect!["48"]);
+        expect_eq(ingress_builtin.width(), expect!["49"]);
         expect_eq(egress.width(), expect!["76"]);
-        expect_eq(egress_builtin.width(), expect!["48"]);
+        expect_eq(egress_builtin.width(), expect!["49"]);
         expect_eq(hash_24_8.width(), expect!["493"]);
         expect_eq(hash_32_8.width(), expect!["655"]);
         expect_eq(hash_48_8.width(), expect!["975"]);
