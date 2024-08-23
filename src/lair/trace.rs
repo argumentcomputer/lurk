@@ -1,4 +1,4 @@
-use std::slice::Iter;
+use std::{borrow::BorrowMut, slice::Iter};
 
 use p3_field::{PrimeField, PrimeField32};
 use p3_matrix::dense::RowMajorMatrix;
@@ -9,6 +9,7 @@ use rayon::{
 
 use crate::{
     air::builder::{Record, RequireRecord},
+    gadgets::bytes::record::DummyBytesRecord,
     lair::execute::mem_index_from_len,
 };
 
@@ -17,7 +18,7 @@ use super::{
     chipset::Chipset,
     execute::{QueryRecord, Shard},
     func_chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
-    provenance::{DEPTH_LESS_THAN_SIZE, DEPTH_W},
+    provenance::{DepthLessThan, DEPTH_LESS_THAN_SIZE, DEPTH_W},
     toplevel::Toplevel,
     List,
 };
@@ -124,8 +125,15 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
                         slice.push_require(index, lookup.into_require());
                     }
                 }
-                self.func
-                    .populate_row(args, index, slice, queries, requires, self.toplevel);
+                self.func.populate_row(
+                    args,
+                    index,
+                    slice,
+                    queries,
+                    requires,
+                    self.toplevel,
+                    result.depth,
+                );
             });
         RowMajorMatrix::new(rows, width)
     }
@@ -135,9 +143,11 @@ struct TraceCtx<'a, F: PrimeField32, H: Chipset<F>> {
     queries: &'a QueryRecord<F>,
     toplevel: &'a Toplevel<F, H>,
     requires: Iter<'a, Record>,
+    depth: u32,
 }
 
 impl<F: PrimeField32> Func<F> {
+    #[allow(clippy::too_many_arguments)]
     fn populate_row<H: Chipset<F>>(
         &self,
         args: &[F],
@@ -146,6 +156,7 @@ impl<F: PrimeField32> Func<F> {
         queries: &QueryRecord<F>,
         requires: Iter<'_, Record>,
         toplevel: &Toplevel<F, H>,
+        depth: u32,
     ) {
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
         // Variable to value map
@@ -155,6 +166,7 @@ impl<F: PrimeField32> Func<F> {
             queries,
             requires,
             toplevel,
+            depth,
         };
         // One column per input
         args.iter().for_each(|arg| slice.push_input(index, *arg));
@@ -310,10 +322,11 @@ impl<F: PrimeField32> Op<F> {
                 slice.push_require(index, lookup.into_require());
                 // provenance constraint witness
                 if func.partial {
-                    for _ in 0..DEPTH_LESS_THAN_SIZE {
-                        // TODO
-                        slice.push_aux(index, F::zero());
-                    }
+                    let bytes = &mut DummyBytesRecord;
+                    let witness: &mut [F] = &mut [F::zero(); DEPTH_LESS_THAN_SIZE];
+                    let less_than: &mut DepthLessThan<F> = witness.borrow_mut();
+                    less_than.populate(&result.depth, &ctx.depth, bytes);
+                    witness.iter().for_each(|w| slice.push_aux(index, *w));
                 }
             }
             Op::PreImg(idx, out) => {
@@ -328,22 +341,25 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, *f);
                 }
                 // dependency provenance
-                if func.partial {
+                let depth = if func.partial {
                     let query_map = &ctx.queries.func_queries()[*idx];
                     let result = query_map.get(inp).expect("Cannot find query result");
                     let depth = result.depth.to_le_bytes();
                     for b in depth.into_iter().take(DEPTH_W) {
                         slice.push_aux(index, F::from_canonical_u8(b));
                     }
-                }
+                    result.depth
+                } else {
+                    0
+                };
                 let lookup = ctx.requires.next().expect("Not enough require hints");
                 slice.push_require(index, lookup.into_require());
                 // provenance constraint witness
                 if func.partial {
-                    for _ in 0..DEPTH_LESS_THAN_SIZE {
-                        // TODO
-                        slice.push_aux(index, F::zero());
-                    }
+                    let bytes = &mut DummyBytesRecord;
+                    let witness: &mut [F] = &mut [F::zero(); DEPTH_LESS_THAN_SIZE];
+                    let less_than: &mut DepthLessThan<F> = witness.borrow_mut();
+                    less_than.populate(&depth, &ctx.depth, bytes);
                 }
             }
             Op::Store(args) => {

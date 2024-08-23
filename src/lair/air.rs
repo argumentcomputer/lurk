@@ -1,18 +1,21 @@
 use p3_air::{Air, AirBuilder};
 use p3_field::Field;
 use p3_matrix::Matrix;
-use std::fmt::Debug;
+use std::{borrow::Borrow, fmt::Debug};
 
 use crate::{
     air::builder::{LookupBuilder, ProvideRecord, RequireRecord},
-    gadgets::bytes::{builder::BytesAirRecordWithContext, ByteAirRecord},
+    gadgets::{
+        bytes::{builder::BytesAirRecordWithContext, ByteAirRecord},
+        unsigned::Word32,
+    },
 };
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
     chipset::Chipset,
     func_chip::{ColumnLayout, FuncChip, LayoutSizes},
-    provenance::{DEPTH_LESS_THAN_SIZE, DEPTH_W},
+    provenance::{DepthLessThan, DEPTH_LESS_THAN_SIZE, DEPTH_W},
     relations::{CallRelation, MemoryRelation},
     toplevel::Toplevel,
     trace::ColumnIndex,
@@ -169,17 +172,21 @@ impl<F: Field> Func<F> {
         let last_nonce = local.next_aux(index);
         let last_count = local.next_aux(index);
         // provenance and range check
-        if self.partial {
-            let bs = (0..DEPTH_W)
+        let depth: Vec<AB::Expr> = if self.partial {
+            let depth = (0..DEPTH_W)
                 .map(|_| local.next_aux(index))
                 .collect::<Vec<_>>();
+            let depth_expr = depth.iter().map(|&b| b.into()).collect();
             let num_requires = (DEPTH_W / 2) + (DEPTH_W % 2);
             let requires = (0..num_requires)
                 .map(|_| local.next_require(index))
                 .collect::<Vec<_>>();
             let mut air_record = BytesAirRecordWithContext::default();
-            air_record.range_check_u8_iter(bs, toplevel_sel.clone());
+            air_record.range_check_u8_iter(depth, toplevel_sel.clone());
             air_record.require_all(builder, (*local.nonce).into(), requires);
+            depth_expr
+        } else {
+            vec![]
         };
         let record = ProvideRecord {
             last_nonce,
@@ -192,7 +199,7 @@ impl<F: Field> Func<F> {
             toplevel_sel.clone(),
         );
         self.body
-            .eval(builder, local, &toplevel_sel, index, map, toplevel);
+            .eval(builder, local, &toplevel_sel, index, map, toplevel, &depth);
     }
 }
 
@@ -217,14 +224,15 @@ impl<F: Field> Block<F> {
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
+        depth: &[AB::Expr],
     ) where
         AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
     {
         self.ops
             .iter()
-            .for_each(|op| op.eval(builder, local, sel, index, map, toplevel));
-        self.ctrl.eval(builder, local, index, map, toplevel);
+            .for_each(|op| op.eval(builder, local, sel, index, map, toplevel, depth));
+        self.ctrl.eval(builder, local, index, map, toplevel, depth);
     }
 }
 
@@ -238,6 +246,7 @@ impl<F: Field> Op<F> {
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
+        depth: &[AB::Expr],
     ) where
         AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
@@ -355,12 +364,13 @@ impl<F: Field> Op<F> {
                     out.push(o.into());
                 }
                 // dependency provenance
-                if func.partial {
-                    for _ in 0..DEPTH_W {
-                        // TODO
-                        let _ = local.next_aux(index);
-                    }
-                }
+                let dep_depth: &[_] = if func.partial {
+                    &(0..DEPTH_W)
+                        .map(|_| local.next_aux(index).into())
+                        .collect::<Vec<_>>()
+                } else {
+                    &[]
+                };
                 let inp = inp.iter().map(|i| map[*i].to_expr());
                 let record = local.next_require(index);
                 builder.require(
@@ -371,10 +381,22 @@ impl<F: Field> Op<F> {
                 );
                 // provenance constraint witness
                 if func.partial {
-                    for _ in 0..DEPTH_LESS_THAN_SIZE {
-                        // TODO
-                        let _ = local.next_aux(index);
-                    }
+                    let witness: &[_] = &(0..DEPTH_LESS_THAN_SIZE)
+                        .map(|_| local.next_aux(index))
+                        .collect::<Vec<_>>();
+                    let less_than: &DepthLessThan<_> = witness.borrow();
+                    let mut air_record = BytesAirRecordWithContext::default();
+                    let dep_depth: &Word32<_> = dep_depth.borrow();
+                    let depth: &Word32<_> = depth.borrow();
+                    less_than.assert_less_than(
+                        builder,
+                        dep_depth,
+                        depth,
+                        &mut air_record,
+                        sel.clone(),
+                    );
+                    // TODO
+                    // air_record.require_all(builder, (*local.nonce).into(), requires);
                 }
             }
             Op::PreImg(idx, out) => {
@@ -386,12 +408,13 @@ impl<F: Field> Op<F> {
                     inp.push(i.into());
                 }
                 // dependency provenance
-                if func.partial {
-                    for _ in 0..DEPTH_W {
-                        // TODO
-                        let _ = local.next_aux(index);
-                    }
-                }
+                let dep_depth: &[_] = if func.partial {
+                    &(0..DEPTH_W)
+                        .map(|_| local.next_aux(index).into())
+                        .collect::<Vec<_>>()
+                } else {
+                    &[]
+                };
                 let out = out.iter().map(|o| map[*o].to_expr());
                 let record = local.next_require(index);
                 builder.require(
@@ -402,10 +425,22 @@ impl<F: Field> Op<F> {
                 );
                 // provenance constraint witness
                 if func.partial {
-                    for _ in 0..DEPTH_LESS_THAN_SIZE {
-                        // TODO
-                        let _ = local.next_aux(index);
-                    }
+                    let witness: &[_] = &(0..DEPTH_LESS_THAN_SIZE)
+                        .map(|_| local.next_aux(index))
+                        .collect::<Vec<_>>();
+                    let less_than: &DepthLessThan<_> = witness.borrow();
+                    let mut air_record = BytesAirRecordWithContext::default();
+                    let dep_depth: &Word32<_> = dep_depth.borrow();
+                    let depth: &Word32<_> = depth.borrow();
+                    less_than.assert_less_than(
+                        builder,
+                        dep_depth,
+                        depth,
+                        &mut air_record,
+                        sel.clone(),
+                    );
+                    // TODO
+                    // air_record.require_all(builder, (*local.nonce).into(), requires);
                 }
             }
             Op::Store(values) => {
@@ -483,6 +518,7 @@ impl<F: Field> Ctrl<F> {
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
+        depth: &[AB::Expr],
     ) where
         AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
@@ -494,7 +530,7 @@ impl<F: Field> Ctrl<F> {
 
                 let mut process = |block: &Block<F>| {
                     let sel = block.return_sel::<AB>(local);
-                    block.eval(builder, local, &sel, index, map, toplevel);
+                    block.eval(builder, local, &sel, index, map, toplevel, depth);
                     map.truncate(map_len);
                     index.restore(init_state);
                 };
@@ -509,7 +545,7 @@ impl<F: Field> Ctrl<F> {
 
                 let mut process = |block: &Block<F>| {
                     let sel = block.return_sel::<AB>(local);
-                    block.eval(builder, local, &sel, index, map, toplevel);
+                    block.eval(builder, local, &sel, index, map, toplevel, depth);
                     map.truncate(map_len);
                     index.restore(init_state);
                 };

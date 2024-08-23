@@ -10,6 +10,7 @@ use std::ops::Range;
 use crate::{
     air::builder::Record,
     gadgets::bytes::{record::BytesRecord, ByteRecord},
+    lair::provenance::DepthLessThan,
     lurk::syntax::digest_to_biguint,
 };
 
@@ -474,6 +475,9 @@ impl<F: PrimeField32> Func<F> {
                         };
                         if partial && toplevel.get_by_index(*callee_index).partial {
                             depth = depth.max(result.depth + 1);
+                            let mut bytes = queries.bytes.context(nonce as u32, &mut requires);
+                            let mut witness = DepthLessThan::<F>::default();
+                            witness.populate(&result.depth, &depth, &mut bytes);
                         }
                         map.extend(out);
                         result.new_lookup(nonce, &mut requires);
@@ -541,6 +545,9 @@ impl<F: PrimeField32> Func<F> {
                         assert_eq!(out_memoized, &out);
                         if partial && toplevel.get_by_index(*callee_index).partial {
                             depth = depth.max(result.depth + 1);
+                            let mut bytes = queries.bytes.context(nonce as u32, &mut requires);
+                            let mut witness = DepthLessThan::<F>::default();
+                            witness.populate(&result.depth, &depth, &mut bytes);
                         }
                         map.extend(inp);
                         result.new_lookup(nonce, &mut requires);
