@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use core::str;
 use itertools::Itertools;
 use nom::{sequence::preceded, Parser};
 use once_cell::sync::OnceCell;
@@ -84,6 +85,16 @@ fn into_sized<F: AbstractField + Copy, const N: usize>(slice: &[F]) -> [F; N] {
     buffer.extract()
 }
 
+fn get_char<F: PrimeField32>(digest: &[F; DIGEST_SIZE]) -> char {
+    let u8s = digest.map(|f| f.as_canonical_u32().try_into().expect("Invalid char limb"));
+    let (bytes, rest) = u8s.split_at(4);
+    assert_eq!(rest, [0; 4]);
+    let mut chars = std::str::from_utf8(bytes).expect("Invalid UTF-8").chars();
+    let c = chars.next().expect("Original slice was not empty");
+    assert!(chars.all(|c| c == '\0'));
+    c
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ZPtr<F> {
     pub tag: Tag,
@@ -115,9 +126,11 @@ impl<F: AbstractField + Copy> ZPtr<F> {
 
     #[inline]
     pub fn char(c: char) -> Self {
+        let mut bytes = [0; DIGEST_SIZE];
+        c.encode_utf8(&mut bytes);
         Self {
             tag: Tag::Char,
-            digest: digest_from_field(F::from_canonical_u32(c as u32)),
+            digest: bytes.map(F::from_canonical_u8),
         }
     }
 
@@ -779,7 +792,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         let zeros = [F::zero(); DIGEST_SIZE];
         while zptr.digest != zeros {
             let (car, cdr) = self.fetch_tuple2(zptr);
-            string.push(char::from_u32(car.digest[0].as_canonical_u32()).expect("invalid char"));
+            string.push(get_char(&car.digest));
             zptr = cdr;
         }
         string
@@ -885,10 +898,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                         .map(|f| u8::try_from(f.as_canonical_u32()).expect("invalid u64 limbs"))
                 )
             ),
-            Tag::Char => format!(
-                "'{}'",
-                char::from_u32(zptr.digest[0].as_canonical_u32()).expect("invalid char")
-            ),
+            Tag::Char => format!("'{}'", get_char(&zptr.digest)),
             Tag::Comm => format!("#{:#x}", digest_to_biguint(&zptr.digest)),
             Tag::Str => format!("\"{}\"", self.fetch_string(zptr)),
             Tag::Builtin | Tag::Sym | Tag::Key | Tag::Nil => {
