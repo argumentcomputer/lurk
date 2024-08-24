@@ -256,6 +256,12 @@ test!(test_type_eqq1, "(type-eqq (nil) (cons 1 2))", |z| z
     .intern_symbol(&lurk_sym("t")));
 test!(test_type_eqq2, "(type-eqq 2 'a')", |z| z.intern_nil());
 
+// coercions
+test!(test_char1, "(char 'a')", |z| z.intern_char('a'));
+test!(test_char2, "(char 97)", |z| z.intern_char('a'));
+test!(test_u64_1, "(u64 97)", |_| uint(97));
+test!(test_u64_2, "(u64 'a')", |_| uint(97));
+
 // environment
 test!(
     test_current_env,
