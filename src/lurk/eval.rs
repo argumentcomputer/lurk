@@ -166,7 +166,7 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
             let (tag, rest: [7]) = tag_full;
             assert_eq!(rest, zeros);
             match tag {
-                Tag::Num, Tag::Char, Tag::Err => {
+                Tag::Num, Tag::Err => {
                     let (x, rest: [7]) = digest;
                     assert_eq!(rest, zeros);
                     return x
@@ -174,6 +174,14 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
                 Tag::Nil => {
                     let zero = 0;
                     return zero
+                }
+                Tag::Char => {
+                    let (bytes: [4], rest: [4]) = digest;
+                    range_u8!(bytes);
+                    let zeros = [0; 4];
+                    assert_eq!(rest, zeros);
+                    let ptr = store(bytes);
+                    return ptr
                 }
                 Tag::U64 => {
                     range_u8!(digest);
@@ -294,7 +302,7 @@ pub fn egress<F: AbstractField + Ord>(nil: List<F>) -> FuncE<F> {
     func!(
         fn egress(tag, val): [8] {
             match tag {
-                Tag::Num, Tag::Char, Tag::Err => {
+                Tag::Num, Tag::Err => {
                     let padding = [0; 7];
                     let digest: [8] = (val, padding);
                     return digest
@@ -302,6 +310,11 @@ pub fn egress<F: AbstractField + Ord>(nil: List<F>) -> FuncE<F> {
                 Tag::Nil => {
                     let digest = Array(nil);
                     return digest
+                }
+                Tag::Char => {
+                    let padding = [0; 4];
+                    let bytes: [4] = load(val);
+                    return (bytes, padding)
                 }
                 Tag::Sym, Tag::Key, Tag::U64, Tag::Comm => {
                     let digest: [8] = load(val);
@@ -914,14 +927,13 @@ pub fn equal<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> 
                     return (val2_tag, val2)
                 }
             };
-            let t = call(equal_inner, val1_tag, val1, val2_tag, val2);
-            if t {
+            let is_equal_inner = call(equal_inner, val1_tag, val1, val2_tag, val2);
+            if is_equal_inner {
                 let builtin_tag = Tag::Builtin;
                 let t = builtins.index("t");
                 return (builtin_tag, t)
             }
-            let nil = 0;
-            return (nil_tag, nil)
+            return (nil_tag, is_equal_inner) // `is_equal_inner` is zero
         }
     )
 }
@@ -941,8 +953,17 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
             }
             match a_tag {
                 // The Nil case is impossible
-                Tag::Builtin, Tag::Num, Tag::Char, Tag::Err => {
+                Tag::Builtin, Tag::Num, Tag::Err => {
                     return zero
+                }
+                Tag::Char => {
+                    let a_bytes: [4] = load(a);
+                    let b_bytes: [4] = load(b);
+                    let diff = sub(a_bytes, b_bytes);
+                    if diff {
+                        return zero
+                    }
+                    return one
                 }
                 Tag::Sym, Tag::U64, Tag::Comm => {
                     let a_digest: [8] = load(a);
@@ -1669,13 +1690,13 @@ mod test {
         expect_eq(eval_letrec.width(), expect!["60"]);
         expect_eq(open_comm.width(), expect!["49"]);
         expect_eq(equal.width(), expect!["46"]);
-        expect_eq(equal_inner.width(), expect!["54"]);
+        expect_eq(equal_inner.width(), expect!["56"]);
         expect_eq(car_cdr.width(), expect!["38"]);
         expect_eq(apply.width(), expect!["62"]);
         expect_eq(env_lookup.width(), expect!["49"]);
-        expect_eq(ingress.width(), expect!["99"]);
+        expect_eq(ingress.width(), expect!["100"]);
         expect_eq(ingress_builtin.width(), expect!["49"]);
-        expect_eq(egress.width(), expect!["76"]);
+        expect_eq(egress.width(), expect!["77"]);
         expect_eq(egress_builtin.width(), expect!["49"]);
         expect_eq(hash_24_8.width(), expect!["493"]);
         expect_eq(hash_32_8.width(), expect!["655"]);
