@@ -122,10 +122,10 @@ pub enum EvalErr {
     NotCons,
     NotComm,
     NotString,
-    CannotCastToNum,
     NonConstantBuiltin,
     NotU64,
-    Todo,
+    CantCastToChar,
+    CantCastToU64,
 }
 
 impl EvalErr {
@@ -807,11 +807,11 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                     let (_car_tag, _car, cdr_tag, cdr) = call(car_cdr, rest_tag, rest, env);
                                     return (cdr_tag, cdr)
                                 }
-                                "num", "u64", "char", "atom", "emit" => {
+                                "u64", "char", "atom", "emit" => {
                                     let (res_tag, res) = call(eval_unop, head, rest_tag, rest, env);
                                     return (res_tag, res)
                                 }
-                                "commit", "comm", "open", "secret" => {
+                                "commit", "open", "secret" => {
                                     let (res_tag, res) = call(eval_comm_unop, head, rest_tag, rest, env);
                                     return (res_tag, res)
                                 }
@@ -1230,10 +1230,8 @@ pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE
         fn eval_unop(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
-            let num_tag = Tag::Num;
             let nil_tag = Tag::Nil;
             let invalid_form = EvalErr::InvalidForm;
-            let todo = EvalErr::Todo;
             let rest_not_cons = sub(rest_tag, cons_tag);
             if rest_not_cons {
                 return (err_tag, invalid_form)
@@ -1251,22 +1249,6 @@ pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE
             };
 
             match head [|sym| builtins.index(sym).to_field()] {
-                "num" => {
-                    let char_tag = Tag::Char;
-                    let u64_tag = Tag::U64;
-                    let val_not_char = sub(val_tag, char_tag);
-                    let val_not_u64 = sub(val_tag, u64_tag);
-                    let val_not_num = sub(val_tag, num_tag);
-
-                    // Commitments cannot be cast to numbers anymore
-                    let acc = mul(val_not_char, val_not_num);
-                    let cannot_cast = mul(acc, val_not_u64);
-                    if cannot_cast {
-                        let err = EvalErr::CannotCastToNum;
-                        return(err_tag, err)
-                    }
-                    return(num_tag, val)
-                }
                 "atom" => {
                     let val_not_cons = sub(val_tag, cons_tag);
                     if val_not_cons {
@@ -1282,10 +1264,35 @@ pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE
                     return (val_tag, val)
                 }
                 "u64" => {
-                    return(err_tag, todo)
+                    match val_tag {
+                        Tag::U64 => {
+                            return (val_tag, val)
+                        }
+                        Tag::Char => {
+                            let bytes: [4] = load(val);
+                            let padding = [0; 4];
+                            let val = store(bytes, padding);
+                            let val_tag = Tag::U64;
+                            return (val_tag, val)
+                        }
+                    };
+                    let err = EvalErr::CantCastToU64;
+                    return(err_tag, err)
                 }
                 "char" => {
-                    return (err_tag, todo)
+                    match val_tag {
+                        Tag::Char => {
+                            return (val_tag, val)
+                        }
+                        Tag::U64 => {
+                            let (bytes: [4], _ignored: [4]) = load(val);
+                            let val = store(bytes);
+                            let val_tag = Tag::Char;
+                            return (val_tag, val)
+                        }
+                    };
+                    let err = EvalErr::CantCastToChar;
+                    return(err_tag, err)
                 }
              }
         }
@@ -1300,7 +1307,6 @@ pub fn eval_comm_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
             let comm_tag = Tag::Comm;
             let nil_tag = Tag::Nil;
             let invalid_form = EvalErr::InvalidForm;
-            let todo = EvalErr::Todo;
             let rest_not_cons = sub(rest_tag, cons_tag);
             if rest_not_cons {
                 return (err_tag, invalid_form)
@@ -1347,10 +1353,6 @@ pub fn eval_comm_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
                     let (secret: [8], _payload: [16]) = preimg(hash_24_8, comm_hash);
                     let ptr = store(secret);
                     return (comm_tag, ptr)
-                }
-                "comm" => {
-                    // Can you really cast field elements to commitments?
-                    return (err_tag, todo)
                 }
              }
         }
@@ -1680,9 +1682,9 @@ mod test {
         };
         expect_eq(lurk_main.width(), expect!["68"]);
         expect_eq(eval.width(), expect!["104"]);
-        expect_eq(eval_comm_unop.width(), expect!["73"]);
+        expect_eq(eval_comm_unop.width(), expect!["72"]);
         expect_eq(eval_hide.width(), expect!["78"]);
-        expect_eq(eval_unop.width(), expect!["35"]);
+        expect_eq(eval_unop.width(), expect!["49"]);
         expect_eq(eval_binop_num.width(), expect!["56"]);
         expect_eq(eval_binop_misc.width(), expect!["34"]);
         expect_eq(eval_begin.width(), expect!["36"]);
@@ -1695,9 +1697,9 @@ mod test {
         expect_eq(apply.width(), expect!["62"]);
         expect_eq(env_lookup.width(), expect!["49"]);
         expect_eq(ingress.width(), expect!["100"]);
-        expect_eq(ingress_builtin.width(), expect!["49"]);
+        expect_eq(ingress_builtin.width(), expect!["47"]);
         expect_eq(egress.width(), expect!["77"]);
-        expect_eq(egress_builtin.width(), expect!["49"]);
+        expect_eq(egress_builtin.width(), expect!["47"]);
         expect_eq(hash_24_8.width(), expect!["493"]);
         expect_eq(hash_32_8.width(), expect!["655"]);
         expect_eq(hash_48_8.width(), expect!["975"]);

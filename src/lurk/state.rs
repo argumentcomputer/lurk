@@ -239,13 +239,12 @@ const LURK_PACKAGE_SYMBOL_NAME: &str = "lurk";
 const USER_PACKAGE_SYMBOL_NAME: &str = "user";
 const META_PACKAGE_SYMBOL_NAME: &str = "meta";
 
-pub(crate) const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 38] = [
+pub(crate) const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 36] = [
     "atom",
     "begin",
     "car",
     "cdr",
     "char",
-    "comm",
     "commit",
     "cons",
     "current-env",
@@ -261,7 +260,6 @@ pub(crate) const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 38] = [
     "let",
     "letrec",
     "nil",
-    "num",
     "u64",
     "open",
     "quote",
