@@ -166,7 +166,7 @@ pub fn ingress<F: AbstractField + Ord>() -> FuncE<F> {
             let (tag, rest: [7]) = tag_full;
             assert_eq!(rest, zeros);
             match tag {
-                Tag::Num, Tag::Err => {
+                Tag::Num => {
                     let (x, rest: [7]) = digest;
                     assert_eq!(rest, zeros);
                     return x
