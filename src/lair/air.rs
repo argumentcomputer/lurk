@@ -172,11 +172,18 @@ impl<F: Field> Func<F> {
         let last_nonce = local.next_aux(index);
         let last_count = local.next_aux(index);
         // provenance and range check
-        let depth: Vec<AB::Expr> = if self.partial {
+        let record = ProvideRecord {
+            last_nonce,
+            last_count,
+        };
+        let mut out = (0..self.output_size)
+            .map(|i| local.output[i].into())
+            .collect::<Vec<_>>();
+        let depth = if self.partial {
             let depth = (0..DEPTH_W)
                 .map(|_| local.next_aux(index))
                 .collect::<Vec<_>>();
-            let depth_expr = depth.iter().map(|&b| b.into()).collect();
+            let depth_expr = depth.iter().map(|&b| b.into()).collect::<Vec<AB::Expr>>();
             let num_requires = (DEPTH_W / 2) + (DEPTH_W % 2);
             let requires = (0..num_requires)
                 .map(|_| local.next_require(index))
@@ -184,15 +191,11 @@ impl<F: Field> Func<F> {
             let mut air_record = BytesAirRecordWithContext::default();
             air_record.range_check_u8_iter(depth, toplevel_sel.clone());
             air_record.require_all(builder, (*local.nonce).into(), requires);
+            out.extend_from_slice(&depth_expr);
             depth_expr
         } else {
             vec![]
         };
-        let record = ProvideRecord {
-            last_nonce,
-            last_count,
-        };
-        let out = (0..self.output_size).map(|i| local.output[i].into());
         builder.provide(
             CallRelation(func_idx, call_inp, out),
             record,
@@ -365,12 +368,6 @@ impl<F: Field> Op<F> {
                 }
                 let inp = inp.iter().map(|i| map[*i].to_expr());
                 let record = local.next_require(index);
-                builder.require(
-                    CallRelation(F::from_canonical_usize(*idx), inp, out),
-                    *local.nonce,
-                    record,
-                    sel.clone(),
-                );
                 // dependency provenance and constraints
                 if func.partial {
                     let dep_depth: &[_] = &(0..DEPTH_W)
@@ -381,11 +378,11 @@ impl<F: Field> Op<F> {
                         .collect::<Vec<_>>();
                     let less_than: &DepthLessThan<_> = witness.borrow();
                     let mut air_record = BytesAirRecordWithContext::default();
-                    let dep_depth: &Word32<_> = dep_depth.borrow();
+                    let dep_depth_word: &Word32<_> = dep_depth.borrow();
                     let depth: &Word32<_> = depth.borrow();
                     less_than.assert_less_than(
                         builder,
-                        dep_depth,
+                        dep_depth_word,
                         depth,
                         &mut air_record,
                         sel.clone(),
@@ -394,7 +391,14 @@ impl<F: Field> Op<F> {
                         .map(|_| local.next_require(index))
                         .collect::<Vec<_>>();
                     air_record.require_all(builder, (*local.nonce).into(), requires);
+                    out.extend(dep_depth.iter().cloned());
                 };
+                builder.require(
+                    CallRelation(F::from_canonical_usize(*idx), inp, out),
+                    *local.nonce,
+                    record,
+                    sel.clone(),
+                );
             }
             Op::PreImg(idx, out) => {
                 let func = toplevel.get_by_index(*idx);
@@ -404,14 +408,8 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(i.into()));
                     inp.push(i.into());
                 }
-                let out = out.iter().map(|o| map[*o].to_expr());
+                let mut out = out.iter().map(|o| map[*o].to_expr()).collect::<Vec<_>>();
                 let record = local.next_require(index);
-                builder.require(
-                    CallRelation(F::from_canonical_usize(*idx), inp, out),
-                    *local.nonce,
-                    record,
-                    sel.clone(),
-                );
                 // dependency provenance and constraints
                 if func.partial {
                     let dep_depth: &[_] = &(0..DEPTH_W)
@@ -422,11 +420,11 @@ impl<F: Field> Op<F> {
                         .collect::<Vec<_>>();
                     let less_than: &DepthLessThan<_> = witness.borrow();
                     let mut air_record = BytesAirRecordWithContext::default();
-                    let dep_depth: &Word32<_> = dep_depth.borrow();
+                    let dep_depth_word: &Word32<_> = dep_depth.borrow();
                     let depth: &Word32<_> = depth.borrow();
                     less_than.assert_less_than(
                         builder,
-                        dep_depth,
+                        dep_depth_word,
                         depth,
                         &mut air_record,
                         sel.clone(),
@@ -435,7 +433,14 @@ impl<F: Field> Op<F> {
                         .map(|_| local.next_require(index))
                         .collect::<Vec<_>>();
                     air_record.require_all(builder, (*local.nonce).into(), requires);
+                    out.extend(dep_depth.iter().cloned());
                 };
+                builder.require(
+                    CallRelation(F::from_canonical_usize(*idx), inp, out),
+                    *local.nonce,
+                    record,
+                    sel.clone(),
+                );
             }
             Op::Store(values) => {
                 let ptr = local.next_aux(index);

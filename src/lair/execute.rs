@@ -358,10 +358,13 @@ impl<F: PrimeField32, H: Chipset<F>> Toplevel<F, H> {
         queries: &mut QueryRecord<F>,
         dbg_func_idx: Option<usize>,
     ) -> Result<List<F>> {
-        let out = func.execute(args, self, queries, dbg_func_idx)?;
+        let (out, depth) = func.execute(args, self, queries, dbg_func_idx)?;
         let mut public_values = Vec::with_capacity(args.len() + out.len());
         public_values.extend(args);
         public_values.extend(out.iter());
+        if func.partial {
+            public_values.extend(depth.to_le_bytes().map(F::from_canonical_u8));
+        }
         queries.public_values = Some(public_values);
         Ok(out)
     }
@@ -414,7 +417,7 @@ impl<F: PrimeField32> Func<F> {
         toplevel: &Toplevel<F, H>,
         queries: &mut QueryRecord<F>,
         dbg_func_idx: Option<usize>,
-    ) -> Result<List<F>> {
+    ) -> Result<(List<F>, u32)> {
         let mut func_index = self.index;
         let mut query_result = QueryResult::default();
         query_result.provide.count = 1;
@@ -745,7 +748,8 @@ impl<F: PrimeField32> Func<F> {
                 }
             }
         }
-        Ok(map.into())
+        let depth = depths.iter().map(|&a| a + 1).max().unwrap_or(0);
+        Ok((map.into(), depth))
     }
 }
 

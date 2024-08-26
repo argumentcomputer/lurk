@@ -15,6 +15,7 @@ use super::{
     execute::{Shard, MEM_TABLE_SIZES},
     func_chip::FuncChip,
     memory::MemChip,
+    provenance::DEPTH_W,
     relations::OuterCallRelation,
 };
 
@@ -31,9 +32,11 @@ pub enum LairChip<'a, F, H: Chipset<F>> {
 impl<'a, F, H: Chipset<F>> LairChip<'a, F, H> {
     #[inline]
     pub fn entrypoint(func: &Func<F>) -> Self {
+        let partial = if func.partial { DEPTH_W } else { 0 };
+        let num_public_values = func.input_size + func.output_size + partial;
         Self::Entrypoint {
             func_idx: func.index,
-            num_public_values: func.input_size + func.output_size,
+            num_public_values,
         }
     }
 }
