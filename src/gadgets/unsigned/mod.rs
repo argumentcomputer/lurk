@@ -11,6 +11,7 @@ use std::ops::{Index, IndexMut};
 pub mod add;
 pub mod cmp;
 pub mod div_rem;
+pub mod field;
 pub mod is_zero;
 pub mod less_than;
 pub mod mul;

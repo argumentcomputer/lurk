@@ -6,6 +6,7 @@ use p3_matrix::dense::RowMajorMatrix;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
 
+#[derive(Debug)]
 pub struct GadgetTester<F> {
     should_fail: bool,
     has_failed: bool,
@@ -23,7 +24,7 @@ impl<F> GadgetTester<F> {
 
     pub fn failing() -> Self {
         Self {
-            should_fail: false,
+            should_fail: true,
             has_failed: false,
             _marker: Default::default(),
         }
@@ -54,7 +55,7 @@ impl<F: Field> AirBuilder for GadgetTester<F> {
 
     fn assert_zero<I: Into<Self::Expr>>(&mut self, x: I) {
         if !x.into().is_zero() {
-            assert!(!self.should_fail, "invalid constraint");
+            assert!(self.should_fail, "invalid constraint");
             self.has_failed = true;
         }
     }
@@ -64,6 +65,8 @@ impl<F> Drop for GadgetTester<F> {
     fn drop(&mut self) {
         if self.should_fail {
             assert!(self.has_failed, "expected failing condition")
+        } else {
+            assert!(!self.has_failed, "expected to never fail")
         }
     }
 }
