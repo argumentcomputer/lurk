@@ -4,7 +4,7 @@ use p3_air::AirBuilder;
 use p3_field::{AbstractField, PrimeField32};
 use sphinx_derive::AlignedBorrow;
 
-use super::Word32;
+use super::{UncheckedWord, Word32};
 
 const W: usize = 4;
 const BABYBEAR_MSB: u8 = 0x78;
@@ -19,19 +19,18 @@ pub struct FieldWitness<T> {
 }
 
 impl<F: PrimeField32> FieldWitness<F> {
-    pub fn populate<U>(&mut self, field: &U, byte_record: &mut impl ByteRecord) -> Word32<F>
+    pub fn populate<U>(&mut self, field: &U, byte_record: &mut impl ByteRecord) -> [u8; W]
     where
-        U: ToBytes<Bytes = [u8; W]> + Unsigned + Ord + std::fmt::Debug,
+        U: ToBytes<Bytes = [u8; W]> + Unsigned + Ord,
     {
         // TODO: assert that field fits in babybear -- constraints fail even without the assert however
 
-        let word = Word32::from_unsigned(field);
         let word_bytes = field.to_le_bytes();
 
         let is_less_than = byte_record.less_than(word_bytes[W - 1], BABYBEAR_MSB);
         self.is_msb_less_than = F::from_bool(is_less_than);
 
-        word
+        word_bytes
     }
 
     pub fn populate_uint<U>(&mut self, _uint: &Word32<F>, _byte_record: &mut impl ByteRecord) -> F
@@ -89,8 +88,6 @@ impl<Var> FieldWitness<Var> {
         for i in 0..(W - 1) {
             builder_when_eq.assert_eq(word[i].clone(), AB::Expr::zero());
         }
-
-        // TODO: range check the word?
     }
 }
 
@@ -112,6 +109,62 @@ impl<T: Default> Default for FieldWitness<T> {
     }
 }
 
+#[derive(Clone, Debug, Default, AlignedBorrow)]
+pub struct FieldToWord32<T> {
+    witness: FieldWitness<T>,
+    result: UncheckedWord<T, W>,
+}
+
+impl<F: PrimeField32> FieldToWord32<F> {
+    pub fn populate<U>(&mut self, field: &U, byte_record: &mut impl ByteRecord)
+    where
+        U: ToBytes<Bytes = [u8; W]> + Unsigned + Ord,
+    {
+        let out = self.witness.populate(field, byte_record);
+        self.result.assign_bytes(&out, byte_record);
+    }
+}
+
+impl<Var> FieldToWord32<Var> {
+    pub fn eval<AB: AirBuilder<Var = Var>>(
+        &self,
+        builder: &mut AB,
+        field: &AB::Expr,
+        record: &mut impl ByteAirRecord<AB::Expr>,
+        is_real: impl Into<AB::Expr>,
+    ) -> Word32<AB::Var>
+    where
+        Var: Copy + Into<AB::Expr>,
+    {
+        let is_real = is_real.into();
+        self.witness.assert_eq(
+            builder,
+            &self.result.into_unchecked().into(),
+            field,
+            record,
+            is_real.clone(),
+        );
+        self.result.into_checked(record, is_real.clone())
+    }
+}
+
+impl<T> FieldToWord32<T> {
+    pub const fn num_requires() -> usize {
+        FieldWitness::<T>::num_requires() + W / 2
+    }
+
+    pub const fn witness_size() -> usize {
+        size_of::<FieldToWord32<u8>>()
+    }
+
+    pub fn iter_result(&self) -> impl IntoIterator<Item = T>
+    where
+        T: Clone,
+    {
+        self.result.0.clone()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,27 +180,32 @@ mod tests {
     #[test]
     fn test_witness_size() {
         expect!["1"].assert_eq(&FieldWitness::<u8>::witness_size().to_string());
+        expect!["5"].assert_eq(&FieldToWord32::<u8>::witness_size().to_string());
     }
 
     #[test]
     fn test_num_requires() {
-        expect!["1"].assert_eq(&FieldWitness::<u8>::witness_size().to_string());
+        expect!["1"].assert_eq(&FieldWitness::<u8>::num_requires().to_string());
+        expect!["3"].assert_eq(&FieldToWord32::<u8>::num_requires().to_string());
     }
 
     fn test_field_inner(val_u32: u32, should_fail: bool) {
-        // FIXME: why is this not failing for n > BABYBEAR_MOD
         let record = &mut ByteRecordTester::default();
+        let mut witness = FieldWitness::<F>::default();
+        let result_bytes = witness.populate(&val_u32, record);
+
+        let result_u32 = u32::from_le_bytes(result_bytes);
+        assert_eq!(val_u32, result_u32);
+        let result = result_bytes.into_iter().map(F::from_canonical_u8).collect();
+        let expected = Word32::from_unsigned(&val_u32);
+        assert_eq!(result, expected);
+        let val = F::from_canonical_u32(val_u32);
+
         let builder = if should_fail {
             &mut GadgetTester::<F>::failing()
         } else {
             &mut GadgetTester::<F>::passing()
         };
-
-        let mut witness = FieldWitness::<F>::default();
-
-        let result: Word32<F> = witness.populate(&val_u32, record);
-        let val = F::from_canonical_u32(val_u32);
-
         witness.assert_eq(
             builder,
             &result,
@@ -156,9 +214,22 @@ mod tests {
             F::one(),
         );
 
-        let expected = Word32::from_unsigned(&val_u32);
+        let record = &mut ByteRecordTester::default();
+        let mut full_witness = FieldToWord32::<F>::default();
+        full_witness.populate(&val_u32, record);
 
-        assert_eq!(result, expected);
+        let builder = if should_fail {
+            &mut GadgetTester::<F>::failing()
+        } else {
+            &mut GadgetTester::<F>::passing()
+        };
+        let full_result = full_witness.eval(
+            builder,
+            &val,
+            &mut record.passing(FieldToWord32::<F>::num_requires()),
+            F::one(),
+        );
+        assert_eq!(full_result, result);
     }
 
     #[test]
