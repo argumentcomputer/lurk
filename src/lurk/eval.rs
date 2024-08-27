@@ -984,8 +984,6 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
             match a_tag {
                 // The Nil case is impossible
                 Tag::Builtin, Tag::Num, Tag::Err => {
-                    // This should never happen, make this path unprovable
-                    assert_eq!(one, zero);
                     return zero
                 }
                 Tag::Char => {

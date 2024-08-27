@@ -338,6 +338,8 @@ test_raw!(
     },
     |z| z.intern_nil()
 );
+test!(test_eq22, "(eq 1n 0n)", |z| z.intern_nil());
+test!(test_eq23, "(eq 1n 1n)", |z| z.intern_symbol(&lurk_sym("t")));
 
 test!(
     test_misc1,
