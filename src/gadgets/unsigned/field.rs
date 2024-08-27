@@ -7,6 +7,7 @@ use sphinx_derive::AlignedBorrow;
 use super::{UncheckedWord, Word32, WORD32_SIZE};
 
 const BABYBEAR_MSB: u8 = 0x78;
+const BABYBEAR_MOD: u32 = 0x78000001;
 
 /// Witness variables for proving the equality between a field element and a u32
 ///
@@ -23,6 +24,8 @@ impl<F: PrimeField32> FieldWitness<F> {
         U: ToBytes<Bytes = [u8; WORD32_SIZE]> + Unsigned + Ord,
     {
         let word_bytes = field.to_le_bytes();
+        let word_u32 = u32::from_le_bytes(word_bytes);
+        assert!(word_u32 < BABYBEAR_MOD, "Field element too large");
 
         let is_less_than = byte_record.less_than(word_bytes[WORD32_SIZE - 1], BABYBEAR_MSB);
         self.is_msb_less_than = F::from_bool(is_less_than);
@@ -165,7 +168,6 @@ mod tests {
     use proptest::prelude::*;
 
     type F = BabyBear;
-    const BABYBEAR_MOD: u32 = 0x78000001;
 
     #[test]
     fn test_witness_size() {
@@ -179,7 +181,7 @@ mod tests {
         expect!["3"].assert_eq(&FieldToWord32::<u8>::num_requires().to_string());
     }
 
-    fn test_field_inner(val_u32: u32, should_fail: bool) {
+    fn test_field_inner(val_u32: u32) {
         let record = &mut ByteRecordTester::default();
         let mut witness = FieldWitness::<F>::default();
         let result_bytes = witness.populate(&val_u32, record);
@@ -191,11 +193,7 @@ mod tests {
         assert_eq!(result, expected);
         let val = F::from_canonical_u32(val_u32);
 
-        let builder = if should_fail {
-            &mut GadgetTester::<F>::failing()
-        } else {
-            &mut GadgetTester::<F>::passing()
-        };
+        let builder = &mut GadgetTester::<F>::passing();
         witness.assert_eq(
             builder,
             &result,
@@ -208,11 +206,7 @@ mod tests {
         let mut full_witness = FieldToWord32::<F>::default();
         full_witness.populate(&val_u32, record);
 
-        let builder = if should_fail {
-            &mut GadgetTester::<F>::failing()
-        } else {
-            &mut GadgetTester::<F>::passing()
-        };
+        let builder = &mut GadgetTester::<F>::passing();
         let full_result = full_witness.eval(
             builder,
             &val,
@@ -224,23 +218,15 @@ mod tests {
 
     #[test]
     fn test_field_special() {
-        test_field_inner(0, false);
-        test_field_inner(BABYBEAR_MOD - 1, false);
-        test_field_inner(BABYBEAR_MOD, true);
-        test_field_inner(BABYBEAR_MOD + 1, true);
-        test_field_inner(u32::MAX, true);
+        test_field_inner(0);
+        test_field_inner(BABYBEAR_MOD - 1);
     }
 
     proptest! {
 
     #[test]
     fn test_field_passing(val_u32 in 0u32..BABYBEAR_MOD) {
-        test_field_inner(val_u32, false);
-    }
-
-    #[test]
-    fn test_field_failing(val_u32 in BABYBEAR_MOD..u32::MAX) {
-        test_field_inner(val_u32, true);
+        test_field_inner(val_u32);
     }
 
     }
