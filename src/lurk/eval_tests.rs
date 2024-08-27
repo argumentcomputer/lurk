@@ -220,6 +220,12 @@ test!(test_div, "(/ 6 3)", |_| uint(2));
 test!(test_arith, "(+ (* 2 2) (* 2 3))", |_| uint(10));
 test!(test_num_eq, "(= 0 1)", |z| z.intern_nil());
 test!(test_num_eq2, "(= 1 1)", |z| z.intern_symbol(&lurk_sym("t")));
+test!(test_num_order, "(>= 1 1)", |z| z
+    .intern_symbol(&lurk_sym("t")));
+test!(test_num_order2, "(<= 1 1)", |z| z
+    .intern_symbol(&lurk_sym("t")));
+test!(test_num_order3, "(< 1 1)", |z| z.intern_nil());
+test!(test_num_order4, "(> 1 1)", |z| z.intern_nil());
 test!(test_begin_empty, "(begin)", |z| z.intern_nil());
 test!(test_begin, "(begin 1 2 3)", |_| uint(3));
 test!(test_quote, "'(x 1 :foo)", |z| {
@@ -334,6 +340,13 @@ test!(
     "(begin (commit (lambda (x) x)) (#0x3f2e7102a9f8a303255b90724f24f4eb05b61e99723ca838cf30671676c86a 42))",
     |_| uint(42)
 );
+test!(test_comm_order, "(>= #0x1 #0x1)", |z| z
+    .intern_symbol(&lurk_sym("t")));
+test!(test_comm_order2, "(<= #0x1 #0x1)", |z| z
+    .intern_symbol(&lurk_sym("t")));
+test!(test_comm_order3, "(< #0x1 #0x1)", |z| z.intern_nil());
+test!(test_comm_order4, "(> #0x1 #0x1)", |z| z.intern_nil());
+test!(test_comm_order5, "(< #0x17084a3b94580234614c1ebde7dbb24bc3cb26ba2a84d1355c06cca90b8fb7 #0x7b4dd31c2678ef3c257cda6a06f0c830aaeab011c2c4e7fa9a27c699550539)", |z| z.intern_symbol(&lurk_sym("t")));
 
 // errors
 test!(test_unbound_var, "a", |_| ZPtr::err(EvalErr::UnboundVar));

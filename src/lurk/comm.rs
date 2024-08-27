@@ -134,7 +134,7 @@ mod test {
         let f = F::from_canonical_usize;
         // Little endian
         let args = &[
-            f(16777216 * 1),
+            f(16777216),
             f(16777216 * 2),
             f(16777216 * 3),
             f(16777216 * 4),
