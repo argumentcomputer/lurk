@@ -464,7 +464,9 @@ impl<F: PrimeField32> Func<F> {
                     if let Some((query_idx, _, result)) =
                         queries.func_queries[*callee_index].get_full_mut(inp.as_slice())
                     {
-                        let out = result.output.as_ref().expect("Loop detected");
+                        let Some(out) = result.output.as_ref() else {
+                            bail!("Loop detected");
+                        };
                         map.extend(out);
                         result.new_lookup(nonce, &mut requires);
                         if dbg_func_idx == Some(*callee_index) {
@@ -520,7 +522,10 @@ impl<F: PrimeField32> Func<F> {
                     if let Some((query_idx, _, result)) =
                         queries.func_queries[*callee_index].get_full_mut(inp.as_slice())
                     {
-                        assert_eq!(result.output.as_ref().expect("Loop detected"), &out);
+                        let Some(out_memoized) = result.output.as_ref() else {
+                            bail!("Loop detected");
+                        };
+                        assert_eq!(out_memoized, &out);
                         map.extend(inp);
                         result.new_lookup(nonce, &mut requires);
                         if dbg_func_idx == Some(*callee_index) {
