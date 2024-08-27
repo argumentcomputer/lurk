@@ -982,8 +982,8 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
                 return one
             }
             match a_tag {
-                // The Nil case is impossible
-                Tag::Builtin, Tag::Num, Tag::Err => {
+                // The Nil and Err cases are impossible
+                Tag::Builtin, Tag::Num => {
                     return zero
                 }
                 Tag::Char => {
