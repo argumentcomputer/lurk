@@ -1,0 +1,27 @@
+!(def position (lambda (elt list)
+                 (letrec ((aux (lambda (list)
+                                 (if (eq (car list) elt)
+                                     0
+                                     (+ 1 (aux (cdr list)))))))
+                   (if list (aux list)))))
+
+!(defrec nth (lambda (n list)
+               (if list
+                   (if (= n 0)
+                       (car list)
+                       (nth (- n 1) (cdr list))))))
+
+
+!(defrec nth-cdr (lambda (n l)
+                   (if (= n 0)
+                       l
+                       (cdr (nth-cdr (- n 1) l)))))
+
+!(def nth (lambda (n list) (car (nth-cdr n list))))
+
+!(defrec apply (lambda (f args)
+                 (if args
+                     (if (cdr args)
+                         (apply (f (car args)) (cdr args))
+                         (f (car args)))
+                     (f))))

@@ -1,0 +1,2 @@
+!(load "util-test.lurk")
+!(load "struct-test.lurk")

@@ -1,0 +1,12 @@
+;; Support for structs, leveraging memoization for efficiency.
+!(load "util.lurk")
+
+;; Crude first-draft of struct implementation.
+!(def struct (lambda (args)
+               (lambda (op)
+                 ;; Both :new and :type are a bit silly and could be normal functions.
+                 ;; However this allows an interface that abstracts the implementation.
+                 (if (eq op :new)
+                     (lambda (vals)
+                       (lambda (field)
+                         (nth (position field args) vals)))))))

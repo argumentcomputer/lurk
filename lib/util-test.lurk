@@ -1,0 +1,11 @@
+!(load "util.lurk")
+
+;; position
+!(assert-eq 2 (position :c '(:a :b :c :d)))
+
+;; nth
+!(assert-eq :c (nth 2 '(:a :b :c :d)))
+!(assert-eq :c (nth 2 '(:a :b :c :d)))
+
+;; apply
+!(assert-eq 27 (apply (lambda (x y z) (* x (+ y z))) '(3 4 5)))
