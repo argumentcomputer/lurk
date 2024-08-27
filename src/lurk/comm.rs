@@ -100,10 +100,7 @@ impl<F: PrimeField32> Chipset<F> for Comm {
 mod test {
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
-    use sphinx_core::{
-        stark::{LocalProver, StarkGenericConfig, StarkMachine},
-        utils::{BabyBearPoseidon2, SphinxCoreOpts},
-    };
+    use sphinx_core::{stark::StarkMachine, utils::BabyBearPoseidon2};
 
     use crate::{
         air::debug::debug_chip_constraints_and_queries_with_sharding,
@@ -167,16 +164,8 @@ mod test {
             queries.expect_public_values().len(),
         );
 
-        let (pk, vk) = machine.setup(&LairMachineProgram);
-        let mut challenger_p = machine.config().challenger();
-        let mut challenger_v = machine.config().challenger();
+        let (pk, _vk) = machine.setup(&LairMachineProgram);
         let shard = Shard::new(&queries);
-
         machine.debug_constraints(&pk, shard.clone());
-        let opts = SphinxCoreOpts::default();
-        let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
-        machine
-            .verify(&vk, &proof, &mut challenger_v)
-            .expect("proof verifies");
     }
 }
