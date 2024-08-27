@@ -16,7 +16,6 @@ pub struct CommitmentCompareWitness<T> {
     is_comp: [T; DIGEST_SIZE],
     lhs_comp_limb: T,
     rhs_comp_limb: T,
-    comp_diff_inv: T,
     lhs_comp_word: FieldToWord32<T>,
     rhs_comp_word: FieldToWord32<T>,
     comp_witness: CompareWitness<T, WORD32_SIZE>,
@@ -35,7 +34,6 @@ impl<F: PrimeField32> CommitmentCompareWitness<F> {
                 self.is_comp[i] = F::one();
                 self.lhs_comp_limb = lhs[i];
                 self.rhs_comp_limb = rhs[i];
-                self.comp_diff_inv = (self.lhs_comp_limb - self.rhs_comp_limb).inverse();
                 let lhs_u32 = lhs[i].as_canonical_u32();
                 let rhs_u32 = rhs[i].as_canonical_u32();
                 self.lhs_comp_word.populate(&lhs_u32, byte_record);
@@ -93,16 +91,6 @@ impl<Var> CommitmentCompareWitness<Var> {
         builder.assert_eq(select_limb(lhs), self.lhs_comp_limb);
         builder.assert_eq(select_limb(rhs), self.rhs_comp_limb);
 
-        // If is_equal == 0, then we must ensure that the comparison limbs are actually different,
-        // since this ensures `is_comp` actually selects the most-significant *different* bytes.
-        // Otherwise, we would be able to set `is_comp[i]` to select equal limbs, which would
-        // force `is_less_than = 0`.
-        // Note that we could avoid this extra constraint if we just want an assertion that lhs<rhs,
-        // since setting `is_less_than` as a constant equal to 1 ensures that the `lhs[i] != rhs[i]`
-        let is_different = AB::Expr::one() - is_equal.clone();
-        let comp_diff = self.lhs_comp_limb.into() - self.rhs_comp_limb;
-        builder.assert_eq(comp_diff * self.comp_diff_inv, is_different.clone());
-
         // Convert the comparison limbs into their respective Word32s
         let lhs_word = self.lhs_comp_word.eval(
             orig_builder,
@@ -127,6 +115,7 @@ impl<Var> CommitmentCompareWitness<Var> {
         );
 
         // Assert that the field-element `is_equal` is equal to word-wise `comp_result.is_equal()`
+        // This means we do not need to directly compare `lhs_comp_limb` and `rhs_comp_limb`.
         orig_builder
             .when(is_real)
             .assert_eq(is_equal.clone(), comp_result.is_equal());
@@ -160,7 +149,6 @@ impl<T: Default> Default for CommitmentCompareWitness<T> {
             lhs_comp_word: Default::default(),
             rhs_comp_word: Default::default(),
             comp_witness: Default::default(),
-            comp_diff_inv: T::default(),
         }
     }
 }
@@ -179,7 +167,7 @@ mod tests {
 
     #[test]
     fn test_witness_size() {
-        expect!["29"].assert_eq(&CommitmentCompareWitness::<u8>::witness_size().to_string());
+        expect!["28"].assert_eq(&CommitmentCompareWitness::<u8>::witness_size().to_string());
     }
 
     #[test]

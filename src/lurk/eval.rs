@@ -1777,7 +1777,7 @@ mod test {
         expect_eq(u64_divrem.width(), expect!["166"]);
         expect_eq(u64_lessthan.width(), expect!["44"]);
         expect_eq(u64_iszero.width(), expect!["26"]);
-        expect_eq(comm_lessthan.width(), expect!["79"]);
+        expect_eq(comm_lessthan.width(), expect!["78"]);
     }
 
     #[test]

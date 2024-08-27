@@ -1,5 +1,5 @@
 use crate::gadgets::bytes::{ByteAirRecord, ByteRecord};
-use num_traits::{ToBytes, Unsigned};
+use num_traits::ToBytes;
 use p3_air::AirBuilder;
 use p3_field::{AbstractField, PrimeField32};
 use sphinx_derive::AlignedBorrow;
@@ -19,10 +19,11 @@ pub struct FieldWitness<T> {
 }
 
 impl<F: PrimeField32> FieldWitness<F> {
-    pub fn populate<U>(&mut self, field: &U, byte_record: &mut impl ByteRecord) -> [u8; WORD32_SIZE]
-    where
-        U: ToBytes<Bytes = [u8; WORD32_SIZE]> + Unsigned + Ord,
-    {
+    pub fn populate(
+        &mut self,
+        field: &u32,
+        byte_record: &mut impl ByteRecord,
+    ) -> [u8; WORD32_SIZE] {
         let word_bytes = field.to_le_bytes();
         let word_u32 = u32::from_le_bytes(word_bytes);
         assert!(word_u32 < BABYBEAR_MOD, "Field element too large");
@@ -110,10 +111,7 @@ pub struct FieldToWord32<T> {
 }
 
 impl<F: PrimeField32> FieldToWord32<F> {
-    pub fn populate<U>(&mut self, field: &U, byte_record: &mut impl ByteRecord)
-    where
-        U: ToBytes<Bytes = [u8; WORD32_SIZE]> + Unsigned + Ord,
-    {
+    pub fn populate(&mut self, field: &u32, byte_record: &mut impl ByteRecord) {
         let out = self.witness.populate(field, byte_record);
         self.result.assign_bytes(&out, byte_record);
     }
