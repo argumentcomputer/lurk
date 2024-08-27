@@ -281,6 +281,64 @@ test!(test_strcons, "(strcons 'a' \"bc\")", |z| z
 test!(test_eq1, "(eq (cons 1 2) '(1 . 2))", |z| z
     .intern_symbol(&lurk_sym("t")));
 test!(test_eq2, "(eq (cons 1 3) '(1 . 2))", |z| z.intern_nil());
+test!(test_eq3, "(eq :a :a)", |z| z.intern_symbol(&lurk_sym("t")));
+test!(test_eq4, "(eq :a :b)", |z| z.intern_nil());
+test!(test_eq5, "(eq 'a 'a)", |z| z.intern_symbol(&lurk_sym("t")));
+test!(test_eq6, "(eq 'a 'b)", |z| z.intern_nil());
+test!(test_eq7, "(eq nil nil)", |z| z
+    .intern_symbol(&lurk_sym("t")));
+test!(test_eq8, "(eq t t)", |z| z.intern_symbol(&lurk_sym("t")));
+test!(test_eq9, "(eq t nil)", |z| z.intern_nil());
+test!(test_eq10, "(eq 'a' 'b')", |z| z.intern_nil());
+test!(test_eq11, "(eq 'a' 'a')", |z| z
+    .intern_symbol(&lurk_sym("t")));
+test!(test_eq12, "(eq \"abc\" \"abd\")", |z| z.intern_nil());
+test!(test_eq13, "(eq \"abc\" \"abc\")", |z| z
+    .intern_symbol(&lurk_sym("t")));
+test!(test_eq14, "(eq (cons 'a 1) (cons 'a 2))", |z| z
+    .intern_nil());
+test!(test_eq15, "(eq (cons :a 1) (cons :a 1))", |z| z
+    .intern_symbol(&lurk_sym("t")));
+test!(test_eq16, "(eq (lambda (x) x) (lambda (x) x))", |z| z
+    .intern_symbol(&lurk_sym("t")));
+test!(test_eq17, "(eq (lambda (x) x) (lambda (y) y))", |z| z
+    .intern_nil());
+test!(
+    test_eq18,
+    "(eq (let ((x 1)) (current-env)) (let ((x 1)) (current-env)))",
+    |z| z.intern_symbol(&lurk_sym("t"))
+);
+test!(
+    test_eq19,
+    "(eq (let ((x 1)) (current-env)) (current-env))",
+    |z| z.intern_nil()
+);
+test_raw!(
+    test_eq20,
+    |z| {
+        let eq = z.intern_symbol(&lurk_sym("eq"));
+        let t = z.intern_symbol(&lurk_sym("t"));
+        let env = z.intern_empty_env();
+        let arg1 = z.intern_thunk(t, env);
+        let arg2 = z.intern_thunk(t, env);
+        z.intern_list([eq, arg1, arg2])
+    },
+    |z| z.intern_symbol(&lurk_sym("t"))
+);
+test_raw!(
+    test_eq21,
+    |z| {
+        let eq = z.intern_symbol(&lurk_sym("eq"));
+        let nil = z.intern_nil();
+        let t = z.intern_symbol(&lurk_sym("t"));
+        let env = z.intern_empty_env();
+        let arg1 = z.intern_thunk(nil, env);
+        let arg2 = z.intern_thunk(t, env);
+        z.intern_list([eq, arg1, arg2])
+    },
+    |z| z.intern_nil()
+);
+
 test!(
     test_misc1,
     "(letrec ((ones (cons 1 (lambda () ones))))

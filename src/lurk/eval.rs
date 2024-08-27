@@ -984,6 +984,8 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
             match a_tag {
                 // The Nil case is impossible
                 Tag::Builtin, Tag::Num, Tag::Err => {
+                    // This should never happen, make this path unprovable
+                    assert_eq!(one, zero);
                     return zero
                 }
                 Tag::Char => {
@@ -1016,7 +1018,7 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
                     let eq = mul(fst_eq, snd_eq);
                     return eq
                 }
-                Tag::Cons, Tag::Thunk => {
+                Tag::Cons => {
                     let (a_fst: [2], a_snd: [2]) = load(a);
                     let (b_fst: [2], b_snd: [2]) = load(b);
                     let fst_eq = call(equal_inner, a_fst, b_fst);
@@ -1024,12 +1026,22 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
                     let eq = mul(fst_eq, snd_eq);
                     return eq
                 }
+                Tag::Thunk => {
+                    let snd_tag = Tag::Env;
+                    let (a_fst: [2], a_snd) = load(a);
+                    let (b_fst: [2], b_snd) = load(b);
+                    let fst_eq = call(equal_inner, a_fst, b_fst);
+                    let snd_eq = call(equal_inner, snd_tag, a_snd, snd_tag, b_snd);
+                    let eq = mul(fst_eq, snd_eq);
+                    return eq
+                }
                 Tag::Fun => {
-                    let (a_fst: [2], a_snd: [2], a_trd: [2]) = load(a);
-                    let (b_fst: [2], b_snd: [2], b_trd: [2]) = load(b);
+                    let trd_tag = Tag::Env;
+                    let (a_fst: [2], a_snd: [2], a_trd) = load(a);
+                    let (b_fst: [2], b_snd: [2], b_trd) = load(b);
                     let fst_eq = call(equal_inner, a_fst, b_fst);
                     let snd_eq = call(equal_inner, a_snd, b_snd);
-                    let trd_eq = call(equal_inner, a_trd, b_trd);
+                    let trd_eq = call(equal_inner, trd_tag, a_trd, trd_tag, b_trd);
                     let eq = mul(fst_eq, snd_eq);
                     let eq = mul(eq, trd_eq);
                     return eq
@@ -1760,7 +1772,7 @@ mod test {
         expect_eq(eval_letrec.width(), expect!["60"]);
         expect_eq(open_comm.width(), expect!["49"]);
         expect_eq(equal.width(), expect!["46"]);
-        expect_eq(equal_inner.width(), expect!["56"]);
+        expect_eq(equal_inner.width(), expect!["57"]);
         expect_eq(car_cdr.width(), expect!["38"]);
         expect_eq(apply.width(), expect!["62"]);
         expect_eq(env_lookup.width(), expect!["49"]);
