@@ -12,14 +12,15 @@ use std::iter::zip;
 pub const WORD32_SIZE: usize = 4;
 
 #[derive(Clone, Debug, AlignedBorrow)]
+#[repr(C)]
 pub struct CommitmentCompareWitness<T> {
     is_comp: [T; DIGEST_SIZE],
     lhs_comp_limb: T,
     rhs_comp_limb: T,
+    comp_diff_inv: T,
     lhs_comp_word: FieldToWord32<T>,
     rhs_comp_word: FieldToWord32<T>,
     comp_witness: CompareWitness<T, WORD32_SIZE>,
-    comp_diff_inv: T,
 }
 
 impl<F: PrimeField32> CommitmentCompareWitness<F> {
@@ -43,7 +44,9 @@ impl<F: PrimeField32> CommitmentCompareWitness<F> {
                 return self.comp_witness.populate(&lhs_u32, &rhs_u32, byte_record);
             }
         }
-        Ordering::Equal
+        self.lhs_comp_word.populate(&0u32, byte_record);
+        self.rhs_comp_word.populate(&0u32, byte_record);
+        self.comp_witness.populate(&0u32, &0u32, byte_record)
     }
 }
 
@@ -232,10 +235,17 @@ mod tests {
         lhs: [u32; DIGEST_SIZE],
         rhs: [u32; DIGEST_SIZE],
     ) {
-        let lhs = lhs.map(F::from_canonical_u32);
-        let rhs = rhs.map(F::from_canonical_u32);
+        let lhs = lhs.map(|x| x % BABYBEAR_MOD).map(F::from_canonical_u32);
+        let rhs = rhs.map(|x| x % BABYBEAR_MOD).map(F::from_canonical_u32);
         test_compare_inner(&lhs, &rhs);
     }
 
+    }
+
+    #[test]
+    fn test_compare_special() {
+        let lhs = [F::zero(); DIGEST_SIZE];
+        let rhs = [F::zero(); DIGEST_SIZE];
+        test_compare_inner(&lhs, &rhs);
     }
 }

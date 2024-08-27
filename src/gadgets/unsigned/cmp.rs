@@ -9,6 +9,7 @@ use std::cmp::Ordering;
 use std::iter::zip;
 
 #[derive(Clone, Debug, AlignedBorrow)]
+#[repr(C)]
 pub struct CompareWitness<T, const W: usize> {
     is_comp: [T; W],
     lhs_comp_limb: T,
