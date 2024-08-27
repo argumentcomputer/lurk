@@ -100,6 +100,7 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, 
         u64_divrem(),
         u64_lessthan(),
         u64_iszero(),
+        comm_lessthan(),
     ];
     let lurk_chip_map = lurk_chip_map();
     let toplevel = Toplevel::new(funcs, lurk_chip_map);
@@ -524,6 +525,17 @@ pub fn u64_iszero<F>() -> FuncE<F> {
             let a: [8] = load(a);
             let b = extern_call(u64_iszero, a);
             return b
+        }
+    )
+}
+
+pub fn comm_lessthan<F>() -> FuncE<F> {
+    func!(
+        fn comm_lessthan(a, b): [1] {
+            let a: [8] = load(a);
+            let b: [8] = load(b);
+            let c = extern_call(comm_lessthan, a, b);
+            return c
         }
     )
 }
@@ -1193,6 +1205,43 @@ pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> 
                         }
                     }
                 }
+                [Tag::Comm, Tag::Comm] => {
+                    match head [|sym| builtins.index(sym).to_field()] {
+                        "<" => {
+                            let res = call(comm_lessthan, val1, val2);
+                            if res {
+                                return (builtin_tag, t)
+                            }
+                            return (nil_tag, nil)
+                        }
+                        ">=" => {
+                            let res = call(comm_lessthan, val1, val2);
+                            if res {
+                                return (nil_tag, nil)
+                            }
+                            return (builtin_tag, t)
+
+                        }
+                        ">" => {
+                            let res = call(comm_lessthan, val2, val1);
+                            if res {
+                                return (builtin_tag, t)
+                            }
+                            return (nil_tag, nil)
+                        }
+                        "<=" => {
+                            let res = call(comm_lessthan, val2, val1);
+                            if res {
+                                return (nil_tag, nil)
+                            }
+                            return (builtin_tag, t)
+                        }
+                        "+", "-", "*", "/", "%" => {
+                            let err = EvalErr::ArgNotNumber;
+                            return (err_tag, err)
+                        }
+                    }
+                }
             };
             let err = EvalErr::ArgNotNumber;
             return (err_tag, err)
@@ -1694,6 +1743,7 @@ mod test {
         let u64_divrem = FuncChip::from_name("u64_divrem", toplevel);
         let u64_lessthan = FuncChip::from_name("u64_lessthan", toplevel);
         let u64_iszero = FuncChip::from_name("u64_iszero", toplevel);
+        let comm_lessthan = FuncChip::from_name("comm_lessthan", toplevel);
 
         let expect_eq = |computed: usize, expected: Expect| {
             expected.assert_eq(&computed.to_string());
@@ -1703,7 +1753,7 @@ mod test {
         expect_eq(eval_comm_unop.width(), expect!["72"]);
         expect_eq(eval_hide.width(), expect!["78"]);
         expect_eq(eval_unop.width(), expect!["49"]);
-        expect_eq(eval_binop_num.width(), expect!["56"]);
+        expect_eq(eval_binop_num.width(), expect!["65"]);
         expect_eq(eval_binop_misc.width(), expect!["34"]);
         expect_eq(eval_begin.width(), expect!["36"]);
         expect_eq(eval_let.width(), expect!["56"]);
@@ -1727,6 +1777,7 @@ mod test {
         expect_eq(u64_divrem.width(), expect!["166"]);
         expect_eq(u64_lessthan.width(), expect!["44"]);
         expect_eq(u64_iszero.width(), expect!["26"]);
+        expect_eq(comm_lessthan.width(), expect!["78"]);
     }
 
     #[test]
