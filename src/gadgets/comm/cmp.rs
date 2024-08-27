@@ -1,6 +1,7 @@
 use crate::gadgets::bytes::{ByteAirRecord, ByteRecord};
 use crate::gadgets::unsigned::cmp::{CompareResult, CompareWitness};
 use crate::gadgets::unsigned::field::FieldToWord32;
+use crate::gadgets::unsigned::WORD32_SIZE;
 use crate::lurk::zstore::DIGEST_SIZE;
 use p3_air::AirBuilder;
 use p3_field::{AbstractField, PrimeField32};
@@ -8,8 +9,6 @@ use sphinx_derive::AlignedBorrow;
 use std::array;
 use std::cmp::Ordering;
 use std::iter::zip;
-
-pub const WORD32_SIZE: usize = 4;
 
 #[derive(Clone, Debug, AlignedBorrow)]
 #[repr(C)]

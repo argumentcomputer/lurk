@@ -4,11 +4,9 @@ use p3_air::AirBuilder;
 use p3_field::{AbstractField, PrimeField32};
 use sphinx_derive::AlignedBorrow;
 
-use super::{UncheckedWord, Word32};
+use super::{UncheckedWord, Word32, WORD32_SIZE};
 
-const WORD32_SIZE: usize = 4;
 const BABYBEAR_MSB: u8 = 0x78;
-const BABYBEAR_MOD: u32 = 0x78000001;
 
 /// Witness variables for proving the equality between a field element and a u32
 ///
@@ -25,20 +23,11 @@ impl<F: PrimeField32> FieldWitness<F> {
         U: ToBytes<Bytes = [u8; WORD32_SIZE]> + Unsigned + Ord,
     {
         let word_bytes = field.to_le_bytes();
-        let field_u32 = u32::from_le_bytes(word_bytes);
-        assert!(field_u32 < BABYBEAR_MOD, "field element too large");
 
         let is_less_than = byte_record.less_than(word_bytes[WORD32_SIZE - 1], BABYBEAR_MSB);
         self.is_msb_less_than = F::from_bool(is_less_than);
 
         word_bytes
-    }
-
-    pub fn populate_uint<U>(&mut self, _uint: &Word32<F>, _byte_record: &mut impl ByteRecord) -> F
-    where
-        U: ToBytes<Bytes = [u8; WORD32_SIZE]> + Unsigned,
-    {
-        todo!()
     }
 }
 
@@ -176,6 +165,7 @@ mod tests {
     use proptest::prelude::*;
 
     type F = BabyBear;
+    const BABYBEAR_MOD: u32 = 0x78000001;
 
     #[test]
     fn test_witness_size() {
@@ -236,10 +226,9 @@ mod tests {
     fn test_field_special() {
         test_field_inner(0, false);
         test_field_inner(BABYBEAR_MOD - 1, false);
-        // FIXME
-        // test_field_inner(BABYBEAR_MOD, true);
-        // test_field_inner(BABYBEAR_MOD + 1, true);
-        // test_field_inner(u32::MAX, true);
+        test_field_inner(BABYBEAR_MOD, true);
+        test_field_inner(BABYBEAR_MOD + 1, true);
+        test_field_inner(u32::MAX, true);
     }
 
     proptest! {
@@ -250,7 +239,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_field_failing(val_u32 in BABYBEAR_MOD..u32::MAX) {
         test_field_inner(val_u32, true);
     }

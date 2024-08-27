@@ -20,8 +20,11 @@ pub mod mul;
 #[repr(C)]
 pub struct Word<T, const W: usize>([T; W]);
 
-pub type Word32<T> = Word<T, 4>;
-pub type Word64<T> = Word<T, 8>;
+pub(crate) const WORD32_SIZE: usize = 4;
+pub(crate) const WORD64_SIZE: usize = 8;
+
+pub type Word32<T> = Word<T, WORD32_SIZE>;
+pub type Word64<T> = Word<T, WORD64_SIZE>;
 
 impl<T, const W: usize> Word<T, W> {
     #[inline]
