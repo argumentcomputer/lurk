@@ -256,6 +256,7 @@ test!(test_type_eqq1, "(type-eqq (nil) (cons 1 2))", |z| z
     .intern_symbol(&lurk_sym("t")));
 test!(test_type_eqq2, "(type-eqq 2 'a')", |z| z.intern_nil());
 test!(test_breakpoint, "(breakpoint)", |z| z.intern_nil());
+test!(test_breakpoint2, "(breakpoint (+ 1 1))", |_| uint(2));
 
 // coercions
 test!(test_char1, "(char 'a')", |z| z.intern_char('a'));

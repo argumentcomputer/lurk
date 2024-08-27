@@ -730,7 +730,7 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                     let (expr_tag, expr) = call(eval_begin, rest_tag, rest, env);
                                     return (expr_tag, expr)
                                 }
-                                "current-env", "empty-env", "breakpoint" => {
+                                "current-env", "empty-env" => {
                                     let rest_not_nil = sub(rest_tag, nil_tag);
                                     if rest_not_nil {
                                         return (err_tag, invalid_form)
@@ -744,10 +744,23 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                             let env = 0;
                                             return (env_tag, env)
                                         }
-                                        "breakpoint" => {
-                                            breakpoint;
+                                    }
+                                }
+                                "breakpoint" => {
+                                    breakpoint;
+                                    match rest_tag {
+                                        Tag::Nil => {
                                             let nil = 0;
                                             return (nil_tag, nil)
+                                        }
+                                        Tag::Cons => {
+                                            let (expr_tag, expr, rest_tag, _rest) = load(rest);
+                                            let rest_not_nil = sub(rest_tag, nil_tag);
+                                            if rest_not_nil {
+                                                return (err_tag, invalid_form)
+                                            }
+                                            let (val_tag, val) = call(eval, expr_tag, expr, env);
+                                            return (val_tag, val)
                                         }
                                     }
                                 }
@@ -1686,7 +1699,7 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["68"]);
-        expect_eq(eval.width(), expect!["105"]);
+        expect_eq(eval.width(), expect!["107"]);
         expect_eq(eval_comm_unop.width(), expect!["72"]);
         expect_eq(eval_hide.width(), expect!["78"]);
         expect_eq(eval_unop.width(), expect!["49"]);
