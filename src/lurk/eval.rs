@@ -730,7 +730,7 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                     let (expr_tag, expr) = call(eval_begin, rest_tag, rest, env);
                                     return (expr_tag, expr)
                                 }
-                                "current-env", "empty-env" => {
+                                "current-env", "empty-env", "breakpoint" => {
                                     let rest_not_nil = sub(rest_tag, nil_tag);
                                     if rest_not_nil {
                                         return (err_tag, invalid_form)
@@ -743,6 +743,11 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                         "empty-env" => {
                                             let env = 0;
                                             return (env_tag, env)
+                                        }
+                                        "breakpoint" => {
+                                            breakpoint;
+                                            let nil = 0;
+                                            return (nil_tag, nil)
                                         }
                                     }
                                 }
@@ -1681,7 +1686,7 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["68"]);
-        expect_eq(eval.width(), expect!["104"]);
+        expect_eq(eval.width(), expect!["105"]);
         expect_eq(eval_comm_unop.width(), expect!["72"]);
         expect_eq(eval_hide.width(), expect!["78"]);
         expect_eq(eval_unop.width(), expect!["49"]);
@@ -1697,9 +1702,9 @@ mod test {
         expect_eq(apply.width(), expect!["62"]);
         expect_eq(env_lookup.width(), expect!["49"]);
         expect_eq(ingress.width(), expect!["100"]);
-        expect_eq(ingress_builtin.width(), expect!["47"]);
+        expect_eq(ingress_builtin.width(), expect!["48"]);
         expect_eq(egress.width(), expect!["77"]);
-        expect_eq(egress_builtin.width(), expect!["47"]);
+        expect_eq(egress_builtin.width(), expect!["48"]);
         expect_eq(hash_24_8.width(), expect!["493"]);
         expect_eq(hash_32_8.width(), expect!["655"]);
         expect_eq(hash_48_8.width(), expect!["975"]);
@@ -1736,12 +1741,14 @@ mod test {
             ingress_args[8..].copy_from_slice(&digest);
 
             toplevel
-                .execute(ingress, &ingress_args, &mut queries)
+                .execute(ingress, &ingress_args, &mut queries, None)
                 .unwrap();
             let ingress_out_ptr = queries.get_output(ingress, &ingress_args)[0];
 
             let egress_args = &[tag, ingress_out_ptr];
-            toplevel.execute(egress, egress_args, &mut queries).unwrap();
+            toplevel
+                .execute(egress, egress_args, &mut queries, None)
+                .unwrap();
             let egress_out = queries.get_output(egress, egress_args);
 
             assert_eq!(

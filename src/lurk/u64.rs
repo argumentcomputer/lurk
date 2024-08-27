@@ -274,7 +274,9 @@ mod test {
             f(0),
             f(0),
         ];
-        let out = toplevel.execute_by_name("add", args, &mut queries).unwrap();
+        let out = toplevel
+            .execute_by_name("add", args, &mut queries, None)
+            .unwrap();
         assert_eq!(
             out.as_ref(),
             &[f(0), f(1), f(0), f(0), f(0), f(0), f(0), f(0)]
@@ -330,7 +332,9 @@ mod test {
             f(0),
             f(0),
         ];
-        let out = toplevel.execute_by_name("sub", args, &mut queries).unwrap();
+        let out = toplevel
+            .execute_by_name("sub", args, &mut queries, None)
+            .unwrap();
         assert_eq!(
             out.as_ref(),
             &[f(255), f(0), f(0), f(0), f(0), f(0), f(0), f(0)]
@@ -390,7 +394,9 @@ mod test {
             f(0),
             f(0),
         ];
-        let out = toplevel.execute_by_name("mul", args, &mut queries).unwrap();
+        let out = toplevel
+            .execute_by_name("mul", args, &mut queries, None)
+            .unwrap();
         assert_eq!(
             out.as_ref(),
             &[f(0), f(0), f(0), f(0), f(1), f(0), f(0), f(0)]
@@ -447,7 +453,7 @@ mod test {
             f(0),
         ];
         let out = toplevel
-            .execute_by_name("divrem", args, &mut queries)
+            .execute_by_name("divrem", args, &mut queries, None)
             .unwrap();
         assert_eq!(
             out.as_ref(),
@@ -523,7 +529,7 @@ mod test {
             f(0),
         ];
         let out = toplevel
-            .execute_by_name("lessthan", args, &mut queries)
+            .execute_by_name("lessthan", args, &mut queries, None)
             .unwrap();
         assert_eq!(out.as_ref(), &[f(1)]);
 
@@ -560,7 +566,7 @@ mod test {
         // Little endian
         let args = &[f(0), f(0), f(0), f(0), f(0), f(0), f(0), f(0)];
         let out = toplevel
-            .execute_by_name("iszero", args, &mut queries)
+            .execute_by_name("iszero", args, &mut queries, None)
             .unwrap();
         assert_eq!(out.as_ref(), &[f(1)]);
 
@@ -581,7 +587,7 @@ mod test {
         let mut queries = QueryRecord::new(&toplevel);
         let args = &[f(0), f(0), f(0), f(123), f(0), f(0), f(0), f(0)];
         let out = toplevel
-            .execute_by_name("iszero", args, &mut queries)
+            .execute_by_name("iszero", args, &mut queries, None)
             .unwrap();
         assert_eq!(out.as_ref(), &[f(0)]);
 

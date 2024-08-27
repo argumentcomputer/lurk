@@ -237,6 +237,10 @@ macro_rules! block {
         let $tgt = $crate::var!($tgt);
         $crate::block!({ $($tail)* }, $ops)
     }};
+    ({ breakpoint; $($tail:tt)+ }, $ops:expr) => {{
+        $ops.push($crate::lair::expr::OpE::Breakpoint);
+        $crate::block!({ $($tail)* }, $ops)
+    }};
     // Control statements
     ({ return ($($src:ident),*) }, $ops:expr) => {{
         let ops = $ops.into();

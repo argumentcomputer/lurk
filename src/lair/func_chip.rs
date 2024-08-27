@@ -250,11 +250,11 @@ impl<F> Op<F> {
                 *aux += aux_size;
                 degrees.extend(vec![1; aux_size]);
             }
-            Op::Debug(_) | Op::Emit(_) => (),
             Op::RangeU8(xs) => {
                 let num_requires = (xs.len() / 2) + (xs.len() % 2);
                 *aux += 3 * num_requires;
             }
+            Op::Emit(_) | Op::Breakpoint | Op::Debug(_) => (),
         }
     }
 }

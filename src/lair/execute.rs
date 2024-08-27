@@ -45,6 +45,26 @@ impl<F: PrimeField32> QueryResult<F> {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub enum DebugEntryKind {
+    Push,
+    Pop,
+    Memoized,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct DebugEntry {
+    pub(crate) dbg_depth: usize,
+    pub(crate) query_idx: usize,
+    pub(crate) kind: DebugEntryKind,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
+pub struct DebugData {
+    pub(crate) entries: Vec<DebugEntry>,
+    pub(crate) breakpoints: Vec<usize>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct QueryRecord<F: PrimeField32> {
     pub(crate) public_values: Option<Vec<F>>,
     pub(crate) func_queries: Vec<QueryMap<F>>,
@@ -52,6 +72,7 @@ pub struct QueryRecord<F: PrimeField32> {
     pub(crate) mem_queries: Vec<MemMap<F>>,
     pub(crate) bytes: BytesRecord,
     pub(crate) emitted: Vec<List<F>>,
+    pub(crate) debug_data: DebugData,
 }
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
@@ -255,6 +276,7 @@ impl<F: PrimeField32> QueryRecord<F> {
             mem_queries,
             bytes: BytesRecord::default(),
             emitted: vec![],
+            debug_data: DebugData::default(),
         }
     }
 
@@ -316,6 +338,7 @@ impl<F: PrimeField32> QueryRecord<F> {
         });
         self.bytes.clear();
         self.emitted = vec![];
+        self.debug_data = DebugData::default();
     }
 
     #[inline]
@@ -330,8 +353,9 @@ impl<F: PrimeField32, H: Chipset<F>> Toplevel<F, H> {
         func: &Func<F>,
         args: &[F],
         queries: &mut QueryRecord<F>,
+        dbg_func_idx: Option<usize>,
     ) -> Result<List<F>> {
-        let out = func.execute(args, self, queries)?;
+        let out = func.execute(args, self, queries, dbg_func_idx)?;
         let mut public_values = Vec::with_capacity(args.len() + out.len());
         public_values.extend(args);
         public_values.extend(out.iter());
@@ -345,9 +369,10 @@ impl<F: PrimeField32, H: Chipset<F>> Toplevel<F, H> {
         name: &'static str,
         args: &[F],
         queries: &mut QueryRecord<F>,
+        dbg_func_idx: Option<usize>,
     ) -> Result<List<F>> {
         let func = self.get_by_name(name);
-        self.execute(func, args, queries)
+        self.execute(func, args, queries, dbg_func_idx)
     }
 
     #[inline]
@@ -356,9 +381,10 @@ impl<F: PrimeField32, H: Chipset<F>> Toplevel<F, H> {
         func_idx: usize,
         args: &[F],
         record: &mut QueryRecord<F>,
+        dbg_func_idx: Option<usize>,
     ) -> Result<List<F>> {
         let func = self.get_by_index(func_idx);
-        self.execute(func, args, record)
+        self.execute(func, args, record, dbg_func_idx)
     }
 }
 
@@ -381,6 +407,7 @@ impl<F: PrimeField32> Func<F> {
         args: &[F],
         toplevel: &Toplevel<F, H>,
         queries: &mut QueryRecord<F>,
+        dbg_func_idx: Option<usize>,
     ) -> Result<List<F>> {
         let mut func_index = self.index;
         let mut query_result = QueryResult::default();
@@ -399,6 +426,14 @@ impl<F: PrimeField32> Func<F> {
             };
         }
         push_block_exec_entries!(&self.body);
+        let mut dbg_depth = 0;
+        if dbg_func_idx == Some(func_index) {
+            queries.debug_data.entries.push(DebugEntry {
+                dbg_depth,
+                query_idx: nonce,
+                kind: DebugEntryKind::Push,
+            });
+        }
         while let Some(exec_entry) = exec_entries_stack.pop() {
             match exec_entry {
                 ExecEntry::Op(Op::AssertEq(a, b)) => {
@@ -426,12 +461,19 @@ impl<F: PrimeField32> Func<F> {
                 }
                 ExecEntry::Op(Op::Call(callee_index, inp)) => {
                     let inp = inp.iter().map(|v| map[*v]).collect::<Vec<_>>();
-                    if let Some(result) =
-                        queries.func_queries[*callee_index].get_mut(inp.as_slice())
+                    if let Some((query_idx, _, result)) =
+                        queries.func_queries[*callee_index].get_full_mut(inp.as_slice())
                     {
                         let out = result.output.as_ref().expect("Loop detected");
                         map.extend(out);
                         result.new_lookup(nonce, &mut requires);
+                        if dbg_func_idx == Some(*callee_index) {
+                            queries.debug_data.entries.push(DebugEntry {
+                                dbg_depth,
+                                query_idx,
+                                kind: DebugEntryKind::Memoized,
+                            });
+                        }
                     } else {
                         // insert dummy entry
                         let (callee_nonce, _) = queries.func_queries[*callee_index]
@@ -455,6 +497,14 @@ impl<F: PrimeField32> Func<F> {
                         func_index = *callee_index;
                         nonce = callee_nonce;
                         push_block_exec_entries!(&toplevel.get_by_index(func_index).body);
+                        if dbg_func_idx == Some(func_index) {
+                            queries.debug_data.entries.push(DebugEntry {
+                                dbg_depth,
+                                query_idx: nonce,
+                                kind: DebugEntryKind::Push,
+                            });
+                            dbg_depth += 1;
+                        }
                     }
                 }
                 ExecEntry::Op(Op::PreImg(callee_index, out)) => {
@@ -467,12 +517,19 @@ impl<F: PrimeField32> Func<F> {
                         bail!("Preimg not found for #{:#x}", digest_to_biguint(&out))
                     };
                     let inp = inp.to_vec();
-                    if let Some(result) =
-                        queries.func_queries[*callee_index].get_mut(inp.as_slice())
+                    if let Some((query_idx, _, result)) =
+                        queries.func_queries[*callee_index].get_full_mut(inp.as_slice())
                     {
                         assert_eq!(result.output.as_ref().expect("Loop detected"), &out);
                         map.extend(inp);
                         result.new_lookup(nonce, &mut requires);
+                        if dbg_func_idx == Some(*callee_index) {
+                            queries.debug_data.entries.push(DebugEntry {
+                                dbg_depth,
+                                query_idx,
+                                kind: DebugEntryKind::Memoized,
+                            });
+                        }
                     } else {
                         let (callee_nonce, _) = queries.func_queries[*callee_index]
                             .insert_full(inp.clone().into(), QueryResult::default());
@@ -490,6 +547,14 @@ impl<F: PrimeField32> Func<F> {
                         func_index = *callee_index;
                         nonce = callee_nonce;
                         push_block_exec_entries!(&toplevel.get_by_index(func_index).body);
+                        if dbg_func_idx == Some(func_index) {
+                            queries.debug_data.entries.push(DebugEntry {
+                                dbg_depth,
+                                query_idx: nonce,
+                                kind: DebugEntryKind::Push,
+                            });
+                            dbg_depth += 1;
+                        }
                     }
                 }
                 ExecEntry::Op(Op::Const(c)) => map.push(*c),
@@ -534,7 +599,6 @@ impl<F: PrimeField32> Func<F> {
                 ExecEntry::Op(Op::Emit(xs)) => {
                     queries.emitted.push(xs.iter().map(|a| map[*a]).collect())
                 }
-                ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
                 ExecEntry::Op(Op::RangeU8(xs)) => {
                     let mut bytes = queries.bytes.context(nonce as u32, &mut requires);
                     let xs = xs.iter().map(|x| {
@@ -545,6 +609,15 @@ impl<F: PrimeField32> Func<F> {
                     });
                     bytes.range_check_u8_iter(xs);
                 }
+                ExecEntry::Op(Op::Breakpoint) => {
+                    if dbg_func_idx == Some(func_index) {
+                        queries
+                            .debug_data
+                            .breakpoints
+                            .push(queries.debug_data.entries.len() - 1);
+                    }
+                }
+                ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
                 ExecEntry::Ctrl(Ctrl::Return(_, out)) => {
                     let out = out.iter().map(|v| map[*v]).collect::<Vec<_>>();
                     let (inp, result) = queries.func_queries[func_index]
@@ -565,6 +638,14 @@ impl<F: PrimeField32> Func<F> {
                         requires: caller_requires,
                     }) = callers_states_stack.pop()
                     {
+                        if dbg_func_idx == Some(func_index) {
+                            dbg_depth -= 1;
+                            queries.debug_data.entries.push(DebugEntry {
+                                dbg_depth,
+                                query_idx: nonce,
+                                kind: DebugEntryKind::Pop,
+                            });
+                        }
                         // recover the state of the caller
                         func_index = caller_func_index;
                         nonce = caller_nonce;
@@ -581,6 +662,14 @@ impl<F: PrimeField32> Func<F> {
                         // no outer caller... about to exit
                         assert!(exec_entries_stack.is_empty());
                         map = out;
+                        if dbg_func_idx == Some(func_index) {
+                            dbg_depth -= 1;
+                            queries.debug_data.entries.push(DebugEntry {
+                                dbg_depth,
+                                query_idx: nonce,
+                                kind: DebugEntryKind::Pop,
+                            });
+                        }
                         break;
                     }
                 }
@@ -625,17 +714,17 @@ mod tests {
         let factorial = toplevel.get_by_name("factorial");
         let args = &[F::from_canonical_u32(5)];
         let queries = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(factorial, args, queries).unwrap();
+        let out = toplevel.execute(factorial, args, queries, None).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(120)]);
 
         let even = toplevel.get_by_name("even");
         let args = &[F::from_canonical_u32(7)];
-        let out = toplevel.execute(even, args, queries).unwrap();
+        let out = toplevel.execute(even, args, queries, None).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(0)]);
 
         let odd = toplevel.get_by_name("odd");
         let args = &[F::from_canonical_u32(4)];
-        let out = toplevel.execute(odd, args, queries).unwrap();
+        let out = toplevel.execute(odd, args, queries, None).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(0)]);
     }
 
@@ -646,7 +735,7 @@ mod tests {
         let fib = toplevel.get_by_name("fib");
         let args = &[F::from_canonical_u32(100000)];
         let queries = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(fib, args, queries).unwrap();
+        let out = toplevel.execute(fib, args, queries, None).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(1123328132)]);
     }
 
@@ -662,7 +751,7 @@ mod tests {
         let test = toplevel.get_by_name("test");
         let args = &[F::from_canonical_u32(20), F::from_canonical_u32(4)];
         let queries = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(test, args, queries).unwrap();
+        let out = toplevel.execute(test, args, queries, None).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(5)]);
     }
 
@@ -680,7 +769,7 @@ mod tests {
         let test = toplevel.get_by_name("test");
         let args = &[F::from_canonical_u32(10)];
         let queries = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(test, args, queries).unwrap();
+        let out = toplevel.execute(test, args, queries, None).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(80)]);
     }
 
@@ -714,9 +803,9 @@ mod tests {
             .map(field_from_u32)
             .collect::<List<_>>();
         let queries = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(polynomial, &args, queries).unwrap();
+        let out = toplevel.execute(polynomial, &args, queries, None).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(58061)]);
-        let inp = toplevel.execute(inverse, &out, queries).unwrap();
+        let inp = toplevel.execute(inverse, &out, queries, None).unwrap();
         assert_eq!(inp, args);
     }
 
@@ -752,14 +841,14 @@ mod tests {
         let f = F::from_canonical_u32;
         let args = &[f(1), f(2), f(3), f(4), f(5), f(6), f(7)];
         let queries = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(test, args, queries).unwrap();
+        let out = toplevel.execute(test, args, queries, None).unwrap();
         assert_eq!(out.as_ref(), [f(5), f(7), f(9)]);
 
         let test = toplevel.get_by_name("test3");
         let f = F::from_canonical_u32;
         let args = &[f(4), f(9), f(21), f(10)];
         let queries = &mut QueryRecord::new(&toplevel);
-        let out = toplevel.execute(test, args, queries).unwrap();
+        let out = toplevel.execute(test, args, queries, None).unwrap();
         assert_eq!(out.as_ref(), [f(1), f(2), f(3), f(4)]);
     }
 
@@ -789,7 +878,7 @@ mod tests {
         queries.inject_inv_queries("double", &toplevel, [(&[f(1)], &[f(2)])]);
         let args = &[f(2)];
 
-        let res1 = toplevel.execute(half, args, &mut queries).unwrap();
+        let res1 = toplevel.execute(half, args, &mut queries, None).unwrap();
         let shard = Shard::new(&queries);
         let traces1 = (
             half_chip.generate_trace(&shard),
@@ -798,7 +887,7 @@ mod tests {
 
         // even after `clean`, the preimg of `double(1)` can still be recovered
         queries.clean();
-        let res2 = toplevel.execute(half, args, &mut queries).unwrap();
+        let res2 = toplevel.execute(half, args, &mut queries, None).unwrap();
         let shard = Shard::new(&queries);
         let traces2 = (
             half_chip.generate_trace(&shard),
@@ -808,7 +897,7 @@ mod tests {
         assert_eq!(traces1, traces2);
 
         queries.clean();
-        let res3 = toplevel.execute(half, args, &mut queries).unwrap();
+        let res3 = toplevel.execute(half, args, &mut queries, None).unwrap();
         let shard = Shard::new(&queries);
         let traces3 = (
             half_chip.generate_trace(&shard),

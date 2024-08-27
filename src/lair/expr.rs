@@ -88,10 +88,12 @@ pub enum OpE<F> {
     ExternCall(VarList, Name, VarList),
     /// `Emit([x, ...])` pushes `x, ...` to `QueryRecord::emitted` during execution
     Emit(VarList),
-    /// `Debug(s)` emits debug message `s`
-    Debug(&'static str),
     /// `RangeU8([x, ...])` makes sure `[x, ...]` are all U8 elements
     RangeU8(VarList),
+    /// `Breakpoint` adds a breakpoint mark in the debug trace
+    Breakpoint,
+    /// `Debug(s)` emits debug message `s`
+    Debug(&'static str),
 }
 
 /// A "code block" containing a sequence of operators and a control node to be

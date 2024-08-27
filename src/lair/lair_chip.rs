@@ -242,7 +242,7 @@ mod tests {
         let mut queries = QueryRecord::new(&toplevel);
 
         toplevel
-            .execute_by_name("factorial", &[F::from_canonical_u8(5)], &mut queries)
+            .execute_by_name("factorial", &[F::from_canonical_u8(5)], &mut queries, None)
             .unwrap();
 
         let config = BabyBearPoseidon2::new();

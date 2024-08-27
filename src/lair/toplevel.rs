@@ -483,7 +483,6 @@ impl<F: Field + Ord> OpE<F> {
                 ops.push(Op::Load(vals.total_size(), ptr));
                 vals.iter().for_each(|val| bind_new(val, ctx));
             }
-            OpE::Debug(s) => ops.push(Op::Debug(s)),
             OpE::Slice(pats, args) => {
                 assert_eq!(pats.total_size(), args.total_size());
                 let args: List<_> = args.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
@@ -514,6 +513,8 @@ impl<F: Field + Ord> OpE<F> {
                 let xs = xs.iter().flat_map(|x| use_var(x, ctx).to_vec()).collect();
                 ops.push(Op::RangeU8(xs));
             }
+            OpE::Breakpoint => ops.push(Op::Breakpoint),
+            OpE::Debug(s) => ops.push(Op::Debug(s)),
         }
     }
 }
