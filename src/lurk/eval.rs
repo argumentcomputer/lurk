@@ -995,7 +995,7 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
                     }
                     return one
                 }
-                Tag::Sym, Tag::U64, Tag::Comm => {
+                Tag::Key, Tag::Sym, Tag::U64, Tag::Comm => {
                     let a_digest: [8] = load(a);
                     let b_digest: [8] = load(b);
                     let diff = sub(a_digest, b_digest);
@@ -1004,7 +1004,7 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
                     }
                     return one
                 }
-                Tag::Str, Tag::Key => {
+                Tag::Str => {
                     let a_and_b = mul(a, b);
                     if !a_and_b {
                         return zero
