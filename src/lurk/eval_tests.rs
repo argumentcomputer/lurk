@@ -230,6 +230,9 @@ test!(
     "(= 3844955657946763191 3844955657946763191)",
     |z| z.intern_symbol(&lurk_sym("t"))
 );
+test!(test_num_eq5, "(= 0n 1n)", |z| z.intern_nil());
+test!(test_num_eq6, "(= 1n 1n)", |z| z
+    .intern_symbol(&lurk_sym("t")));
 test!(test_num_order1, "(>= 0 1)", |z| z.intern_nil());
 test!(test_num_order2, "(>= 1 1)", |z| z
     .intern_symbol(&lurk_sym("t")));
@@ -462,4 +465,10 @@ test!(test_div_by_zero_fel, "(/ 1n 0n)", |_| ZPtr::err(
 ));
 test!(test_div_by_zero, "(/ 1 0)", |_| ZPtr::err(
     EvalErr::DivByZero
+));
+test!(test_equal_non_num, "(= 'a 'a)", |_| ZPtr::err(
+    EvalErr::ArgNotNumber
+));
+test!(test_equal_non_num2, "(= #0x0 #0x0)", |_| ZPtr::err(
+    EvalErr::ArgNotNumber
 ));
