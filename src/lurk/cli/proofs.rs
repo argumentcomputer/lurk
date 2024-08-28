@@ -1,5 +1,6 @@
 use hashbrown::HashMap;
 use p3_baby_bear::BabyBear;
+use p3_field::{AbstractField, PrimeField32};
 use serde::{Deserialize, Serialize};
 use sphinx_core::{
     stark::{
@@ -9,7 +10,7 @@ use sphinx_core::{
 };
 
 use crate::{
-    lair::chipset::Chipset,
+    lair::{chipset::Chipset, provenance::DEPTH_W},
     lurk::{
         tag::Tag,
         zstore::{ZPtr, ZStore, DIGEST_SIZE, ZPTR_SIZE},
@@ -30,6 +31,7 @@ struct CryptoShardProof {
 pub(crate) struct CryptoProof {
     shard_proofs: Vec<CryptoShardProof>,
     verifier_version: String,
+    depth: u32,
 }
 
 type F = BabyBear;
@@ -46,6 +48,7 @@ impl CryptoProof {
         public_values.extend(expr.flatten());
         public_values.extend(env.digest);
         public_values.extend(result.flatten());
+        public_values.extend(self.depth.to_le_bytes().map(F::from_canonical_u8));
         let shard_proofs = self
             .shard_proofs
             .into_iter()
@@ -74,10 +77,12 @@ impl CryptoProof {
     }
 }
 
+// The asserts/expects/unwraps in this impl are all internal and should always succeed.
+#[allow(clippy::fallible_impl_from)]
 impl From<MachineProof<BabyBearPoseidon2>> for CryptoProof {
     #[inline]
     fn from(value: MachineProof<BabyBearPoseidon2>) -> Self {
-        let shard_proofs = value
+        let (shard_proofs, all_public_values) = value
             .shard_proofs
             .into_iter()
             .map(|sp| {
@@ -86,19 +91,36 @@ impl From<MachineProof<BabyBearPoseidon2>> for CryptoProof {
                     opened_values,
                     opening_proof,
                     chip_ordering,
+                    public_values,
                     ..
                 } = sp;
-                CryptoShardProof {
-                    commitment,
-                    opened_values,
-                    opening_proof,
-                    chip_ordering,
-                }
+                (
+                    CryptoShardProof {
+                        commitment,
+                        opened_values,
+                        opening_proof,
+                        chip_ordering,
+                    },
+                    public_values,
+                )
             })
-            .collect();
+            .collect::<(Vec<_>, Vec<_>)>();
+        let public_values = all_public_values.first().expect("must have public values");
+        // sanity check: all shards have the same public values
+        assert!(all_public_values.iter().all(|pv| pv == public_values));
+        let depth_bytes = public_values[public_values.len() - DEPTH_W..]
+            .iter()
+            .cloned()
+            .map(|x| {
+                assert!(x <= F::from_canonical_u8(u8::MAX));
+                x.as_canonical_u32() as u8
+            })
+            .collect::<Vec<_>>();
+        let depth = u32::from_le_bytes(depth_bytes.try_into().unwrap());
         Self {
             shard_proofs,
             verifier_version: env!("VERGEN_GIT_SHA").to_string(),
+            depth,
         }
     }
 }
@@ -121,7 +143,8 @@ impl IOProof {
     ) -> Self {
         let mut zdag = ZDag::default();
         let (expr_data, rest) = public_values.split_at(ZPTR_SIZE);
-        let (env_digest, result_data) = rest.split_at(DIGEST_SIZE);
+        let (env_digest, rest) = rest.split_at(DIGEST_SIZE);
+        let (result_data, _rest) = rest.split_at(ZPTR_SIZE);
         let expr = ZPtr::from_flat_data(expr_data);
         let env = ZPtr::from_flat_digest(Tag::Env, env_digest);
         let result = ZPtr::from_flat_data(result_data);
