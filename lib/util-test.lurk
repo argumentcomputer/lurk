@@ -9,3 +9,28 @@
 
 ;; apply
 !(assert-eq 27 (apply (lambda (x y z) (* x (+ y z))) '(3 4 5)))
+
+;; getf
+!(assert-eq 2 (getf '(:a 1 :b 2 :c 3) :b))
+(emit (cons :getf-2 (getf '(:a 1 :b 2 :c 3) :b))) ; 30 iterations
+
+!(assert-eq nil (getf '(:a 1 :b 2 :c 3) :d))
+
+;; assoc
+!(assert-eq '(:b . 2) (assoc :b '((:a . 1) (:b . 2) (:c . 3))))
+(emit (cons :assoc-b (assoc :b '((:a . 1) (:b . 2) (:c . 3))))) ;; 29 iterations
+
+!(assert-eq nil (assoc :d '((:a . 1) (:b . 2) (:c . 3))))
+(emit (cons :assoc-d (assoc :d '((:a . 1) (:b . 2) (:c . 3))))) ; 44 iterations
+
+!(assert-eq nil (assoc :d '((:a . 1) (:b . 2) (:c . 3))))
+
+;; length
+!(assert-eq 3 (length '(a b c)))
+!(assert-eq 0 (length ()))
+
+;; reverse
+!(assert-eq '(c b a) (reverse '(a b c)))
+
+;; zip
+!(assert-eq '((a . 1) (b . 2) (c . 3)) (zip '(a b c) '(1 2 3)))

@@ -25,3 +25,36 @@
                          (apply (f (car args)) (cdr args))
                          (f (car args)))
                      (f))))
+
+!(def getf (lambda (plist indicator)
+             (letrec ((aux (lambda (plist)
+                             (if plist
+                                 (if (eq (car plist) indicator)
+                                     (car (cdr plist))
+                                     (aux (cdr (cdr plist))))))))
+               (aux plist))))
+
+!(def assoc (lambda (item alist)
+              (letrec ((aux (lambda (alist)
+                              (if alist
+                                  (if (eq (car (car alist)) item)
+                                      (car alist)
+                                      (aux (cdr alist)))))))
+                (aux alist))))
+
+!(defrec length (lambda (l) (if l (+ 1 (length (cdr l))) 0)))
+
+!(defrec reverse
+        (lambda (l)
+          (letrec ((aux (lambda (acc l)
+                          (if l
+                              (aux (cons (car l) acc) (cdr l))
+                              acc))))
+            (aux nil l))))
+
+!(def zip (lambda (a b)
+            (letrec ((aux (lambda (a b)
+                            (if a
+                                (if b
+                                    (cons (cons (car a) (car b)) (aux (cdr a) (cdr b))))))))
+              (aux a b))))

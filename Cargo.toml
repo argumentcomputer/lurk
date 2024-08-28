@@ -4,9 +4,9 @@ version = "0.1.0"
 edition.workspace = true
 repository.workspace = true
 
-# [[bin]]
-# name = "lurk"
-# path = "src/main.rs"
+[[bin]]
+name = "lurk"
+path = "src/main.rs"
 
 [workspace.package]
 authors = ["Argument Engineering <engineering@argument.xyz>"]
