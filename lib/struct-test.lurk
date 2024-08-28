@@ -1,0 +1,67 @@
+!(load "struct.lurk")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; struct
+!(def foo (struct '(:a :b :c)))
+!(def x ((foo :new) '(1 2 3)))
+
+!(assert-eq 1 (x :a))
+!(assert-eq 2 (x :b))
+!(assert-eq 3 (x :c))
+
+!(def y ((foo :new) '(9 8 7)))
+(emit (cons :foo-new ((foo :new) '(9 8 7)))) ;; 14 iterations
+
+;; First access of :b in x -- 55 iterations
+(cons :xb (x :b))
+;; [55 iterations] => (:xb . 2)
+
+;; Second access of :b in x -- 1 iteration
+(cons :xb-xb (begin (x :b) (x :b)))
+;; [57 iterations] => (:xb-xb . 2)
+
+;; First access of :b in y -- 30 iterations
+(cons :xb-xy (begin (x :b) (y :b)))
+;; [86 iterations] => (:xb-xy . 8)
+
+;; First access of :a in x -- 27 iterations
+(cons :xb-yb-xa (begin (x :b) (y :b) (x :a)))
+;; [113 iterations] => (:xb-yb-xa . 1)
+
+;; First access of :a in y -- 14 iterations
+(cons :xb-yb-xa-ya (begin (x :b) (y :b) (x :a) (y :a)))
+;; [127 iterations] => (:xb-yb-xa-ya . 9)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; alist-struct
+
+!(def foo (alist-struct '(:a :b :c)))
+!(def x ((foo :new) '(1 2 3)))
+
+!(assert-eq 1 (x :a))
+!(assert-eq 2 (x :b))
+!(assert-eq 3 (x :c))
+
+!(def y ((foo :new) '(9 8 7)))
+(emit (cons :foo-new ((foo :new) '(9 8 7)))) ;; 64 iterations
+
+;; First access of :b in x -- 32 iterations
+(cons :xb (x :b))
+;; [32 iterations] => (:xb . 2)
+
+;; Second access of :b in x -- 1 iteration
+(cons :xb-xb (begin (x :b) (x :b)))
+;; [34 iterations] => (:xb-xb . 2)
+
+;; First access of :b in y -- 30 iterations
+(cons :xb-xy (begin (x :b) (y :b)))
+;; [63 iterations] => (:xb-xy . 8)
+
+;; First access of :a in x -- 20 iterations
+(cons :xb-yb-xa (begin (x :b) (y :b) (x :a)))
+;; [113 iterations] => (:xb-yb-xa . 1)
+
+;; First access of :a in y -- 19 iterations
+(cons :xb-yb-xa-ya (begin (x :b) (y :b) (x :a) (y :a)))
+;; [102 iterations] => (:xb-yb-xa-ya . 9)
+
