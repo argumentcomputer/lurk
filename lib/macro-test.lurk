@@ -1,0 +1,81 @@
+!(load "macro.lurk")
+
+!(assert (immediate? 123))
+!(assert (immediate? 123n))
+!(assert (immediate? nil))
+!(assert (immediate? t))
+!(assert (immediate? :asdf))
+!(assert (immediate? "frog"))
+!(assert (immediate? 'q'))
+!(assert (not (immediate? (cons 1 2))))
+!(assert (not (immediate? 'sym)))
+;!(assert (immediate? (lambda () nil)))
+
+
+!(def macro-env ())
+!(def macro-env (bind-macro 'and macro-env
+                            (lambda (whole)
+                              (if (cdr whole)
+                                  (if (cdr (cdr whole))
+                                      (list 'if (car (cdr whole))
+                                            (cons 'and (cdr (cdr whole))))
+                                      (car (cdr whole)))
+                                  t))))
+
+!(def macro-env (bind-macro 'or macro-env
+                            (lambda (whole)
+                              (if (cdr whole)
+                                  (if (cdr (cdr whole))
+                                      (list 'if (car (cdr whole))
+                                            (car (cdr whole)) ;; this is memoized
+                                            (cons 'or (cdr (cdr whole))))
+                                      (car (cdr whole)))
+                                  nil))))
+
+!(def macro-env (bind-macro 'foo macro-env
+                            (lambda (whole)
+                              (cons 'bar (cdr whole)))))
+
+!(def macro-env (bind-macro 'bar macro-env
+                            (lambda (whole)
+                              (cons 'baz (cdr whole)))))
+
+!(assert-eq 123 (macroexpand-1 () 123))
+
+;!(debug (macroexpand-1 '(and a b c) macro-env))
+!(assert-eq '(if a (and b c)) (macroexpand-1 macro-env '(and a b c)))
+!(assert-eq t (macroexpand-1 macro-env '(and)))
+
+!(assert-eq '(if a a (or b c)) (macroexpand-1 macro-env '(or a b c)))
+!(assert-eq nil (macroexpand-1 macro-env '(or)))
+
+!(assert-eq '(bar 1 2 3) (macroexpand-1 macro-env '(foo 1 2 3)))
+!(assert-eq '(baz 1 2 3) (macroexpand macro-env '(foo 1 2 3)))
+
+!(assert-eq '(if a (if b c)) (macroexpand-all macro-env '(and a b c)))
+!(assert-eq '(if a a (if b b c)) (macroexpand-all macro-env '(or a b c)))
+
+!(assert-eq
+  '(let ((a (baz 1 2 3)) (b (letrec ((c (baz 9 8 7))) c)))
+    (begin
+     (if (if a (if b c))
+         (if a (if b c))
+         (if (baz x)
+             (baz y)
+             (if (baz x) (baz y))))))
+  (macroexpand-all macro-env '(let ((a (foo 1 2 3))
+                                    (b (letrec ((c (bar 9 8 7)))
+                                         c)))
+                               (begin
+                                (or (and a b c)
+                                 (if (foo x) (bar y) (and (bar x) (foo y))))))))
+
+!(def qux (evl macro-env '(lambda (a b c)
+                            (or (and a b)
+                                (and a c)
+                                123))))
+
+!(assert-eq 123 (qux nil :b :c))
+!(assert-eq :b (qux :a :b :c))
+!(assert-eq :c (qux :a nil :c))
+!(assert-eq 123 (qux nil nil nil))

@@ -1,0 +1,59 @@
+!(load "macro.lurk") ;; this will also load util.lurk.
+
+!(def macro-env ())
+!(def macro-env (bind-macro 'and macro-env
+                            (lambda (whole)
+                              (if (cdr whole)
+                                  (if (cdr (cdr whole))
+                                      (list 'if (car (cdr whole))
+                                            (cons 'and (cdr (cdr whole))))
+                                      (car (cdr whole)))
+                                  t))))
+
+!(def macro-env (bind-macro 'or macro-env
+                            (lambda (whole)
+                              (if (cdr whole)
+                                  (if (cdr (cdr whole))
+                                      (list 'if (car (cdr whole))
+                                            (car (cdr whole)) ;; this is memoized
+                                            (cons 'or (cdr (cdr whole))))
+                                      (car (cdr whole)))
+                                  nil))))
+
+!(assert-eq '(if a (and b c)) (macroexpand-1 macro-env '(and a b c)))
+!(assert-eq t (macroexpand-1 macro-env '(and)))
+
+!(assert-eq '(if a a (or b c)) (macroexpand-1 macro-env '(or a b c)))
+!(assert-eq nil (macroexpand-1 macro-env '(or)))
+
+!(assert-eq '(if a (if b c)) (macroexpand-all macro-env '(and a b c)))
+!(assert-eq '(if a a (if b b c)) (macroexpand-all macro-env '(or a b c)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; mutual recursion
+
+;; We can use the following trick to define mutrec.
+
+;; !(def odd-aux? (lambda (even? n)
+;;              (if (= 0 n)
+;;                  nil
+;;                  (even? (- n 1)))))
+
+;; !(defrec even? (lambda (n)
+;;                  (if (= 0 n)
+;;                      t
+;;                      (odd-aux? even? (- n 1)))))
+
+;; !(defrec odd? (odd-aux? even?))
+
+;; !(assert-eq '(t nil t nil t) (map odd? '(1 2 3 4 5)))
+;; !(assert-eq '(nil t nil t nil) (map even? '(1 2 3 4 5)))
+
+;; !(def macro-env (bind-macro 'mutrec macro-env
+;;                             (lambda (whole)
+;;                               (let ((bindings (cadr whole))
+;;                                     (body (caddr whole)))
+;;                                 (todo)
+;;                                 ))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

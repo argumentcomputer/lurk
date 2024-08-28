@@ -1,6 +1,5 @@
 !(load "util.lurk")
 
-
 ;; todo
 !(assert-error (todo :rest-of-owl))
 

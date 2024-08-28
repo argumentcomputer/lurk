@@ -16,13 +16,13 @@
 
 !(def todo (lambda (x)
              (begin
-              (emit (list-2 :todo x))
+              (emit (list :todo x))
               ;; this will error
               (break))))
 
 !(def error (lambda (type data)
               (begin
-               (emit (list-2 :error (list-2 type data)))
+               (emit (list :error (list type data)))
               ;; this will error
               (break))))
 
@@ -144,5 +144,5 @@
                         (expt (* b b) (/ e 2))))))
 
 ;; todo: make variadic when possible
-!(def compose (lambda (a b) 
+!(def compose (lambda (a b)
                 (lambda (x) (a (b x)))))
