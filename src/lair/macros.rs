@@ -5,6 +5,18 @@ macro_rules! func {
         $crate::lair::expr::FuncE {
             name: $crate::lair::Name(stringify!($name)),
             invertible: false,
+            partial: false,
+            input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
+            output_size: $size,
+            body: $crate::block_init!($lair),
+        }
+    }};
+    (partial fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
+        $(let $in = $crate::var!($in $(, $in_size)?);)*
+        $crate::lair::expr::FuncE {
+            name: $crate::lair::Name(stringify!($name)),
+            invertible: false,
+            partial: true,
             input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
             output_size: $size,
             body: $crate::block_init!($lair),
@@ -15,6 +27,18 @@ macro_rules! func {
         $crate::lair::expr::FuncE {
             name: $crate::lair::Name(stringify!($name)),
             invertible: true,
+            partial: false,
+            input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
+            output_size: $size,
+            body: $crate::block_init!($lair),
+        }
+    }};
+    (invertible partial fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
+        $(let $in = $crate::var!($in $(, $in_size)?);)*
+        $crate::lair::expr::FuncE {
+            name: $crate::lair::Name(stringify!($name)),
+            invertible: true,
+            partial: true,
             input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
             output_size: $size,
             body: $crate::block_init!($lair),

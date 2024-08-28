@@ -12,6 +12,7 @@ pub struct Toplevel<F, H: Chipset<F>> {
 pub(crate) struct FuncInfo {
     input_size: usize,
     output_size: usize,
+    partial: bool,
 }
 
 impl<F: Field + Ord, H: Chipset<F>> Toplevel<F, H> {
@@ -23,6 +24,7 @@ impl<F: Field + Ord, H: Chipset<F>> Toplevel<F, H> {
                 let func_info = FuncInfo {
                     input_size: func.input_params.total_size(),
                     output_size: func.output_size,
+                    partial: func.partial,
                 };
                 (*name, func_info)
             })
@@ -116,6 +118,7 @@ struct CheckCtx<'a, H> {
     return_ident: usize,
     return_idents: Vec<usize>,
     return_size: usize,
+    partial: bool,
     bind_map: BindMap,
     used_map: UsedMap,
     info_map: &'a Map<Name, FuncInfo>,
@@ -154,6 +157,7 @@ impl<F: Field + Ord> FuncE<F> {
             return_ident: 0,
             return_idents: vec![],
             return_size: self.output_size,
+            partial: self.partial,
             bind_map: FxHashMap::default(),
             used_map: FxHashMap::default(),
             info_map,
@@ -173,6 +177,7 @@ impl<F: Field + Ord> FuncE<F> {
         Func {
             name: self.name,
             invertible: self.invertible,
+            partial: self.partial,
             index: func_index,
             body,
             input_size: self.input_params.total_size(),
@@ -449,7 +454,11 @@ impl<F: Field + Ord> OpE<F> {
                 let FuncInfo {
                     input_size,
                     output_size,
+                    partial,
                 } = ctx.info_map.get_index(name_idx).unwrap().1;
+                if partial {
+                    assert!(ctx.partial);
+                }
                 assert_eq!(inp.total_size(), input_size);
                 assert_eq!(out.total_size(), output_size);
                 let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
@@ -464,7 +473,11 @@ impl<F: Field + Ord> OpE<F> {
                 let FuncInfo {
                     input_size,
                     output_size,
+                    partial,
                 } = ctx.info_map.get_index(name_idx).unwrap().1;
+                if partial {
+                    assert!(ctx.partial);
+                }
                 assert_eq!(out.total_size(), input_size);
                 assert_eq!(inp.total_size(), output_size);
                 let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();

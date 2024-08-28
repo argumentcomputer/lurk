@@ -1,17 +1,21 @@
 use p3_air::{Air, AirBuilder};
 use p3_field::Field;
 use p3_matrix::Matrix;
-use std::fmt::Debug;
+use std::{borrow::Borrow, fmt::Debug};
 
 use crate::{
     air::builder::{LookupBuilder, ProvideRecord, RequireRecord},
-    gadgets::bytes::{builder::BytesAirRecordWithContext, ByteAirRecord},
+    gadgets::{
+        bytes::{builder::BytesAirRecordWithContext, ByteAirRecord},
+        unsigned::Word32,
+    },
 };
 
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
     chipset::Chipset,
     func_chip::{ColumnLayout, FuncChip, LayoutSizes},
+    provenance::{DepthLessThan, DEPTH_LESS_THAN_SIZE, DEPTH_W},
     relations::{CallRelation, MemoryRelation},
     toplevel::Toplevel,
     trace::ColumnIndex,
@@ -98,6 +102,34 @@ impl<'a, T> ColumnSlice<'a, T> {
     }
 }
 
+fn eval_depth<F: Field, AB>(
+    builder: &mut AB,
+    local: ColumnSlice<'_, AB::Var>,
+    index: &mut ColumnIndex,
+    depth: &[AB::Expr],
+    sel: &AB::Expr,
+    out: &mut Vec<AB::Expr>,
+) where
+    AB: AirBuilder<F = F> + LookupBuilder,
+{
+    let dep_depth: &[_] = &(0..DEPTH_W)
+        .map(|_| local.next_aux(index).into())
+        .collect::<Vec<_>>();
+    let witness: &[_] = &(0..DEPTH_LESS_THAN_SIZE)
+        .map(|_| local.next_aux(index))
+        .collect::<Vec<_>>();
+    let less_than: &DepthLessThan<_> = witness.borrow();
+    let mut air_record = BytesAirRecordWithContext::default();
+    let dep_depth_word: &Word32<_> = dep_depth.borrow();
+    let depth: &Word32<_> = depth.borrow();
+    less_than.assert_less_than(builder, dep_depth_word, depth, &mut air_record, sel.clone());
+    let requires = (0..DepthLessThan::<F>::num_requires())
+        .map(|_| local.next_require(index))
+        .collect::<Vec<_>>();
+    air_record.require_all(builder, (*local.nonce).into(), requires);
+    out.extend(dep_depth.iter().cloned());
+}
+
 impl<'a, AB, H: Chipset<AB::F>> Air<AB> for FuncChip<'a, AB::F, H>
 where
     AB: AirBuilder + LookupBuilder,
@@ -167,18 +199,38 @@ impl<F: Field> Func<F> {
         builder.assert_bool(toplevel_sel.clone());
         let last_nonce = local.next_aux(index);
         let last_count = local.next_aux(index);
+        // provenance and range check
         let record = ProvideRecord {
             last_nonce,
             last_count,
         };
-        let out = (0..self.output_size).map(|i| local.output[i].into());
+        let mut out = (0..self.output_size)
+            .map(|i| local.output[i].into())
+            .collect::<Vec<_>>();
+        let depth = if self.partial {
+            let depth = (0..DEPTH_W)
+                .map(|_| local.next_aux(index))
+                .collect::<Vec<_>>();
+            let depth_expr = depth.iter().map(|&b| b.into()).collect::<Vec<AB::Expr>>();
+            let num_requires = (DEPTH_W / 2) + (DEPTH_W % 2);
+            let requires = (0..num_requires)
+                .map(|_| local.next_require(index))
+                .collect::<Vec<_>>();
+            let mut air_record = BytesAirRecordWithContext::default();
+            air_record.range_check_u8_iter(depth, toplevel_sel.clone());
+            air_record.require_all(builder, (*local.nonce).into(), requires);
+            out.extend_from_slice(&depth_expr);
+            depth_expr
+        } else {
+            vec![]
+        };
         builder.provide(
             CallRelation(func_idx, call_inp, out),
             record,
             toplevel_sel.clone(),
         );
         self.body
-            .eval(builder, local, &toplevel_sel, index, map, toplevel);
+            .eval(builder, local, &toplevel_sel, index, map, toplevel, &depth);
     }
 }
 
@@ -203,14 +255,15 @@ impl<F: Field> Block<F> {
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
+        depth: &[AB::Expr],
     ) where
         AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
     {
         self.ops
             .iter()
-            .for_each(|op| op.eval(builder, local, sel, index, map, toplevel));
-        self.ctrl.eval(builder, local, index, map, toplevel);
+            .for_each(|op| op.eval(builder, local, sel, index, map, toplevel, depth));
+        self.ctrl.eval(builder, local, index, map, toplevel, depth);
     }
 }
 
@@ -224,6 +277,7 @@ impl<F: Field> Op<F> {
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
+        depth: &[AB::Expr],
     ) where
         AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
@@ -342,6 +396,10 @@ impl<F: Field> Op<F> {
                 }
                 let inp = inp.iter().map(|i| map[*i].to_expr());
                 let record = local.next_require(index);
+                // dependency provenance and constraints
+                if func.partial {
+                    eval_depth(builder, local, index, depth, sel, &mut out);
+                };
                 builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
                     *local.nonce,
@@ -357,8 +415,12 @@ impl<F: Field> Op<F> {
                     map.push(Val::Expr(i.into()));
                     inp.push(i.into());
                 }
-                let out = out.iter().map(|o| map[*o].to_expr());
+                let mut out = out.iter().map(|o| map[*o].to_expr()).collect::<Vec<_>>();
                 let record = local.next_require(index);
+                // dependency provenance and constraints
+                if func.partial {
+                    eval_depth(builder, local, index, depth, sel, &mut out);
+                };
                 builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
                     *local.nonce,
@@ -441,6 +503,7 @@ impl<F: Field> Ctrl<F> {
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
         toplevel: &Toplevel<F, H>,
+        depth: &[AB::Expr],
     ) where
         AB: AirBuilder<F = F> + LookupBuilder,
         <AB as AirBuilder>::Var: Debug,
@@ -452,7 +515,7 @@ impl<F: Field> Ctrl<F> {
 
                 let mut process = |block: &Block<F>| {
                     let sel = block.return_sel::<AB>(local);
-                    block.eval(builder, local, &sel, index, map, toplevel);
+                    block.eval(builder, local, &sel, index, map, toplevel, depth);
                     map.truncate(map_len);
                     index.restore(init_state);
                 };
@@ -467,7 +530,7 @@ impl<F: Field> Ctrl<F> {
 
                 let mut process = |block: &Block<F>| {
                     let sel = block.return_sel::<AB>(local);
-                    block.eval(builder, local, &sel, index, map, toplevel);
+                    block.eval(builder, local, &sel, index, map, toplevel, depth);
                     map.truncate(map_len);
                     index.restore(init_state);
                 };

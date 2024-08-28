@@ -1,4 +1,4 @@
-use std::slice::Iter;
+use std::{borrow::BorrowMut, slice::Iter};
 
 use p3_field::{PrimeField, PrimeField32};
 use p3_matrix::dense::RowMajorMatrix;
@@ -9,6 +9,7 @@ use rayon::{
 
 use crate::{
     air::builder::{Record, RequireRecord},
+    gadgets::bytes::record::DummyBytesRecord,
     lair::execute::mem_index_from_len,
 };
 
@@ -17,6 +18,7 @@ use super::{
     chipset::Chipset,
     execute::{QueryRecord, Shard},
     func_chip::{ColumnLayout, Degree, FuncChip, LayoutSizes},
+    provenance::{DepthLessThan, DEPTH_LESS_THAN_SIZE, DEPTH_W},
     toplevel::Toplevel,
     List,
 };
@@ -89,6 +91,7 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 let requires = result.requires.iter();
+                let mut depth_requires = result.depth_requires.iter();
                 let queries = shard.queries();
                 let query_map = &queries.func_queries()[self.func.index];
                 let lookup = query_map
@@ -104,21 +107,43 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
                     .for_each(|&o| slice.push_output(index, o));
                 slice.push_aux(index, provide.last_nonce);
                 slice.push_aux(index, provide.last_count);
-                self.func
-                    .populate_row(args, index, slice, queries, requires, self.toplevel);
+                // provenance and range check
+                if self.func.partial {
+                    let num_requires = (DEPTH_W / 2) + (DEPTH_W % 2);
+                    let depth: [u8; DEPTH_W] = result.depth.to_le_bytes();
+                    for b in depth {
+                        slice.push_aux(index, F::from_canonical_u8(b));
+                    }
+                    for _ in 0..num_requires {
+                        let lookup = depth_requires.next().expect("Not enough require hints");
+                        slice.push_require(index, lookup.into_require());
+                    }
+                }
+                self.func.populate_row(
+                    args,
+                    index,
+                    slice,
+                    queries,
+                    requires,
+                    self.toplevel,
+                    result.depth,
+                    depth_requires,
+                );
             });
         RowMajorMatrix::new(rows, width)
     }
 }
 
-#[derive(Clone)]
 struct TraceCtx<'a, F: PrimeField32, H: Chipset<F>> {
     queries: &'a QueryRecord<F>,
     toplevel: &'a Toplevel<F, H>,
     requires: Iter<'a, Record>,
+    depth: u32,
+    depth_requires: Iter<'a, Record>,
 }
 
 impl<F: PrimeField32> Func<F> {
+    #[allow(clippy::too_many_arguments)]
     fn populate_row<H: Chipset<F>>(
         &self,
         args: &[F],
@@ -127,6 +152,8 @@ impl<F: PrimeField32> Func<F> {
         queries: &QueryRecord<F>,
         requires: Iter<'_, Record>,
         toplevel: &Toplevel<F, H>,
+        depth: u32,
+        depth_requires: Iter<'_, Record>,
     ) {
         assert_eq!(self.input_size(), args.len(), "Argument mismatch");
         // Variable to value map
@@ -136,6 +163,8 @@ impl<F: PrimeField32> Func<F> {
             queries,
             requires,
             toplevel,
+            depth,
+            depth_requires,
         };
         // One column per input
         args.iter().for_each(|arg| slice.push_input(index, *arg));
@@ -169,6 +198,7 @@ impl<F: PrimeField32> Ctrl<F> {
         match self {
             Ctrl::Return(ident, _) => {
                 assert!(ctx.requires.next().is_none());
+                assert!(ctx.depth_requires.next().is_none());
                 slice.sel[*ident] = F::one();
             }
             Ctrl::Choose(var, cases, _) => {
@@ -200,6 +230,27 @@ fn push_inequality_witness<F: PrimeField, I: Iterator<Item = F>>(
         }
     }
     assert!(found);
+}
+
+fn push_depth<F: PrimeField32, H: Chipset<F>>(
+    index: &mut ColumnIndex,
+    slice: &mut ColumnMutSlice<'_, F>,
+    ctx: &mut TraceCtx<'_, F, H>,
+    depth: u32,
+) {
+    let depth_bytes: [u8; DEPTH_W] = depth.to_le_bytes();
+    for b in depth_bytes {
+        slice.push_aux(index, F::from_canonical_u8(b));
+    }
+    let bytes = &mut DummyBytesRecord;
+    let witness: &mut [F] = &mut [F::zero(); DEPTH_LESS_THAN_SIZE];
+    let less_than: &mut DepthLessThan<F> = witness.borrow_mut();
+    less_than.populate(&depth, &ctx.depth, bytes);
+    witness.iter().for_each(|w| slice.push_aux(index, *w));
+    for _ in 0..DepthLessThan::<F>::num_requires() {
+        let lookup = ctx.depth_requires.next().expect("Not enough require hints");
+        slice.push_require(index, lookup.into_require());
+    }
 }
 
 impl<F: PrimeField32> Op<F> {
@@ -272,6 +323,7 @@ impl<F: PrimeField32> Op<F> {
                 }
             }
             Op::Call(idx, inp) => {
+                let func = ctx.toplevel.get_by_index(*idx);
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let query_map = &ctx.queries.func_queries()[*idx];
                 let result = query_map.get(&args).expect("Cannot find query result");
@@ -281,19 +333,30 @@ impl<F: PrimeField32> Op<F> {
                 }
                 let lookup = ctx.requires.next().expect("Not enough require hints");
                 slice.push_require(index, lookup.into_require());
+                // dependency provenance and constrants
+                if func.partial {
+                    push_depth(index, slice, ctx, result.depth);
+                }
             }
             Op::PreImg(idx, out) => {
+                let func = ctx.toplevel.get_by_index(*idx);
                 let out = out.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let inv_map = ctx.queries.inv_func_queries[*idx]
                     .as_ref()
                     .expect("Function not invertible");
                 let inp = inv_map.get(&out).expect("Cannot find preimage");
+                // dependency provenance and constrants
                 for f in inp.iter() {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
                 let lookup = ctx.requires.next().expect("Not enough require hints");
                 slice.push_require(index, lookup.into_require());
+                if func.partial {
+                    let query_map = &ctx.queries.func_queries()[*idx];
+                    let result = query_map.get(inp).expect("Cannot find query result");
+                    push_depth(index, slice, ctx, result.depth);
+                };
             }
             Op::Store(args) => {
                 let mem_idx = mem_index_from_len(args.len());

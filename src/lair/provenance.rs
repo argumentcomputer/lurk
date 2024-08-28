@@ -8,15 +8,15 @@ use std::borrow::{Borrow, BorrowMut};
 use std::iter::zip;
 
 /// Use `u32` for depth.
-const DEPTH_W: usize = 4;
+pub const DEPTH_W: usize = 4;
 
-type Depth<F> = Word<F, DEPTH_W>;
-type UncheckedDepth<F> = UncheckedWord<F, DEPTH_W>;
+pub type Depth<F> = Word<F, DEPTH_W>;
+pub type UncheckedDepth<F> = UncheckedWord<F, DEPTH_W>;
 
-type DepthLessThan<F> = LessThanWitness<F, DEPTH_W>;
-type DepthAddOne<F> = AddOne<F, DEPTH_W>;
-const DEPTH_LESS_THAN_SIZE: usize = DepthLessThan::<u8>::witness_size();
-const DEPTH_ADD_ONE_SIZE: usize = DepthAddOne::<u8>::witness_size();
+pub type DepthLessThan<F> = LessThanWitness<F, DEPTH_W>;
+pub type DepthAddOne<F> = AddOne<F, DEPTH_W>;
+pub const DEPTH_LESS_THAN_SIZE: usize = DepthLessThan::<u8>::witness_size();
+pub const DEPTH_ADD_ONE_SIZE: usize = DepthAddOne::<u8>::witness_size();
 
 pub fn populate_max<F: PrimeField>(
     depths: &[u32],

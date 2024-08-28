@@ -134,6 +134,7 @@ pub struct CasesE<K, F> {
 pub struct FuncE<F> {
     pub name: Name,
     pub invertible: bool,
+    pub partial: bool,
     pub input_params: VarList,
     pub output_size: usize,
     pub body: BlockE<F>,
