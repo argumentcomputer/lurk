@@ -110,8 +110,8 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
                 // provenance and range check
                 if self.func.partial {
                     let num_requires = (DEPTH_W / 2) + (DEPTH_W % 2);
-                    let depth = result.depth.to_le_bytes();
-                    for b in depth.into_iter().take(DEPTH_W) {
+                    let depth: [u8; DEPTH_W] = result.depth.to_le_bytes();
+                    for b in depth {
                         slice.push_aux(index, F::from_canonical_u8(b));
                     }
                     for _ in 0..num_requires {
@@ -314,8 +314,8 @@ impl<F: PrimeField32> Op<F> {
                 slice.push_require(index, lookup.into_require());
                 // dependency provenance and constrants
                 if func.partial {
-                    let dep_depth = result.depth.to_le_bytes();
-                    for b in dep_depth.into_iter().take(DEPTH_W) {
+                    let dep_depth: [u8; DEPTH_W] = result.depth.to_le_bytes();
+                    for b in dep_depth {
                         slice.push_aux(index, F::from_canonical_u8(b));
                     }
                     let bytes = &mut DummyBytesRecord;
@@ -346,8 +346,8 @@ impl<F: PrimeField32> Op<F> {
                 if func.partial {
                     let query_map = &ctx.queries.func_queries()[*idx];
                     let result = query_map.get(inp).expect("Cannot find query result");
-                    let depth = result.depth.to_le_bytes();
-                    for b in depth.into_iter().take(DEPTH_W) {
+                    let depth: [u8; DEPTH_W] = result.depth.to_le_bytes();
+                    for b in depth {
                         slice.push_aux(index, F::from_canonical_u8(b));
                     }
                     let bytes = &mut DummyBytesRecord;
