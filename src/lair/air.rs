@@ -102,6 +102,34 @@ impl<'a, T> ColumnSlice<'a, T> {
     }
 }
 
+fn eval_depth<F: Field, AB>(
+    builder: &mut AB,
+    local: ColumnSlice<'_, AB::Var>,
+    index: &mut ColumnIndex,
+    depth: &[AB::Expr],
+    sel: &AB::Expr,
+    out: &mut Vec<AB::Expr>,
+) where
+    AB: AirBuilder<F = F> + LookupBuilder,
+{
+    let dep_depth: &[_] = &(0..DEPTH_W)
+        .map(|_| local.next_aux(index).into())
+        .collect::<Vec<_>>();
+    let witness: &[_] = &(0..DEPTH_LESS_THAN_SIZE)
+        .map(|_| local.next_aux(index))
+        .collect::<Vec<_>>();
+    let less_than: &DepthLessThan<_> = witness.borrow();
+    let mut air_record = BytesAirRecordWithContext::default();
+    let dep_depth_word: &Word32<_> = dep_depth.borrow();
+    let depth: &Word32<_> = depth.borrow();
+    less_than.assert_less_than(builder, dep_depth_word, depth, &mut air_record, sel.clone());
+    let requires = (0..DepthLessThan::<F>::num_requires())
+        .map(|_| local.next_require(index))
+        .collect::<Vec<_>>();
+    air_record.require_all(builder, (*local.nonce).into(), requires);
+    out.extend(dep_depth.iter().cloned());
+}
+
 impl<'a, AB, H: Chipset<AB::F>> Air<AB> for FuncChip<'a, AB::F, H>
 where
     AB: AirBuilder + LookupBuilder,
@@ -370,28 +398,7 @@ impl<F: Field> Op<F> {
                 let record = local.next_require(index);
                 // dependency provenance and constraints
                 if func.partial {
-                    let dep_depth: &[_] = &(0..DEPTH_W)
-                        .map(|_| local.next_aux(index).into())
-                        .collect::<Vec<_>>();
-                    let witness: &[_] = &(0..DEPTH_LESS_THAN_SIZE)
-                        .map(|_| local.next_aux(index))
-                        .collect::<Vec<_>>();
-                    let less_than: &DepthLessThan<_> = witness.borrow();
-                    let mut air_record = BytesAirRecordWithContext::default();
-                    let dep_depth_word: &Word32<_> = dep_depth.borrow();
-                    let depth: &Word32<_> = depth.borrow();
-                    less_than.assert_less_than(
-                        builder,
-                        dep_depth_word,
-                        depth,
-                        &mut air_record,
-                        sel.clone(),
-                    );
-                    let requires = (0..DepthLessThan::<F>::num_requires())
-                        .map(|_| local.next_require(index))
-                        .collect::<Vec<_>>();
-                    air_record.require_all(builder, (*local.nonce).into(), requires);
-                    out.extend(dep_depth.iter().cloned());
+                    eval_depth(builder, local, index, depth, sel, &mut out);
                 };
                 builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),
@@ -412,28 +419,7 @@ impl<F: Field> Op<F> {
                 let record = local.next_require(index);
                 // dependency provenance and constraints
                 if func.partial {
-                    let dep_depth: &[_] = &(0..DEPTH_W)
-                        .map(|_| local.next_aux(index).into())
-                        .collect::<Vec<_>>();
-                    let witness: &[_] = &(0..DEPTH_LESS_THAN_SIZE)
-                        .map(|_| local.next_aux(index))
-                        .collect::<Vec<_>>();
-                    let less_than: &DepthLessThan<_> = witness.borrow();
-                    let mut air_record = BytesAirRecordWithContext::default();
-                    let dep_depth_word: &Word32<_> = dep_depth.borrow();
-                    let depth: &Word32<_> = depth.borrow();
-                    less_than.assert_less_than(
-                        builder,
-                        dep_depth_word,
-                        depth,
-                        &mut air_record,
-                        sel.clone(),
-                    );
-                    let requires = (0..DepthLessThan::<F>::num_requires())
-                        .map(|_| local.next_require(index))
-                        .collect::<Vec<_>>();
-                    air_record.require_all(builder, (*local.nonce).into(), requires);
-                    out.extend(dep_depth.iter().cloned());
+                    eval_depth(builder, local, index, depth, sel, &mut out);
                 };
                 builder.require(
                     CallRelation(F::from_canonical_usize(*idx), inp, out),

@@ -232,6 +232,27 @@ fn push_inequality_witness<F: PrimeField, I: Iterator<Item = F>>(
     assert!(found);
 }
 
+fn push_depth<F: PrimeField32, H: Chipset<F>>(
+    index: &mut ColumnIndex,
+    slice: &mut ColumnMutSlice<'_, F>,
+    ctx: &mut TraceCtx<'_, F, H>,
+    depth: u32,
+) {
+    let depth_bytes: [u8; DEPTH_W] = depth.to_le_bytes();
+    for b in depth_bytes {
+        slice.push_aux(index, F::from_canonical_u8(b));
+    }
+    let bytes = &mut DummyBytesRecord;
+    let witness: &mut [F] = &mut [F::zero(); DEPTH_LESS_THAN_SIZE];
+    let less_than: &mut DepthLessThan<F> = witness.borrow_mut();
+    less_than.populate(&depth, &ctx.depth, bytes);
+    witness.iter().for_each(|w| slice.push_aux(index, *w));
+    for _ in 0..DepthLessThan::<F>::num_requires() {
+        let lookup = ctx.depth_requires.next().expect("Not enough require hints");
+        slice.push_require(index, lookup.into_require());
+    }
+}
+
 impl<F: PrimeField32> Op<F> {
     fn populate_row<H: Chipset<F>>(
         &self,
@@ -314,19 +335,7 @@ impl<F: PrimeField32> Op<F> {
                 slice.push_require(index, lookup.into_require());
                 // dependency provenance and constrants
                 if func.partial {
-                    let dep_depth: [u8; DEPTH_W] = result.depth.to_le_bytes();
-                    for b in dep_depth {
-                        slice.push_aux(index, F::from_canonical_u8(b));
-                    }
-                    let bytes = &mut DummyBytesRecord;
-                    let witness: &mut [F] = &mut [F::zero(); DEPTH_LESS_THAN_SIZE];
-                    let less_than: &mut DepthLessThan<F> = witness.borrow_mut();
-                    less_than.populate(&result.depth, &ctx.depth, bytes);
-                    witness.iter().for_each(|w| slice.push_aux(index, *w));
-                    for _ in 0..DepthLessThan::<F>::num_requires() {
-                        let lookup = ctx.depth_requires.next().expect("Not enough require hints");
-                        slice.push_require(index, lookup.into_require());
-                    }
+                    push_depth(index, slice, ctx, result.depth);
                 }
             }
             Op::PreImg(idx, out) => {
@@ -346,19 +355,7 @@ impl<F: PrimeField32> Op<F> {
                 if func.partial {
                     let query_map = &ctx.queries.func_queries()[*idx];
                     let result = query_map.get(inp).expect("Cannot find query result");
-                    let depth: [u8; DEPTH_W] = result.depth.to_le_bytes();
-                    for b in depth {
-                        slice.push_aux(index, F::from_canonical_u8(b));
-                    }
-                    let bytes = &mut DummyBytesRecord;
-                    let witness: &mut [F] = &mut [F::zero(); DEPTH_LESS_THAN_SIZE];
-                    let less_than: &mut DepthLessThan<F> = witness.borrow_mut();
-                    less_than.populate(&result.depth, &ctx.depth, bytes);
-                    witness.iter().for_each(|w| slice.push_aux(index, *w));
-                    for _ in 0..DepthLessThan::<F>::num_requires() {
-                        let lookup = ctx.depth_requires.next().expect("Not enough require hints");
-                        slice.push_require(index, lookup.into_require());
-                    }
+                    push_depth(index, slice, ctx, result.depth);
                 };
             }
             Op::Store(args) => {
