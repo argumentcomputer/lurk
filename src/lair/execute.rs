@@ -970,4 +970,25 @@ mod tests {
         assert_eq!(res2, res3);
         assert_eq!(traces2, traces3);
     }
+
+    #[test]
+    #[should_panic(expected = "assertion failed: ctx.partial")]
+    fn nonpartial_calls_partial() {
+        let partial_e = func!(
+            partial fn foo(a): [1] {
+                return a
+            }
+        );
+        let nonpartial_e = func!(
+            fn bar(a): [1] {
+                let b = call(foo, a);
+                return b
+            }
+        );
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[partial_e, nonpartial_e]);
+        let nonpartial = toplevel.get_by_name("bar");
+        let args = [1].into_iter().map(field_from_u32).collect::<List<_>>();
+        let queries = &mut QueryRecord::new(&toplevel);
+        let _ = toplevel.execute(nonpartial, &args, queries, None);
+    }
 }
