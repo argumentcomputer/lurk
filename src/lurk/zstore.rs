@@ -498,34 +498,41 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         self.intern_compact3(Tag::Env, sym, val, env)
     }
 
-    fn intern_syntax(&mut self, syn: &Syntax<F>) -> ZPtr<F> {
+    fn intern_syntax(&mut self, syn: &Syntax<F>) -> Result<ZPtr<F>> {
         if let Some(zptr) = self.syn_cache.get(syn).copied() {
-            return zptr;
+            return Ok(zptr);
         }
         let zptr = match syn {
             Syntax::Num(_, f) => self.intern_num(*f),
             Syntax::Char(_, c) => self.intern_char(*c),
             Syntax::U64(_, u) => self.intern_u64(*u),
+            Syntax::I64(..) => bail!("Transient error: Signed integers are not yet supported. Using `(- 0 x)` instead of `-x` might work as a temporary workaround."),
             Syntax::Digest(_, c) => self.intern_comm(*c),
             Syntax::String(_, s) => self.intern_string(s),
             Syntax::Symbol(_, s) => self.intern_symbol(s),
             Syntax::List(_, xs) => {
-                let xs = xs.iter().map(|x| self.intern_syntax(x)).collect::<Vec<_>>();
+                let xs = xs
+                    .iter()
+                    .map(|x| self.intern_syntax(x))
+                    .collect::<Result<Vec<_>>>()?;
                 self.intern_list(xs)
             }
             Syntax::Improper(_, xs, y) => {
-                let xs = xs.iter().map(|x| self.intern_syntax(x)).collect::<Vec<_>>();
-                let y = self.intern_syntax(y);
+                let xs = xs
+                    .iter()
+                    .map(|x| self.intern_syntax(x))
+                    .collect::<Result<Vec<_>>>()?;
+                let y = self.intern_syntax(y)?;
                 self.intern_list_full(xs, y)
             }
             Syntax::Quote(_, x) => {
                 let quote = self.intern_symbol(quote());
-                let x = self.intern_syntax(x);
+                let x = self.intern_syntax(x)?;
                 self.intern_list([quote, x])
             }
         };
         self.syn_cache.insert(syn.clone(), zptr);
-        zptr
+        Ok(zptr)
     }
 
     #[inline]
@@ -542,7 +549,10 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                     .get_pos()
                     .get_from_offset()
                     .expect("Parsed syntax should have its Pos set");
-                Ok((offset, rest, is_meta, self.intern_syntax(&syn)))
+                let syn = self
+                    .intern_syntax(&syn)
+                    .map_err(|e| Error::Syntax(format!("{e}")))?;
+                Ok((offset, rest, is_meta, syn))
             }
         }
     }

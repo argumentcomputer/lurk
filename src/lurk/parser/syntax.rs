@@ -224,19 +224,29 @@ pub fn parse_numeric<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Synt
             // when more uint types are supported we can do:
             #[allow(clippy::unnested_or_patterns)]
             Some("u8") | Some("u16") | Some("u32") | Some("u128") | Some("i8") | Some("i16")
-            | Some("i32") | Some("i64") | Some("i128") => {
+            | Some("i32") | Some("i128") => {
                 let suffix = suffix.unwrap();
                 ParseError::throw(
                     from,
                     ParseErrorKind::Custom(format!("Numeric suffix {suffix} not yet supported")),
                 )
             }
+            Some("i64") => {
+                let (_, x) =
+                    ParseError::res(u64::from_str_radix(&digits, base.radix()), from, |e| {
+                        ParseErrorKind::ParseIntErr(e)
+                    })?;
+                let pos = Pos::from_upto(from, upto);
+                Ok((upto, Syntax::I64(pos, neg.is_some(), x)))
+            }
             None | Some("u64") => {
                 if neg.is_some() {
-                    ParseError::throw(
-                        from,
-                        ParseErrorKind::Custom("Negative u64 invalid".to_string()),
-                    )
+                    let (_, x) =
+                        ParseError::res(u64::from_str_radix(&digits, base.radix()), from, |e| {
+                            ParseErrorKind::ParseIntErr(e)
+                        })?;
+                    let pos = Pos::from_upto(from, upto);
+                    Ok((upto, Syntax::I64(pos, neg.is_some(), x)))
                 } else {
                     let (_, x) =
                         ParseError::res(u64::from_str_radix(&digits, base.radix()), from, |e| {
