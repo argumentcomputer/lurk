@@ -535,14 +535,14 @@ pub fn u64_iszero<F>() -> FuncE<F> {
 pub fn u64_equal<F: AbstractField>() -> FuncE<F> {
     func!(
         fn u64_equal(a, b): [1] {
-            let zero = 0;
-            let one = 1;
             let a: [8] = load(a);
             let b: [8] = load(b);
             let diff = sub(a, b);
             if diff {
+                let zero = 0;
                 return zero
             }
+            let one = 1;
             return one
         }
     )
