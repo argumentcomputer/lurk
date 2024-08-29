@@ -35,11 +35,26 @@ fn get_fib_arg() -> usize {
 
 fn build_lurk_expr(arg: usize) -> String {
     format!(
-        "(letrec ((fib
-          (lambda (n)
-            (if (<= n 1) n
-              (+ (fib (- n 1)) (fib (- (- n 1) 1)))))))
-  (fib {arg}))"
+        "
+(let ((fib (letrec ((matmul (lambda (a b) ;; 2x2 matrix multiplication
+                               (cons (cons (+ (* (car (car a)) (car (car b)))
+                                              (* (cdr (car a)) (car (cdr b))))
+                                           (+ (* (car (car a)) (cdr (car b)))
+                                              (* (cdr (car a)) (cdr (cdr b)))))
+                                     (cons (+ (* (car (cdr a)) (car (car b)))
+                                              (* (cdr (cdr a)) (car (cdr b))))
+                                           (+ (* (car (cdr a)) (cdr (car b)))
+                                              (* (cdr (cdr a)) (cdr (cdr b))))))))
+                     (fast-matexp (lambda (b e)
+                                    (if (= e 0)
+                                        '((1 . 0) . (0 . 1)) ;; identity matrix
+                                        (if (= (% e 2) 1) ;; (odd? e)
+                                            (matmul b (fast-matexp (matmul b b) (/ (- e 1) 2)))
+                                            (fast-matexp (matmul b b) (/ e 2)))))))
+             (lambda (n)
+               (car (car (fast-matexp '((0 . 1) . (1 . 1)) (+ n 1))))))))
+  (fib {arg}))
+"
     )
 }
 
