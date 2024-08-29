@@ -6,7 +6,7 @@
 use p3_baby_bear::BabyBear;
 use p3_field::AbstractField;
 use sphinx_core::{
-    stark::{LocalProver, StarkGenericConfig, StarkMachine},
+    stark::{LocalProver, MachineRecord, StarkGenericConfig, StarkMachine},
     utils::{BabyBearPoseidon2, SphinxCoreOpts},
 };
 use std::time::Instant;
@@ -14,7 +14,7 @@ use std::time::Instant;
 use loam::{
     lair::{
         chipset::Chipset,
-        execute::{QueryRecord, Shard},
+        execute::{QueryRecord, Shard, ShardingConfig},
         func_chip::FuncChip,
         lair_chip::{build_chip_vector, LairMachineProgram},
         toplevel::Toplevel,
@@ -87,12 +87,55 @@ fn fib_e2e() {
         build_chip_vector(&lurk_main),
         record.expect_public_values().len(),
     );
-    let (pk, _) = machine.setup(&LairMachineProgram);
+    let (pk, vk) = machine.setup(&LairMachineProgram);
     let mut challenger_p = machine.config().challenger();
     let opts = SphinxCoreOpts::default();
     let shard = Shard::new(&record);
-    machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
+    let proof = machine.prove::<LocalProver<_, _>>(&pk, shard.clone(), &mut challenger_p, opts);
 
     let elapsed_time = start_time.elapsed().as_secs_f32();
     println!("Total time for e2e-{arg} = {:.2} s", elapsed_time);
+
+    let mut challenger_v = machine.config().challenger();
+    machine
+        .verify(&vk, &proof, &mut challenger_v)
+        .expect("proof verifies");
+}
+
+#[ignore]
+#[test]
+fn fib_shard_e2e() {
+    // This is enough for ensuring two shards in the proof by default
+    let arg = 500000;
+    let (toplevel, _) = build_lurk_toplevel();
+    let (args, lurk_main, mut record) = setup(arg, &toplevel);
+    let start_time = Instant::now();
+
+    toplevel
+        .execute(lurk_main.func(), &args, &mut record, None)
+        .unwrap();
+    let config = BabyBearPoseidon2::new();
+    let machine = StarkMachine::new(
+        config,
+        build_chip_vector(&lurk_main),
+        record.expect_public_values().len(),
+    );
+    let (pk, vk) = machine.setup(&LairMachineProgram);
+    let mut challenger_p = machine.config().challenger();
+    let opts = SphinxCoreOpts::default();
+    let shard = Shard::new(&record);
+    let shards = shard.clone().shard(&ShardingConfig::default());
+    assert!(
+        shards.len() > 1,
+        "lurk_shard_test must have more than one shard"
+    );
+    let proof = machine.prove::<LocalProver<_, _>>(&pk, shard.clone(), &mut challenger_p, opts);
+
+    let elapsed_time = start_time.elapsed().as_secs_f32();
+    println!("Total time for e2e-{arg} = {:.2} s", elapsed_time);
+
+    let mut challenger_v = machine.config().challenger();
+    machine
+        .verify(&vk, &proof, &mut challenger_v)
+        .expect("proof verifies");
 }
