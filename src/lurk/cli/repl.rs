@@ -75,7 +75,7 @@ impl<F: Field + Debug> InputValidator<F> {
                 if rest.is_empty() {
                     Ok(())
                 } else {
-                    Err(Error::Syntax(format!("Leftover input: {}", rest)))
+                    self.try_parse(&rest)
                 }
             }
         }
@@ -595,29 +595,35 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
 
         loop {
             match editor.readline(&self.input_marker()) {
-                Ok(line) => {
-                    if line.trim_end().is_empty() {
-                        continue;
-                    }
+                Ok(mut line) => {
                     editor.add_history_entry(&line)?;
-                    match self
-                        .zstore
-                        .read_maybe_meta_with_state(self.state.clone(), &line)
-                    {
-                        Ok((.., is_meta, zptr)) => {
-                            if is_meta {
-                                if let Err(e) = self.handle_meta(&zptr, &self.pwd_path.clone()) {
-                                    eprintln!("!Error: {e}");
+
+                    while !line.trim_end().is_empty() {
+                        match self
+                            .zstore
+                            .read_maybe_meta_with_state(self.state.clone(), &line)
+                        {
+                            Ok((.., rest, is_meta, zptr)) => {
+                                if is_meta {
+                                    if let Err(e) = self.handle_meta(&zptr, &self.pwd_path.clone())
+                                    {
+                                        eprintln!("!Error: {e}");
+                                        break;
+                                    }
+                                } else if let Err(e) = self.handle_non_meta(&zptr) {
+                                    eprintln!("Error: {e}");
+                                    break;
                                 }
-                            } else if let Err(e) = self.handle_non_meta(&zptr) {
-                                eprintln!("Error: {e}");
+                                line = rest.to_string();
                             }
-                        }
-                        Err(Error::NoInput) => {
-                            // It's ok, the line is only a single comment
-                        }
-                        Err(e) => {
-                            eprintln!("Read error: {e}");
+                            Err(Error::NoInput) => {
+                                // It's ok, the line is only a single comment
+                                break;
+                            }
+                            Err(e) => {
+                                eprintln!("Read error: {e}");
+                                break;
+                            }
                         }
                     }
                 }
