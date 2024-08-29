@@ -10,3 +10,11 @@ fail-fast = false
 slow-timeout = { period = "300s", terminate-after = 4 }
 # Retry failed tests once, marked flaky if test then passes
 retries = 1
+
+[test-groups]
+limited = { max-threads = 4 }
+very-limited = { max-threads = 1 }
+
+[[profile.ci.overrides]]
+filter = '(test(_shard_) | test(_e2e))'
+test-group = 'very-limited'
