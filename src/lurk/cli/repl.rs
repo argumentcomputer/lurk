@@ -297,6 +297,41 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         self.memoize_dag(Tag::Env, &self.env.digest.clone())
     }
 
+    /// Produces a minimal `QueryRecord` with just enough data to manually execute
+    /// the `egress` chip and to register inverse queries that might be needed for
+    /// later DAG memoization
+    fn tmp_queries_for_egression(&self) -> QueryRecord<F> {
+        let mut inv_func_queries = Vec::with_capacity(self.queries.inv_func_queries.len());
+        for inv_query_map in &self.queries.inv_func_queries {
+            if inv_query_map.is_some() {
+                inv_func_queries.push(Some(Default::default()));
+            } else {
+                inv_func_queries.push(None);
+            }
+        }
+        QueryRecord {
+            public_values: None,
+            func_queries: vec![Default::default(); self.queries.func_queries.len()],
+            inv_func_queries,
+            mem_queries: self.queries.mem_queries.clone(),
+            bytes: Default::default(),
+            emitted: Default::default(),
+            debug_data: Default::default(),
+        }
+    }
+
+    /// Extends the inverse query maps with data from a `QueryRecord`
+    fn retrieve_inv_query_data_from_tmp_queries(&mut self, queries_tmp: QueryRecord<F>) {
+        for (func_idx, inv_queries_tmp) in queries_tmp.inv_func_queries.into_iter().enumerate() {
+            if let Some(inv_queries) = &mut self.queries.inv_func_queries[func_idx] {
+                inv_queries.extend(
+                    inv_queries_tmp
+                        .expect("Inv map corresponds to an invertible func and shouldn't be None"),
+                );
+            }
+        }
+    }
+
     fn manual_egression(&self, egress_input: &[F], queries_tmp: &mut QueryRecord<F>) -> ZPtr<F> {
         let digest = self
             .toplevel
@@ -396,12 +431,12 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
     ) -> Result<(ZPtr<F>, Vec<ZPtr<F>>)> {
         self.prepare_queries();
         let mut queries_tmp = self.queries.clone();
-        let result = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
+        let result_data = self.toplevel.execute_by_index(
             self.lurk_main_idx,
             &self.build_input(expr, env),
             &mut queries_tmp,
             None,
-        )?);
+        );
         let emitted_raw_vec = std::mem::take(&mut queries_tmp.emitted);
         let mut emitted = Vec::with_capacity(emitted_raw_vec.len());
         for emitted_raw in &emitted_raw_vec {
@@ -412,7 +447,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             self.memoize_dag(zptr.tag, &zptr.digest);
             println!("{}", self.fmt(zptr));
         }
-        Ok((result, emitted))
+        result_data.map(|data| (ZPtr::from_flat_data(&data), emitted))
     }
 
     #[inline]
@@ -421,49 +456,14 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         self.reduce_aux_with_env(expr, &env)
     }
 
-    /// Produces a minimal `QueryRecord` with just enough data to manually execute
-    /// the `egress` chip and to register inverse queries that might be needed for
-    /// later DAG memoization
-    fn tmp_queries_for_egression(&self) -> QueryRecord<F> {
-        let mut inv_func_queries = Vec::with_capacity(self.queries.inv_func_queries.len());
-        for inv_query_map in &self.queries.inv_func_queries {
-            if inv_query_map.is_some() {
-                inv_func_queries.push(Some(Default::default()));
-            } else {
-                inv_func_queries.push(None);
-            }
-        }
-        QueryRecord {
-            public_values: None,
-            func_queries: vec![Default::default(); self.queries.func_queries.len()],
-            inv_func_queries,
-            mem_queries: self.queries.mem_queries.clone(),
-            bytes: Default::default(),
-            emitted: Default::default(),
-            debug_data: Default::default(),
-        }
-    }
-
-    /// Extends the inverse query maps with data from a `QueryRecord`
-    fn retrieve_inv_query_data_from_tmp_queries(&mut self, queries_tmp: QueryRecord<F>) {
-        for (func_idx, inv_queries_tmp) in queries_tmp.inv_func_queries.into_iter().enumerate() {
-            if let Some(inv_queries) = &mut self.queries.inv_func_queries[func_idx] {
-                inv_queries.extend(
-                    inv_queries_tmp
-                        .expect("Inv map corresponds to an invertible func and shouldn't be None"),
-                );
-            }
-        }
-    }
-
     pub(crate) fn reduce_with_env(&mut self, expr: &ZPtr<F>, env: &ZPtr<F>) -> Result<ZPtr<F>> {
         self.prepare_queries();
-        let result = ZPtr::from_flat_data(&self.toplevel.execute_by_index(
+        let result_data = self.toplevel.execute_by_index(
             self.lurk_main_idx,
             &self.build_input(expr, env),
             &mut self.queries,
             Some(self.eval_idx),
-        )?);
+        );
         if !self.queries.emitted.is_empty() {
             let mut queries_tmp = self.tmp_queries_for_egression();
             let mut emitted = Vec::with_capacity(self.queries.emitted.len());
@@ -476,7 +476,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
                 println!("{}", self.fmt(zptr));
             }
         }
-        Ok(result)
+        result_data.map(|data| ZPtr::from_flat_data(&data))
     }
 
     #[inline]

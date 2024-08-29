@@ -165,11 +165,12 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         run: |repl, args, _path| {
             if args.tag != Tag::Nil {
                 let expr = *repl.peek1(args)?;
-                repl.handle_non_meta(&expr)?;
+                let result = repl.handle_non_meta(&expr);
+                debug_mode(&repl.format_debug_data())?;
+                result.map(|_| ())
+            } else {
+                debug_mode(&repl.format_debug_data())
             }
-            let formatted_debug_data = repl.format_debug_data();
-            debug_mode(&formatted_debug_data)?;
-            Ok(())
         },
     };
 
