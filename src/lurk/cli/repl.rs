@@ -608,11 +608,9 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
                                     if let Err(e) = self.handle_meta(&zptr, &self.pwd_path.clone())
                                     {
                                         eprintln!("!Error: {e}");
-                                        break;
                                     }
                                 } else if let Err(e) = self.handle_non_meta(&zptr) {
                                     eprintln!("Error: {e}");
-                                    break;
                                 }
                                 line = rest.to_string();
                             }
