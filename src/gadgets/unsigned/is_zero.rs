@@ -237,6 +237,8 @@ mod tests {
             witness.eval_is_zero(&mut GadgetTester::failing(), Word::<F, W>::zero(), F::one());
         }
     }
+
+    #[allow(dead_code)]
     fn test_is_diff<const W: usize, U: ToBytes<Bytes = [u8; W]> + Unsigned>(lhs: &U, rhs: &U) {
         let mut witness = IsEqual::<F, W>::default();
         let is_equal = witness.populate_is_equal(lhs, rhs);
