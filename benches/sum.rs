@@ -24,7 +24,7 @@ use loam::{
     },
 };
 
-const DEFAULT_SUM_ARG: usize = 10000;
+const DEFAULT_SUM_ARG: usize = 100000;
 
 fn get_sum_arg() -> usize {
     std::env::var("LOAM_SUM_ARG")
