@@ -240,19 +240,14 @@ pub fn parse_numeric<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Synt
                 Ok((upto, Syntax::I64(pos, neg.is_some(), x)))
             }
             None | Some("u64") => {
+                let (_, x) =
+                    ParseError::res(u64::from_str_radix(&digits, base.radix()), from, |e| {
+                        ParseErrorKind::ParseIntErr(e)
+                    })?;
+                let pos = Pos::from_upto(from, upto);
                 if neg.is_some() {
-                    let (_, x) =
-                        ParseError::res(u64::from_str_radix(&digits, base.radix()), from, |e| {
-                            ParseErrorKind::ParseIntErr(e)
-                        })?;
-                    let pos = Pos::from_upto(from, upto);
                     Ok((upto, Syntax::I64(pos, neg.is_some(), x)))
                 } else {
-                    let (_, x) =
-                        ParseError::res(u64::from_str_radix(&digits, base.radix()), from, |e| {
-                            ParseErrorKind::ParseIntErr(e)
-                        })?;
-                    let pos = Pos::from_upto(from, upto);
                     Ok((upto, Syntax::U64(pos, x)))
                 }
             }
