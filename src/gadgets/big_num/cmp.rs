@@ -12,7 +12,7 @@ use std::iter::zip;
 
 #[derive(Clone, Debug, AlignedBorrow)]
 #[repr(C)]
-pub struct CommitmentCompareWitness<T> {
+pub struct BigNumCompareWitness<T> {
     is_comp: [T; DIGEST_SIZE],
     lhs_comp_limb: T,
     rhs_comp_limb: T,
@@ -21,7 +21,7 @@ pub struct CommitmentCompareWitness<T> {
     comp_witness: CompareWitness<T, WORD32_SIZE>,
 }
 
-impl<F: PrimeField32> CommitmentCompareWitness<F> {
+impl<F: PrimeField32> BigNumCompareWitness<F> {
     pub fn populate(
         &mut self,
         lhs: &[F; DIGEST_SIZE],
@@ -47,7 +47,7 @@ impl<F: PrimeField32> CommitmentCompareWitness<F> {
     }
 }
 
-impl<Var> CommitmentCompareWitness<Var> {
+impl<Var> BigNumCompareWitness<Var> {
     pub fn eval<AB: AirBuilder<Var = Var>>(
         &self,
         orig_builder: &mut AB,
@@ -124,13 +124,13 @@ impl<Var> CommitmentCompareWitness<Var> {
     }
 }
 
-impl<T> CommitmentCompareWitness<T> {
+impl<T> BigNumCompareWitness<T> {
     pub const fn num_requires() -> usize {
         FieldToWord32::<T>::num_requires() * 2 + CompareWitness::<T, WORD32_SIZE>::num_requires()
     }
 
     pub const fn witness_size() -> usize {
-        size_of::<CommitmentCompareWitness<u8>>()
+        size_of::<BigNumCompareWitness<u8>>()
     }
 
     pub fn iter_result(&self) -> impl IntoIterator<Item = T>
@@ -140,7 +140,7 @@ impl<T> CommitmentCompareWitness<T> {
         self.comp_witness.iter_result()
     }
 }
-impl<T: Default> Default for CommitmentCompareWitness<T> {
+impl<T: Default> Default for BigNumCompareWitness<T> {
     fn default() -> Self {
         Self {
             is_comp: array::from_fn(|_| T::default()),
@@ -167,12 +167,12 @@ mod tests {
 
     #[test]
     fn test_witness_size() {
-        expect!["28"].assert_eq(&CommitmentCompareWitness::<u8>::witness_size().to_string());
+        expect!["28"].assert_eq(&BigNumCompareWitness::<u8>::witness_size().to_string());
     }
 
     #[test]
     fn test_num_requires() {
-        expect!["7"].assert_eq(&CommitmentCompareWitness::<u8>::num_requires().to_string());
+        expect!["7"].assert_eq(&BigNumCompareWitness::<u8>::num_requires().to_string());
     }
 
     fn util_cmp(lhs: &[F; DIGEST_SIZE], rhs: &[F; DIGEST_SIZE]) -> Ordering {
@@ -189,14 +189,14 @@ mod tests {
 
         let record = &mut ByteRecordTester::default();
 
-        let mut cmp_witness = CommitmentCompareWitness::<F>::default();
+        let mut cmp_witness = BigNumCompareWitness::<F>::default();
         let cmp = cmp_witness.populate(lhs, rhs, record);
         assert_eq!(cmp, cmp_expected);
         let cmp_f = cmp_witness.eval(
             &mut GadgetTester::passing(),
             lhs,
             rhs,
-            &mut record.passing(CommitmentCompareWitness::<F>::num_requires()),
+            &mut record.passing(BigNumCompareWitness::<F>::num_requires()),
             F::one(),
         );
         match cmp {

@@ -22,6 +22,7 @@ pub enum Tag {
     Err,
     Thunk,
     Builtin,
+    BigNum,
 }
 
 impl Tag {

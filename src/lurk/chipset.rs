@@ -10,7 +10,7 @@ use crate::{
 use crate::lair::{map::Map, Name};
 use crate::lurk::poseidon::PoseidonChipset;
 
-use super::{comm::Comm, u64::U64, zstore::Hasher};
+use super::{big_num::BigNum, u64::U64, zstore::Hasher};
 
 #[derive(Clone)]
 pub enum LurkChip {
@@ -18,7 +18,7 @@ pub enum LurkChip {
     Hasher32_8(PoseidonChipset<BabyBearConfig32, 32>),
     Hasher48_8(PoseidonChipset<BabyBearConfig48, 48>),
     U64(U64),
-    Comm(Comm),
+    BigNum(BigNum),
 }
 
 pub fn lurk_chip_map() -> Map<Name, LurkChip> {
@@ -31,7 +31,7 @@ pub fn lurk_chip_map() -> Map<Name, LurkChip> {
     let u64_divrem = LurkChip::U64(U64::DivRem);
     let u64_lessthan = LurkChip::U64(U64::LessThan);
     let u64_iszero = LurkChip::U64(U64::IsZero);
-    let comm_lessthan = LurkChip::Comm(Comm::LessThan);
+    let big_num_lessthan = LurkChip::BigNum(BigNum::LessThan);
     let vec = vec![
         (Name("hash_24_8"), hash_24_8),
         (Name("hash_32_8"), hash_32_8),
@@ -42,7 +42,7 @@ pub fn lurk_chip_map() -> Map<Name, LurkChip> {
         (Name("u64_divrem"), u64_divrem),
         (Name("u64_lessthan"), u64_lessthan),
         (Name("u64_iszero"), u64_iszero),
-        (Name("comm_lessthan"), comm_lessthan),
+        (Name("big_num_lessthan"), big_num_lessthan),
     ];
     Map::from_vec(vec)
 }
@@ -55,7 +55,7 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher32_8(op) => op.input_size(),
             LurkChip::Hasher48_8(op) => op.input_size(),
             LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::input_size(op),
-            LurkChip::Comm(op) => <Comm as Chipset<BabyBear>>::input_size(op),
+            LurkChip::BigNum(op) => <BigNum as Chipset<BabyBear>>::input_size(op),
         }
     }
 
@@ -66,7 +66,7 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher32_8(op) => op.output_size(),
             LurkChip::Hasher48_8(op) => op.output_size(),
             LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::output_size(op),
-            LurkChip::Comm(op) => <Comm as Chipset<BabyBear>>::output_size(op),
+            LurkChip::BigNum(op) => <BigNum as Chipset<BabyBear>>::output_size(op),
         }
     }
 
@@ -76,7 +76,7 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher32_8(op) => op.witness_size(),
             LurkChip::Hasher48_8(op) => op.witness_size(),
             LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::witness_size(op),
-            LurkChip::Comm(op) => <Comm as Chipset<BabyBear>>::witness_size(op),
+            LurkChip::BigNum(op) => <BigNum as Chipset<BabyBear>>::witness_size(op),
         }
     }
 
@@ -86,7 +86,7 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher32_8(op) => op.require_size(),
             LurkChip::Hasher48_8(op) => op.require_size(),
             LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::require_size(op),
-            LurkChip::Comm(op) => <Comm as Chipset<BabyBear>>::require_size(op),
+            LurkChip::BigNum(op) => <BigNum as Chipset<BabyBear>>::require_size(op),
         }
     }
 
@@ -95,7 +95,7 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher24_8(hasher) => hasher.execute_simple(input),
             LurkChip::Hasher32_8(hasher) => hasher.execute_simple(input),
             LurkChip::Hasher48_8(hasher) => hasher.execute_simple(input),
-            LurkChip::U64(..) | LurkChip::Comm(..) => panic!("use `execute`"),
+            LurkChip::U64(..) | LurkChip::BigNum(..) => panic!("use `execute`"),
         }
     }
 
@@ -111,7 +111,7 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher32_8(hasher) => hasher.execute(input, nonce, queries, requires),
             LurkChip::Hasher48_8(hasher) => hasher.execute(input, nonce, queries, requires),
             LurkChip::U64(op) => op.execute(input, nonce, queries, requires),
-            LurkChip::Comm(op) => op.execute(input, nonce, queries, requires),
+            LurkChip::BigNum(op) => op.execute(input, nonce, queries, requires),
         }
     }
 
@@ -121,7 +121,7 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher32_8(hasher) => hasher.populate_witness(input, witness),
             LurkChip::Hasher48_8(hasher) => hasher.populate_witness(input, witness),
             LurkChip::U64(op) => op.populate_witness(input, witness),
-            LurkChip::Comm(op) => op.populate_witness(input, witness),
+            LurkChip::BigNum(op) => op.populate_witness(input, witness),
         }
     }
 
@@ -145,7 +145,7 @@ impl Chipset<BabyBear> for LurkChip {
                 hasher.eval(builder, is_real, preimg, witness, nonce, requires)
             }
             LurkChip::U64(op) => op.eval(builder, is_real, preimg, witness, nonce, requires),
-            LurkChip::Comm(op) => op.eval(builder, is_real, preimg, witness, nonce, requires),
+            LurkChip::BigNum(op) => op.eval(builder, is_real, preimg, witness, nonce, requires),
         }
     }
 }

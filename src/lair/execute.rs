@@ -11,7 +11,7 @@ use crate::{
     air::builder::Record,
     gadgets::bytes::{record::BytesRecord, ByteRecord},
     lair::provenance::DepthLessThan,
-    lurk::syntax::digest_to_biguint,
+    lurk::big_num::field_elts_to_biguint,
 };
 
 use super::{
@@ -540,7 +540,7 @@ impl<F: PrimeField32> Func<F> {
                         .expect("Missing inverse map")
                         .get(&out)
                     else {
-                        bail!("Preimg not found for #{:#x}", digest_to_biguint(&out))
+                        bail!("Preimg not found for #{:#x}", field_elts_to_biguint(&out))
                     };
                     let inp = inp.to_vec();
                     if let Some((query_idx, _, result)) =

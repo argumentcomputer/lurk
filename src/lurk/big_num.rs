@@ -1,9 +1,10 @@
 use std::borrow::{Borrow, BorrowMut};
 
+use num_bigint::BigUint;
 use p3_air::AirBuilder;
-use p3_field::PrimeField32;
+use p3_field::{PrimeField, PrimeField32};
 
-use crate::gadgets::comm::cmp::CommitmentCompareWitness;
+use crate::gadgets::big_num::cmp::BigNumCompareWitness;
 use crate::{
     air::builder::{LookupBuilder, Record, RequireRecord},
     gadgets::bytes::{builder::BytesAirRecordWithContext, record::DummyBytesRecord},
@@ -11,32 +12,32 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub enum Comm {
+pub enum BigNum {
     LessThan,
 }
 
-impl<F: PrimeField32> Chipset<F> for Comm {
+impl<F: PrimeField32> Chipset<F> for BigNum {
     fn input_size(&self) -> usize {
         match self {
-            Comm::LessThan => 16,
+            BigNum::LessThan => 16,
         }
     }
 
     fn output_size(&self) -> usize {
         match self {
-            Comm::LessThan => 1,
+            BigNum::LessThan => 1,
         }
     }
 
     fn witness_size(&self) -> usize {
         match self {
-            Comm::LessThan => CommitmentCompareWitness::<F>::witness_size(),
+            BigNum::LessThan => BigNumCompareWitness::<F>::witness_size(),
         }
     }
 
     fn require_size(&self) -> usize {
         match self {
-            Comm::LessThan => CommitmentCompareWitness::<F>::num_requires(),
+            BigNum::LessThan => BigNumCompareWitness::<F>::num_requires(),
         }
     }
 
@@ -51,8 +52,8 @@ impl<F: PrimeField32> Chipset<F> for Comm {
         let in2: [F; 8] = input[8..16].try_into().unwrap();
         let bytes = &mut queries.bytes.context(nonce, requires);
         match self {
-            Comm::LessThan => {
-                let mut witness = CommitmentCompareWitness::<F>::default();
+            BigNum::LessThan => {
+                let mut witness = BigNumCompareWitness::<F>::default();
                 witness.populate(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
@@ -64,8 +65,8 @@ impl<F: PrimeField32> Chipset<F> for Comm {
         let in2: [F; 8] = input[8..16].try_into().unwrap();
         let bytes = &mut DummyBytesRecord;
         match self {
-            Comm::LessThan => {
-                let witness: &mut CommitmentCompareWitness<F> = witness.borrow_mut();
+            BigNum::LessThan => {
+                let witness: &mut BigNumCompareWitness<F> = witness.borrow_mut();
                 witness.populate(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
@@ -85,8 +86,8 @@ impl<F: PrimeField32> Chipset<F> for Comm {
         let in2: [AB::Expr; 8] = ins[8..16].to_vec().try_into().unwrap();
         let mut air_record = BytesAirRecordWithContext::default();
         let out = match self {
-            Comm::LessThan => {
-                let witness: &CommitmentCompareWitness<AB::Var> = witness.borrow();
+            BigNum::LessThan => {
+                let witness: &BigNumCompareWitness<AB::Var> = witness.borrow();
                 let cmp = witness.eval(builder, &in1, &in2, &mut air_record, is_real.clone());
                 vec![cmp.is_less_than()]
             }
@@ -94,6 +95,16 @@ impl<F: PrimeField32> Chipset<F> for Comm {
         air_record.require_all(builder, nonce, requires.iter().cloned());
         out
     }
+}
+
+/// Returns a `BigUint` from a digest of field elements stored in little-endian order.
+pub fn field_elts_to_biguint<F: PrimeField>(elts: &[F]) -> BigUint {
+    let mut num = elts[elts.len() - 1].as_canonical_biguint();
+    for l in elts[..elts.len() - 1].iter().rev() {
+        num *= F::order();
+        num += l.as_canonical_biguint();
+    }
+    num
 }
 
 #[cfg(test)]
@@ -115,12 +126,12 @@ mod test {
     };
 
     #[test]
-    fn comm_lessthan_test() {
+    fn big_num_lessthan_test() {
         sphinx_core::utils::setup_logger();
 
         let lessthan_func = func!(
         fn lessthan(a: [8], b: [8]): [1] {
-            let c = extern_call(comm_lessthan, a, b);
+            let c = extern_call(big_num_lessthan, a, b);
             return c
         });
         let lurk_chip_map = lurk_chip_map();

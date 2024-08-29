@@ -9,6 +9,7 @@ use sphinx_core::stark::StarkGenericConfig;
 use crate::{
     lair::{chipset::Chipset, lair_chip::LairMachineProgram},
     lurk::{
+        big_num::field_elts_to_biguint,
         cli::{
             paths::{commits_dir, proofs_dir},
             proofs::IOProof,
@@ -16,7 +17,6 @@ use crate::{
         },
         package::{Package, SymbolRef},
         state::lurk_sym,
-        syntax::digest_to_biguint,
         tag::Tag,
         zstore::{ZPtr, DIGEST_SIZE},
     },
@@ -306,9 +306,9 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         repl.memoize_dag(payload.tag, &payload.digest);
         let comm_data = CommData::new(secret, payload, &repl.zstore);
         let comm = comm_data.commit(&mut repl.zstore);
-        let hash = format!("{:x}", digest_to_biguint(&comm.digest));
+        let hash = format!("{:x}", field_elts_to_biguint(&comm.digest));
         std::fs::write(commits_dir()?.join(&hash), bincode::serialize(&comm_data)?)?;
-        println!("Hash: {}", repl.fmt(&comm));
+        println!("Hash: #0x{hash}");
         Ok(())
     }
 
@@ -357,10 +357,10 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
 
     fn fetch_comm_data(
         repl: &mut Repl<F, H>,
-        comm: &ZPtr<F>,
+        digest: &[F],
         print_payload: Option<bool>,
     ) -> Result<()> {
-        let hash = format!("{:x}", digest_to_biguint(&comm.digest));
+        let hash = format!("{:x}", field_elts_to_biguint(digest));
         let comm_data_bytes = std::fs::read(commits_dir()?.join(&hash))?;
         let comm_data: CommData<F> = bincode::deserialize(&comm_data_bytes)?;
         let message = print_payload.map(|print_payload| {
@@ -387,11 +387,12 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             "!(open #0x3719f5d02845123a80da4f5077c803ba0ce1964e08289a9d020603c1f3c450)",
         ],
         run: |repl, args, _path| {
-            let comm = *repl.peek1(args)?;
-            if comm.tag != Tag::Comm {
-                bail!("Expected a commitment");
+            let expr = *repl.peek1(args)?;
+            let (result, _) = repl.reduce_aux(&expr)?;
+            match result.tag {
+                Tag::BigNum | Tag::Comm => Self::fetch_comm_data(repl, &result.digest, Some(true)),
+                _ => bail!("Expected a commitment or a BigNum"),
             }
-            Self::fetch_comm_data(repl, &comm, Some(true))
         },
     };
 
@@ -405,11 +406,12 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             "!(fetch #0x3719f5d02845123a80da4f5077c803ba0ce1964e08289a9d020603c1f3c450)",
         ],
         run: |repl, args, _path| {
-            let comm = *repl.peek1(args)?;
-            if comm.tag != Tag::Comm {
-                bail!("Expected a commitment");
+            let expr = *repl.peek1(args)?;
+            let (result, _) = repl.reduce_aux(&expr)?;
+            match result.tag {
+                Tag::BigNum | Tag::Comm => Self::fetch_comm_data(repl, &result.digest, Some(false)),
+                _ => bail!("Expected a commitment or a BigNum"),
             }
-            Self::fetch_comm_data(repl, &comm, Some(false))
         },
     };
 
@@ -418,12 +420,15 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             bail!("Missing callable object");
         }
         let (&callable, _) = repl.zstore.fetch_tuple2(call_expr);
-        if callable.tag == Tag::Comm {
-            let inv_hashes3 = repl.queries.get_inv_queries("hash_24_8", &repl.toplevel);
-            if !inv_hashes3.contains_key(callable.digest.as_slice()) {
-                // try to fetch a persisted commitment
-                Self::fetch_comm_data(repl, &callable, None)?;
+        match callable.tag {
+            Tag::BigNum | Tag::Comm => {
+                let inv_hashes3 = repl.queries.get_inv_queries("hash_24_8", &repl.toplevel);
+                if !inv_hashes3.contains_key(callable.digest.as_slice()) {
+                    // try to fetch a persisted commitment
+                    Self::fetch_comm_data(repl, &callable.digest, None)?;
+                }
             }
+            _ => (),
         }
         repl.handle_non_meta(call_expr)
     }

@@ -24,9 +24,9 @@ use crate::{
 };
 
 use super::{
+    big_num::field_elts_to_biguint,
     chipset::{lurk_hasher, LurkChip},
     eval::EvalErr,
-    syntax::digest_to_biguint,
 };
 
 pub(crate) const DIGEST_SIZE: usize = 8;
@@ -147,6 +147,14 @@ impl<F: AbstractField + Copy> ZPtr<F> {
         Self {
             tag: Tag::Err,
             digest: digest_from_field(err.to_field()),
+        }
+    }
+
+    #[inline]
+    pub fn big_num(digest: [F; DIGEST_SIZE]) -> Self {
+        Self {
+            tag: Tag::BigNum,
+            digest,
         }
     }
 
@@ -390,8 +398,8 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     }
 
     #[inline]
-    pub fn intern_comm(&mut self, c: [F; 8]) -> ZPtr<F> {
-        self.memoize_atom_dag(ZPtr::comm(c))
+    pub fn intern_big_num(&mut self, c: [F; 8]) -> ZPtr<F> {
+        self.memoize_atom_dag(ZPtr::big_num(c))
     }
 
     #[inline]
@@ -507,7 +515,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
             Syntax::Char(_, c) => self.intern_char(*c),
             Syntax::U64(_, u) => self.intern_u64(*u),
             Syntax::I64(..) => bail!("Transient error: Signed integers are not yet supported. Using `(- 0 x)` instead of `-x` might work as a temporary workaround."),
-            Syntax::Digest(_, c) => self.intern_comm(*c),
+            Syntax::BigNum(_, c) => self.intern_big_num(*c),
             Syntax::String(_, s) => self.intern_string(s),
             Syntax::Symbol(_, s) => self.intern_symbol(s),
             Syntax::List(_, xs) => {
@@ -752,7 +760,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 memoize_tuple3!(fst_tag, fst_digest, snd_tag, snd_digest, trd_tag, trd_digest);
             }
             Tag::Sym | Tag::Key | Tag::Nil | Tag::Builtin => (), // these should be already memoized
-            Tag::Num | Tag::U64 | Tag::Char | Tag::Err | Tag::Comm => {
+            Tag::Num | Tag::U64 | Tag::Char | Tag::Err | Tag::BigNum | Tag::Comm => {
                 self.memoize_atom_dag(ZPtr {
                     tag,
                     digest: into_sized(digest),
@@ -909,7 +917,8 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 )
             ),
             Tag::Char => format!("'{}'", get_char(&zptr.digest)),
-            Tag::Comm => format!("#{:#x}", digest_to_biguint(&zptr.digest)),
+            Tag::BigNum => format!("#{:#x}", field_elts_to_biguint(&zptr.digest)),
+            Tag::Comm => format!("(comm #{:#x})", field_elts_to_biguint(&zptr.digest)),
             Tag::Str => format!("\"{}\"", self.fetch_string(zptr)),
             Tag::Builtin | Tag::Sym | Tag::Key | Tag::Nil => {
                 state.borrow().fmt_to_string(&self.fetch_symbol(zptr))
@@ -1069,20 +1078,27 @@ mod test {
         let one_u64 = ZPtr::u64(1);
         assert_eq!(zstore.fmt_with_state(state, &one_u64), "1");
 
+        let zero_big_num = ZPtr::big_num([BabyBear::zero(); 8]);
+        assert_eq!(zstore.fmt_with_state(state, &zero_big_num), "#0x0");
+
         let zero_comm = ZPtr::comm([BabyBear::zero(); 8]);
-        assert_eq!(zstore.fmt_with_state(state, &zero_comm), "#0x0");
+        assert_eq!(zstore.fmt_with_state(state, &zero_comm), "(comm #0x0)");
 
         let mut one_comm = ZPtr::comm([BabyBear::zero(); 8]);
         one_comm.digest[0] = BabyBear::one();
-        assert_eq!(zstore.fmt_with_state(state, &one_comm), "#0x1");
+        assert_eq!(zstore.fmt_with_state(state, &one_comm), "(comm #0x1)");
 
         let mut preimg = Vec::with_capacity(24);
         preimg.extend([BabyBear::zero(); 8]);
         preimg.extend(ZPtr::num(BabyBear::from_canonical_u32(123)).flatten());
-        let simple_comm = ZPtr::comm(lurk_hasher().hash(&preimg).try_into().unwrap());
+        let digest = lurk_hasher().hash(&preimg).try_into().unwrap();
         assert_eq!(
-            zstore.fmt_with_state(state, &simple_comm),
+            zstore.fmt_with_state(state, &ZPtr::big_num(digest)),
             "#0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3"
+        );
+        assert_eq!(
+            zstore.fmt_with_state(state, &ZPtr::comm(digest)),
+            "(comm #0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3)"
         );
 
         let empty_str = zstore.intern_string("");
