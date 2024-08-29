@@ -27,6 +27,7 @@ use crate::{
         toplevel::Toplevel,
     },
     lurk::{
+        big_num::field_elts_to_biguint,
         chipset::LurkChip,
         cli::{
             meta::{meta_cmds, MetaCmdsMap},
@@ -38,7 +39,6 @@ use crate::{
             Error, Span,
         },
         state::{State, StateRcCell},
-        syntax::digest_to_biguint,
         tag::Tag,
         zstore::{ZPtr, ZStore, DIGEST_SIZE},
     },
@@ -173,7 +173,7 @@ impl<H: Chipset<BabyBear>> Repl<BabyBear, H> {
             .hash(&public_values[..INPUT_SIZE])
             .try_into()
             .unwrap();
-        let proof_key = format!("{:x}", digest_to_biguint(proof_key_img));
+        let proof_key = format!("{:x}", field_elts_to_biguint(proof_key_img));
         let proof_path = proofs_dir()?.join(&proof_key);
         let machine = self.stark_machine();
         let (pk, vk) = machine.setup(&LairMachineProgram);

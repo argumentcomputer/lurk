@@ -202,7 +202,7 @@ ledger2
 
 ;; We can verify the proof..
 
-!(verify "5723c335ca7728b128b17874b5d76e4ecb7a6019a367ac030009985a3c44b0")
+!(verify "447db46bdf1630b04d14ba94e793493e3aa5a5221e7cf9d9b2a18bad83ec59")
 
 ;; Unfortunately, this functional commitment doesn't let us maintain state.
 ;; Let's turn our single-transaction function into a chained function.
@@ -213,30 +213,30 @@ ledger2
                                      (cons new-state (hide salt (foo new-state)))))))
                      (foo db))))
 
-;; We'll call this on our ledger, and protect write-access with a salt value (commit 999).
+;; We'll call this on our ledger, and protect write-access with a salt value #0x999.
 
-!(commit (chain<-db ledger (commit 999)))
+!(commit (chain<-db ledger #0x999))
 
 ;; Now we can transfer one unit from Church to Satoshi like before.
 
-!(chain #0x7f58cca261ee1a833ffa86cc23c4c4ea8f33b1ca03fda09f5b4ffa50effd7d '(1 0 2))
+!(chain #0x369702221fb6c0118dd8d2cd6299c8c1b095579076b378762d4168c37ff2c '(1 0 2))
 
 !(prove)
 
-!(verify "8c6f220f36d3d3627e53730fb4e56234028d1b83dd539edb79c6c6d89f4397")
+!(verify "8b4210c0343682fb1d60d6e6159958aee9c3fc1956235ea33b857be2619589")
 
 ;; Then we can transfer 5 more, proceeding from the new head of the chain.
 
-!(chain #0x697b5380df28d87c019643fbf1f033a726219f47782d122f693dfcfa96a3d8 '(5 0 2))
+!(chain #0x4e45e27336abf9d4039593d0655bca393cbea54de651b7a32a265d5002c051 '(5 0 2))
 
 !(prove)
 
-!(verify "435f669b37ca7ff3dd90e0d625d8cdb87b72eeb1182e4d019f57842588b82e")
+!(verify "575cb510eddc56d66cbb857ab6ab84dbb574bd565183a0878adbf69fb82603")
 
 ;; And once more, this time we'll transfer 20 from Turing to Church.
 
-!(chain #0x3222b4dfb0bc6c27ba60b9cb75b30dd08b8310dbe7b6af29d24040baf3c526 '(20 1 0))
+!(chain #0x1402764a9df0f83e60189990db00311bcfc1ae72e97d11e049a1b0309332ff '(20 1 0))
 
 !(prove)
 
-!(verify "9781d2e93cd9fa7103fa10952ed116b53c88ef8300deefe51a33d48244ab8e")
+!(verify "701727df3cd00c62c33c8324aa6462438574f9598c10e485e14466a80d0668")

@@ -256,7 +256,7 @@ pub fn parse_numeric<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Synt
     }
 }
 
-pub fn parse_digest<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
+pub fn parse_big_num<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
     move |from: Span<'_>| {
         let (i, _) = tag("#0x")(from)?;
         let (i, digits) = base::parse_litbase_digits(base::LitBase::Hex)(i)?;
@@ -278,7 +278,7 @@ pub fn parse_digest<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Synta
             )
         } else {
             let pos = Pos::from_upto(from, i);
-            Ok((i, Syntax::Digest(pos, res.try_into().unwrap())))
+            Ok((i, Syntax::BigNum(pos, res.try_into().unwrap())))
         }
     }
 }
@@ -432,7 +432,7 @@ pub fn parse_syntax<F: Field>(
                 parse_list(state.clone(), meta, create_unknown_packages),
             ),
             parse_numeric(),
-            parse_digest(),
+            parse_big_num(),
             context(
                 "symbol",
                 parse_symbol(state.clone(), create_unknown_packages),
