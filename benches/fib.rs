@@ -24,13 +24,13 @@ use loam::{
     },
 };
 
-const DEFAULT_FIB_ARG: usize = 500;
+const DEFAULT_FIB_ARG: usize = 100000;
 
 fn get_fib_arg() -> usize {
-    std::env::args()
-        .collect::<Vec<_>>()
-        .get(2)
-        .map_or(DEFAULT_FIB_ARG, |a| a.parse().expect("failed to parse arg"))
+    std::env::var("LOAM_FIB_ARG")
+        .unwrap_or(DEFAULT_FIB_ARG.to_string())
+        .parse::<usize>()
+        .expect("Expected a number")
 }
 
 fn build_lurk_expr(arg: usize) -> String {
