@@ -62,9 +62,45 @@ impl Ptr {
         Self(Tag::Nil.elt(), LE::from_canonical_u32(0))
     }
 
-    fn t() -> Self {
-        let addr = lurk_sym_index("t").unwrap();
+    /// make this const
+    fn buitin(op: &str) -> Self {
+        let addr = lurk_sym_index(op).unwrap();
         Self(Tag::Builtin.elt(), LE::from_canonical_u32(addr as u32))
+    }
+
+    /// make this const
+    fn t() -> Self {
+        Self::buitin("t")
+    }
+
+    /// make this const
+    fn eq() -> Self {
+        Self::buitin("eq")
+    }
+
+    /// make this const
+    fn cons() -> Self {
+        Self::buitin("cons")
+    }
+
+    /// make this const
+    fn car() -> Self {
+        Self::buitin("car")
+    }
+
+    /// make this const
+    fn cdr() -> Self {
+        Self::buitin("cdr")
+    }
+
+    /// make this const
+    fn quote() -> Self {
+        Self::buitin("quote")
+    }
+
+    /// make this const
+    fn atom() -> Self {
+        Self::buitin("atom")
     }
 
     fn f(val: LE) -> Self {
@@ -232,81 +268,34 @@ impl From<Num> for WidePtr {
 trait LoamProgram {
     fn allocator(&self) -> &Allocator;
     fn allocator_mut(&mut self) -> &mut Allocator;
-    fn zstore(&self) -> &ZStore<LE, LurkChip>;
-    fn zstore_mut(&mut self) -> &mut ZStore<LE, LurkChip>;
 
     fn ptr_value(&self) -> &Vec<(Ptr, Wide)>;
     fn cons_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)>;
     fn fun_rel(&self) -> &Vec<(Ptr, Ptr, Ptr, Ptr)>;
     fn thunk_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)>;
-    fn num_mem(&self) -> &Vec<(Ptr,)>;
 
     fn alloc_addr(&mut self, tag: LE, initial_addr: LE) -> LE {
         self.allocator_mut().alloc_addr(tag, initial_addr)
     }
 
-    fn unhash4(&mut self, tag: LE, digest: Wide) -> [Wide; 4] {
-        let zptr = ZPtr {
-            tag: Tag::from_field(&tag),
-            digest: digest.0,
-        };
-        let (a, b) = self.zstore_mut().fetch_tuple2(&zptr);
-        [
-            Wide::widen(a.tag.elt()),
-            Wide(a.digest),
-            Wide::widen(b.tag.elt()),
-            Wide(b.digest),
-        ]
+    fn import_zstore(&mut self, zstore: &ZStore<LE, LurkChip>) {
+        self.allocator_mut().import_zstore(zstore)
     }
 
-    fn hash4(&mut self, tag: LE, a: Wide, b: Wide, c: Wide, d: Wide) -> Wide {
-        let a_zptr = ZPtr {
-            tag: Tag::from_field(&a.f()),
-            digest: b.0,
-        };
-        let b_zptr = ZPtr {
-            tag: Tag::from_field(&c.f()),
-            digest: d.0,
-        };
-        let zptr = self
-            .zstore_mut()
-            .intern_tuple2(Tag::from_field(&tag), a_zptr, b_zptr);
-        Wide(zptr.digest)
+    fn unhash4(&mut self, digest: &Wide) -> [Wide; 4] {
+        self.allocator_mut().unhash4(digest)
     }
 
-    fn unhash6(&mut self, tag: LE, digest: Wide) -> [Wide; 6] {
-        let zptr = ZPtr {
-            tag: Tag::from_field(&tag),
-            digest: digest.0,
-        };
-        let (a, b, c) = self.zstore_mut().fetch_tuple3(&zptr);
-        [
-            a.tag.value(),
-            Wide(a.digest),
-            b.tag.value(),
-            Wide(b.digest),
-            c.tag.value(),
-            Wide(c.digest),
-        ]
+    fn hash4(&mut self, a: Wide, b: Wide, c: Wide, d: Wide) -> Wide {
+        self.allocator_mut().hash4(a, b, c, d)
     }
 
-    fn hash6(&mut self, tag: LE, a: Wide, b: Wide, c: Wide, d: Wide, e: Wide, f: Wide) -> Wide {
-        let a_zptr = ZPtr {
-            tag: Tag::from_field(&a.f()),
-            digest: b.0,
-        };
-        let b_zptr = ZPtr {
-            tag: Tag::from_field(&c.f()),
-            digest: d.0,
-        };
-        let c_zptr = ZPtr {
-            tag: Tag::from_field(&e.f()),
-            digest: f.0,
-        };
-        let zptr = self
-            .zstore_mut()
-            .intern_tuple3(Tag::from_field(&tag), a_zptr, b_zptr, c_zptr);
-        Wide(zptr.digest)
+    fn unhash6(&mut self, digest: &Wide) -> [Wide; 6] {
+        self.allocator_mut().unhash6(digest)
+    }
+
+    fn hash6(&mut self, a: Wide, b: Wide, c: Wide, d: Wide, e: Wide, f: Wide) -> Wide {
+        self.allocator_mut().hash6(a, b, c, d, e, f)
     }
 
     fn export_memory(&self) -> VirtualMemory {
@@ -334,14 +323,11 @@ trait LoamProgram {
             .map(|(body, closed_env, thunk)| (VPtr(*thunk), (VPtr(*body), VPtr(*closed_env))))
             .collect();
 
-        let num_mem = self.num_mem().iter().map(|(num,)| (VPtr(*num),)).collect();
-
         VirtualMemory {
             ptr_value,
             cons_mem,
             fun_mem,
             thunk_mem,
-            num_mem,
         }
     }
 }

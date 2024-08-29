@@ -28,8 +28,6 @@ pub struct Memory {
     pub sym_digest_mem: Vec<(Wide, LE)>,
     pub builtin_digest_mem: Vec<(Wide, LE)>,
     pub nil_digest_mem: Vec<(Wide, LE)>,
-
-    pub num_mem: Vec<(Ptr,)>,
 }
 
 impl Memory {
@@ -37,7 +35,6 @@ impl Memory {
         summary.set_distilled_size(Tag::Cons, self.cons_mem.len());
         summary.set_distilled_size(Tag::Fun, self.fun_mem.len());
         summary.set_distilled_size(Tag::Thunk, self.thunk_mem.len());
-        summary.set_distilled_size(Tag::Num, self.num_mem.len());
     }
 }
 
@@ -79,7 +76,7 @@ impl VPtr {
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 /// Physical pointer
-struct PPtr(Ptr);
+pub struct PPtr(pub Ptr);
 
 impl PPtr {
     fn new(tag: Tag, addr: u32) -> Self {
@@ -136,7 +133,6 @@ pub struct VirtualMemory {
     pub cons_mem: FxHashMap<VPtr, (VPtr, VPtr)>,
     pub fun_mem: FxHashMap<VPtr, (VPtr, VPtr, VPtr)>,
     pub thunk_mem: FxHashMap<VPtr, (VPtr, VPtr)>,
-    pub num_mem: Vec<(VPtr,)>,
 }
 
 impl VirtualMemory {
@@ -144,11 +140,24 @@ impl VirtualMemory {
         summary.set_original_size(Tag::Cons, self.cons_mem.len());
         summary.set_original_size(Tag::Fun, self.fun_mem.len());
         summary.set_original_size(Tag::Thunk, self.thunk_mem.len());
-        summary.set_original_size(Tag::Num, self.num_mem.len());
     }
 
     pub fn distill(&self, options: &DistillationOptions) -> Memory {
         let mut store = Store::default();
+        store.intern_virtual_memory(&self);
+        let distilled_memory = store.reconstruct_memory();
+
+        if let Some(threshold) = options.summary_threshold {
+            let mut summary = DistillationSummary::new(threshold);
+            self.report_sizes(&mut summary);
+            distilled_memory.report_sizes(&mut summary);
+            summary.report();
+        }
+
+        distilled_memory
+    }
+
+    pub fn distill_with_store(&self, store: &mut Store, options: &DistillationOptions) -> Memory {
         store.intern_virtual_memory(&self);
         let distilled_memory = store.reconstruct_memory();
 
@@ -244,8 +253,8 @@ impl DistillationSummary {
     }
 }
 
-#[derive(Clone, Default, Debug, PartialEq, Eq)]
-struct Store {
+#[derive(Clone, Default)]
+pub struct Store {
     pub allocator: Allocator,
 
     pub dag: FxHashMap<PPtr, (PPtrType, Option<Wide>)>,
@@ -253,6 +262,9 @@ struct Store {
 
     /// These are opaque pointers that only have digests.
     pub pptr_digest: FxHashMap<PPtr, Wide>,
+
+    /// ZPtr to PPtr translation
+    pub digest_pptr: FxHashMap<Wide, PPtr>,
 
     /// Virtual to physical address translation.
     pub vptr_pptr: FxHashMap<VPtr, PPtr>,
@@ -347,22 +359,21 @@ impl Store {
     fn intern_digest(&mut self, vptr: VPtr, digest: Wide, memory: &VirtualMemory) -> PPtr {
         let tag = vptr.tag();
         let ptr = self.vptr_pptr.get(&vptr).copied().unwrap_or_else(|| {
-            // let addr = if tag == Tag::Num {
-            //     vptr.0.1
-            // } else {
-            //     self.allocator.alloc_addr(tag.elt(), LE::zero())
-            // };
-
             let ptr = PPtr(vptr.0);
             self.vptr_pptr.insert(vptr, ptr);
             ptr
         });
 
+        // let mut changed = false;
         if let Some((_, inner)) = self.dag.get_mut(&ptr) {
+            self.digest_pptr.insert(digest, ptr);
             *inner = Some(digest);
         } else if let Some(other) = self.pptr_digest.insert(ptr, digest) {
             assert_eq!(digest, other); // if it exists, the digest better be the same
+        } else {
+            self.digest_pptr.insert(digest, ptr);
         }
+
         ptr
     }
 
@@ -382,9 +393,10 @@ impl Store {
         }
     }
 
-    fn reconstruct_memory(self) -> Memory {
+    fn reconstruct_memory(&self) -> Memory {
         let sorted_memory = self
             .dag
+            .clone()
             .into_iter()
             .sorted_by_key(|x| x.0)
             .collect::<Vec<_>>();
@@ -421,13 +433,13 @@ impl Store {
             }
         }
 
-        for (ptr, digest) in self.pptr_digest {
+        for (ptr, digest) in &self.pptr_digest {
             let tag = ptr.tag();
             match tag {
-                Tag::Sym => memory.sym_digest_mem.push((digest, ptr.addr())),
-                Tag::Nil => memory.nil_digest_mem.push((digest, ptr.addr())),
-                Tag::Builtin => memory.builtin_digest_mem.push((digest, ptr.addr())),
-                Tag::Num => memory.num_mem.push((ptr.0,)),
+                Tag::Sym => memory.sym_digest_mem.push((*digest, ptr.addr())),
+                Tag::Nil => memory.nil_digest_mem.push((*digest, ptr.addr())),
+                Tag::Builtin => memory.builtin_digest_mem.push((*digest, ptr.addr())),
+                Tag::Num => (),
                 _ => panic!("unimplemented: {:?}", &ptr),
             }
         }
@@ -466,10 +478,15 @@ impl Store {
         }
     }
 
+    pub fn zptr_ptr(&self, zptr: &ZPtr<LE>) -> Option<Ptr> {
+        let digest = Wide(zptr.digest);
+        self.digest_pptr.get(&digest).map(|pptr| pptr.0)
+    }
+
     pub fn fmt(&self, zstore: &ZStore<LE, LurkChip>, ptr: &PPtr) -> String {
         match ptr.tag() {
             Tag::Num => format!("{}n", ptr.addr()),
-            Tag::Builtin | Tag::Sym | Tag::Key | Tag::Nil => self
+            Tag::Builtin | Tag::BigNum | Tag::Sym | Tag::Key | Tag::Nil => self
                 .pptr_digest
                 .get(ptr)
                 .map(|digest| {

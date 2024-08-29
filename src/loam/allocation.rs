@@ -13,22 +13,30 @@ use crate::loam::{LEWrap, Ptr, Wide, WidePtr, LE};
 
 use crate::lurk::chipset::{lurk_hasher, LurkHasher};
 use crate::lurk::tag::Tag;
-use crate::lurk::zstore::{DIGEST_SIZE, HASH4_SIZE};
+use crate::lurk::zstore::{DIGEST_SIZE, HASH3_SIZE, HASH4_SIZE, HASH6_SIZE};
 
 use crate::lurk::{
     chipset::LurkChip,
     zstore::{ZPtr, ZStore},
 };
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+use super::LoamProgram;
+
+#[derive(Clone)]
 pub struct Allocator {
     allocation_map: FxHashMap<LE, LE>,
+    digest_cache: FxHashMap<Vec<Wide>, Wide>,
+    preimage_cache: FxHashMap<Wide, Vec<Wide>>,
+    hasher: LurkHasher,
 }
 
 impl Default for Allocator {
     fn default() -> Self {
         Self {
             allocation_map: Default::default(),
+            digest_cache: Default::default(),
+            preimage_cache: Default::default(),
+            hasher: lurk_hasher(),
         }
     }
 }
@@ -36,10 +44,67 @@ impl Default for Allocator {
 impl Allocator {
     pub fn init(&mut self) {
         self.allocation_map = Default::default();
+        self.hasher = lurk_hasher();
+        self.digest_cache = Default::default();
+        self.preimage_cache = Default::default();
     }
 
     pub fn reset_allocation(&mut self) {
         self.allocation_map = Default::default();
+    }
+
+    /// TODO: reorg for duplicate code
+    pub fn import_hashes3(&mut self, hashes3: &FxHashMap<[LE; HASH3_SIZE], [LE; DIGEST_SIZE]>) {
+        for (preimage, digest) in hashes3 {
+            let preimage_vec = preimage
+                .chunks(8)
+                .map(|chunk| Wide::from_slice(chunk))
+                .collect::<Vec<_>>();
+            let digest_wide = Wide(digest.clone());
+
+            self.digest_cache
+                .insert(preimage_vec.clone(), digest_wide.clone());
+
+            self.preimage_cache.insert(digest_wide, preimage_vec);
+        }
+    }
+
+    /// TODO: reorg for duplicate code
+    pub fn import_hashes4(&mut self, hashes4: &FxHashMap<[LE; HASH4_SIZE], [LE; DIGEST_SIZE]>) {
+        for (preimage, digest) in hashes4 {
+            let preimage_vec = preimage
+                .chunks(8)
+                .map(|chunk| Wide::from_slice(chunk))
+                .collect::<Vec<_>>();
+            let digest_wide = Wide(digest.clone());
+
+            self.digest_cache
+                .insert(preimage_vec.clone(), digest_wide.clone());
+
+            self.preimage_cache.insert(digest_wide, preimage_vec);
+        }
+    }
+
+    /// TODO: reorg for duplicate code
+    pub fn import_hashes6(&mut self, hashes6: &FxHashMap<[LE; HASH6_SIZE], [LE; DIGEST_SIZE]>) {
+        for (preimage, digest) in hashes6 {
+            let preimage_vec = preimage
+                .chunks(8)
+                .map(|chunk| Wide::from_slice(chunk))
+                .collect::<Vec<_>>();
+            let digest_wide = Wide(digest.clone());
+
+            self.digest_cache
+                .insert(preimage_vec.clone(), digest_wide.clone());
+
+            self.preimage_cache.insert(digest_wide, preimage_vec);
+        }
+    }
+
+    pub fn import_zstore(&mut self, zstore: &ZStore<LE, LurkChip>) {
+        self.import_hashes3(&zstore.hashes3);
+        self.import_hashes4(&zstore.hashes4);
+        self.import_hashes6(&zstore.hashes6);
     }
 
     pub fn alloc_addr(&mut self, tag: LE, initial_addr: LE) -> LE {
@@ -50,14 +115,90 @@ impl Allocator {
             .or_insert(initial_addr);
         idx
     }
+
+    pub fn hash4(&mut self, a: Wide, b: Wide, c: Wide, d: Wide) -> Wide {
+        let mut preimage = Vec::with_capacity(32);
+
+        preimage.extend(&a.0);
+        preimage.extend(&b.0);
+        preimage.extend(&c.0);
+        preimage.extend(&d.0);
+
+        let preimage_vec = vec![a, b, c, d];
+
+        if let Some(digest) = self.digest_cache.get(&preimage_vec) {
+            return digest.clone();
+        };
+
+        let mut digest0 = [LE::zero(); 8];
+        let digest1 = self.hasher.hash(&preimage);
+
+        digest0.copy_from_slice(&digest1);
+        let digest = Wide(digest0);
+
+        self.digest_cache.insert(preimage_vec.clone(), digest);
+        self.preimage_cache.insert(digest, preimage_vec);
+
+        digest
+    }
+    // TODO: refactor to share code with hash4
+    pub fn hash6(&mut self, a: Wide, b: Wide, c: Wide, d: Wide, e: Wide, f: Wide) -> Wide {
+        let mut preimage = Vec::with_capacity(32);
+
+        preimage.extend(&a.0);
+        preimage.extend(&b.0);
+        preimage.extend(&c.0);
+        preimage.extend(&d.0);
+        preimage.extend(&e.0);
+        preimage.extend(&f.0);
+
+        let preimage_vec = vec![a, b, c, d];
+
+        if let Some(digest) = self.digest_cache.get(&preimage_vec) {
+            return digest.clone();
+        };
+
+        let mut digest0 = [LE::zero(); 8];
+        let digest1 = self.hasher.hash(&preimage);
+
+        digest0.copy_from_slice(&digest1);
+        let digest = Wide(digest0);
+
+        self.digest_cache.insert(preimage_vec.clone(), digest);
+        self.preimage_cache.insert(digest, preimage_vec);
+
+        digest
+    }
+    pub fn unhash4(&mut self, digest: &Wide) -> [Wide; 4] {
+        let mut preimage = [Wide::widen(LE::from_canonical_u32(0)); 4];
+
+        self.preimage_cache
+            .get(digest)
+            .map(|digest| {
+                preimage.copy_from_slice(&digest[..4]);
+                preimage
+            })
+            .unwrap()
+    }
+
+    pub fn unhash6(&mut self, digest: &Wide) -> [Wide; 6] {
+        let mut preimage = [Wide::widen(LE::from_canonical_u32(0)); 6];
+
+        self.preimage_cache
+            .get(digest)
+            .map(|digest| {
+                preimage.copy_from_slice(&digest[..6]);
+                preimage
+            })
+            .unwrap()
+    }
 }
 
 #[cfg(feature = "loam")]
 ascent! {
-    // #![trace]
+    #![trace]
     struct AllocationProgram {
         allocator: Allocator,
-        zstore: ZStore<LE, LurkChip>,
     }
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -66,12 +207,10 @@ ascent! {
     // The standard tag mapping.
     relation tag(LE, Wide) = Tag::wide_relation(); // (short-tag, wide-tag)
 
-    relation ptr_value(Ptr, Wide); // (ptr, value)}
-    relation ptr_tag(Ptr, Wide); // (ptr, tag)
+    relation ptr_value(Ptr, Wide); // (ptr, value)
 
-    // triggers memoized/deduplicated allocation of input conses by populating cons outside of testing, this indirection
-    // is likely unnecessary.
-    // relation input_cons(Ptr, Ptr); // (car, cdr)
+    relation thunk_rel(Ptr, Ptr, Ptr);
+    relation fun_rel(Ptr, Ptr, Ptr, Ptr);
 
     relation input_expr(WidePtr); // (wide-ptr)
     relation output_expr(WidePtr); // (wide-ptr)
@@ -80,24 +219,12 @@ ascent! {
 
     // triggers allocation once per unique cons
     relation cons(Ptr, Ptr); // (car, cdr)
-    relation car(Ptr, Ptr); // (cons, car)
-    relation cdr(Ptr, Ptr); // (cons, cdr)
-    relation hash4(Ptr, Wide, Wide, Wide, Wide); // (ptr, a, b, c, d)
-    relation unhash4(LE, Wide); // (tag, digest)
+    relation hash4(Wide, Wide, Wide, Wide); // (a, b, c, d)
+    relation unhash4(Wide); // (tag, digest)
     relation hash4_rel(Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, digest)
 
     // inclusion triggers *_value relations.
     relation egress(Ptr); // (ptr)
-    relation f_value(Ptr, Wide); // (ptr, immediate-wide-value)
-    relation cons_value(Ptr, Wide); // (cons, value)
-
-    // all known `Ptr`s should be added to ptr.
-    relation ptr(Ptr); // (ptr)
-    relation ptr_tag(Ptr, Wide); // (ptr, tag)
-    relation ptr_value(Ptr, Wide); // (ptr, value)
-
-    // supporting ingress
-    // inclusion triggers *_value relations.
     relation ingress(Ptr); // (ptr)
 
     relation alloc(LE, Wide); // (tag, value)
@@ -108,166 +235,103 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
     // Cons
 
-    // The canonical cons Ptr relation.
+    // Final: The canonical cons Ptr relation.
     relation cons_rel(Ptr, Ptr, Ptr); // (car, cdr, cons)
-
-    // Memory to support conses allocated by digest or contents.
-    lattice cons_digest_mem(Wide, Dual<LEWrap>); // (digest, addr)
+    // Final: Memory to support conses allocated by digest or contents.
+    lattice cons_digest_mem(Wide, Dual<LEWrap>); // (value, addr)
+    // Final
     lattice cons_mem(Ptr, Ptr, Dual<LEWrap>); // (car, cdr, addr)
 
     // Populating alloc(...) triggers allocation in cons_digest_mem.
-    #[trace("#0:")]
-    cons_digest_mem(value, Dual(LEWrap(_self.allocator.alloc_addr(Tag::Cons.elt(), LE::zero())))) <-- alloc(Tag::Cons.elt(), value);
-
-    // Convert addr to ptr and register ptr relations.
-    #[trace("#1:")]
-    ptr(ptr), ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0.0);
-
+    cons_digest_mem(value, Dual(addr)) <--
+        alloc(tag, value), if *tag == Tag::Cons.elt(),
+        let addr = LEWrap(_self.alloc_addr(Tag::Cons.elt(), LE::zero()));
     // Populating cons(...) triggers allocation in cons mem.
-    #[trace("#2: cons_mem {:?}, {:?}", car, cdr)]
-    cons_mem(car, cdr, Dual(LEWrap(_self.allocator.alloc_addr(Tag::Cons.elt(), LE::zero())))) <-- cons(car, cdr);
+    cons_mem(car, cdr, Dual(addr)) <-- cons(car, cdr), let addr = LEWrap(_self.alloc_addr(Tag::Cons.elt(), LE::zero()));
+
+    // Register cons value.
+    ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0.0);
+    // Register cons relation.
+    cons_rel(car, cdr, cons) <-- cons_mem(car, cdr, addr), let cons = Ptr(Tag::Cons.elt(), addr.0.0);
 
     // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
-    #[trace("#3:")]
     cons_digest_mem(digest, addr) <--
         cons_mem(car, cdr, addr),
         ptr_value(car, car_value), ptr_value(cdr, cdr_value),
-        ptr_tag(car, car_tag), ptr_tag(cdr, cdr_tag),
-        hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest);
-
-    #[trace("#4:")]
-    cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0.0)) <-- cons_mem(car, cdr, addr);
-
-    // ptr(cons), ptr_tag(cons, Tag::Cons.value()) <-- cons_rel(car, cdr, cons);
+        hash4_rel(car.wide_tag(), car_value, cdr.wide_tag(), cdr_value, digest);
+    // Other way around
+    cons_mem(car, cdr, addr) <--
+        cons_digest_mem(digest, addr),
+        hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest),
+        ptr_value(car, car_value), ptr_value(cdr, cdr_value),
+        if car.wide_tag() == *car_tag && cdr.wide_tag() == *cdr_tag;
 
     ////////////////////////////////////////////////////////////////////////////////
+    // Num
 
-    // Provide ptr_tag and ptr_value when known.
-    #[trace("#5:")]
-    ptr_tag(ptr, wide_tag) <-- ptr(ptr), tag(ptr.0, wide_tag);
-    #[trace("#6:")]
-    ptr_value(ptr, value) <-- ptr(ptr), cons_value(ptr, value);
-    #[trace("#7:")]
-    ptr_value(ptr, value) <-- ptr(ptr), f_value(ptr, value);
+    ptr_value(ptr, digest) <--
+        alloc(tag, digest), if *tag == Tag::Num.elt(), let ptr = Ptr(Tag::Num.elt(), digest.f());
 
     ////////////////////////////////////////////////////////////////////////////////
     // Ingress path
 
     // Ingress 1: mark input expression for allocation.
-    #[trace("#8: alloc {:?}", wide_ptr.1)]
     alloc(tag, wide_ptr.1) <-- input_expr(wide_ptr), tag(tag, wide_ptr.0);
 
     // Populate input_ptr and mark for ingress.
-    #[trace("#9: intro ingress input")]
-    ingress(ptr),
-    input_ptr(ptr) <-- input_expr(wide_ptr), ptr_value(ptr, wide_ptr.1), ptr_tag(ptr, wide_ptr.0);
+    ingress(ptr), input_ptr(ptr) <--
+        input_expr(wide_ptr), ptr_value(ptr, wide_ptr.1), if ptr.tag() == wide_ptr.tag();
 
     // mark ingress conses for unhashing.
-    #[trace("#10: apply ingress unhash4")]
-    unhash4(Tag::Cons.elt(), digest) <--
-        ingress(ptr), if ptr.is_cons(),
-        ptr_value(ptr, digest);
+    unhash4(digest) <-- ingress(ptr), if ptr.is_cons(), ptr_value(ptr, digest);
 
     // unhash to acquire preimage pointers from digest.
-    #[trace("#11: hash4_rel <-- unhash4")]
-    hash4_rel(a, b, c, d, digest) <-- unhash4(tag, digest), let [a, b, c, d] = _self.unhash4(*tag, *digest);
+    hash4_rel(a, b, c, d, digest) <-- unhash4(digest), let [a, b, c, d] = _self.unhash4(digest);
 
-    #[trace("#12: alloc unhash4")]
     alloc(car_tag, car_value),
     alloc(cdr_tag, cdr_value) <--
-        unhash4(&Tag::Cons.elt(), digest),
+        unhash4(digest),
         hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
         tag(car_tag, wide_car_tag),
         tag(cdr_tag, wide_cdr_tag);
 
-    #[trace("#13:")]
-    f_value(Ptr(Tag::Num.elt(), value.f()), value) <-- alloc(&Tag::Num.elt(), value);
-
-    #[trace("#14:")]
-    cons_rel(car, cdr, Ptr(Tag::Cons.elt(), addr.0.0)),
-    cons_mem(car, cdr, addr) <--
-        hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
-        cons_digest_mem(digest, addr),
-        ptr_tag(car, wide_car_tag), ptr_tag(cdr, wide_cdr_tag),
-        ptr_value(car, car_value), ptr_value(cdr, cdr_value);
-
-    #[trace("#15:")]
-    ptr(cons), car(cons, car), cdr(cons, cdr) <-- cons_rel(car, cdr, cons);
-
-    #[trace("#16:")]
-    f_value(ptr, Wide::widen(ptr.1)) <-- ptr(ptr), if ptr.is_num();
-    ptr(ptr) <-- f_value(ptr, _);
-
-    // Provide cons_value when known.
-    #[trace("#17:")]
-    cons_value(ptr, digest)
-        <-- hash4(ptr, car_tag, car_value, cdr_tag, cdr_value),
-            hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest);
-
     ////////////////////////////////////////////////////////////////////////////////
     // Egress path
 
-
     // The output_ptr is marked for egress.
-    // #[trace("#18: intro egress output")]
     egress(ptr) <-- output_ptr(ptr);
 
-    // consume egress of cons pointer to trigger egress of car, cdr
-    #[trace("#19: apply egress cons {:?}", cons)]
+    // Cons
     egress(car), egress(cdr) <-- egress(cons), cons_rel(car, cdr, cons);
 
-    // consume egress of num ptr into num value
-    #[trace("#20: apply egress num")]
-    ptr_tag(ptr, Tag::Num.value()), ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_num();
+    // Num
+    ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_num();
 
-    #[trace("#21:")]
-    output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), ptr_value(ptr, value), ptr_tag(ptr, wide_tag);
+    output_expr(WidePtr(ptr.wide_tag(), *value)) <-- output_ptr(ptr), ptr_value(ptr, value);
 
-    // consome egress of
-    #[trace("#22: apply egress hash4 {:?}", cons)]
-    hash4(cons, car_tag, car_value, cdr_tag, cdr_value) <--
+    hash4(car.wide_tag(), car_value, cdr.wide_tag(), cdr_value) <--
         egress(cons),
         cons_rel(car, cdr, cons),
-        ptr_tag(car, car_tag),
-        ptr_value(car, car_value),
-        ptr_tag(cdr, cdr_tag),
-        ptr_value(cdr, cdr_value);
-
-    #[trace("#23:")]
-    hash4_rel(a, b, c, d, digest) <--
-        hash4(ptr, a, b, c, d), let digest = _self.hash4(ptr.0, *a, *b, *c, *d);
-
-    #[trace("#24:")]
-    ptr(car), ptr(cdr) <--
-        hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, _),
-        ptr_tag(car, wide_car_tag), ptr_tag(cdr, wide_cdr_tag),
         ptr_value(car, car_value), ptr_value(cdr, cdr_value);
+
+    hash4_rel(a, b, c, d, digest) <--
+        hash4(a, b, c, d), let digest = _self.hash4(*a, *b, *c, *d);
 
     ////////////////////////////////////////////////////////////////////////////////
     // map_double
-    //
-    // This is just a silly input->output function that maps f(x)->2x over the input tree,
-    // for use as a development example. This will be replaced by e.g. Lurk eval.
 
     relation map_double_input(Ptr); // (input)
     relation map_double(Ptr, Ptr); // (input-ptr, output-ptr)
+    relation map_double_cont(Ptr, Ptr, Ptr);
 
-    #[trace("#25:")]
-    ptr(doubled),
     map_double(ptr, doubled) <-- map_double_input(ptr), if ptr.is_num(), let doubled = Ptr(Tag::Num.elt(), ptr.1.double());
 
-    #[trace("#26:")]
     map_double_input(ptr) <-- input_ptr(ptr);
 
-    #[trace("#27: intro ingress map_double")]
     ingress(ptr) <-- map_double_input(ptr);
 
-    #[trace("#28: map_double_input car, cdr <-- cons")]
     map_double_input(car), map_double_input(cdr) <-- map_double_input(cons), cons_rel(car, cdr, cons);
 
-    relation map_double_cont(Ptr, Ptr, Ptr); //
-
-    #[trace("#29: map_double_input intro cont")]
     map_double_cont(ptr, double_car, double_cdr),
     cons(double_car, double_cdr) <--
         map_double_input(ptr),
@@ -275,170 +339,43 @@ ascent! {
         map_double(car, double_car),
         map_double(cdr, double_cdr);
 
-    #[trace("#30: map_double_input apply cont")]
     map_double(ptr, double_cons) <--
         map_double_cont(ptr, double_car, double_cdr),
         cons_rel(double_car, double_cdr, double_cons);
 
-    // For now, just copy input straight to output. Later, we will evaluate.
-    #[trace("#31: output <-- input")]
     output_ptr(out) <-- input_ptr(ptr), map_double(ptr, out);
 
     ////////////////////////////////////////////////////////////////////////////////
 }
 
 #[cfg(feature = "loam")]
-impl AllocationProgram {
-    fn cons_mem_is_contiguous(&self) -> bool {
-        println!("{:?}", self.cons_mem);
-        println!("{:?}", self.cons_digest_mem);
-        let mut addrs1 = self
-            .cons_mem
-            .iter()
-            .map(|(_, _, addr)| addr.0)
-            .collect::<Vec<_>>();
-
-        let mut addrs2 = self
-            .cons_digest_mem
-            .iter()
-            .map(|(_, addr)| addr.0)
-            .collect::<Vec<_>>();
-
-        addrs1.sort();
-        addrs2.sort();
-
-        let len1 = addrs1.len();
-        let len2 = addrs2.len();
-        addrs1.dedup();
-        addrs2.dedup();
-
-        let no_duplicates = addrs1.len() == len1 && addrs2.len() == len2;
-
-        let mut addrs = Vec::with_capacity(addrs1.len() + addrs2.len());
-
-        addrs.extend(addrs1);
-        addrs.extend(addrs2);
-        addrs.sort();
-        addrs.dedup();
-
-        let len = addrs.len();
-        no_duplicates
-            && addrs[0].0.is_zero()
-            && LE::as_canonical_u32(&addrs[len - 1].0) as usize == len - 1
+impl LoamProgram for AllocationProgram {
+    fn allocator(&self) -> &Allocator {
+        &self.allocator
+    }
+    fn allocator_mut(&mut self) -> &mut Allocator {
+        &mut self.allocator
     }
 
-    fn unhash4(&mut self, tag: LE, digest: Wide) -> [Wide; 4] {
-        let zptr = ZPtr {
-            tag: Tag::from_field(&tag),
-            digest: digest.0,
-        };
-        let (a, b) = self.zstore.fetch_tuple2(&zptr);
-        [
-            Wide::widen(a.tag.elt()),
-            Wide(a.digest),
-            Wide::widen(b.tag.elt()),
-            Wide(b.digest),
-        ]
+    fn ptr_value(&self) -> &Vec<(Ptr, Wide)> {
+        &self.ptr_value
     }
-
-    fn hash4(&mut self, tag: LE, a: Wide, b: Wide, c: Wide, d: Wide) -> Wide {
-        let a_zptr = ZPtr {
-            tag: Tag::from_field(&a.f()),
-            digest: b.0,
-        };
-        let b_zptr = ZPtr {
-            tag: Tag::from_field(&c.f()),
-            digest: d.0,
-        };
-        let zptr = self
-            .zstore
-            .intern_tuple2(Tag::from_field(&tag), a_zptr, b_zptr);
-        Wide(zptr.digest)
+    fn cons_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)> {
+        &self.cons_rel
     }
-
-    fn fmt(&self, tag: Tag, digest: &Wide) -> String {
-        let zptr = ZPtr {
-            tag,
-            digest: digest.0,
-        };
-        self.zstore.fmt(&zptr)
+    fn fun_rel(&self) -> &Vec<(Ptr, Ptr, Ptr, Ptr)> {
+        &self.fun_rel
     }
-
-    fn fmt2(&self, wide_ptr: &WidePtr) -> String {
-        let zptr = ZPtr {
-            tag: Tag::from_field(&wide_ptr.0.f()),
-            digest: wide_ptr.1 .0,
-        };
-        self.zstore.fmt(&zptr)
-    }
-
-    fn deref(&self, ptr: &Ptr) -> Option<String> {
-        let ptr = &(*ptr,);
-        let tag = Tag::from_field(&self.ptr_tag_indices_0.0.get(ptr)?[0].0.f());
-        let digest = self.ptr_value_indices_0.0.get(ptr)?[0].0 .0;
-        if tag == Tag::Thunk {
-            return Some("skip cuz bad impl".into());
-        }
-        Some(self.zstore.fmt(&ZPtr { tag, digest }))
-    }
-
-    fn print_memory_tables(&self) {
-        const FULL_SEP: &str = "=====================================================================================================";
-
-        println!("{}", FULL_SEP);
-        println!("== cons memory digest");
-
-        for (i, (digest, Dual(LEWrap(ptr)))) in self.cons_digest_mem.iter().enumerate() {
-            println!("#{}, cons={}:", i, ptr.as_canonical_u32());
-            println!("\t{}", self.fmt(Tag::Cons, digest));
-            println!("\n");
-        }
-
-        println!("{}", FULL_SEP);
-        println!("== cons memory");
-
-        for (i, (car, cdr, Dual(LEWrap(ptr)))) in self.cons_mem.iter().enumerate() {
-            println!(
-                "#{}, cons={}, car={}, cdr={}:",
-                i,
-                ptr.as_canonical_u32(),
-                car.1.as_canonical_u32(),
-                cdr.1.as_canonical_u32()
-            );
-            println!("\t{:?}", self.deref(car));
-            println!("\t{:?}", self.deref(cdr));
-            println!("\n");
-        }
-    }
-
-    pub fn export_memory(&self) -> VirtualMemory {
-        let ptr_value = self
-            .ptr_value
-            .iter()
-            .map(|(ptr, wide)| (VPtr(*ptr), *wide))
-            .collect();
-
-        let cons_mem = self
-            .cons_rel
-            .iter()
-            .map(|(car, cdr, cons)| (VPtr(*cons), (VPtr(*car), VPtr(*cdr))))
-            .collect();
-
-        VirtualMemory {
-            ptr_value,
-            cons_mem,
-            fun_mem: Default::default(),
-            thunk_mem: Default::default(),
-            num_mem: Default::default(),
-        }
+    fn thunk_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)> {
+        &self.thunk_rel
     }
 }
 
+#[cfg(feature = "loam")]
 ascent! {
     #![trace]
-
     struct DistilledAllocationProgram {
-        zstore: ZStore<LE, LurkChip>,
+        allocator: Allocator,
     }
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -447,23 +384,26 @@ ascent! {
     // The standard tag mapping.
     relation tag(LE, Wide) = Tag::wide_relation(); // (short-tag, wide-tag)
 
-    relation ptr_value(Ptr, Wide); // (ptr, value)}
-    relation ptr_tag(Ptr, Wide); // (ptr, tag)
+    relation ptr_value(Ptr, Wide); // (ptr, value)
 
-    // triggers memoized/deduplicated allocation of input conses by populating cons outside of testing, this indirection
-    // is likely unnecessary.
-    // relation input_cons(Ptr, Ptr); // (car, cdr)
+    relation thunk_rel(Ptr, Ptr, Ptr);
+    relation fun_rel(Ptr, Ptr, Ptr, Ptr);
 
     relation input_expr(WidePtr); // (wide-ptr)
     relation output_expr(WidePtr); // (wide-ptr)
     relation input_ptr(Ptr); // (ptr)
     relation output_ptr(Ptr); // (ptr)
 
-    relation car(Ptr, Ptr); // (cons, car)
-    relation cdr(Ptr, Ptr); // (cons, cdr)
+    relation cons(Ptr, Ptr); // (car, cdr)
+    relation hash4(Wide, Wide, Wide, Wide); // (a, b, c, d)
+    relation unhash4(Wide); // (tag, digest)
+    relation hash4_rel(Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, digest)
 
-    relation ptr_tag(Ptr, Wide); // (ptr, tag)
-    relation ptr_value(Ptr, Wide); // (ptr, value)
+    // inclusion triggers *_value relations.
+    relation egress(Ptr); // (ptr)
+    relation ingress(Ptr); // (ptr)
+
+    relation alloc(LE, Wide); // (tag, value)
 
     ////////////////////////////////////////////////////////////////////////////////
     // Memory
@@ -471,44 +411,102 @@ ascent! {
     ////////////////////////////////////////////////////////////////////////////////
     // Cons
 
-    // The canonical cons Ptr relation.
+    // Final: The canonical cons Ptr relation.
     relation cons_rel(Ptr, Ptr, Ptr); // (car, cdr, cons)
-
-    // Memory to support conses allocated by digest or contents.
-    relation cons_digest_mem(Wide, LE); // (digest, addr)
+    // Final: Memory to support conses allocated by digest or contents.
+    relation cons_digest_mem(Wide, LE); // (value, addr)
+    // Final
     relation cons_mem(Ptr, Ptr, LE); // (car, cdr, addr)
 
-    // Convert addr to ptr and register ptr relations.
-    ptr_tag(ptr, Tag::Cons.value()), ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), *addr);
+    relation initial_cons_digest_mem(Wide, LE); // (value, addr)
+    relation initial_cons_mem(Ptr, Ptr, LE); // (car, cdr, addr)
+    cons_digest_mem(digest, addr) <-- initial_cons_digest_mem(digest, addr);
+    cons_mem(car, cdr, addr) <-- initial_cons_mem(car, cdr, addr);
 
-    cons_rel(car, cdr, Ptr(Tag::Cons.elt(), *addr)) <-- cons_mem(car, cdr, addr);
+    // Register cons value.
+    ptr_value(cons, value) <-- 
+        alloc(tag, value), if *tag == Tag::Cons.elt(), 
+        cons_digest_mem(value, addr), 
+        let cons = Ptr(Tag::Cons.elt(), *addr);
+    // Register cons relation.
+    cons_rel(car, cdr, cons) <-- cons(car, cdr), cons_mem(car, cdr, addr), let cons = Ptr(Tag::Cons.elt(), *addr);
 
-    car(cons, car), cdr(cons, cdr) <-- cons_rel(car, cdr, cons);
+    // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
+    ptr_value(cons, digest) <--
+        cons_rel(car, cdr, cons),
+        ptr_value(car, car_value), ptr_value(cdr, cdr_value),
+        hash4_rel(car.wide_tag(), car_value, cdr.wide_tag(), cdr_value, digest);
+    cons_rel(car, cdr, cons) <--
+        ptr_value(cons, digest), if cons.tag() == Tag::Cons,
+        hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest),
+        ptr_value(car, car_value), ptr_value(cdr, cdr_value),
+        if car.wide_tag() == *car_tag && cdr.wide_tag() == *cdr_tag;
 
     ////////////////////////////////////////////////////////////////////////////////
-    // IO (originally ingress/egress paths)
+    // Num
+    
+    ptr_value(num, value) <-- alloc(tag, value), if *tag == Tag::Num.elt(), let num = Ptr(Tag::Num.elt(), value.f());
 
-    input_ptr(ptr) <-- input_expr(wide_ptr), ptr_value(ptr, wide_ptr.1), ptr_tag(ptr, wide_ptr.0);
-    output_expr(WidePtr(*wide_tag, *value)) <-- output_ptr(ptr), ptr_value(ptr, value), ptr_tag(ptr, wide_tag);
+    ////////////////////////////////////////////////////////////////////////////////
+    // Ingress path
+
+    alloc(tag, wide_ptr.1) <-- input_expr(wide_ptr), tag(tag, wide_ptr.0);
+
+    // Populate input_ptr and mark for ingress.
+    ingress(ptr), input_ptr(ptr) <--
+        input_expr(wide_ptr), ptr_value(ptr, wide_ptr.1), if ptr.tag() == wide_ptr.tag();
+
+    // mark ingress conses for unhashing.
+    unhash4(digest) <-- ingress(ptr), if ptr.is_cons(), ptr_value(ptr, digest);
+
+    // unhash to acquire preimage pointers from digest.
+    hash4_rel(a, b, c, d, digest) <-- unhash4(digest), let [a, b, c, d] = _self.unhash4(digest);
+    
+    alloc(x_tag, x_value),
+    alloc(y_tag, y_value) <--
+        unhash4(digest),
+        hash4_rel(wide_x_tag, x_value, wide_y_tag, y_value, digest),
+        tag(x_tag, wide_x_tag),
+        tag(y_tag, wide_y_tag);
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // Egress path
+
+    // The output_ptr is marked for egress.
+    egress(ptr) <-- output_ptr(ptr);
+
+    // Cons
+    egress(car), egress(cdr) <-- egress(cons), cons_rel(car, cdr, cons);
+
+    // Num
+    ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_num();
+
+    output_expr(WidePtr(ptr.wide_tag(), *value)) <-- output_ptr(ptr), ptr_value(ptr, value);
+
+    hash4(car.wide_tag(), car_value, cdr.wide_tag(), cdr_value) <--
+        egress(cons),
+        cons_rel(car, cdr, cons),
+        ptr_value(car, car_value), ptr_value(cdr, cdr_value);
+
+    hash4_rel(a, b, c, d, digest) <--
+        hash4(a, b, c, d), let digest = _self.hash4(*a, *b, *c, *d);
 
     ////////////////////////////////////////////////////////////////////////////////
     // map_double
-    //
-    // This is just a silly input->output function that maps f(x)->2x over the input tree,
-    // for use as a development example. This will be replaced by e.g. Lurk eval.
 
     relation map_double_input(Ptr); // (input)
     relation map_double(Ptr, Ptr); // (input-ptr, output-ptr)
+    relation map_double_cont(Ptr, Ptr, Ptr);
 
     map_double(ptr, doubled) <-- map_double_input(ptr), if ptr.is_num(), let doubled = Ptr(Tag::Num.elt(), ptr.1.double());
 
     map_double_input(ptr) <-- input_ptr(ptr);
 
+    ingress(ptr) <-- map_double_input(ptr);
+
     map_double_input(car), map_double_input(cdr) <-- map_double_input(cons), cons_rel(car, cdr, cons);
 
-    relation map_double_cont(Ptr, Ptr, Ptr); //
-
-    map_double_cont(ptr, double_car, double_cdr) <--
+    map_double_cont(ptr, double_car, double_cdr), cons(double_car, double_cdr) <--
         map_double_input(ptr),
         cons_rel(car, cdr, ptr),
         map_double(car, double_car),
@@ -518,17 +516,39 @@ ascent! {
         map_double_cont(ptr, double_car, double_cdr),
         cons_rel(double_car, double_cdr, double_cons);
 
-    // For now, just copy input straight to output. Later, we will evaluate.
     output_ptr(out) <-- input_ptr(ptr), map_double(ptr, out);
 
     ////////////////////////////////////////////////////////////////////////////////
 }
 
 #[cfg(feature = "loam")]
+impl LoamProgram for DistilledAllocationProgram {
+    fn allocator(&self) -> &Allocator {
+        &self.allocator
+    }
+    fn allocator_mut(&mut self) -> &mut Allocator {
+        &mut self.allocator
+    }
+
+    fn ptr_value(&self) -> &Vec<(Ptr, Wide)> {
+        &self.ptr_value
+    }
+    fn cons_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)> {
+        &self.cons_rel
+    }
+    fn fun_rel(&self) -> &Vec<(Ptr, Ptr, Ptr, Ptr)> {
+        &self.fun_rel
+    }
+    fn thunk_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)> {
+        &self.thunk_rel
+    }
+}
+
+#[cfg(feature = "loam")]
 impl DistilledAllocationProgram {
     pub fn import_memory(&mut self, memory: Memory) {
-        self.cons_digest_mem = memory.cons_digest_mem;
-        self.cons_mem = memory.cons_mem;
+        self.initial_cons_digest_mem = memory.cons_digest_mem;
+        self.initial_cons_mem = memory.cons_mem;
     }
 }
 
@@ -538,7 +558,7 @@ mod test {
     use p3_baby_bear::BabyBear;
 
     use crate::{
-        loam::memory::DistillationOptions,
+        loam::memory::{DistillationOptions, PPtr, Store},
         lurk::{
             chipset::LurkChip,
             zstore::{lurk_zstore, ZPtr, ZStore},
@@ -557,18 +577,17 @@ mod test {
     }
 
     fn test_aux0(
-        zstore: ZStore<BabyBear, LurkChip>,
+        zstore: &ZStore<BabyBear, LurkChip>,
         input: WidePtr,
         expected_output: WidePtr,
     ) -> AllocationProgram {
         let mut prog = AllocationProgram::default();
 
-        prog.zstore = zstore;
+        prog.import_zstore(zstore);
         prog.input_expr = vec![(input,)];
         prog.run();
 
         println!("{}", prog.relation_sizes_summary());
-        prog.print_memory_tables();
 
         assert_eq!(expected_output, prog.output_expr[0].0);
         prog
@@ -578,40 +597,82 @@ mod test {
         let mut zstore = lurk_zstore();
         let input = read_wideptr(&mut zstore, input);
         let expected_output = read_wideptr(&mut zstore, expected_output);
-        test_aux0(zstore, input, expected_output)
+        test_aux0(&zstore, input, expected_output)
     }
 
     fn test_aux1(input: &str, expected_output: WidePtr) -> AllocationProgram {
         let mut zstore = lurk_zstore();
         let input = read_wideptr(&mut zstore, input);
-        test_aux0(zstore, input, expected_output)
+        test_aux0(&zstore, input, expected_output)
     }
 
-    fn test_distilled(original_program: &AllocationProgram) {
+    fn test_distilled(input: &str, expected_output: &str, bad_input_output: Option<(&str, &str)>) {
+        // Run the first phase
+        let mut zstore = lurk_zstore();
+        let input = read_wideptr(&mut zstore, input);
+        let expected_output = read_wideptr(&mut zstore, expected_output);
+        let original_program = test_aux0(&zstore, input, expected_output);
+
+        // Start the second phase
         let mut prog = DistilledAllocationProgram::default();
 
-        prog.zstore = original_program.zstore.clone();
+        // Move the hashes (stored in the allocator) and input over
+        prog.allocator = original_program.allocator.clone();
         prog.input_expr = original_program.input_expr.clone();
 
         // transfer over the memory (assume it's been distilled)
         let raw_memory = original_program.export_memory();
+        let mut store = Store::default();
         let options = DistillationOptions::new().with_summary(0.9);
-        let memory = raw_memory.distill(&options);
+        let memory = raw_memory.distill_with_store(&mut store, &options);
+
+        // Determine whether we want to use the intended in/out, or the bad in/out
+        let (input_ptr, output_expr) = if let Some((bad_input, bad_output)) = bad_input_output {
+            let bad_zptr = zstore.read(bad_input).expect("failed to read");
+            (
+                store.zptr_ptr(&bad_zptr).unwrap(),
+                vec![(read_wideptr(&mut zstore, bad_output),)],
+            )
+        } else {
+            let input_zptr = prog.input_expr[0].0.to_zptr();
+            (
+                store.zptr_ptr(&input_zptr).unwrap(),
+                original_program.output_expr,
+            )
+        };
 
         prog.import_memory(memory);
+
+        // Add a ptr_value for input_expr with input_ptr (which may or may not be bad)
+        let input_digest = prog.input_expr[0].0 .1;
+        prog.cons_digest_mem.push((input_digest, input_ptr.1));
+
         prog.run();
 
         println!("{}", prog.relation_sizes_summary());
 
-        assert_eq!(prog.output_expr, original_program.output_expr);
+        // Check what we got. If we had a bad input, we should get a bad output.
+        // (Which is bad!! But we are showing that something is wrong.)
+        assert_eq!(prog.output_expr, output_expr);
     }
 
     #[test]
     fn new_test_cons() {
-        let prog = test_aux("((1n . 2n) . (2n . 4n))", "((2n . 4n) . (4n . 8n))");
-        test_distilled(&prog);
+        test_distilled("((1n . 2n) . (2n . 4n))", "((2n . 4n) . (4n . 8n))", None);
+        test_distilled("((1n . 2n) . (2n . 4n))", "((2n . 4n) . (4n . 8n))", None);
+    }
 
-        let prog = test_aux("((1n . 2n) . (2n . 3n))", "((2n . 4n) . (4n . 6n))");
-        test_distilled(&prog);
+    #[test]
+    fn new_test_cons_bad() {
+        test_distilled(
+            "((1n . 2n) . (2n . 4n))",
+            "((2n . 4n) . (4n . 8n))",
+            Some(("(1n . 2n)", "(2n . 4n)")),
+        );
+        test_distilled(
+            "((1n . 2n) . (2n . 4n))",
+            "((2n . 4n) . (4n . 8n))",
+            Some(("(2n . 4n)", "(4n . 8n)")),
+        );
     }
 }
