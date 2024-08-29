@@ -42,7 +42,6 @@ bincode = "1"
 camino = "1.1"
 clap = "4.5.15"
 criterion = "0.5"
-elsa = { git = "https://github.com/argumentcomputer/elsa", branch = "sync_frozen" }
 expect-test = "1.4.1"
 home = "0.5"
 indexmap = "2.2.6"
@@ -83,7 +82,6 @@ base-x = { workspace = true }
 bincode = { workspace = true }
 camino = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-elsa = { workspace = true, features = ["indexmap"] }
 expect-test = { workspace = true }
 home = { workspace = true }
 hybrid-array = { workspace = true }
@@ -150,7 +148,7 @@ name = "lurk"
 harness = false
 
 [workspace]
-members = ["loam-macros", "examples/calculator", "examples/byte_lookup"]
+members = ["loam-macros", "examples/byte_lookup"]
 
 [profile.dev-ci]
 inherits = "dev"

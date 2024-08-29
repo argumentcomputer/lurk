@@ -5,10 +5,7 @@ pub mod lair;
 // #[allow(dead_code)]
 // pub mod logup;
 
-pub mod loam;
-
-#[allow(dead_code)]
 pub mod gadgets;
+pub mod loam;
 pub mod lurk;
 pub mod poseidon;
-pub mod store_core;
