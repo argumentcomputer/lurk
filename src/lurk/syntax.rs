@@ -10,10 +10,12 @@ use super::zstore::DIGEST_SIZE;
 /// Lurk's syntax for parsing
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Syntax<F> {
-    /// An element of the finite field `F`
+    /// An element of the finite field `F`: 1n, 0xffn
     Num(Pos, F),
-    /// A u64 integer: 1u64, 0xffu64
+    /// A u64 integer: 1, 0xff, 1u64, 0xffu64
     U64(Pos, u64),
+    /// A i64 integer: -1, -0xff, 1i64, 0xffi64, -1i64, -0xffi64
+    I64(Pos, bool, u64),
     /// A raw hash digest of some lurk data: #0xffff...ffff, stored in little-endian
     Digest(Pos, [F; DIGEST_SIZE]),
     /// A hierarchical symbol: foo, foo.bar.baz or keyword :foo
@@ -36,6 +38,7 @@ impl<F> Syntax<F> {
         match self {
             Self::Num(pos, _)
             | Self::U64(pos, _)
+            | Self::I64(pos, ..)
             | Self::Digest(pos, _)
             | Self::Symbol(pos, _)
             | Self::String(pos, _)
@@ -62,6 +65,7 @@ impl<F: fmt::Display + PrimeField> fmt::Display for Syntax<F> {
         match self {
             Self::Num(_, x) => write!(f, "{x}"),
             Self::U64(_, x) => write!(f, "{x}u64"),
+            Self::I64(_, sign, x) => write!(f, "{}{x}i64", if *sign { "-" } else { "" }),
             Self::Digest(_, c) => write!(f, "#{:#x}", digest_to_biguint(c)),
             Self::Symbol(_, x) => write!(f, "{x}"),
             Self::String(_, x) => write!(f, "\"{}\"", x.escape_default()),
