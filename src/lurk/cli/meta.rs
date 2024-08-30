@@ -937,6 +937,9 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
             let path_str = repl.zstore.fetch_string(path);
 
             let (protocol, _) = repl.reduce_aux(&protocol_expr)?;
+            if protocol.tag == Tag::Err {
+                bail!("Error when evaluating the protocol");
+            }
             let (vars_vec, &body) = Self::get_vars_vec_and_body(repl, &protocol)?;
             let vars_vec = copy_inner(vars_vec);
 
@@ -953,7 +956,11 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
             let args_vec = copy_inner(args_vec);
             let mut args_vec_reduced = Vec::with_capacity(args_vec.len());
             for arg in args_vec.iter() {
-                args_vec_reduced.push(repl.reduce_aux(arg)?.0);
+                let (arg_reduced, _) = repl.reduce_aux(arg)?;
+                if arg_reduced.tag == Tag::Err {
+                    bail!("Error when evaluating a protocol argument");
+                }
+                args_vec_reduced.push(arg_reduced);
             }
 
             let (&claim, &post_verify_predicate) = Self::get_claim_and_post_verify_predicade(
@@ -1008,6 +1015,9 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
             let path_str = repl.zstore.fetch_string(path);
 
             let (protocol, _) = repl.reduce_aux(&protocol_expr)?;
+            if protocol.tag == Tag::Err {
+                bail!("Error when evaluating the protocol");
+            }
             let (vars_vec, &body) = Self::get_vars_vec_and_body(repl, &protocol)?;
             let vars_vec = copy_inner(vars_vec);
 
