@@ -879,6 +879,9 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                             let (res_tag, res) = call(apply, head_tag, head, rest_tag, rest, env);
                             return (res_tag, res)
                         }
+                        Tag::Err => {
+                            return (head_tag, head)
+                        }
                     };
                     let (res_tag, res) = call(apply, head_tag, head, rest_tag, rest, env);
                     return (res_tag, res)
@@ -1701,14 +1704,18 @@ pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
 
             match params_tag {
                 Tag::Nil => {
+                    let (res_tag, res) = call(eval, body_tag, body, func_env);
+                    match res_tag {
+                        Tag::Err => {
+                            return (res_tag, res)
+                        }
+                    };
                     match args_tag {
                         Tag::Nil => {
-                            let (res_tag, res) = call(eval, body_tag, body, func_env);
                             return (res_tag, res)
                         }
                         Tag::Cons => {
                             // Oversaturated application
-                            let (res_tag, res) = call(eval, body_tag, body, func_env);
                             let (app_res_tag, app_res) = call(apply, res_tag, res, args_tag, args, args_env);
                             return (app_res_tag, app_res)
                         }
@@ -1834,7 +1841,7 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["91"]);
-        expect_eq(eval.width(), expect!["153"]);
+        expect_eq(eval.width(), expect!["154"]);
         expect_eq(eval_opening_unop.width(), expect!["96"]);
         expect_eq(eval_hide.width(), expect!["114"]);
         expect_eq(eval_unop.width(), expect!["78"]);
@@ -1847,7 +1854,7 @@ mod test {
         expect_eq(equal.width(), expect!["82"]);
         expect_eq(equal_inner.width(), expect!["57"]);
         expect_eq(car_cdr.width(), expect!["61"]);
-        expect_eq(apply.width(), expect!["98"]);
+        expect_eq(apply.width(), expect!["99"]);
         expect_eq(env_lookup.width(), expect!["49"]);
         expect_eq(ingress.width(), expect!["100"]);
         expect_eq(ingress_builtin.width(), expect!["50"]);

@@ -209,6 +209,10 @@ test!(test_app2, "((lambda (x y z) y) 1 2 3)", |_| uint(2));
 test!(test_app3, "((lambda (x) (lambda (y) x)) 1 2)", |_| {
     uint(1)
 });
+test!(test_app_err, "(a)", |_| ZPtr::err(EvalErr::UnboundVar));
+test!(test_app_err2, "((lambda () a) 2)", |_| ZPtr::err(
+    EvalErr::UnboundVar
+));
 
 // builtins
 test!(test_if, "(if 1 1 0)", |_| uint(1));
