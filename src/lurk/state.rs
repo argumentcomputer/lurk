@@ -247,7 +247,7 @@ pub(crate) const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 39] = [
     "char",
     "commit",
     "comm",
-    "big-num",
+    "bignum",
     "cons",
     "current-env",
     "emit",

@@ -390,7 +390,7 @@ test!(test_commit, "(commit 123)", |_| {
     preimg.extend(uint(123).flatten());
     ZPtr::comm(lurk_hasher().hash(&preimg).try_into().unwrap())
 });
-test!(test_hide, "(hide (big-num (commit 321)) 123)", |_| {
+test!(test_hide, "(hide (bignum (commit 321)) 123)", |_| {
     let mut secret_preimg = Vec::with_capacity(24);
     secret_preimg.extend([F::zero(); 8]);
     secret_preimg.extend(uint(321).flatten());
@@ -440,7 +440,7 @@ test!(test_big_num_to_comm, "(comm #0x0)", |_| ZPtr::comm(
 ));
 test!(
     test_big_num_to_comm_to_big_num,
-    "(big-num (comm #0x0))",
+    "(bignum (comm #0x0))",
     |_| ZPtr::big_num([F::zero(); 8])
 );
 test!(test_big_num_equal1, "(= #0x0 #0x1)", |z| z.intern_nil());
