@@ -860,7 +860,7 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                     let (_car_tag, _car, cdr_tag, cdr) = call(car_cdr, rest_tag, rest, env);
                                     return (cdr_tag, cdr)
                                 }
-                                "u64", "char", "atom", "emit", "big-num", "comm" => {
+                                "u64", "char", "atom", "emit", "bignum", "comm" => {
                                     let (res_tag, res) = call(eval_unop, head, rest_tag, rest, env);
                                     return (res_tag, res)
                                 }
@@ -1415,7 +1415,7 @@ pub fn eval_unop<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE
                     let err = EvalErr::CantCastToChar;
                     return(err_tag, err)
                 }
-                "big-num" => {
+                "bignum" => {
                     match val_tag {
                         Tag::BigNum => {
                             return (val_tag, val)
