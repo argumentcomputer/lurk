@@ -24,13 +24,13 @@ use loam::{
     },
 };
 
-const DEFAULT_FIB_ARG: usize = 500;
+const DEFAULT_FIB_ARG: usize = 100000;
 
 fn get_fib_arg() -> usize {
-    std::env::args()
-        .collect::<Vec<_>>()
-        .get(2)
-        .map_or(DEFAULT_FIB_ARG, |a| a.parse().expect("failed to parse arg"))
+    std::env::var("LOAM_FIB_ARG")
+        .unwrap_or(DEFAULT_FIB_ARG.to_string())
+        .parse::<usize>()
+        .expect("Expected a number")
 }
 
 fn build_lurk_expr(arg: usize) -> String {
@@ -70,7 +70,7 @@ fn setup<H: Chipset<BabyBear>>(
 
 fn evaluation(c: &mut Criterion) {
     let arg = get_fib_arg();
-    c.bench_function(&format!("evaluation-{arg}"), |b| {
+    c.bench_function(&format!("fib-evaluation-{arg}"), |b| {
         let (toplevel, _) = build_lurk_toplevel();
         let (args, lurk_main, record) = setup(arg, &toplevel);
         b.iter_batched(
@@ -87,7 +87,7 @@ fn evaluation(c: &mut Criterion) {
 
 fn trace_generation(c: &mut Criterion) {
     let arg = get_fib_arg();
-    c.bench_function(&format!("trace-generation-{arg}"), |b| {
+    c.bench_function(&format!("fib-trace-generation-{arg}"), |b| {
         let (toplevel, _) = build_lurk_toplevel();
         let (args, lurk_main, mut record) = setup(arg, &toplevel);
         toplevel
@@ -105,7 +105,7 @@ fn trace_generation(c: &mut Criterion) {
 
 fn e2e(c: &mut Criterion) {
     let arg = get_fib_arg();
-    c.bench_function(&format!("e2e-{arg}"), |b| {
+    c.bench_function(&format!("fib-e2e-{arg}"), |b| {
         let (toplevel, _) = build_lurk_toplevel();
         let (args, lurk_main, record) = setup(arg, &toplevel);
 

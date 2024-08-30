@@ -74,7 +74,7 @@ fn setup<'a, H: Chipset<BabyBear>>(
 
 fn evaluation(c: &mut Criterion) {
     let args = get_lcs_args();
-    c.bench_function("evaluation", |b| {
+    c.bench_function("lcs-evaluation", |b| {
         let (toplevel, _) = build_lurk_toplevel();
         let (args, lurk_main, record) = setup(args.0, args.1, &toplevel);
         b.iter_batched(
@@ -91,7 +91,7 @@ fn evaluation(c: &mut Criterion) {
 
 fn trace_generation(c: &mut Criterion) {
     let args = get_lcs_args();
-    c.bench_function("trace-generation", |b| {
+    c.bench_function("lcs-trace-generation", |b| {
         let (toplevel, _) = build_lurk_toplevel();
         let (args, lurk_main, mut record) = setup(args.0, args.1, &toplevel);
         toplevel
@@ -109,7 +109,7 @@ fn trace_generation(c: &mut Criterion) {
 
 fn e2e(c: &mut Criterion) {
     let args = get_lcs_args();
-    c.bench_function("e2e", |b| {
+    c.bench_function("lcs-e2e", |b| {
         let (toplevel, _) = build_lurk_toplevel();
         let (args, lurk_main, record) = setup(args.0, args.1, &toplevel);
 

@@ -234,8 +234,12 @@ pub struct ShardingConfig {
 
 impl Default for ShardingConfig {
     fn default() -> Self {
+        const DEFAULT_SHARD_SIZE: u32 = 1 << 22;
         Self {
-            max_shard_size: 1 << 22,
+            max_shard_size: std::env::var("SHARD_SIZE").map_or_else(
+                |_| DEFAULT_SHARD_SIZE,
+                |s| s.parse::<u32>().unwrap_or(DEFAULT_SHARD_SIZE),
+            ),
         }
     }
 }

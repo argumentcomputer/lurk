@@ -24,28 +24,26 @@ use loam::{
     },
 };
 
-const DEFAULT_SUM_ARG: usize = 1000;
+const DEFAULT_SUM_ARG: usize = 100000;
 
 fn get_sum_arg() -> usize {
-    std::env::args()
-        .collect::<Vec<_>>()
-        .get(2)
-        .map_or(DEFAULT_SUM_ARG, |a| a.parse().expect("failed to parse arg"))
+    std::env::var("LOAM_SUM_ARG")
+        .unwrap_or(DEFAULT_SUM_ARG.to_string())
+        .parse::<usize>()
+        .expect("Expected a number")
 }
 
 fn u64s_below(n: usize) -> String {
-    (0..n)
-        .map(|i| format!("{i}u64 "))
-        .collect::<Vec<_>>()
-        .join("")
+    (0..n).map(|i| format!("{i}")).collect::<Vec<_>>().join(" ")
 }
 
 fn build_lurk_expr(n: usize) -> String {
     let input = u64s_below(n);
     format!(
-        r#"
+        "
 (letrec ((sum (lambda (l) (if l (+ (car l) (sum (cdr l))) 0))))
-  (sum {input}))"#
+  (sum '({input})))
+"
     )
 }
 
@@ -77,7 +75,7 @@ fn setup<H: Chipset<BabyBear>>(
 
 fn evaluation(c: &mut Criterion) {
     let arg = get_sum_arg();
-    c.bench_function("evaluation", |b| {
+    c.bench_function(&format!("sum-evaluation-{arg}"), |b| {
         let (toplevel, _) = build_lurk_toplevel();
         let (args, lurk_main, record) = setup(arg, &toplevel);
         b.iter_batched(
@@ -94,7 +92,7 @@ fn evaluation(c: &mut Criterion) {
 
 fn trace_generation(c: &mut Criterion) {
     let arg = get_sum_arg();
-    c.bench_function("trace-generation", |b| {
+    c.bench_function(&format!("sum-trace-generation-{arg}"), |b| {
         let (toplevel, _) = build_lurk_toplevel();
         let (args, lurk_main, mut record) = setup(arg, &toplevel);
         toplevel
@@ -112,7 +110,7 @@ fn trace_generation(c: &mut Criterion) {
 
 fn e2e(c: &mut Criterion) {
     let arg = get_sum_arg();
-    c.bench_function("e2e", |b| {
+    c.bench_function(&format!("sum-e2e-{arg}"), |b| {
         let (toplevel, _) = build_lurk_toplevel();
         let (args, lurk_main, record) = setup(arg, &toplevel);
 
