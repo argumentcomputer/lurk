@@ -164,4 +164,10 @@ impl<F> Func<F> {
     pub fn output_size(&self) -> usize {
         self.output_size
     }
+
+    /// Getter for the index
+    #[inline]
+    pub fn index(&self) -> usize {
+        self.index
+    }
 }
