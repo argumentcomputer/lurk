@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues, BaseAir, PairBuilder};
 use p3_field::{AbstractField, Field, PrimeField32};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
@@ -20,7 +22,10 @@ use super::{
 };
 
 pub enum LairChip<'a, F, H: Chipset<F>> {
-    Func(FuncChip<'a, F, H>),
+    Func {
+        func_chip: Arc<FuncChip<'a, F, H>>,
+        rc_index: usize,
+    },
     Mem(MemChip<F>),
     Bytes(BytesChip<F>),
     Entrypoint {
@@ -54,7 +59,7 @@ impl<'a, F: PrimeField32, H: Chipset<F>> EventLens<LairChip<'a, F, H>> for Shard
 impl<'a, F: Field + Sync, H: Chipset<F>> BaseAir<F> for LairChip<'a, F, H> {
     fn width(&self) -> usize {
         match self {
-            Self::Func(func_chip) => func_chip.width(),
+            Self::Func { func_chip, .. } => func_chip.width(),
             Self::Mem(mem_chip) => mem_chip.width(),
             Self::Bytes(bytes_chip) => bytes_chip.width(),
             Self::Entrypoint {
@@ -78,7 +83,7 @@ impl<'a, F: PrimeField32, H: Chipset<F>> MachineAir<F> for LairChip<'a, F, H> {
 
     fn name(&self) -> String {
         match self {
-            Self::Func(func_chip) => format!("Func[{}]", func_chip.func.name),
+            Self::Func { func_chip, .. } => format!("Func[{}]", func_chip.func.name),
             Self::Mem(mem_chip) => format!("Mem[{}-wide]", mem_chip.len),
             Self::Entrypoint { func_idx, .. } => format!("Entrypoint[{func_idx}]"),
             // the following is required by sphinx
@@ -93,7 +98,10 @@ impl<'a, F: PrimeField32, H: Chipset<F>> MachineAir<F> for LairChip<'a, F, H> {
         _: &mut Self::Record,
     ) -> RowMajorMatrix<F> {
         match self {
-            Self::Func(func_chip) => func_chip.generate_trace(shard.events()),
+            Self::Func {
+                func_chip,
+                rc_index,
+            } => func_chip.generate_trace_rc(shard.events(), *rc_index),
             Self::Mem(mem_chip) => mem_chip.generate_trace(shard.events()),
             Self::Bytes(bytes_chip) => {
                 // TODO: Shard the byte events differently?
@@ -117,8 +125,8 @@ impl<'a, F: PrimeField32, H: Chipset<F>> MachineAir<F> for LairChip<'a, F, H> {
 
     fn included(&self, shard: &Self::Record) -> bool {
         match self {
-            Self::Func(func_chip) => {
-                let range = shard.get_func_range(func_chip.func.index);
+            Self::Func { func_chip, .. } => {
+                let range = shard.get_func_range(func_chip.func);
                 !range.is_empty()
             }
             Self::Mem(_mem_chip) => {
@@ -154,7 +162,7 @@ where
 {
     fn eval(&self, builder: &mut AB) {
         match self {
-            Self::Func(func_chip) => func_chip.eval(builder),
+            Self::Func { func_chip, .. } => func_chip.eval(builder),
             Self::Mem(mem_chip) => mem_chip.eval(builder),
             Self::Bytes(bytes_chip) => bytes_chip.eval(builder),
             Self::Entrypoint {
@@ -195,7 +203,14 @@ pub fn build_lair_chip_vector<'a, F: PrimeField32, H: Chipset<F>>(
     let mut chip_vector = Vec::with_capacity(2 + toplevel.map.size() + MEM_TABLE_SIZES.len());
     chip_vector.push(LairChip::entrypoint(func));
     for func_chip in FuncChip::from_toplevel(toplevel) {
-        chip_vector.push(LairChip::Func(func_chip));
+        let func_chip = Arc::new(func_chip);
+        for rc_index in 0..func_chip.func.rc {
+            let func_chip = func_chip.clone();
+            chip_vector.push(LairChip::Func {
+                func_chip,
+                rc_index,
+            });
+        }
     }
     for mem_len in MEM_TABLE_SIZES {
         chip_vector.push(LairChip::Mem(MemChip::new(mem_len)));

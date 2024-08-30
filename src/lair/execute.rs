@@ -107,8 +107,25 @@ impl<'a, F: PrimeField32> Shard<'a, F> {
         self.queries.expect("Missing query record reference")
     }
 
-    pub fn get_func_range(&self, func_index: usize) -> Range<usize> {
-        let num_func_queries = self.queries().func_queries[func_index].len();
+    pub fn get_func_range_rc(&self, func: &Func<F>, rc_index: usize) -> Range<usize> {
+        let num_func_queries = self.queries().func_queries[func.index].len();
+        let shard_idx = self.index as usize;
+        let shard_chunk = self.shard_config.max_shard_size as usize * func.rc;
+        let start = shard_idx * shard_chunk;
+        let end = ((shard_idx + 1) * shard_chunk).min(num_func_queries);
+        let len = (start..end).len();
+        if len % func.rc == 0 {
+            let chunk = len / func.rc;
+            start + chunk * rc_index..start + chunk * (rc_index + 1)
+        } else {
+            let chunk = (len / func.rc) + 1;
+            let end = start + chunk * (rc_index + 1);
+            start + chunk * rc_index..end.min(num_func_queries)
+        }
+    }
+
+    pub fn get_func_range(&self, func: &Func<F>) -> Range<usize> {
+        let num_func_queries = self.queries().func_queries[func.index].len();
         let shard_idx = self.index as usize;
         let max_shard_size = self.shard_config.max_shard_size as usize;
         shard_idx * max_shard_size..((shard_idx + 1) * max_shard_size).min(num_func_queries)

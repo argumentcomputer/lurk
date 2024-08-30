@@ -138,6 +138,7 @@ pub struct Func<F> {
     pub(crate) input_size: usize,
     pub(crate) output_size: usize,
     pub(crate) body: Block<F>,
+    pub(crate) rc: usize,
 }
 
 impl<F> Func<F> {

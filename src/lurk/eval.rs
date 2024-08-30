@@ -143,6 +143,11 @@ impl EvalErr {
     }
 }
 
+const EVAL_RC: usize = 8;
+const APPLY_RC: usize = 4;
+const BINOP_RC: usize = 4;
+const LOOKUP_RC: usize = 4;
+
 pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn lurk_main(full_expr_tag: [8], expr_digest: [8], env_digest: [8]): [16] {
@@ -301,6 +306,7 @@ fn ingress_builtin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Fun
         input_params: [input_var].into(),
         output_size: 1,
         body: BlockE { ops, ctrl },
+        rc: 1,
     }
 }
 
@@ -435,6 +441,7 @@ fn egress_builtin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Func
         input_params: [input_var].into(),
         output_size: 8,
         body: BlockE { ops, ctrl },
+        rc: 1,
     }
 }
 
@@ -565,6 +572,7 @@ pub fn big_num_lessthan<F>() -> FuncE<F> {
 
 pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
+        #[RC = EVAL_RC]
         partial fn eval(expr_tag, expr, env): [2] {
             // Constants, tags, etc
             let t = builtins.index("t");
@@ -1131,6 +1139,7 @@ pub fn eval_begin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> Func
 
 pub fn eval_binop_num<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
     func!(
+        #[RC = BINOP_RC]
         partial fn eval_binop_num(head, exp1_tag, exp1, exp2_tag, exp2, env): [2] {
             let err_tag = Tag::Err;
             let num_tag = Tag::Num;
@@ -1685,6 +1694,7 @@ pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
 
 pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
+        #[RC = APPLY_RC]
         partial fn apply(head_tag, head, args_tag, args, args_env): [2] {
             // Constants, tags, etc
             let err_tag = Tag::Err;
@@ -1765,6 +1775,7 @@ pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
 
 pub fn env_lookup<F: AbstractField>() -> FuncE<F> {
     func!(
+        #[RC = LOOKUP_RC]
         fn env_lookup(x_digest: [8], env): [2] {
             if !env {
                 let err_tag = Tag::Err;
