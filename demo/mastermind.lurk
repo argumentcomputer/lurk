@@ -1,0 +1,247 @@
+;;; This demo program implements a two-player game of Mastermind (https://en.wikipedia.org/wiki/Mastermind_(board_game)).
+;;; Each player simultaneously takes on the role of codemaker and codebreaker.
+;;; 
+
+;; Tries to remove the first instance of elt from list and returns (removed? . remaining).
+;; removed? is true if elt was removed.
+;; remaining is a list of the remaining elements (in reverse order) whether or not elt was removed.
+;; If elt occurs one than once in list, only the first occurence is removed.
+!(def maybe-remove (lambda (elt list)
+                     (letrec ((aux (lambda (removed? acc elt list)
+                                     (if list
+                                         (if (eq elt (car list))
+                                             (aux t acc elt (if removed? list (cdr list)))
+                                             (aux removed? (cons (car list) acc) elt (cdr list)))
+                                         (cons removed? acc)))))
+                       (aux nil () elt list))))
+
+;; Returns (hits . partial-hits).
+;; hits is the number of positions at which code and guess match.
+;; partial-hits is the number of values ('colors') common between the remaining codes and guesses (after the hits have been removed). 
+;; code and guess must be the same length
+!(def score (lambda (code guess)
+              (letrec ((aux (lambda (hits code-miss guess-miss code guess)
+                              (if code
+                                  (if (eq (car code) (car guess))
+                                      (aux (+ 1 hits) code-miss guess-miss (cdr code) (cdr guess))
+                                      (aux hits (cons (car code) code-miss) (cons (car guess) guess-miss) (cdr code) (cdr guess)))
+                                  (letrec ((aux2 (lambda (partial-hits code-miss guess-miss)
+                                                   (if code-miss
+                                                       (let ((removed?-remaining (maybe-remove (car code-miss) guess-miss)))
+                                                         (if (car removed?-remaining)
+                                                             (aux2 (+ 1 partial-hits) (cdr code-miss) (cdr removed?-remaining))
+                                                             (aux2 partial-hits (cdr code-miss) guess-miss)))
+                                                       partial-hits))))
+                                    (cons hits (aux2 0 code-miss guess-miss)))))))
+                (aux 0 () () code guess))))
+
+!(assert (eq '(1 . 2) (score '(1 2 3 4) '(1 3 4 5))))
+
+!(assert (eq '(2 . 0) (score '(1 2 3 4) '(5 2 3 5))))
+
+!(defrec length (lambda (list)
+                  (if list
+                      (+ 1 (length (cdr list)))
+                      0)))
+
+!(assert-eq 0 (length ()))
+!(assert-eq 3 (length '(1 2 3)))
+
+!(def code-valid? (lambda (code expected-length num-choices)
+                    (if (= expected-length (length code))
+                        (letrec ((aux (lambda (code)
+                                        (if code
+                                            (if (<= (car code) num-choices)
+                                                (if (>= (car code) 1)
+                                                    (aux (cdr code))))
+                                            t))))
+                          (aux code)))))
+
+!(def make-code-validator (lambda (expected-length num-choices)
+                            (lambda (code)
+                              (if (code-valid? code expected-length num-choices)
+                                  t
+                                  ;; FIXME: we can't test this because comm is apparently unimplemented so far.
+                                  (open (comm 0))))))
+
+!(assert (code-valid? '(1 2 3 4) 4 6))
+!(assert (code-valid? '(1 2 3 4) 4 4))
+!(assert-eq nil (code-valid? '(1 2 3 4) 3 6))
+!(assert-eq nil (code-valid? '(1 2 3 4) 5 6))
+!(assert-eq nil (code-valid? '(1 2 3 4) 4 3))
+
+!(def make-scoring-fn (lambda (code-commitment code-length num-choices)
+                        ;; The opening below ensures that whoever makes the scoring function will be able to prove it later.
+                        ;; Knowledge of the opening of code-commitment acts as a credential. 'Knowledge is power.'
+                        (if (code-valid? (open code-commitment) code-length num-choices)
+                            (lambda (guess)
+                              (let ((score (score (open code-commitment) guess)))
+                                (if (eq (car score) code-length)
+                                    :correct
+                                    score))))
+                            :bad-code))
+
+!(def g0 (make-scoring-fn (commit '(1 2 3 4)) 4 6))
+;; (emit (cons :g0 g0))
+!(assert-eq :correct (g0 '(1 2 3 4)))
+
+!(assert-eq '(1 . 3) (g0 '(1 4 2 3)))
+
+!(defrec play (lambda (ensure-valid-code g1 g2 guess2 guess1 max-rounds)
+                (letrec ((play-one-round
+                          (lambda (round guess2 guess1)
+                            (let ((score (g2 guess2))) ; Player 1's guess scored on g2, player 2's game. Hence guess2.
+                              (begin
+                               (ensure-valid-code guess1)
+                               (if (eq score :correct)
+                                   (cons :advantage-1
+                                         (lambda ()
+                                           (let ((score (g1 guess1))) ;; Player 2's guess scored on g1, player 1's game. Hence guess1.
+                                             (cons (if (eq score :correct) :draw :winner-1) nil))))
+                                   (cons score
+                                         (lambda (guess2)
+                                           (begin
+                                            (ensure-valid-code guess2)
+                                            (let ((score (g1 guess1))) ;; Player 2's guess scored on g1, player 1's game. Hence guess1.
+                                              (if (= round max-rounds)
+                                                  (cons (if (eq score :correct)
+                                                            :winner-2
+                                                            ;; This could just be :draw, if the enclosing protocol won't distinguish types of draw.
+                                                            ;; Doing so initially is useful for testing.
+                                                            :draw-max)
+                                                        nil)
+                                                  (if (eq score :correct)
+                                                      (cons :winner-2 nil)
+                                                      ;; On subsequent iterations, we have only player 1's guess (guess2).
+                                                      ;; The partial application yields a continuation function that will receive player 2's guess (guess1).
+                                                      (cons score (play-one-round (+ 1 round) guess2))))))))))))))
+                  ;; On first iteration, we have already received both guesses.
+                  (play-one-round 1 guess2 guess1))))
+
+!(def init-game
+     ;; Game is initialized with commitments to codes from both players.
+     (lambda (code-comm1 code-comm2 expected-code-length num-choices max-rounds)
+       (let ((ensure-valid-code (make-code-validator expected-code-length num-choices)))
+         (cons :player-1-guess ; prompt
+               ;; Somewhat confusingly, guess2 is player 1's first guess. See comment in play.
+               (lambda (guess2)
+                 (begin
+                  ;; Players must provably validate their own codes to ensure they cannot cause their opponent's proofs
+                  ;; to be of errors.
+                  (ensure-valid-code guess2)
+                  ;; game1 is played by player 1.
+                  ;; Only player 2 will be able to prove this, due to make-scoring-fn's interface.
+                  (let ((game1 (make-scoring-fn code-comm1 expected-code-length num-choices)))
+                    (if (eq game1 :bad-code)
+                        (cons :player-1-bad-code
+                              (lambda ()
+                                (if (eq :bad-code (make-scoring-fn code-comm2 expected-code-length num-choices))
+                                    (cons :draw nil)
+                                    (cons :winner-2 nil))))
+                        ;; Player 2 provides guess1 (named that because it is input to game1).
+                        (cons :player-2-guess ; prompt
+                              (lambda (guess1)
+                                ;; game-2 is played by player 2.
+                                ;; Only player 2 will be able to prove this, due to make-scoring-fn's interface.
+                                (let ((game2 (make-scoring-fn code-comm2 expected-code-length num-choices)))
+                                  (if (eq game2 :bad-code)
+                                      (cons :winner-1)
+                                      (play ensure-valid-code game1 game2 guess2 guess1 max-rounds)))))))))))))
+
+;; Player 1 supplies a bad code. Player 2 supplies a good code.
+!(def bad1 (init-game (commit '(1)) (commit '(6 6 6 5)) 4 6 7))
+
+!(transition bad1a bad1 '(1 1 1 1))
+!(assert-eq :player-1-bad-code (car bad1a))
+
+;; Player 2 just calls the continuation with zero args, to prove own code length is correct (or not).
+!(transition bad1b bad1a)
+;; As expected, player 2 wins.
+!(assert-eq :winner-2 (car bad1b))
+
+;; Both players supply bad codes.
+!(def bad2 (init-game (commit '(1)) (commit '(6 6)) 4 6 7))
+
+!(transition bad2a bad2 '(1 1 1 1))
+!(assert-eq :player-1-bad-code (car bad2a))
+
+!(transition bad2b bad2a)
+;; As expected, it is a draw.
+!(assert-eq :draw (car bad2b))
+
+!(def player-1-code (commit '(1 2 3 4)))
+!(def player-2-code (commit '(6 6 6 5)))
+
+!(def m0 (init-game player-1-code player-2-code 4 6 3))
+;(emit (cons :m0 (car m0)))
+!(assert-eq :player-1-guess (car m0))
+
+;; ;; Player 1 has the advantage and has already guessed correctly, so no next guess is needed.
+;; ;; This transition is just to determine whether Player 2 already (previously) guessed correctly.
+!(transition mA m0 '(6 6 6 5))
+;(emit (cons :mA (car mA)))
+!(assert-eq :player-2-guess (car mA))
+
+!(transition mB mA '(1 1 1 1))
+;(emit (cons :mB (car mB)))
+!(assert-eq :advantage-1 (car mB))
+
+!(transition mC mB)
+;(emit (cons :mC (car mC)))
+!(assert-eq :winner-1 (car mC))
+
+;; chain has terminated.
+!(assert-eq nil (cdr mC))
+
+;; Rewind and let player 2 nullify the advantage.
+!(transition mB2 mA '(1 2 3 4))
+;(emit (cons :mB2 mB2))
+!(assert-eq :advantage-1 (car mB2))
+
+!(transition mC2 mB2)
+;(emit (cons :mC2 mC2))
+!(assert-eq :draw (car mC2))
+
+;; chain has terminated.
+!(assert-eq nil (cdr mC2))
+
+
+;; Rewind and try a different ending.
+!(transition m1 m0 '(5 5 5 5)) ; player 1 guess, round 1
+;(emit (cons :m1 (car m1)))
+!(assert-eq :player-2-guess (car m1))
+
+!(transition m2 m1 '(1 2 4 3)) ; player 2 guess, round 1
+;(emit (cons :m2 (car m2)))
+!(assert-eq '(1 . 0) (car m2)) ; guess (5 5 5 5), code (6 6 6 5)
+
+!(transition m3 m2 '(5 5 5 5)) ; player 1 guess, round 2
+;(emit (cons :m3 (car m3)))
+!(assert-eq '(2 . 2) (car m3)) ; guess (1 2 4 3), code (1 2 3 4)
+
+!(transition m4 m3 '(1 2 3 4)) ; player 2 guess, round 2
+;(emit (cons :m4 (car m4)))
+!(assert-eq '(1 . 0) (car m4)) ; guess (1 2 3 4), code (1 2 3 4)
+
+!(transition m5 m4 '(6 6 6 5)) ; player 1 guess, round 3
+;(emit (cons :m5 (car m5)))
+!(assert-eq :winner-2 (car m5))
+
+;; Chain has terminated.
+!(assert-eq nil (cdr m5))
+
+;; TODO: test other possible continuations of the game to exercise other outcomes.
+
+!(transition m4x m3 '(1 1 1 1)) ; player 2 guess, round 2
+;(emit (cons :m4x (car m4x)))
+!(transition m5x m4x '(2 2 2 2)) ; player 1 guess, round 3
+;(emit (cons :m5x m5x))
+!(transition m6x m5x '(3 3 3 3)) ; player 2 guess, round 3
+;(emit (cons :m6x m6x))
+!(transition m7x m6x '(4 4 4 4))
+!(assert-eq :draw-max (car m7x))
+
+;; Chain has terminated.
+!(assert-eq nil (cdr m7x))
+
+:fin
