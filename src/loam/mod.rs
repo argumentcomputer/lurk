@@ -249,6 +249,10 @@ impl WidePtr {
             digest: self.1 .0,
         }
     }
+
+    fn from_zptr(zptr: &ZPtr<LE>) -> Self {
+        Self(Wide::widen(zptr.tag.elt()), Wide(zptr.digest))
+    }
 }
 
 impl From<&Num> for WidePtr {

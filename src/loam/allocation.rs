@@ -196,7 +196,7 @@ impl Allocator {
 
 #[cfg(feature = "loam")]
 ascent! {
-    #![trace]
+    // #![trace]
     struct AllocationProgram {
         allocator: Allocator,
     }
@@ -373,7 +373,7 @@ impl LoamProgram for AllocationProgram {
 
 #[cfg(feature = "loam")]
 ascent! {
-    #![trace]
+    // #![trace]
     struct DistilledAllocationProgram {
         allocator: Allocator,
     }
@@ -424,9 +424,9 @@ ascent! {
     cons_mem(car, cdr, addr) <-- initial_cons_mem(car, cdr, addr);
 
     // Register cons value.
-    ptr_value(cons, value) <-- 
-        alloc(tag, value), if *tag == Tag::Cons.elt(), 
-        cons_digest_mem(value, addr), 
+    ptr_value(cons, value) <--
+        alloc(tag, value), if *tag == Tag::Cons.elt(),
+        cons_digest_mem(value, addr),
         let cons = Ptr(Tag::Cons.elt(), *addr);
     // Register cons relation.
     cons_rel(car, cdr, cons) <-- cons(car, cdr), cons_mem(car, cdr, addr), let cons = Ptr(Tag::Cons.elt(), *addr);
@@ -444,7 +444,7 @@ ascent! {
 
     ////////////////////////////////////////////////////////////////////////////////
     // Num
-    
+
     ptr_value(num, value) <-- alloc(tag, value), if *tag == Tag::Num.elt(), let num = Ptr(Tag::Num.elt(), value.f());
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -461,7 +461,7 @@ ascent! {
 
     // unhash to acquire preimage pointers from digest.
     hash4_rel(a, b, c, d, digest) <-- unhash4(digest), let [a, b, c, d] = _self.unhash4(digest);
-    
+
     alloc(x_tag, x_value),
     alloc(y_tag, y_value) <--
         unhash4(digest),
@@ -663,6 +663,7 @@ mod test {
     }
 
     #[test]
+    #[should_panic]
     fn new_test_cons_bad() {
         test_distilled(
             "((1n . 2n) . (2n . 4n))",

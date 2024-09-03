@@ -436,7 +436,7 @@ ascent! {
     // Ingress path
 
     // Ingress 1: mark input expression for allocation.
-    alloc(expr_tag, expr.1), alloc(env_tag, env.1) <-- 
+    alloc(expr_tag, expr.1), alloc(env_tag, env.1) <--
         toplevel_input(expr, env), tag(expr_tag, expr.0), tag(env_tag, env.0);
 
     ingress(expr_ptr),
@@ -826,8 +826,8 @@ ascent! {
     ////////////////////
     // conditional
 
-    ingress(rest) <-- 
-        eval_input(expr, env), cons_rel(op, rest, expr), 
+    ingress(rest) <--
+        eval_input(expr, env), cons_rel(op, rest, expr),
         if op.is_if();
 
     // Signal: Evaluating if
@@ -1400,21 +1400,14 @@ mod test {
     #[test]
     fn test_lambda() {
         let mut zstore = lurk_zstore();
-        let args_wide_ptr = read_wideptr(&mut zstore, "(x)");
-        let body_wide_ptr = read_wideptr(&mut zstore, "(+ x 1)");
+        let args = zstore.read("(x)").unwrap();
+        let body = zstore.read("(+ x 1)").unwrap();
+        let env = zstore.intern_nil();
 
-        // TODO: fix me
-        // let expected_fun_digest = allocator().hash6(
-        //     args_wide_ptr.0,
-        //     args_wide_ptr.1,
-        //     body_wide_ptr.0,
-        //     body_wide_ptr.1,
-        //     WidePtr::empty_env().0,
-        //     WidePtr::empty_env().1,
-        // );
-        // let expected_fun = WidePtr(Tag::Fun.value(), expected_fun_digest);
+        let fun = zstore.intern_fun(args, body, env);
+        let expected_fun = WidePtr::from_zptr(&fun);
 
-        // test_aux1("(lambda (x) (+ x 1))", expected_fun, None);
+        test_aux1("(lambda (x) (+ x 1))", expected_fun, None);
 
         test_aux("((lambda (x) (+ x 1n)) 7n)", "8n", None);
 
@@ -1519,12 +1512,6 @@ mod test {
 
         let expr_ptr = read_wideptr(&mut zstore, "123n");
         let env_ptr = WidePtr::empty_env();
-
-        // TODO: fix me
-        // let expected_thunk_digest = allocator().hash4(expr_ptr.0, expr_ptr.1, env_ptr.0, env_ptr.1);
-
-        // let expected_thunk = WidePtr(Tag::Thunk.value(), expected_thunk_digest);
-        // let prog = test_aux1(thunk, expr_ptr, None);
     }
 
     #[test]

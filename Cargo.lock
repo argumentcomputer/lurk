@@ -135,7 +135,7 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 [[package]]
 name = "ascent"
 version = "0.6.0"
-source = "git+https://github.com/winston-h-zhang/ascent.git?branch=master#524612c3b64b6d79ba51179cb5e89f5a4f958dda"
+source = "git+https://github.com/argumentcomputer/ascent.git#9c245a8ccf0024699312caafa9c5bce69d3f1831"
 dependencies = [
  "ascent_base",
  "ascent_macro",
@@ -152,7 +152,7 @@ dependencies = [
 [[package]]
 name = "ascent_base"
 version = "0.6.0"
-source = "git+https://github.com/winston-h-zhang/ascent.git?branch=master#524612c3b64b6d79ba51179cb5e89f5a4f958dda"
+source = "git+https://github.com/argumentcomputer/ascent.git#9c245a8ccf0024699312caafa9c5bce69d3f1831"
 dependencies = [
  "paste",
 ]
@@ -160,7 +160,7 @@ dependencies = [
 [[package]]
 name = "ascent_macro"
 version = "0.6.0"
-source = "git+https://github.com/winston-h-zhang/ascent.git?branch=master#524612c3b64b6d79ba51179cb5e89f5a4f958dda"
+source = "git+https://github.com/argumentcomputer/ascent.git#9c245a8ccf0024699312caafa9c5bce69d3f1831"
 dependencies = [
  "ascent_base",
  "derive-syn-parse",

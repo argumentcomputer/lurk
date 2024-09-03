@@ -96,9 +96,9 @@ ascent! {
     cons_mem(car, cdr, addr) <-- initial_cons_mem(car, cdr, addr);
 
     // Register cons value.
-    ptr_value(cons, value) <-- 
-        alloc(tag, value), if *tag == Tag::Cons.elt(), 
-        cons_digest_mem(value, addr), 
+    ptr_value(cons, value) <--
+        alloc(tag, value), if *tag == Tag::Cons.elt(),
+        cons_digest_mem(value, addr),
         let cons = Ptr(Tag::Cons.elt(), *addr);
     // Register cons relation.
     cons_rel(car, cdr, cons) <-- cons(car, cdr), cons_mem(car, cdr, addr), let cons = Ptr(Tag::Cons.elt(), *addr);
@@ -131,16 +131,16 @@ ascent! {
     relation initial_fun_mem(Ptr, Ptr, Ptr, LE); // (args, body, closed-env, addr)
     fun_digest_mem(digest, addr) <-- initial_fun_digest_mem(digest, addr);
     fun_mem(args, body, closed_env, addr) <-- initial_fun_mem(args, body, closed_env, addr);
-    
+
     // Register fun value.
-    ptr_value(fun, value) <-- 
-        alloc(tag, value), if *tag == Tag::Fun.elt(), 
-        fun_digest_mem(value, addr), 
+    ptr_value(fun, value) <--
+        alloc(tag, value), if *tag == Tag::Fun.elt(),
+        fun_digest_mem(value, addr),
         let fun = Ptr(Tag::Fun.elt(), *addr);
     // Register fun relation.
-    fun_rel(args, body, closed_env, fun) <-- 
-        fun(args, body, closed_env), 
-        fun_mem(args, body, closed_env, addr), 
+    fun_rel(args, body, closed_env, fun) <--
+        fun(args, body, closed_env),
+        fun_mem(args, body, closed_env, addr),
         let fun = Ptr(Tag::Fun.elt(), *addr);
 
     // Populate ptr_value if a fun_rel has been hashed in hash6_rel.
@@ -189,14 +189,14 @@ ascent! {
     thunk_mem(body, closed_env, addr) <-- initial_thunk_mem(body, closed_env, addr);
 
     // Register thunk value.
-    ptr_value(thunk, value) <-- 
-        alloc(tag, value), if *tag == Tag::Thunk.elt(), 
-        thunk_digest_mem(value, addr), 
+    ptr_value(thunk, value) <--
+        alloc(tag, value), if *tag == Tag::Thunk.elt(),
+        thunk_digest_mem(value, addr),
         let thunk = Ptr(Tag::Thunk.elt(), *addr);
     // Register thunk relation.
-    thunk_rel(body, closed_env, thunk) <-- 
-        thunk(body, closed_env), 
-        thunk_mem(body, closed_env, addr), 
+    thunk_rel(body, closed_env, thunk) <--
+        thunk(body, closed_env),
+        thunk_mem(body, closed_env, addr),
         let thunk = Ptr(Tag::Thunk.elt(), *addr);
 
     // Populate ptr_value if a thunk_rel has been hashed in hash4_rel.
@@ -247,7 +247,7 @@ ascent! {
     // Ingress path
 
     // Ingress 1: mark input expression for allocation.
-    alloc(expr_tag, expr.1), alloc(env_tag, env.1) <-- 
+    alloc(expr_tag, expr.1), alloc(env_tag, env.1) <--
         toplevel_input(expr, env), tag(expr_tag, expr.0), tag(env_tag, env.0);
 
     ingress(expr_ptr), input_ptr(expr_ptr, env_ptr) <--
@@ -263,7 +263,7 @@ ascent! {
     // unhash to acquire preimage pointers from digest.
     hash4_rel(a, b, c, d, digest) <--
         unhash4(digest), let [a, b, c, d] = _self.allocator.unhash4(digest);
-    
+
     alloc(x_tag, x_value), alloc(y_tag, y_value) <--
         unhash4(digest),
         hash4_rel(wide_x_tag, x_value, wide_y_tag, y_value, digest),
@@ -275,7 +275,7 @@ ascent! {
 
     hash6_rel(a, b, c, d, e, f, digest) <--
         unhash6(digest), let [a, b, c, d, e, f] = _self.allocator.unhash6(digest);
-    
+
     alloc(x_tag, x_value), alloc(y_tag, y_value), alloc(z_tag, z_value) <--
         unhash6(digest),
         hash6_rel(wide_x_tag, x_value, wide_y_tag, y_value, wide_z_tag, z_value, digest),
@@ -642,8 +642,8 @@ ascent! {
     ////////////////////
     // conditional
 
-    ingress(rest) <-- 
-        eval_input(expr, env), cons_rel(op, rest, expr), 
+    ingress(rest) <--
+        eval_input(expr, env), cons_rel(op, rest, expr),
         if op.is_if();
 
     // Signal: Evaluating if
