@@ -11,15 +11,15 @@ For more detailed information, refer to the paper: [https://eprint.iacr.org/2023
 Lurk's distinguishing feature relative to most SNARK authoring languages is that Lurk is Turing complete, so arbitrary computational claims can be made and proved (subject to resource limitations, obviously). Because Lurk is a Lisp, its code is simply Lurk data, and any Lurk data can be directly evaluated as a Lurk program. Lurk constructs compound data using SNARK-friendly Poseidon hashes, so its data is naturally content-addressable.
 
 The [Lurk User Manual](https://docs.argument.xyz/) covers the information necessary to get started.
-And the [demo directory](demo/) contains some simple examples for those who want to see how Lurk programs look like.
+The [demo directory](demo/) contains some simple examples for those who want to see what Lurk programs look like.
 
 ## Status
 
-Lurk is currently at version 0.5 and is still going through several improvements in order to deliver the best-in-class experience as a fully fledged Turing-complete ZK programming language.
+Lurk is currently at version 0.5 and is still going through several improvements in order to deliver the best-in-class experience as a fully fledged Turing-complete zk programming language.
 
 ## Performance
 
-Lurk 0.5 offers a big performance jump from [Lurk Beta](https://argument.xyz/blog/lurk-beta/).
+Lurk 0.5 offers a big performance jump from [Lurk Beta](https://github.com/argumentcomputer/lurk-beta).
 Make sure to check out our [performance blog post](https://argument.xyz/blog/perf-2024/) to see how it compares to other contemporary provers.
 
 ## Disclaimer
