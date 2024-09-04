@@ -326,14 +326,17 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         format: "!(hide <secret_expr> <payload_expr>)",
         info: &[
             "The secret is the reduction of <secret_expr>, which must be a",
-            "commitment, and the payload is the reduction of <payload_expr>.",
+            "bignum, and the payload is the reduction of <payload_expr>.",
         ],
-        example: &["!(hide (commit 123) 42)"],
+        example: &[
+            "!(hide (bignum (commit 123)) 42)",
+            "!(hide #0x3719f5d02845123a80da4f5077c803ba0ce1964e08289a9d020603c1f3c450 42)",
+        ],
         run: |repl, args, _path| {
             let (&secret_expr, &payload_expr) = repl.peek2(args)?;
             let (secret, _) = repl.reduce_aux(&secret_expr)?;
-            if secret.tag != Tag::Comm {
-                bail!("Secret must reduce to a commitment");
+            if secret.tag != Tag::BigNum {
+                bail!("Secret must reduce to a bignum");
             }
             Self::hide(secret, &payload_expr, repl)
         },
@@ -345,12 +348,13 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         format: "!(commit <payload_expr>)",
         info: &[
             "The secret is an opaque commitment whose digest amounts to zeros",
-            "and the payload is the reduction of <payload_expr>.",
+            "and the payload is the reduction of <payload_expr>. Equivalent to",
+            "!(hide #0x0 <payload_expr>).",
         ],
         example: &["!(commit 42)"],
         run: |repl, args, _path| {
             let payload_expr = *repl.peek1(args)?;
-            let secret = ZPtr::null(Tag::Comm);
+            let secret = ZPtr::null(Tag::BigNum);
             Self::hide(secret, &payload_expr, repl)
         },
     };
@@ -453,13 +457,13 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             bail!("Chain result must be a pair");
         }
         let (_, next_callable) = repl.zstore.fetch_tuple2(cons);
-        if next_callable.tag == Tag::Comm {
+        if matches!(next_callable.tag, Tag::Comm | Tag::BigNum) {
             let inv_hashes3 = repl.queries.get_inv_queries("hash_24_8", &repl.toplevel);
             let preimg = inv_hashes3
                 .get(next_callable.digest.as_slice())
                 .expect("Preimage must be known");
             let (secret, payload) = preimg.split_at(DIGEST_SIZE);
-            let secret = ZPtr::from_flat_digest(Tag::Comm, secret);
+            let secret = ZPtr::from_flat_digest(Tag::BigNum, secret);
             let payload = ZPtr::from_flat_data(payload);
             Self::persist_comm_data(secret, payload, repl)?;
         }

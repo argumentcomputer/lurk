@@ -25,7 +25,7 @@ impl<F: std::hash::Hash + Eq + Default + Copy> CommData<F> {
         payload: ZPtr<F>,
         zstore: &ZStore<F, H>,
     ) -> Self {
-        assert_eq!(secret.tag, Tag::Comm);
+        assert_eq!(secret.tag, Tag::BigNum);
         let mut zdag = ZDag::default();
         zdag.populate_with_many([&secret, &payload], zstore);
         Self {
