@@ -457,7 +457,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             bail!("Chain result must be a pair");
         }
         let (_, next_callable) = repl.zstore.fetch_tuple2(cons);
-        if next_callable.tag == Tag::Comm || next_callable.tag == Tag::BigNum {
+        if matches!(next_callable.tag, Tag::Comm | Tag::BigNum) {
             let inv_hashes3 = repl.queries.get_inv_queries("hash_24_8", &repl.toplevel);
             let preimg = inv_hashes3
                 .get(next_callable.digest.as_slice())
