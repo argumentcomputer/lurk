@@ -730,7 +730,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         run: |repl, args, _path| {
             if args.tag != Tag::Nil {
                 let arg = repl.peek1(args)?;
-                if arg.tag != Tag::Sym {
+                if !matches!(arg.tag, Tag::Sym | Tag::Builtin) {
                     bail!("Argument must be a symbol");
                 }
                 let sym_path = repl.zstore.fetch_symbol_path(arg);
