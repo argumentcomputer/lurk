@@ -1,15 +1,19 @@
+;; test basic asserts
 !(assert (= 1 1))
 !(assert-eq (+ 2 1) (+ 1 2))
 !(assert-error (/ 1 0))
 !(assert-emitted '(1 2) (begin (emit 1) (emit 2)))
 
+;; test nested loading
 !(load "loaded.lurk")
 !(assert-eq loaded-nested :loaded-nested)
 !(assert-eq loaded :loaded)
 
+;; test defrec
 !(defrec sum (lambda (l) (if (eq l nil) 0 (+ (car l) (sum (cdr l))))))
 !(assert-eq (sum '(1 2 3)) 6)
 
+;; test env manipulation
 !(clear)
 !(assert-error sum)
 !(set-env (eval '(let ((a 1) (b 2)) (current-env))))
@@ -18,13 +22,23 @@
 !(assert-error a)
 !(assert-eq b 2)
 
+;; test help meta command
+!(help)
+!(help hide)
+!(help open)
+!(help commit)
+
+;; test hide/commit
 !(hide (bignum (commit 123)) 42)
 !(commit 42)
 
+;; test calling functional commitments
 !(call (lambda (x) x) 0)
 !(commit (eval '(lambda (x) x)))
 !(call #0x3f2e7102a9f8a303255b90724f24f4eb05b61e99723ca838cf30671676c86a 0)
+!(call (comm #0x3f2e7102a9f8a303255b90724f24f4eb05b61e99723ca838cf30671676c86a) 0)
 
+;; test chain and transition
 !(commit (eval '(letrec ((add (lambda (counter x)
                        (let ((counter (+ counter x)))
                          (cons counter (commit (add counter)))))))
@@ -35,6 +49,7 @@
 !(transition state1 state 1)
 !(assert-eq (car state1) 1)
 
+;; test packages
 !(defpackage abc)
 !(in-package abc)
 !(def two (.lurk.+ 1 1))
@@ -43,6 +58,7 @@
 !(import .lurk.user.abc.two)
 !(assert-eq two 2)
 
+;; test dump-expr/load-expr
 !(dump-expr (+ 1 1) "repl-test-two")
 !(load-expr two "repl-test-two")
 !(assert-eq two 2)
