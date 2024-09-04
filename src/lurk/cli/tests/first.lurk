@@ -18,7 +18,7 @@
 !(assert-error a)
 !(assert-eq b 2)
 
-!(hide (commit 123) 42)
+!(hide (bignum (commit 123)) 42)
 !(commit 42)
 
 !(call (lambda (x) x) 0)
