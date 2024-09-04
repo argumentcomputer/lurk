@@ -182,6 +182,7 @@ impl<F: Field + Ord> FuncE<F> {
             body,
             input_size: self.input_params.total_size(),
             output_size: self.output_size,
+            rc: self.rc,
         }
     }
 }

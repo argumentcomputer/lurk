@@ -71,9 +71,73 @@ impl<'a, T> ColumnMutSlice<'a, T> {
 
 impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
     /// Per-row parallel trace generation
+    pub fn generate_trace_rc(&self, shard: &Shard<'_, F>, rc_index: usize) -> RowMajorMatrix<F> {
+        let func_queries = &shard.queries().func_queries()[self.func.index];
+        let range = shard.get_func_range_rc(self.func, rc_index);
+        let offset = range.start;
+        let width = self.width();
+        let non_dummy_height = range.len();
+        let height = non_dummy_height.next_power_of_two();
+        let mut rows = vec![F::zero(); height * width];
+        // initializing nonces
+        rows.chunks_mut(width)
+            .enumerate()
+            .for_each(|(i, row)| row[0] = F::from_canonical_usize(i + offset));
+        let non_dummies = &mut rows[0..non_dummy_height * width];
+        non_dummies
+            .par_chunks_mut(width)
+            .enumerate()
+            .for_each(|(i, row)| {
+                let (args, result) = func_queries.get_index(i + offset).unwrap();
+                let index = &mut ColumnIndex::default();
+                let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
+                let requires = result.requires.iter();
+                let mut depth_requires = result.depth_requires.iter();
+                let queries = shard.queries();
+                let query_map = &queries.func_queries()[self.func.index];
+                let lookup = query_map
+                    .get(args)
+                    .expect("Cannot find query result")
+                    .provide;
+                let provide = lookup.into_provide();
+                result
+                    .output
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .for_each(|&o| slice.push_output(index, o));
+                slice.push_aux(index, provide.last_nonce);
+                slice.push_aux(index, provide.last_count);
+                // provenance and range check
+                if self.func.partial {
+                    let num_requires = (DEPTH_W / 2) + (DEPTH_W % 2);
+                    let depth: [u8; DEPTH_W] = result.depth.to_le_bytes();
+                    for b in depth {
+                        slice.push_aux(index, F::from_canonical_u8(b));
+                    }
+                    for _ in 0..num_requires {
+                        let lookup = depth_requires.next().expect("Not enough require hints");
+                        slice.push_require(index, lookup.into_require());
+                    }
+                }
+                self.func.populate_row(
+                    args,
+                    index,
+                    slice,
+                    queries,
+                    requires,
+                    self.toplevel,
+                    result.depth,
+                    depth_requires,
+                );
+            });
+        RowMajorMatrix::new(rows, width)
+    }
+
+    /// Per-row parallel trace generation
     pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
         let func_queries = &shard.queries().func_queries()[self.func.index];
-        let range = shard.get_func_range(self.func.index);
+        let range = shard.get_func_range(self.func);
         let width = self.width();
         let non_dummy_height = range.len();
         let height = non_dummy_height.next_power_of_two();

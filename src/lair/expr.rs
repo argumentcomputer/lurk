@@ -133,9 +133,10 @@ pub struct CasesE<K, F> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FuncE<F> {
     pub name: Name,
-    pub invertible: bool,
     pub partial: bool,
+    pub invertible: bool,
     pub input_params: VarList,
     pub output_size: usize,
     pub body: BlockE<F>,
+    pub rc: usize,
 }

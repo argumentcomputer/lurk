@@ -1,6 +1,12 @@
 #[macro_export]
 macro_rules! func {
-    (fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
+    (#[RC = $rc:expr] $($x:tt)*) => { $crate::func_body!($rc, $($x)*) };
+    ($($x:tt)*) => { $crate::func_body!(1, $($x)*) };
+}
+
+#[macro_export]
+macro_rules! func_body {
+    ($rc:expr, fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
         $(let $in = $crate::var!($in $(, $in_size)?);)*
         $crate::lair::expr::FuncE {
             name: $crate::lair::Name(stringify!($name)),
@@ -9,9 +15,10 @@ macro_rules! func {
             input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
             output_size: $size,
             body: $crate::block_init!($lair),
+            rc: $rc,
         }
     }};
-    (partial fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
+    ($rc:expr, partial fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
         $(let $in = $crate::var!($in $(, $in_size)?);)*
         $crate::lair::expr::FuncE {
             name: $crate::lair::Name(stringify!($name)),
@@ -20,9 +27,10 @@ macro_rules! func {
             input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
             output_size: $size,
             body: $crate::block_init!($lair),
+            rc: $rc,
         }
     }};
-    (invertible fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
+    ($rc:expr, invertible fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
         $(let $in = $crate::var!($in $(, $in_size)?);)*
         $crate::lair::expr::FuncE {
             name: $crate::lair::Name(stringify!($name)),
@@ -31,9 +39,10 @@ macro_rules! func {
             input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
             output_size: $size,
             body: $crate::block_init!($lair),
+            rc: $rc,
         }
     }};
-    (invertible partial fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
+    ($rc:expr, invertible partial fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
         $(let $in = $crate::var!($in $(, $in_size)?);)*
         $crate::lair::expr::FuncE {
             name: $crate::lair::Name(stringify!($name)),
@@ -42,6 +51,7 @@ macro_rules! func {
             input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
             output_size: $size,
             body: $crate::block_init!($lair),
+            rc: $rc,
         }
     }};
 }
