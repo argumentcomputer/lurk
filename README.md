@@ -1,5 +1,9 @@
 # Lurk
 
+<p align="center">
+  <img src="./assets/lurk-logo.png" alt="Logo" width="200">
+</p>
+
 ## Overview
 
 Lurk is a statically scoped dialect of Lisp, influenced by Scheme and Common Lisp. A reference implementation focused on describing and developing the core language can be found in the [`lurk-lisp`](https://github.com/argumentcomputer/lurk-lisp) repo.
