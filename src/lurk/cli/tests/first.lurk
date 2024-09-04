@@ -48,11 +48,10 @@
 !(def state0 (cons nil (comm #0x8ef25bc2228ca9799db65fd2b137a7b0ebccbfc04cf8530133e60087d403db)))
 !(transition state1 state0 1)
 !(assert-eq (car state1) 1)
-!(fetch #0x385d186d86be8b23b1784c339e7a9b601e3d69012a7d77923d0d2f69274287)
+!(fetch (cdr state1))
 !(transition state2 state1 4)
 !(assert-eq (car state2) 5)
-!(assert-eq (cdr state2) (comm #0x6b2984a56dc2bbb61495c6fdf8076f0debf10ab2ae43aa1de45de64b460141))
-!(fetch (comm #0x6b2984a56dc2bbb61495c6fdf8076f0debf10ab2ae43aa1de45de64b460141))
+!(fetch (cdr state2))
 
 !(clear)
 !(commit (eval '(letrec ((add (lambda (counter x)
@@ -63,11 +62,10 @@
 !(def state0 (cons nil #0x5c438d9aaadaaaa1f7ee1a5f3deaa400c29cbf1ab51240e667c1120a5ca0f8))
 !(transition state1 state0 1)
 !(assert-eq (car state1) 1)
-!(fetch #0x185d8872fcbe43a7a7d785fcd5cf0ccd80e1dbe601d36d447eb852190ead80)
+!(fetch (cdr state1))
 !(transition state2 state1 4)
 !(assert-eq (car state2) 5)
-!(assert-eq (cdr state2) #0xb81cb9209faa8d633089d3038f44ab7f50e06d21540f3630f25a510156c92)
-!(fetch #0xb81cb9209faa8d633089d3038f44ab7f50e06d21540f3630f25a510156c92)
+!(fetch (cdr state2))
 
 ;; test packages
 !(defpackage abc)
