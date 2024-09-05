@@ -4,207 +4,26 @@
 
 use num_traits::FromPrimitive;
 use p3_baby_bear::BabyBear;
-use rustc_hash::FxHashMap;
 
-use crate::loam::allocation::Allocator;
 use crate::loam::lurk_sym_index;
-use crate::loam::memory::{
-    generate_lisp_program, initial_builtin_addr, initial_builtin_relation, initial_nil_addr,
-    initial_nil_relation, initial_tag_relation, Memory, VPtr, VirtualMemory,
-};
+use crate::loam::memory::{initial_tag_relation, Memory};
 use crate::loam::{LEWrap, LoamProgram, Num, Ptr, PtrEq, Wide, WidePtr, LE};
 use crate::lurk::chipset::LurkChip;
 use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
 use crate::lurk::tag::Tag;
-use crate::lurk::zstore::{builtin_vec, lurk_zstore, ZPtr, ZStore};
+use crate::lurk::zstore::{builtin_vec, lurk_zstore, ZPtr};
 
 use p3_field::{AbstractField, Field, PrimeField32};
 
-use ascent::{ascent, Dual, Lattice};
+use ascent::{ascent, Lattice};
 
-impl Ptr {
-    pub fn is_built_in_named(&self, name: &str) -> bool {
-        if !self.is_builtin() {
-            return false;
-        }
+use super::allocation::Allocator;
 
-        self.1.as_canonical_u32() as usize == lurk_sym_index(name).unwrap()
-    }
-
-    pub fn is_t(&self) -> bool {
-        self.is_built_in_named("t")
-    }
-
-    pub fn is_binding(&self) -> bool {
-        self.is_built_in_named("let")
-    }
-
-    pub fn is_recursive_binding(&self) -> bool {
-        self.is_built_in_named("letrec")
-    }
-
-    pub fn is_lambda(&self) -> bool {
-        self.is_built_in_named("lambda")
-    }
-
-    pub fn is_if(&self) -> bool {
-        self.is_built_in_named("if")
-    }
-
-    pub fn is_left_foldable(&self) -> bool {
-        self.is_built_in_named("+") || self.is_built_in_named("*")
-    }
-
-    pub fn is_right_foldable(&self) -> bool {
-        self.is_built_in_named("/") || self.is_built_in_named("-")
-    }
-
-    pub fn is_eq_op(&self) -> bool {
-        self.is_built_in_named("eq")
-    }
-
-    pub fn is_cons_op(&self) -> bool {
-        self.is_built_in_named("cons")
-    }
-
-    pub fn is_car(&self) -> bool {
-        self.is_built_in_named("car")
-    }
-
-    pub fn is_cdr(&self) -> bool {
-        self.is_built_in_named("cdr")
-    }
-
-    pub fn is_car_cdr(&self) -> bool {
-        self.is_car() || self.is_cdr()
-    }
-
-    pub fn is_atom_op(&self) -> bool {
-        self.is_built_in_named("atom")
-    }
-
-    pub fn is_atom(&self) -> bool {
-        let tag = Tag::from_field(&self.0);
-        tag != Tag::Cons
-    }
-
-    pub fn is_quote(&self) -> bool {
-        self.is_built_in_named("quote")
-    }
-
-    pub fn is_built_in(&self) -> bool {
-        if !self.is_builtin() {
-            return false;
-        }
-
-        self.1 < initial_builtin_addr()
-    }
-
-    pub fn is_non_built_in(&self) -> bool {
-        self.is_sym()
-    }
-
-    pub fn is_relational(&self) -> bool {
-        self.is_built_in_named("=")
-            || self.is_built_in_named("<")
-            || self.is_built_in_named(">")
-            || self.is_built_in_named("<=")
-            || self.is_built_in_named(">=")
-    }
-
-    pub fn neutral_element(&self) -> Num {
-        if self.is_built_in_named("+") || self.is_built_in_named("-") {
-            return Num(LE::zero());
-        }
-        if self.is_built_in_named("*") || self.is_built_in_named("/") {
-            return Num(LE::one());
-        }
-        unreachable!()
-    }
-
-    pub fn apply_op(&self, a: Num, b: Num) -> Num {
-        // TODO: more efficient matching
-        if self.is_built_in_named("+") {
-            return Num(a.0 + b.0);
-        }
-        if self.is_built_in_named("-") {
-            return Num(a.0 - b.0);
-        }
-        if self.is_built_in_named("*") {
-            return Num(a.0 * b.0);
-        }
-        if self.is_built_in_named("/") {
-            return Num(a.0 / b.0);
-        }
-
-        unreachable!()
-    }
-
-    pub fn apply_relop(&self, a: Num, b: Num) -> Self {
-        // TODO: more efficient matching
-        if self.is_built_in_named("=") {
-            return Self::lurk_bool(a.0 == b.0);
-        }
-        if self.is_built_in_named("<") {
-            return Self::lurk_bool(a.0 < b.0);
-        }
-        if self.is_built_in_named(">") {
-            return Self::lurk_bool(a.0 > b.0);
-        }
-        if self.is_built_in_named("<=") {
-            return Self::lurk_bool(a.0 <= b.0);
-        }
-        if self.is_built_in_named(">=") {
-            return Self::lurk_bool(a.0 >= b.0);
-        }
-
-        unreachable!()
-    }
-
-    pub fn lurk_bool(b: bool) -> Self {
-        if b {
-            Self::t()
-        } else {
-            Self::nil()
-        }
-    }
-
-    pub fn built_in_name(&self) -> &str {
-        assert!(self.is_built_in(), "not built_in");
-        let mut idx = self.1.as_canonical_u32() as usize;
-        if idx >= 18 {
-            idx += 1;
-        }
-        LURK_PACKAGE_SYMBOLS_NAMES[idx]
-    }
-}
-
-impl Tag {
-    pub fn elt(&self) -> LE {
-        self.to_field::<LE>()
-    }
-
-    pub fn value(&self) -> Wide {
-        Wide::widen(self.elt())
-    }
-
-    pub fn wide_relation() -> Vec<(LE, Wide)> {
-        (0..Self::count())
-            .map(|i| {
-                let tag = Tag::from_u32(i.try_into().unwrap()).unwrap();
-                (tag.elt(), tag.value())
-            })
-            .collect()
-    }
-}
-
-// Because it's hard to share code between ascent programs, this is a copy of `AllocationProgam`, replacing the `map_double` function
-// with evaluation
 #[cfg(feature = "loam")]
 ascent! {
     // #![trace]
 
-    pub struct EvaluationProgram {
+    pub struct DistilledEvaluationProgram {
         pub allocator: Allocator,
     }
 
@@ -267,30 +86,31 @@ ascent! {
     // Final: The canonical cons Ptr relation.
     relation cons_rel(Ptr, Ptr, Ptr); // (car, cdr, cons)
     // Final: Memory to support conses allocated by digest or contents.
-    lattice cons_digest_mem(Wide, Dual<LEWrap>); // (value, addr)
+    relation cons_digest_mem(Wide, LE); // (value, addr)
     // Final
-    lattice cons_mem(Ptr, Ptr, Dual<LEWrap>); // (car, cdr, addr)
+    relation cons_mem(Ptr, Ptr, LE); // (car, cdr, addr)
 
-    // Populating alloc(...) triggers allocation in cons_digest_mem.
-    cons_digest_mem(value, Dual(addr)) <--
-        alloc(tag, value), if *tag == Tag::Cons.elt(),
-        let addr = LEWrap(_self.alloc_addr(Tag::Cons.elt(), LE::zero()));
-    // Populating cons(...) triggers allocation in cons mem.
-    cons_mem(car, cdr, Dual(addr)) <-- cons(car, cdr), let addr = LEWrap(_self.alloc_addr(Tag::Cons.elt(), LE::zero()));
+    relation initial_cons_digest_mem(Wide, LE); // (value, addr)
+    relation initial_cons_mem(Ptr, Ptr, LE); // (car, cdr, addr)
+    cons_digest_mem(digest, addr) <-- initial_cons_digest_mem(digest, addr);
+    cons_mem(car, cdr, addr) <-- initial_cons_mem(car, cdr, addr);
 
     // Register cons value.
-    ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0.0);
+    ptr_value(cons, value) <--
+        alloc(tag, value), if *tag == Tag::Cons.elt(),
+        cons_digest_mem(value, addr),
+        let cons = Ptr(Tag::Cons.elt(), *addr);
     // Register cons relation.
-    cons_rel(car, cdr, cons) <-- cons_mem(car, cdr, addr), let cons = Ptr(Tag::Cons.elt(), addr.0.0);
+    cons_rel(car, cdr, cons) <-- cons(car, cdr), cons_mem(car, cdr, addr), let cons = Ptr(Tag::Cons.elt(), *addr);
 
-    // Populate cons_digest_mem if a cons in cons_mem has been hashed in hash4_rel.
-    cons_digest_mem(digest, addr) <--
-        cons_mem(car, cdr, addr),
+    // Populate ptr_value if a cons_rel has been hashed in hash4_rel.
+    ptr_value(cons, digest) <--
+        cons_rel(car, cdr, cons),
         ptr_value(car, car_value), ptr_value(cdr, cdr_value),
         hash4_rel(car.wide_tag(), car_value, cdr.wide_tag(), cdr_value, digest);
     // Other way around
-    cons_mem(car, cdr, addr) <--
-        cons_digest_mem(digest, addr),
+    cons_rel(car, cdr, cons) <--
+        ptr_value(cons, digest), if cons.tag() == Tag::Cons,
         hash4_rel(car_tag, car_value, cdr_tag, cdr_value, digest),
         ptr_value(car, car_value), ptr_value(cdr, cdr_value),
         if car.wide_tag() == *car_tag && cdr.wide_tag() == *cdr_tag;
@@ -303,25 +123,29 @@ ascent! {
     // Final
     relation fun_rel(Ptr, Ptr, Ptr, Ptr); // (args, body, closed-env, fun)
     // Final
-    lattice fun_digest_mem(Wide, Dual<LEWrap>); // (value, addr)
+    relation fun_digest_mem(Wide, LE); // (value, addr)
     // Final
-    lattice fun_mem(Ptr, Ptr, Ptr, Dual<LEWrap>); // (args, body, closed-env, addr)
+    relation fun_mem(Ptr, Ptr, Ptr, LE); // (args, body, closed-env, addr)
 
-    // Populating alloc(...) triggers allocation in fun_digest_mem.
-    fun_digest_mem(value, Dual(addr)) <--
-        alloc(tag, value), if *tag == Tag::Fun.elt(),
-        let addr = LEWrap(_self.alloc_addr(Tag::Fun.elt(), LE::zero()));
-    // Populating cons(...) triggers allocation in cons mem.
-    fun_mem(args, body, closed_env, Dual(addr)) <-- fun(args, body, closed_env), let addr = LEWrap(_self.alloc_addr(Tag::Fun.elt(), LE::zero()));
+    relation initial_fun_digest_mem(Wide, LE); // (value, addr)
+    relation initial_fun_mem(Ptr, Ptr, Ptr, LE); // (args, body, closed-env, addr)
+    fun_digest_mem(digest, addr) <-- initial_fun_digest_mem(digest, addr);
+    fun_mem(args, body, closed_env, addr) <-- initial_fun_mem(args, body, closed_env, addr);
 
     // Register fun value.
-    ptr_value(ptr, value) <-- fun_digest_mem(value, addr), let ptr = Ptr(Tag::Fun.elt(), addr.0.0);
+    ptr_value(fun, value) <--
+        alloc(tag, value), if *tag == Tag::Fun.elt(),
+        fun_digest_mem(value, addr),
+        let fun = Ptr(Tag::Fun.elt(), *addr);
     // Register fun relation.
-    fun_rel(args, body, closed_env, fun) <-- fun_mem(args, body, closed_env, addr), let fun = Ptr(Tag::Fun.elt(), addr.0.0);
-
-    // Populate fun_digest_mem if a fun in fun_mem has been hashed in hash6_rel.
-    fun_digest_mem(digest, addr) <--
+    fun_rel(args, body, closed_env, fun) <--
+        fun(args, body, closed_env),
         fun_mem(args, body, closed_env, addr),
+        let fun = Ptr(Tag::Fun.elt(), *addr);
+
+    // Populate ptr_value if a fun_rel has been hashed in hash6_rel.
+    ptr_value(fun, digest) <--
+        fun_rel(args, body, closed_env, fun),
         ptr_value(args, args_value), ptr_value(body, body_value), ptr_value(closed_env, closed_env_value),
         hash6_rel(
             args.wide_tag(),
@@ -333,8 +157,8 @@ ascent! {
             digest,
         );
     // Other way around
-    fun_mem(args, body, closed_env, addr) <--
-        fun_digest_mem(digest, addr),
+    fun_rel(args, body, closed_env, fun) <--
+        ptr_value(fun, digest), if fun.tag() == Tag::Fun,
         hash6_rel(
             args_tag,
             args_value,
@@ -355,30 +179,34 @@ ascent! {
     // Final
     relation thunk_rel(Ptr, Ptr, Ptr); // (body, closed-env, thunk)
     // Final
-    lattice thunk_digest_mem(Wide, Dual<LEWrap>); // (value, addr)
+    relation thunk_digest_mem(Wide, LE); // (value, addr)
     // Final
-    lattice thunk_mem(Ptr, Ptr, Dual<LEWrap>); // (body, closed-env, addr)
+    relation thunk_mem(Ptr, Ptr, LE); // (body, closed-env, addr)
 
-    // Populating alloc(...) triggers allocation in thunk_digest_mem.
-    thunk_digest_mem(value, Dual(addr)) <--
-        alloc(tag, value), if *tag == Tag::Thunk.elt(),
-        let addr = LEWrap(_self.alloc_addr(Tag::Thunk.elt(), LE::zero()));
-    // Populating cons(...) triggers allocation in cons mem.
-    thunk_mem(body, closed_env, Dual(addr)) <-- thunk(body, closed_env), let addr = LEWrap(_self.alloc_addr(Tag::Thunk.elt(), LE::zero()));
+    relation initial_thunk_digest_mem(Wide, LE); // (value, addr)
+    relation initial_thunk_mem(Ptr, Ptr, LE); // (body, closed-env, addr)
+    thunk_digest_mem(digest, addr) <-- initial_thunk_digest_mem(digest, addr);
+    thunk_mem(body, closed_env, addr) <-- initial_thunk_mem(body, closed_env, addr);
 
     // Register thunk value.
-    ptr_value(ptr, value) <-- thunk_digest_mem(value, addr), let ptr = Ptr(Tag::Thunk.elt(), addr.0.0);
+    ptr_value(thunk, value) <--
+        alloc(tag, value), if *tag == Tag::Thunk.elt(),
+        thunk_digest_mem(value, addr),
+        let thunk = Ptr(Tag::Thunk.elt(), *addr);
     // Register thunk relation.
-    thunk_rel(body, closed_env, cons) <-- thunk_mem(body, closed_env, addr), let cons = Ptr(Tag::Thunk.elt(), addr.0.0);
-
-    // Populate thunk_digest_mem if a thunk in thunk_mem has been hashed in hash4_rel.
-    thunk_digest_mem(digest, addr) <--
+    thunk_rel(body, closed_env, thunk) <--
+        thunk(body, closed_env),
         thunk_mem(body, closed_env, addr),
+        let thunk = Ptr(Tag::Thunk.elt(), *addr);
+
+    // Populate ptr_value if a thunk_rel has been hashed in hash4_rel.
+    ptr_value(thunk, digest) <--
+        thunk_rel(body, closed_env, thunk),
         ptr_value(body, body_value), ptr_value(closed_env, closed_env_value),
         hash4_rel(body.wide_tag(), body_value, closed_env.wide_tag(), closed_env_value, digest);
     // Other way around
-    thunk_mem(body, closed_env, addr) <--
-        thunk_digest_mem(digest, addr),
+    thunk_rel(body, closed_env, thunk) <--
+        ptr_value(thunk, digest), if thunk.tag() == Tag::Thunk,
         hash4_rel(body_tag, body_value, closed_env_tag, closed_env_value, digest),
         ptr_value(body, body_value), ptr_value(closed_env, closed_env_value),
         if body.wide_tag() == *body_tag && closed_env.wide_tag() == *closed_env_tag;
@@ -387,45 +215,28 @@ ascent! {
     // Sym
 
     // Final
-    lattice sym_digest_mem(Wide, Dual<LEWrap>); // (digest, addr)
+    relation sym_digest_mem(Wide, LE); // (digest, addr)
 
-    // Populating alloc(...) triggers allocation in sym_digest_mem.
-    sym_digest_mem(value, Dual(addr)) <--
-        alloc(tag, value), if *tag == Tag::Sym.elt(),
-        let addr = LEWrap(_self.alloc_addr(Tag::Sym.elt(), LE::zero()));
-
-    // Convert addr to ptr and register ptr relations.
-    ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), addr.0.0);
+    ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), *addr);
     // todo: sym_value
 
     ////////////////////////////////////////////////////////////////////////////////
     // Builtin
 
     // Final
-    lattice builtin_digest_mem(Wide, Dual<LEWrap>) = initial_builtin_relation(); // (digest, addr)
+    relation builtin_digest_mem(Wide, LE); // (digest, addr)
 
-    // Populating alloc(...) triggers allocation in sym_digest_mem.
-    builtin_digest_mem(value, Dual(addr)) <--
-        alloc(tag, value), if *tag == Tag::Builtin.elt(),
-        let addr = LEWrap(_self.alloc_addr(Tag::Builtin.elt(), initial_builtin_addr()));
-
-    // Convert addr to ptr and register ptr relations.
-    ptr_value(ptr, value) <-- builtin_digest_mem(value, addr), let ptr = Ptr(Tag::Builtin.elt(), addr.0.0);
+    ptr_value(ptr, value) <-- builtin_digest_mem(value, addr), let ptr = Ptr(Tag::Builtin.elt(), *addr);
     // todo: builtin_value
-
 
     ////////////////////////////////////////////////////////////////////////////////
     // Nil
 
     // Final
     // Can this be combined with sym_digest_mem? Can it be eliminated? (probably eventually).
-    lattice nil_digest_mem(Wide, Dual<LEWrap>) = initial_nil_relation(); // (digest, addr)
+    relation nil_digest_mem(Wide, LE); // (digest, addr)
 
-    nil_digest_mem(value, Dual(addr)) <--
-        alloc(tag, value), if *tag == Tag::Nil.elt(),
-        let addr = LEWrap(_self.alloc_addr(Tag::Nil.elt(), initial_nil_addr()));
-
-    ptr_value(ptr, value) <-- nil_digest_mem(value, addr), let ptr = Ptr(Tag::Nil.elt(), addr.0.0);
+    ptr_value(ptr, value) <-- nil_digest_mem(value, addr), let ptr = Ptr(Tag::Nil.elt(), *addr);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Num
@@ -439,8 +250,7 @@ ascent! {
     alloc(expr_tag, expr.1), alloc(env_tag, env.1) <--
         toplevel_input(expr, env), tag(expr_tag, expr.0), tag(env_tag, env.0);
 
-    ingress(expr_ptr),
-    input_ptr(expr_ptr, env_ptr) <--
+    ingress(expr_ptr), input_ptr(expr_ptr, env_ptr) <--
         toplevel_input(expr, env),
         ptr_value(expr_ptr, expr.1),
         ptr_value(env_ptr, env.1),
@@ -452,20 +262,26 @@ ascent! {
 
     // unhash to acquire preimage pointers from digest.
     hash4_rel(a, b, c, d, digest) <--
-        unhash4(digest), let [a, b, c, d] = _self.unhash4(digest);
+        unhash4(digest), let [a, b, c, d] = _self.allocator.unhash4(digest);
+
+    alloc(x_tag, x_value), alloc(y_tag, y_value) <--
+        unhash4(digest),
+        hash4_rel(wide_x_tag, x_value, wide_y_tag, y_value, digest),
+        tag(x_tag, wide_x_tag),
+        tag(y_tag, wide_y_tag);
 
     // mark ingress funs for unhashing
     unhash6(digest) <-- ingress(ptr), if ptr.is_fun(), ptr_value(ptr, digest);
 
     hash6_rel(a, b, c, d, e, f, digest) <--
-        unhash6(digest), let [a, b, c, d, e, f] = _self.unhash6(digest);
+        unhash6(digest), let [a, b, c, d, e, f] = _self.allocator.unhash6(digest);
 
-    alloc(car_tag, car_value),
-    alloc(cdr_tag, cdr_value) <--
-        unhash4(digest),
-        hash4_rel(wide_car_tag, car_value, wide_cdr_tag, cdr_value, digest),
-        tag(car_tag, wide_car_tag),
-        tag(cdr_tag, wide_cdr_tag);
+    alloc(x_tag, x_value), alloc(y_tag, y_value), alloc(z_tag, z_value) <--
+        unhash6(digest),
+        hash6_rel(wide_x_tag, x_value, wide_y_tag, y_value, wide_z_tag, z_value, digest),
+        tag(x_tag, wide_x_tag),
+        tag(y_tag, wide_y_tag),
+        tag(z_tag, wide_z_tag);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Egress path
@@ -501,7 +317,7 @@ ascent! {
         ptr_value(body, body_value), ptr_value(closed_env, closed_env_value);
 
     hash4_rel(a, b, c, d, digest) <--
-        hash4(a, b, c, d), let digest = _self.hash4(*a, *b, *c, *d);
+        hash4(a, b, c, d), let digest = _self.allocator.hash4(*a, *b, *c, *d);
 
     // Fun
     hash6(args.wide_tag(), args_value, body.wide_tag(), body_value, closed_env.wide_tag(), closed_env_value) <--
@@ -512,7 +328,7 @@ ascent! {
         ptr_value(closed_env, closed_env_value);
 
     hash6_rel(a, b, c, d, e, f, digest) <--
-        hash6(a, b, c, d, e, f), let digest = _self.hash6(*a, *b, *c, *d, *e, *f);
+        hash6(a, b, c, d, e, f), let digest = _self.allocator.hash6(*a, *b, *c, *d, *e, *f);
 
     ////////////////////////////////////////////////////////////////////////////////
     // eval
@@ -1147,6 +963,9 @@ ascent! {
         cons_rel(car, cdr, tail),
         eval(car, env, evaled_car), if evaled_car.is_num();
 
+    // output
+    output_ptr(output) <-- input_ptr(input, env), eval(input, env, output);
+
     ////////////////////
     // bool_fold
     // TODO: error if args are not Num.
@@ -1188,46 +1007,44 @@ ascent! {
         if x.is_t();
 
     ////////////////////////////////////////////////////////////////////////////////
-    // output
-
-    output_ptr(output) <-- input_ptr(input, env), eval(input, env, output);
-
-    ////////////////////////////////////////////////////////////////////////////////
 
 }
 
 #[cfg(feature = "loam")]
-impl LoamProgram for EvaluationProgram {
-    fn allocator(&self) -> &Allocator {
-        &self.allocator
-    }
-    fn allocator_mut(&mut self) -> &mut Allocator {
-        &mut self.allocator
-    }
+impl DistilledEvaluationProgram {
+    pub fn import_memory(&mut self, memory: Memory) {
+        self.initial_cons_digest_mem = memory.cons_digest_mem;
+        self.initial_cons_mem = memory.cons_mem;
+        self.initial_fun_digest_mem = memory.fun_digest_mem;
+        self.initial_fun_mem = memory.fun_mem;
+        self.initial_thunk_digest_mem = memory.thunk_digest_mem;
+        self.initial_thunk_mem = memory.thunk_mem;
 
-    fn ptr_value(&self) -> &Vec<(Ptr, Wide)> {
-        &self.ptr_value
-    }
-    fn cons_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)> {
-        &self.cons_rel
-    }
-    fn fun_rel(&self) -> &Vec<(Ptr, Ptr, Ptr, Ptr)> {
-        &self.fun_rel
-    }
-    fn thunk_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)> {
-        &self.thunk_rel
+        self.sym_digest_mem = memory.sym_digest_mem;
+        self.builtin_digest_mem = memory.builtin_digest_mem;
+        self.nil_digest_mem = memory.nil_digest_mem;
     }
 }
 
 #[cfg(test)]
 #[cfg(feature = "loam")]
 mod test {
-    use itertools::Itertools;
+    use hashbrown::raw;
     use p3_baby_bear::BabyBear;
 
+    use crate::{
+        loam::{
+            evaluation::EvaluationProgram,
+            memory::{generate_lisp_program, DistillationOptions},
+            LoamProgram,
+        },
+        lurk::{
+            chipset::LurkChip,
+            zstore::{lurk_zstore, ZPtr, ZStore},
+        },
+    };
+
     use super::*;
-    use crate::lurk::chipset::LurkChip;
-    use crate::lurk::zstore::{self, ZPtr};
 
     fn err() -> WidePtr {
         WidePtr(Tag::Err.value(), Wide::widen(LE::from_canonical_u32(0)))
@@ -1254,10 +1071,30 @@ mod test {
         prog.toplevel_input = vec![(input, env.unwrap_or(WidePtr::empty_env()))];
         prog.run();
 
-        println!("{}", prog.relation_sizes_summary());
-
         assert_eq!(vec![(expected_output,)], prog.output_expr);
         prog
+    }
+
+    fn test_second_phase(original_program: &EvaluationProgram) {
+        let mut prog = DistilledEvaluationProgram::default();
+
+        prog.allocator = original_program.allocator.clone();
+        prog.toplevel_input = original_program.toplevel_input.clone();
+
+        // Export the virtual memory and then distill it.
+        let virtual_memory = original_program.export_memory();
+        let options = DistillationOptions::new().with_summary(0.5);
+        let memory = virtual_memory.distill(&options);
+
+        // Import the distilled memory and run the second phase
+        prog.import_memory(memory);
+        prog.run();
+
+        // println!("{}", prog.relation_sizes_summary());
+        println!("cons_digest_mem size: {}", prog.cons_digest_mem.len());
+        println!("cons_mem size: {}", prog.cons_mem.len());
+
+        assert_eq!(prog.output_expr, original_program.output_expr);
     }
 
     fn test_aux(input: &str, expected_output: &str, env: Option<&str>) -> EvaluationProgram {
@@ -1268,94 +1105,111 @@ mod test {
         test_aux0(zstore, input, expected_output, env)
     }
 
-    fn test_aux1(input: &str, expected_output: WidePtr, env: Option<&str>) -> EvaluationProgram {
-        let mut zstore = lurk_zstore();
-        let input = read_wideptr(&mut zstore, input);
-        let env = env.map(|s| read_wideptr(&mut zstore, s));
-        test_aux0(zstore, input, expected_output, env)
-    }
-
     #[test]
     fn test_self_evaluating_f() {
-        test_aux("123n", "123n", None);
+        let prog = test_aux("123n", "123n", None);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_self_evaluating_nil() {
         let prog = test_aux("nil", "nil", None);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_zero_arg_addition() {
-        test_aux("(+)", "0n", None);
+        let prog = test_aux("(+)", "0n", None);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_one_arg_addition() {
-        test_aux("(+ 1n)", "1n", None);
+        let prog = test_aux("(+ 1n)", "1n", None);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_two_arg_addition() {
-        test_aux("(+ 1n 2n)", "3n", None);
+        let prog = test_aux("(+ 1n 2n)", "3n", None);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_three_arg_addition() {
-        test_aux("(+ 1n 2n 3n)", "6n", None);
+        let prog = test_aux("(+ 1n 2n 3n)", "6n", None);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_zerog_arg_multiplication() {
-        test_aux("(*)", "1n", None);
+        let prog = test_aux("(*)", "1n", None);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_one_arg_multiplication() {
-        test_aux("(* 2n)", "2n", None);
+        let prog = test_aux("(* 2n)", "2n", None);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_two_arg_multiplication() {
-        test_aux("(* 2n 3n)", "6n", None);
+        let prog = test_aux("(* 2n 3n)", "6n", None);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_three_arg_multiplication() {
-        test_aux("(* 2n 3n 4n)", "24n", None);
+        let prog = test_aux("(* 2n 3n 4n)", "24n", None);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_nested_arithmetic() {
-        test_aux("(+ 5n (* 3n 4n))", "17n", None);
+        let prog = test_aux("(+ 5n (* 3n 4n))", "17n", None);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_three_arg_division() {
-        test_aux("(/ 10n 2n 5n)", "1n", None);
+        let prog = test_aux("(/ 10n 2n 5n)", "1n", None);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_complicated_nested_arithmetic() {
-        test_aux(
+        let prog = test_aux(
             "(+ 5n (-) (*) (/) (+) (* 3n 4n (- 7n 2n 1n)) (/ 10n 2n 5n))",
             "56n",
             None,
         );
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_relational() {
-        test_aux("(=)", "t", None);
-        test_aux("(= 1n)", "t", None);
-        test_aux("(= 1n 1n)", "t", None);
-        test_aux("(= 1n 1n 1n)", "t", None);
-        test_aux("(= 1n 2n)", "nil", None);
-        test_aux("(= 1n 1n 2n)", "nil", None);
+        let prog = test_aux("(=)", "t", None);
+        test_second_phase(&prog);
+
+        let prog = test_aux("(= 1n)", "t", None);
+        test_second_phase(&prog);
+
+        let prog = test_aux("(= 1n 1n)", "t", None);
+        test_second_phase(&prog);
+
+        let prog = test_aux("(= 1n 1n 1n)", "t", None);
+        test_second_phase(&prog);
+
+        let prog = test_aux("(= 1n 2n)", "nil", None);
+        test_second_phase(&prog);
+
+        let prog = test_aux("(= 1n 1n 2n)", "nil", None);
+        test_second_phase(&prog);
 
         // TODO: handle these type errors
         // test_aux1("(= nil)", err(), None);
-        // test_aux1("(= 1n nil)", err(), None);
+        // test_aux1("(= 1 nil)", err(), None);
     }
 
     #[test]
@@ -1364,10 +1218,10 @@ mod test {
         test_aux("(if (= 1n 2n) 123n 456n)", "456n", None);
     }
 
-    #[test]
-    fn test_unbound_var() {
-        test_aux1("x", err(), None);
-    }
+    // #[test]
+    // fn test_unbound_var() {
+    //     test_aux1("x", err(), None);
+    // }
 
     #[test]
     fn test_var_lookup() {
@@ -1382,7 +1236,7 @@ mod test {
 
         test_aux("x", "9n", Some("((y . 10n) (x . 9n))"));
         test_aux("y", "10n", Some("((y . 10n) (x . 9n))"));
-        test_aux1("z", err(), Some("((y . 10n) (x . 9n))"));
+        // test_aux1("z", err(), Some("((y . 10) (x . 9))"));
     }
 
     #[test]
@@ -1392,123 +1246,6 @@ mod test {
         test_aux("(let ((x 9n)(y 10n)) y)", "10n", None);
         test_aux("(let ((x (+ 1n 1n))) x)", "2n", None);
         test_aux("(let ((y 9n) (x (+ 1n 1n))) x)", "2n", None);
-    }
-
-    #[test]
-    fn test_lambda() {
-        let mut zstore = lurk_zstore();
-        let args = zstore.read("(x)").unwrap();
-        let body = zstore.read("(+ x 1)").unwrap();
-        let env = zstore.intern_nil();
-
-        let fun = zstore.intern_fun(args, body, env);
-        let expected_fun = WidePtr::from_zptr(&fun);
-
-        test_aux1("(lambda (x) (+ x 1))", expected_fun, None);
-
-        test_aux("((lambda (x) (+ x 1n)) 7n)", "8n", None);
-
-        test_aux("(let ((f (lambda () 123n))) (f))", "123n", None);
-        test_aux("(let ((f (lambda (x) (+ 1n x)))) (f 2n))", "3n", None);
-
-        // evaled args
-        test_aux(
-            "(let ((f (lambda (x) (+ 1n x)))) (f (* 2n 3n)))",
-            "7n",
-            None,
-        );
-
-        // multiple args
-        test_aux("(let ((f (lambda (a b) (* a b)))) (f 2n 3n))", "6n", None);
-
-        // closure
-        test_aux(
-            "(let ((k 123n)(foo (lambda (x) (+ x k)))) (foo 1n))",
-            "124n",
-            None,
-        );
-
-        test_aux(
-            "(let ((foo (lambda (x) (* x 2n)))(bar 123n)) (foo 3n))",
-            "6n",
-            None,
-        );
-        test_aux(
-            "(let ((foo (lambda (x) (* x 2n)))(bar (lambda () 123n))) (foo 3n))",
-            "6n",
-            None,
-        );
-        test_aux(
-            "(let ((foo (lambda (x) (* x 2n)))(bar (lambda (x) 123n))) (foo 3n))",
-            "6n",
-            None,
-        );
-
-        // nested calls
-        test_aux(
-            "(let ((foo (lambda (x) (* x 2n))) (bar (lambda (x) (+ 1n (foo x))))) (bar 3n))",
-            "7n",
-            None,
-        );
-
-        ////////////////////////////////////////
-        // with letrec
-
-        test_aux("(letrec ((f (lambda () 123n))) (f))", "123n", None);
-        test_aux("(letrec ((f (lambda (x) (+ 1n x)))) (f 2n))", "3n", None);
-
-        // evaled args
-        test_aux(
-            "(letrec ((f (lambda (x) (+ 1n x)))) (f (* 2n 3n)))",
-            "7n",
-            None,
-        );
-
-        // multiple args
-        test_aux(
-            "(letrec ((f (lambda (a b) (* a b)))) (f 2n 3n))",
-            "6n",
-            None,
-        );
-
-        // closure
-        test_aux(
-            "(letrec ((k 123n)(foo (lambda (x) (+ x k)))) (foo 1n))",
-            "124n",
-            None,
-        );
-
-        test_aux(
-            "(letrec ((foo (lambda (x) (* x 2n)))(bar 123n)) (foo 3n))",
-            "6n",
-            None,
-        );
-        test_aux(
-            "(letrec ((foo (lambda (x) (* x 2n)))(bar (lambda () 123n))) (foo 3n))",
-            "6n",
-            None,
-        );
-        test_aux(
-            "(letrec ((foo (lambda (x) (* x 2n)))(bar (lambda (x) 123n))) (foo 3n))",
-            "6n",
-            None,
-        );
-
-        // nested calls
-        test_aux(
-            "(letrec ((foo (lambda (x) (* x 2n))) (bar (lambda (x) (+ 1n (foo x))))) (bar 3n))",
-            "7n",
-            None,
-        );
-    }
-
-    #[test]
-    fn test_letrec_binding() {
-        let mut zstore = lurk_zstore();
-        let thunk = "(letrec ((f 123n)) f)";
-
-        let expr_ptr = read_wideptr(&mut zstore, "123n");
-        let env_ptr = WidePtr::empty_env();
     }
 
     #[test]
@@ -1531,163 +1268,39 @@ mod test {
 "
             )
         };
-
-        // test_aux(&factorial(0), "1n", None);
-        // test_aux(&factorial(1), "1n", None);
-        // test_aux(&factorial(4), "24n", None);
-
-        // // 1, 1, 2, 3, 5, 8, 13, 21
-        test_aux(&fibonacci(0), "1n", None);
-        test_aux(&fibonacci(1), "1n", None);
-        test_aux(&fibonacci(5), "8n", None);
-        test_aux(&fibonacci(7), "21n", None);
+        let prog = test_aux(&fibonacci(7), "21n", None);
+        test_second_phase(&prog);
     }
 
     #[test]
-    fn test_add_fibonacci() {
-        let fibonacci_twice = |n| {
-            format!(
-                "
-(letrec ((fibonacci (lambda (n) (if (< n 2n) 1n (let ((a (fibonacci (- n 1n))) (b (fibonacci (- n 2n)))) (+ a b))))))
-  (+ (fibonacci {n}n) (fibonacci {n}n)))
-"
-            )
-        };
-        test_aux(&fibonacci_twice(7), "42n", None);
+    fn test_map_double_distilled() {
+        let map_double = "
+(letrec ((input (cons (cons 1n 2n) (cons 2n 4n)))
+         (map-double (lambda (x) (if (atom x) (+ x x) (cons (map-double (car x))  (map-double (cdr x)))))))
+    (map-double input))
+        ";
+        let prog = test_aux(map_double, "((2n . 4n) . (4n . 8n))", None);
+        test_second_phase(&prog);
     }
 
     #[test]
-    fn test_cons_simple() {
-        test_aux("(cons 1n 2n)", "(1n . 2n)", None);
-    }
-
-    #[test]
-    fn test_car_cdr_cons_simple() {
-        test_aux("(car (cons 1n 2n))", "1n", None);
-        test_aux("(cdr (cons 1n 2n))", "2n", None);
-    }
-
-    #[test]
-    fn test_atom_simple() {
-        test_aux("(atom 1n)", "t", None);
-        test_aux("(atom nil)", "t", None);
-        test_aux("(atom (cons 1n 2n))", "nil", None);
-    }
-
-    #[test]
-    fn test_quote_simple() {
-        // test_aux("(quote 1n)", "1n", None);
-        // test_aux("(quote (1n . 2n))", "(1n . 2n)", None);
-        // test_aux("(quote (cons 1n 2n))", "(cons 1n 2n)", None);
-        // test_aux("(car (quote (1n . 2n)))", "1n", None);
-        test_aux("(quote x)", "x", None);
-    }
-
-    #[test]
-    fn test_map_double_cons() {
+    fn test_map_double_distilled_noncontiguous() {
         let map_double = "
 (letrec ((input (quote ((1n . 2n) . (2n . 4n))))
          (map-double (lambda (x) (if (atom x) (+ x x) (cons (map-double (car x))  (map-double (cdr x)))))))
     (map-double input))
         ";
-        test_aux(map_double, "((2n . 4n) . (4n . 8n))", None);
+        let prog = test_aux(map_double, "((2n . 4n) . (4n . 8n))", None);
+        test_second_phase(&prog);
     }
 
     #[test]
-    fn test_eq_simple() {
-        test_aux("(eq 1n 1n)", "t", None);
-        test_aux("(eq 1n 2n)", "nil", None);
-        test_aux("(eq (cons 1n 2n) (quote (1n . 2n)))", "t", None);
-        test_aux("((lambda (x) (eq (cons 1n 2n) x)) '(1n . 2n))", "t", None);
-        test_aux(
-            "((lambda (x) (let ((a (cons 1n 2n))) (eq a x))) '(1n . 2n))",
-            "t",
-            None,
-        );
-    }
-
-    #[test]
-    fn test_eq_complex() {
+    fn test_eq_complex_distilled() {
         let n = std::env::var("LISP_N")
             .unwrap_or("4".to_owned())
             .parse::<usize>()
             .unwrap_or(4);
-        test_aux(&generate_lisp_program(n, "eq"), "t", None);
-    }
-
-    #[test]
-    fn test_show_summary() {
-        println!("{}", EvaluationProgram::summary());
-    }
-
-    fn debug_prog(prog: EvaluationProgram) {
-        println!("{}", prog.relation_sizes_summary());
-
-        let EvaluationProgram {
-            mut ptr_value,
-            cons,
-            cons_rel,
-            cons_mem,
-            hash4,
-            unhash4,
-            hash4_rel,
-            ingress,
-            egress,
-            toplevel_input,
-            output_expr,
-            alloc,
-            input_ptr,
-            output_ptr,
-            eval_input,
-            eval,
-            cons_digest_mem,
-            fun_rel,
-            fun_mem,
-            fun,
-            sym_digest_mem,
-            fun_call,
-            thunk_rel,
-            thunk_mem,
-            thunk_digest_mem,
-            lookup,
-            bool_fold,
-            bool_fold0,
-            ..
-        } = prog;
-
-        ptr_value.sort_by_key(|(key, _)| *key);
-
-        dbg!(
-            toplevel_input,
-            input_ptr,
-            eval_input,
-            eval,
-            // hash4,
-            // unhash4,
-            // hash4_rel,
-            output_ptr,
-            output_expr,
-            //ptr_value,
-            // cons,
-            cons_rel,
-            cons_mem,
-            // cons_digest_mem,
-            // alloc,
-            // ingress,
-            // egress,
-            // fun_rel,
-            // fun_mem,
-            // fun,
-            // sym_digest_mem,
-            fun_call,
-            // hash4_rel,
-            thunk_rel,
-            thunk_mem,
-            thunk_digest_mem,
-            lookup,
-            alloc,
-            bool_fold,
-            bool_fold0
-        );
+        let prog = test_aux(&generate_lisp_program(n, "eq"), "t", None);
+        test_second_phase(&prog)
     }
 }

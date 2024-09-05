@@ -3,16 +3,22 @@
 #![allow(warnings)]
 use std::cmp::Ordering;
 
+use allocation::Allocator;
 use ascent::Lattice;
+use memory::{Memory, VPtr, VirtualMemory};
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField32};
+use rustc_hash::FxHashMap;
 
+use crate::lurk::chipset::LurkChip;
 use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
 use crate::lurk::tag::Tag;
 use crate::lurk::zstore::{self, lurk_zstore, ZPtr, ZStore};
 
 mod allocation;
+mod distilled_evaluation;
 mod evaluation;
+mod memory;
 
 pub type LE = BabyBear;
 
@@ -31,11 +37,19 @@ impl PartialOrd for LEWrap {
 }
 
 impl Lattice for LEWrap {
-    fn meet(self, other: Self) -> Self {
-        self.min(other)
+    fn meet_mut(&mut self, other: Self) -> bool {
+        let changed = *self > other;
+        if changed {
+            *self = other;
+        }
+        changed
     }
-    fn join(self, other: Self) -> Self {
-        self.max(other)
+    fn join_mut(&mut self, other: Self) -> bool {
+        let changed = *self < other;
+        if changed {
+            *self = other;
+        }
+        changed
     }
 }
 
@@ -48,9 +62,45 @@ impl Ptr {
         Self(Tag::Nil.elt(), LE::from_canonical_u32(0))
     }
 
-    fn t() -> Self {
-        let addr = lurk_sym_index("t").unwrap();
+    /// make this const
+    fn builtin(op: &str) -> Self {
+        let addr = lurk_sym_index(op).unwrap();
         Self(Tag::Builtin.elt(), LE::from_canonical_u32(addr as u32))
+    }
+
+    /// make this const
+    fn t() -> Self {
+        Self::builtin("t")
+    }
+
+    /// make this const
+    fn eq() -> Self {
+        Self::builtin("eq")
+    }
+
+    /// make this const
+    fn cons() -> Self {
+        Self::builtin("cons")
+    }
+
+    /// make this const
+    fn car() -> Self {
+        Self::builtin("car")
+    }
+
+    /// make this const
+    fn cdr() -> Self {
+        Self::builtin("cdr")
+    }
+
+    /// make this const
+    fn quote() -> Self {
+        Self::builtin("quote")
+    }
+
+    /// make this const
+    fn atom() -> Self {
+        Self::builtin("atom")
     }
 
     fn f(val: LE) -> Self {
@@ -82,6 +132,62 @@ impl Ptr {
     }
     fn is_err(&self) -> bool {
         self.0 == Tag::Err.elt()
+    }
+
+    pub fn tag(&self) -> Tag {
+        Tag::from_field(&self.0)
+    }
+
+    pub fn wide_tag(&self) -> Wide {
+        Wide::widen(self.0)
+    }
+
+    pub fn is_eq(&self, other: &Ptr) -> PtrEq {
+        if self == other {
+            // The pointers are actually equal
+            PtrEq::Equal
+        } else if self.tag() != other.tag() {
+            // The pointers' tags are not equal, and thus the pointers must not be equal
+            PtrEq::NotEqual
+        } else {
+            // The pointers' addresses are not equal, must check for deep equality
+            match self.tag() {
+                // unless the pointers are immediate values
+                Tag::Num | Tag::Err => {
+                    if self.1 == other.1 {
+                        PtrEq::Equal
+                    } else {
+                        PtrEq::NotEqual
+                    }
+                }
+                _ => PtrEq::Unknown,
+            }
+        }
+    }
+}
+
+/// Possible ways two pointer can be "equal" to each other
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
+pub enum PtrEq {
+    Equal = 0,
+    NotEqual,
+    Unknown,
+}
+
+impl Lattice for PtrEq {
+    fn meet_mut(&mut self, other: Self) -> bool {
+        let changed = *self > other;
+        if changed {
+            *self = other;
+        }
+        changed
+    }
+    fn join_mut(&mut self, other: Self) -> bool {
+        let changed = *self < other;
+        if changed {
+            *self = other;
+        }
+        changed
     }
 }
 
@@ -132,6 +238,21 @@ impl WidePtr {
     fn empty_env() -> Self {
         Self::nil()
     }
+
+    fn tag(&self) -> Tag {
+        Tag::from_field(&self.0.f())
+    }
+
+    fn to_zptr(&self) -> ZPtr<LE> {
+        ZPtr {
+            tag: Tag::from_field(&self.0.f()),
+            digest: self.1 .0,
+        }
+    }
+
+    fn from_zptr(zptr: &ZPtr<LE>) -> Self {
+        Self(Wide::widen(zptr.tag.elt()), Wide(zptr.digest))
+    }
 }
 
 impl From<&Num> for WidePtr {
@@ -143,6 +264,75 @@ impl From<&Num> for WidePtr {
 impl From<Num> for WidePtr {
     fn from(f: Num) -> Self {
         (&f).into()
+    }
+}
+
+/// TODO: Figure out how to organize the relationships between the types here correctly.
+/// Also is this even needed if there's going to be exactly one Loam program? (Maybe that's wrong.)
+trait LoamProgram {
+    fn allocator(&self) -> &Allocator;
+    fn allocator_mut(&mut self) -> &mut Allocator;
+
+    fn ptr_value(&self) -> &Vec<(Ptr, Wide)>;
+    fn cons_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)>;
+    fn fun_rel(&self) -> &Vec<(Ptr, Ptr, Ptr, Ptr)>;
+    fn thunk_rel(&self) -> &Vec<(Ptr, Ptr, Ptr)>;
+
+    fn alloc_addr(&mut self, tag: LE, initial_addr: LE) -> LE {
+        self.allocator_mut().alloc_addr(tag, initial_addr)
+    }
+
+    fn import_zstore(&mut self, zstore: &ZStore<LE, LurkChip>) {
+        self.allocator_mut().import_zstore(zstore)
+    }
+
+    fn unhash4(&mut self, digest: &Wide) -> [Wide; 4] {
+        self.allocator_mut().unhash4(digest)
+    }
+
+    fn hash4(&mut self, a: Wide, b: Wide, c: Wide, d: Wide) -> Wide {
+        self.allocator_mut().hash4(a, b, c, d)
+    }
+
+    fn unhash6(&mut self, digest: &Wide) -> [Wide; 6] {
+        self.allocator_mut().unhash6(digest)
+    }
+
+    fn hash6(&mut self, a: Wide, b: Wide, c: Wide, d: Wide, e: Wide, f: Wide) -> Wide {
+        self.allocator_mut().hash6(a, b, c, d, e, f)
+    }
+
+    fn export_memory(&self) -> VirtualMemory {
+        let ptr_value = self
+            .ptr_value()
+            .iter()
+            .map(|(ptr, wide)| (VPtr(*ptr), *wide))
+            .collect();
+
+        let cons_mem = self
+            .cons_rel()
+            .iter()
+            .map(|(car, cdr, cons)| (VPtr(*cons), (VPtr(*car), VPtr(*cdr))))
+            .collect();
+        let fun_mem = self
+            .fun_rel()
+            .iter()
+            .map(|(args, body, closed_env, fun)| {
+                (VPtr(*fun), (VPtr(*args), VPtr(*body), VPtr(*closed_env)))
+            })
+            .collect();
+        let thunk_mem = self
+            .thunk_rel()
+            .iter()
+            .map(|(body, closed_env, thunk)| (VPtr(*thunk), (VPtr(*body), VPtr(*closed_env))))
+            .collect();
+
+        VirtualMemory {
+            ptr_value,
+            cons_mem,
+            fun_mem,
+            thunk_mem,
+        }
     }
 }
 

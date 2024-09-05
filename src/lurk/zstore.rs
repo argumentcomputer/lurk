@@ -34,7 +34,7 @@ pub(crate) const DIGEST_SIZE: usize = 8;
 pub(crate) const ZPTR_SIZE: usize = 2 * DIGEST_SIZE;
 pub(crate) const HASH3_SIZE: usize = DIGEST_SIZE + ZPTR_SIZE;
 pub(crate) const HASH4_SIZE: usize = 2 * ZPTR_SIZE;
-const HASH6_SIZE: usize = 3 * ZPTR_SIZE;
+pub(crate) const HASH6_SIZE: usize = 3 * ZPTR_SIZE;
 
 fn digest_from_field<F: AbstractField + Copy>(f: F) -> [F; DIGEST_SIZE] {
     let mut digest = [F::zero(); DIGEST_SIZE];
@@ -283,6 +283,24 @@ pub struct ZStore<F, H: Chipset<F>> {
     syn_cache: FxHashMap<Syntax<F>, ZPtr<F>>,
 }
 
+impl Default for ZStore<BabyBear, LurkChip> {
+    fn default() -> Self {
+        Self {
+            hasher: lurk_hasher(),
+            dag: Default::default(),
+            hashes3: Default::default(),
+            hashes4: Default::default(),
+            hashes6: Default::default(),
+            hashes3_diff: Default::default(),
+            hashes4_diff: Default::default(),
+            hashes6_diff: Default::default(),
+            str_cache: Default::default(),
+            sym_cache: Default::default(),
+            syn_cache: Default::default(),
+        }
+    }
+}
+
 static NIL: OnceCell<Symbol> = OnceCell::new();
 fn nil() -> &'static Symbol {
     NIL.get_or_init(|| lurk_sym("nil"))
@@ -340,7 +358,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         digest
     }
 
-    fn intern_tuple2(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>) -> ZPtr<F> {
+    pub fn intern_tuple2(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>) -> ZPtr<F> {
         let preimg = ZPtr::flatten2(&a, &b);
         let digest = self.hash4(preimg);
         let zptr = ZPtr { tag, digest };
@@ -348,7 +366,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         zptr
     }
 
-    fn intern_tuple3(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>, c: ZPtr<F>) -> ZPtr<F> {
+    pub fn intern_tuple3(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>, c: ZPtr<F>) -> ZPtr<F> {
         let preimg = ZPtr::flatten3(&a, &b, &c);
         let digest = self.hash6(preimg);
         let zptr = ZPtr { tag, digest };
@@ -784,7 +802,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     #[inline]
     pub fn fetch_tuple2(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>) {
         let Some(ZPtrType::Tuple2(a, b)) = self.dag.get(zptr) else {
-            panic!("Tuple2 data not found on DAG")
+            panic!("Tuple2 data not found on DAG: {:?}", zptr)
         };
         (a, b)
     }
@@ -792,7 +810,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     #[inline]
     pub fn fetch_tuple3(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>, &ZPtr<F>) {
         let Some(ZPtrType::Tuple3(a, b, c)) = self.dag.get(zptr) else {
-            panic!("Tuple3 data not found on DAG")
+            panic!("Tuple3 data not found on DAG: {:?}", zptr)
         };
         (a, b, c)
     }
@@ -800,7 +818,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     #[inline]
     pub fn fetch_compact2(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>) {
         let Some(ZPtrType::Compact2(a, b)) = self.dag.get(zptr) else {
-            panic!("Compact2 data not found on DAG")
+            panic!("Compact2 data not found on DAG: {:?}", zptr)
         };
         (a, b)
     }
@@ -808,7 +826,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     #[inline]
     pub fn fetch_compact3(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>, &ZPtr<F>) {
         let Some(ZPtrType::Compact3(a, b, c)) = self.dag.get(zptr) else {
-            panic!("Compact3 data not found on DAG")
+            panic!("Compact3 data not found on DAG: {:?}", zptr)
         };
         (a, b, c)
     }

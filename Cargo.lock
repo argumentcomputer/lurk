@@ -135,8 +135,7 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 [[package]]
 name = "ascent"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdd36abb7ceed59bb5be428927e8c17e32085a94c837fde7eaed7887071a4393"
+source = "git+https://github.com/argumentcomputer/ascent.git#9c245a8ccf0024699312caafa9c5bce69d3f1831"
 dependencies = [
  "ascent_base",
  "ascent_macro",
@@ -153,8 +152,7 @@ dependencies = [
 [[package]]
 name = "ascent_base"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "607bcfa9c2865077d4580c7f38df9edcf69aa7c7f0010917e0cbcd19933791b9"
+source = "git+https://github.com/argumentcomputer/ascent.git#9c245a8ccf0024699312caafa9c5bce69d3f1831"
 dependencies = [
  "paste",
 ]
@@ -162,8 +160,7 @@ dependencies = [
 [[package]]
 name = "ascent_macro"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "726b7cdaa8b822285ce86d69ed7bc8dc79be547d874b855d0aac305b04d769d7"
+source = "git+https://github.com/argumentcomputer/ascent.git#9c245a8ccf0024699312caafa9c5bce69d3f1831"
 dependencies = [
  "ascent_base",
  "derive-syn-parse",
