@@ -289,14 +289,14 @@ pub fn parse_prefixed_hex_digest<F: Field>(
 pub fn parse_big_num<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
     move |from: Span<'_>| {
         let (i, (pos, res)) = parse_prefixed_hex_digest("#0x", DIGEST_SIZE)(from)?;
-        return Ok((i, Syntax::BigNum(pos, res.try_into().unwrap())));
+        Ok((i, Syntax::BigNum(pos, res.try_into().unwrap())))
     }
 }
 
 pub fn parse_comm<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
     move |from: Span<'_>| {
         let (i, (pos, res)) = parse_prefixed_hex_digest("#c0x", DIGEST_SIZE)(from)?;
-        return Ok((i, Syntax::Comm(pos, res.try_into().unwrap())));
+        Ok((i, Syntax::Comm(pos, res.try_into().unwrap())))
     }
 }
 
