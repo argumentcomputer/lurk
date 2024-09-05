@@ -323,6 +323,28 @@ impl<F: PrimeField32> QueryRecord<F> {
         }
     }
 
+    /// Alternative version of `inject_inv_queries` that takes ownership of the
+    /// data and thus is capable of avoiding clones.
+    pub fn inject_inv_queries_owned<
+        I: Into<List<F>>,
+        O: Into<List<F>>,
+        T: IntoIterator<Item = (I, O)>,
+        H: Chipset<F>,
+    >(
+        &mut self,
+        name: &'static str,
+        toplevel: &Toplevel<F, H>,
+        new_queries_data: T,
+    ) {
+        let func = toplevel.get_by_name(name);
+        let inv_func_queries = self.inv_func_queries[func.index]
+            .as_mut()
+            .expect("Inverse query map not found");
+        for (inp, out) in new_queries_data {
+            inv_func_queries.insert(out.into(), inp.into());
+        }
+    }
+
     pub fn get_inv_queries<H: Chipset<F>>(
         &self,
         name: &'static str,
