@@ -63,44 +63,44 @@ impl Ptr {
     }
 
     /// make this const
-    fn buitin(op: &str) -> Self {
+    fn builtin(op: &str) -> Self {
         let addr = lurk_sym_index(op).unwrap();
         Self(Tag::Builtin.elt(), LE::from_canonical_u32(addr as u32))
     }
 
     /// make this const
     fn t() -> Self {
-        Self::buitin("t")
+        Self::builtin("t")
     }
 
     /// make this const
     fn eq() -> Self {
-        Self::buitin("eq")
+        Self::builtin("eq")
     }
 
     /// make this const
     fn cons() -> Self {
-        Self::buitin("cons")
+        Self::builtin("cons")
     }
 
     /// make this const
     fn car() -> Self {
-        Self::buitin("car")
+        Self::builtin("car")
     }
 
     /// make this const
     fn cdr() -> Self {
-        Self::buitin("cdr")
+        Self::builtin("cdr")
     }
 
     /// make this const
     fn quote() -> Self {
-        Self::buitin("quote")
+        Self::builtin("quote")
     }
 
     /// make this const
     fn atom() -> Self {
-        Self::buitin("atom")
+        Self::builtin("atom")
     }
 
     fn f(val: LE) -> Self {
@@ -160,7 +160,7 @@ impl Ptr {
                         PtrEq::NotEqual
                     }
                 }
-                _ => PtrEq::DontKnow,
+                _ => PtrEq::Unknown,
             }
         }
     }
@@ -171,7 +171,7 @@ impl Ptr {
 pub enum PtrEq {
     Equal = 0,
     NotEqual,
-    DontKnow,
+    Unknown,
 }
 
 impl Lattice for PtrEq {

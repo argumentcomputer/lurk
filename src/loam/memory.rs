@@ -105,23 +105,23 @@ impl PPtr {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum PPtrType {
+pub enum PPtrKind {
     Tuple2(PPtr, PPtr),
     Tuple3(PPtr, PPtr, PPtr),
 }
 
-impl PPtrType {
+impl PPtrKind {
     fn get2(self) -> (PPtr, PPtr) {
         match self {
-            PPtrType::Tuple2(x, y) => (x, y),
-            PPtrType::Tuple3(_, _, _) => panic!(),
+            PPtrKind::Tuple2(x, y) => (x, y),
+            PPtrKind::Tuple3(_, _, _) => panic!(),
         }
     }
 
     fn get3(self) -> (PPtr, PPtr, PPtr) {
         match self {
-            PPtrType::Tuple2(_, _) => panic!(),
-            PPtrType::Tuple3(x, y, z) => (x, y, z),
+            PPtrKind::Tuple2(_, _) => panic!(),
+            PPtrKind::Tuple3(x, y, z) => (x, y, z),
         }
     }
 }
@@ -257,8 +257,8 @@ impl DistillationSummary {
 pub struct Store {
     pub allocator: Allocator,
 
-    pub dag: FxHashMap<PPtr, (PPtrType, Option<Wide>)>,
-    pub inv_dag: FxHashMap<(Tag, PPtrType), PPtr>,
+    pub dag: FxHashMap<PPtr, (PPtrKind, Option<Wide>)>,
+    pub inv_dag: FxHashMap<(Tag, PPtrKind), PPtr>,
 
     /// These are opaque pointers that only have digests.
     pub pptr_digest: FxHashMap<PPtr, Wide>,
@@ -272,7 +272,7 @@ pub struct Store {
 
 impl Store {
     fn intern_tuple2(&mut self, tag: Tag, p1: PPtr, p2: PPtr) -> PPtr {
-        let ptr_type = PPtrType::Tuple2(p1, p2);
+        let ptr_type = PPtrKind::Tuple2(p1, p2);
 
         if let Some(ptr) = self.inv_dag.get(&(tag, ptr_type)) {
             // println!("{:?} = inv_dag.get({:?})", ptr, ptr_type);
@@ -288,7 +288,7 @@ impl Store {
     }
 
     fn intern_tuple3(&mut self, tag: Tag, p1: PPtr, p2: PPtr, p3: PPtr) -> PPtr {
-        let ptr_type = PPtrType::Tuple3(p1, p2, p3);
+        let ptr_type = PPtrKind::Tuple3(p1, p2, p3);
 
         if let Some(ptr) = self.inv_dag.get(&(tag, ptr_type)) {
             *ptr
@@ -307,8 +307,7 @@ impl Store {
             return *ptr;
         }
 
-        let tag = vptr.tag();
-        match tag {
+        match vptr.tag() {
             Tag::Cons => {
                 let (vcar, vcdr) = memory
                     .cons_mem
@@ -364,7 +363,6 @@ impl Store {
             ptr
         });
 
-        // let mut changed = false;
         if let Some((_, inner)) = self.dag.get_mut(&ptr) {
             self.digest_pptr.insert(digest, ptr);
             *inner = Some(digest);
@@ -449,7 +447,7 @@ impl Store {
 
     #[inline]
     pub fn fetch_tuple2(&self, ptr: &PPtr) -> (&PPtr, &PPtr) {
-        let Some((PPtrType::Tuple2(a, b), _)) = self.dag.get(ptr) else {
+        let Some((PPtrKind::Tuple2(a, b), _)) = self.dag.get(ptr) else {
             panic!("Tuple2 data not found on DAG: {:?}", ptr)
         };
         (a, b)
@@ -457,7 +455,7 @@ impl Store {
 
     #[inline]
     pub fn fetch_tuple3(&self, ptr: &PPtr) -> (&PPtr, &PPtr, &PPtr) {
-        let Some((PPtrType::Tuple3(a, b, c), _)) = self.dag.get(ptr) else {
+        let Some((PPtrKind::Tuple3(a, b, c), _)) = self.dag.get(ptr) else {
             panic!("Tuple3 data not found on DAG: {:?}", ptr)
         };
         (a, b, c)

@@ -472,7 +472,7 @@ ascent! {
 
     // Signal: Prepare to match on the tag. I don't know if inlining the match would be more efficient.
     ingress(arg1), ingress(arg2), eq_rel_cont1(arg1, arg2, tag) <--
-        eq(arg1, arg2, PtrEq::DontKnow), let tag = arg1.0;
+        eq(arg1, arg2, PtrEq::Unknown), let tag = arg1.0;
 
     // Signal: Match on the Cons tag and query the children
     eq_rel_tuple2_cont(arg1, arg2, car1, cdr1, car2, cdr2, is_eq) <--
@@ -506,13 +506,13 @@ ascent! {
 
     // Signal: Recurse.
     eq(x1, x2, x_is_eq), eq(y1, y2, y_is_eq) <--
-        eq_rel_tuple2_cont(arg1, arg2, x1, y1, x2, y2, PtrEq::DontKnow),
+        eq_rel_tuple2_cont(arg1, arg2, x1, y1, x2, y2, PtrEq::Unknown),
         let x_is_eq = x1.is_eq(x2),
         let y_is_eq = y1.is_eq(y2);
 
     // Signal: Finish.
     eq_rel(arg1, arg2, is_eq) <--
-        eq_rel_tuple2_cont(arg1, arg2, x1, y1, x2, y2, PtrEq::DontKnow),
+        eq_rel_tuple2_cont(arg1, arg2, x1, y1, x2, y2, PtrEq::Unknown),
         eq_rel(x1, x2, x_is_eq),
         eq_rel(y1, y2, y_is_eq),
         let is_eq = *x_is_eq && *y_is_eq;
@@ -527,14 +527,14 @@ ascent! {
 
     // Signal: Recurse.
     eq(x1, x2, x_is_eq), eq(y1, y2, y_is_eq), eq(z1, z2, z_is_eq) <--
-        eq_rel_tuple3_cont(arg1, arg2, x1, y1, z1, x2, y2, z2, PtrEq::DontKnow),
+        eq_rel_tuple3_cont(arg1, arg2, x1, y1, z1, x2, y2, z2, PtrEq::Unknown),
         let x_is_eq = x1.is_eq(x2),
         let y_is_eq = y1.is_eq(y2),
         let z_is_eq = z1.is_eq(z2);
 
     // Signal: Finish.
     eq_rel(arg1, arg2, is_eq) <--
-        eq_rel_tuple3_cont(arg1, arg2, x1, y1, z1, x2, y2, z2, PtrEq::DontKnow),
+        eq_rel_tuple3_cont(arg1, arg2, x1, y1, z1, x2, y2, z2, PtrEq::Unknown),
         eq_rel(x1, x2, x_is_eq),
         eq_rel(y1, y2, y_is_eq),
         eq_rel(z1, z2, z_is_eq),
@@ -1075,17 +1075,18 @@ mod test {
         prog
     }
 
-    fn test_distilled(original_program: &EvaluationProgram) {
+    fn test_second_phase(original_program: &EvaluationProgram) {
         let mut prog = DistilledEvaluationProgram::default();
 
         prog.allocator = original_program.allocator.clone();
         prog.toplevel_input = original_program.toplevel_input.clone();
 
-        // transfer over the memory (assume it's been distilled)
-        let raw_memory = original_program.export_memory();
+        // Export the virtual memory and then distill it.
+        let virtual_memory = original_program.export_memory();
         let options = DistillationOptions::new().with_summary(0.5);
-        let memory = raw_memory.distill(&options);
+        let memory = virtual_memory.distill(&options);
 
+        // Import the distilled memory and run the second phase
         prog.import_memory(memory);
         prog.run();
 
@@ -1107,73 +1108,73 @@ mod test {
     #[test]
     fn test_self_evaluating_f() {
         let prog = test_aux("123n", "123n", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_self_evaluating_nil() {
         let prog = test_aux("nil", "nil", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_zero_arg_addition() {
         let prog = test_aux("(+)", "0n", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_one_arg_addition() {
         let prog = test_aux("(+ 1n)", "1n", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_two_arg_addition() {
         let prog = test_aux("(+ 1n 2n)", "3n", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_three_arg_addition() {
         let prog = test_aux("(+ 1n 2n 3n)", "6n", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_zerog_arg_multiplication() {
         let prog = test_aux("(*)", "1n", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_one_arg_multiplication() {
         let prog = test_aux("(* 2n)", "2n", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_two_arg_multiplication() {
         let prog = test_aux("(* 2n 3n)", "6n", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_three_arg_multiplication() {
         let prog = test_aux("(* 2n 3n 4n)", "24n", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_nested_arithmetic() {
         let prog = test_aux("(+ 5n (* 3n 4n))", "17n", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_three_arg_division() {
         let prog = test_aux("(/ 10n 2n 5n)", "1n", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
@@ -1183,28 +1184,28 @@ mod test {
             "56n",
             None,
         );
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
     fn test_relational() {
         let prog = test_aux("(=)", "t", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
 
         let prog = test_aux("(= 1n)", "t", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
 
         let prog = test_aux("(= 1n 1n)", "t", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
 
         let prog = test_aux("(= 1n 1n 1n)", "t", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
 
         let prog = test_aux("(= 1n 2n)", "nil", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
 
         let prog = test_aux("(= 1n 1n 2n)", "nil", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
 
         // TODO: handle these type errors
         // test_aux1("(= nil)", err(), None);
@@ -1268,7 +1269,7 @@ mod test {
             )
         };
         let prog = test_aux(&fibonacci(7), "21n", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
@@ -1279,7 +1280,7 @@ mod test {
     (map-double input))
         ";
         let prog = test_aux(map_double, "((2n . 4n) . (4n . 8n))", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
@@ -1290,7 +1291,7 @@ mod test {
     (map-double input))
         ";
         let prog = test_aux(map_double, "((2n . 4n) . (4n . 8n))", None);
-        test_distilled(&prog);
+        test_second_phase(&prog);
     }
 
     #[test]
@@ -1300,6 +1301,6 @@ mod test {
             .parse::<usize>()
             .unwrap_or(4);
         let prog = test_aux(&generate_lisp_program(n, "eq"), "t", None);
-        test_distilled(&prog)
+        test_second_phase(&prog)
     }
 }

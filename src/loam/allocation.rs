@@ -606,7 +606,11 @@ mod test {
         test_aux0(&zstore, input, expected_output)
     }
 
-    fn test_distilled(input: &str, expected_output: &str, bad_input_output: Option<(&str, &str)>) {
+    fn test_second_phase(
+        input: &str,
+        expected_output: &str,
+        bad_input_output: Option<(&str, &str)>,
+    ) {
         // Run the first phase
         let mut zstore = lurk_zstore();
         let input = read_wideptr(&mut zstore, input);
@@ -620,57 +624,57 @@ mod test {
         prog.allocator = original_program.allocator.clone();
         prog.input_expr = original_program.input_expr.clone();
 
-        // transfer over the memory (assume it's been distilled)
         let raw_memory = original_program.export_memory();
         let mut store = Store::default();
         let options = DistillationOptions::new().with_summary(0.9);
         let memory = raw_memory.distill_with_store(&mut store, &options);
 
-        // Determine whether we want to use the intended in/out, or the bad in/out
-        let (input_ptr, output_expr) = if let Some((bad_input, bad_output)) = bad_input_output {
-            let bad_zptr = zstore.read(bad_input).expect("failed to read");
-            (
-                store.zptr_ptr(&bad_zptr).unwrap(),
-                vec![(read_wideptr(&mut zstore, bad_output),)],
-            )
-        } else {
-            let input_zptr = prog.input_expr[0].0.to_zptr();
-            (
-                store.zptr_ptr(&input_zptr).unwrap(),
-                original_program.output_expr,
-            )
-        };
-
         prog.import_memory(memory);
 
-        // Add a ptr_value for input_expr with input_ptr (which may or may not be bad)
-        let input_digest = prog.input_expr[0].0 .1;
-        prog.cons_digest_mem.push((input_digest, input_ptr.1));
+        // Determine whether we want to use the intended in/out, or attack the program with the bad in/out
+        if let Some((bad_input, bad_output)) = bad_input_output {
+            let bad_zptr = zstore.read(bad_input).expect("failed to read");
+            let bad_input = store.zptr_ptr(&bad_zptr).unwrap();
+            let bad_output = vec![(read_wideptr(&mut zstore, bad_output),)];
 
-        prog.run();
+            // Inject the bad input pointer into memory with the intended input's digest.
+            // If the prover is not correctly checking the hashes, this will slip through
+            // and cause the prover to believe that the bad input pointer is correct and
+            // evaluate it.
+            let input_digest = prog.input_expr[0].0 .1;
+            prog.cons_digest_mem.push((input_digest, bad_input.1));
+            prog.run();
+
+            // Check if we get the bad output. Assuming our program is correctly constrained,
+            // this `assert_eq` should never be true, so in our tests, we `#[should_panic]`.
+            assert_eq!(prog.output_expr, bad_output);
+        } else {
+            // Otherwise, we don't inject any bad pointers, and just run everything as normal,
+            // and then check that the expected output is correct.
+            prog.run();
+            assert_eq!(prog.output_expr, original_program.output_expr);
+        };
 
         println!("{}", prog.relation_sizes_summary());
-
-        // Check what we got. If we had a bad input, we should get a bad output.
-        // (Which is bad!! But we are showing that something is wrong.)
-        assert_eq!(prog.output_expr, output_expr);
     }
 
     #[test]
     fn new_test_cons() {
-        test_distilled("((1n . 2n) . (2n . 4n))", "((2n . 4n) . (4n . 8n))", None);
-        test_distilled("((1n . 2n) . (2n . 4n))", "((2n . 4n) . (4n . 8n))", None);
+        test_second_phase("((1n . 2n) . (2n . 4n))", "((2n . 4n) . (4n . 8n))", None);
+        test_second_phase("((1n . 2n) . (2n . 4n))", "((2n . 4n) . (4n . 8n))", None);
     }
 
     #[test]
     #[should_panic]
     fn new_test_cons_bad() {
-        test_distilled(
+        // This test tries to attack the program by injecting bad memory.
+        // If the program is correctly constrained, the test should fail (and panic).
+        test_second_phase(
             "((1n . 2n) . (2n . 4n))",
             "((2n . 4n) . (4n . 8n))",
             Some(("(1n . 2n)", "(2n . 4n)")),
         );
-        test_distilled(
+        test_second_phase(
             "((1n . 2n) . (2n . 4n))",
             "((2n . 4n) . (4n . 8n))",
             Some(("(2n . 4n)", "(4n . 8n)")),

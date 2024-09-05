@@ -656,7 +656,7 @@ ascent! {
 
     // Signal: Prepare to match on the tag. I don't know if inlining the match would be more efficient.
     ingress(arg1), ingress(arg2), eq_rel_cont1(arg1, arg2, tag) <--
-        eq(arg1, arg2, PtrEq::DontKnow), let tag = arg1.0;
+        eq(arg1, arg2, PtrEq::Unknown), let tag = arg1.0;
 
     // Signal: Match on the Cons tag and query the children
     eq_rel_tuple2_cont(arg1, arg2, car1, cdr1, car2, cdr2, is_eq) <--
@@ -690,13 +690,13 @@ ascent! {
 
     // Signal: Recurse.
     eq(x1, x2, x_is_eq), eq(y1, y2, y_is_eq) <--
-        eq_rel_tuple2_cont(arg1, arg2, x1, y1, x2, y2, PtrEq::DontKnow),
+        eq_rel_tuple2_cont(arg1, arg2, x1, y1, x2, y2, PtrEq::Unknown),
         let x_is_eq = x1.is_eq(x2),
         let y_is_eq = y1.is_eq(y2);
 
     // Signal: Finish.
     eq_rel(arg1, arg2, is_eq) <--
-        eq_rel_tuple2_cont(arg1, arg2, x1, y1, x2, y2, PtrEq::DontKnow),
+        eq_rel_tuple2_cont(arg1, arg2, x1, y1, x2, y2, PtrEq::Unknown),
         eq_rel(x1, x2, x_is_eq),
         eq_rel(y1, y2, y_is_eq),
         let is_eq = *x_is_eq && *y_is_eq;
@@ -711,14 +711,14 @@ ascent! {
 
     // Signal: Recurse.
     eq(x1, x2, x_is_eq), eq(y1, y2, y_is_eq), eq(z1, z2, z_is_eq) <--
-        eq_rel_tuple3_cont(arg1, arg2, x1, y1, z1, x2, y2, z2, PtrEq::DontKnow),
+        eq_rel_tuple3_cont(arg1, arg2, x1, y1, z1, x2, y2, z2, PtrEq::Unknown),
         let x_is_eq = x1.is_eq(x2),
         let y_is_eq = y1.is_eq(y2),
         let z_is_eq = z1.is_eq(z2);
 
     // Signal: Finish.
     eq_rel(arg1, arg2, is_eq) <--
-        eq_rel_tuple3_cont(arg1, arg2, x1, y1, z1, x2, y2, z2, PtrEq::DontKnow),
+        eq_rel_tuple3_cont(arg1, arg2, x1, y1, z1, x2, y2, z2, PtrEq::Unknown),
         eq_rel(x1, x2, x_is_eq),
         eq_rel(y1, y2, y_is_eq),
         eq_rel(z1, z2, z_is_eq),
@@ -1254,12 +1254,9 @@ mod test {
         prog.toplevel_input = vec![(input, env.unwrap_or(WidePtr::empty_env()))];
         prog.run();
 
-        println!("\n\n\n{}", prog.relation_sizes_summary());
-        // prog.print_memory_tables();
-        // prog.print_unevaled();
+        println!("{}", prog.relation_sizes_summary());
 
         assert_eq!(vec![(expected_output,)], prog.output_expr);
-        // prog.export_memory().check_compact();
         prog
     }
 
