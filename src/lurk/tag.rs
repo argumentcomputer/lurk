@@ -46,3 +46,36 @@ impl From<Tag> for i32 {
         item as u32 as i32
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::lurk::tag::Tag;
+    use num_traits::FromPrimitive;
+    use p3_baby_bear::BabyBear;
+    use p3_field::PrimeField32;
+
+    #[test]
+    fn test_tag_index_roundtrip() {
+        for tag in [
+            Tag::Nil,
+            Tag::Cons,
+            Tag::Sym,
+            Tag::Fun,
+            Tag::Num,
+            Tag::Str,
+            Tag::Char,
+            Tag::Comm,
+            Tag::U64,
+            Tag::Key,
+            Tag::Env,
+            Tag::Err,
+            Tag::Thunk,
+            Tag::Builtin,
+            Tag::BigNum,
+        ] {
+            let f = tag.to_field::<BabyBear>();
+            let u = f.as_canonical_u32();
+            assert_eq!(Some(tag), Tag::from_u32(u));
+        }
+    }
+}

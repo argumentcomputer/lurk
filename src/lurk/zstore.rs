@@ -998,8 +998,6 @@ pub fn lurk_zstore() -> ZStore<BabyBear, LurkChip> {
 
 #[cfg(test)]
 mod test {
-    use num_traits::FromPrimitive;
-
     use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
 
@@ -1016,6 +1014,20 @@ mod test {
     };
 
     use super::{into_sized, ZPtr};
+
+    #[test]
+    fn test_sym_key_hash_equivalence() {
+        let mut zstore = lurk_zstore();
+        let mut symbol = Symbol::sym(&["foo", "bar", "baz"]);
+        let sym = zstore.intern_symbol(&symbol);
+        assert_eq!(sym.tag, Tag::Sym);
+
+        symbol.set_as_keyword();
+        let key = zstore.intern_symbol(&symbol);
+        assert_eq!(key.tag, Tag::Key);
+
+        assert_eq!(sym.digest, key.digest);
+    }
 
     #[test]
     fn test_dag_memoization() {
@@ -1136,19 +1148,5 @@ mod test {
         assert_eq!(zstore.fmt_with_state(state, &empty_env), "<Env ()>");
         let env = zstore.intern_env(x, one, empty_env);
         assert_eq!(zstore.fmt_with_state(state, &env), "<Env ((x . 1n))>");
-    }
-
-    #[test]
-    fn test_tag_index_roundtrip() {
-        use p3_field::PrimeField32;
-
-        let test = |tag: Tag| {
-            let f = tag.to_field::<BabyBear>();
-            let u = f.as_canonical_u32();
-            let new_tag = Tag::from_u32(u).unwrap();
-            assert_eq!(tag, new_tag);
-        };
-
-        test(Tag::Nil);
     }
 }
