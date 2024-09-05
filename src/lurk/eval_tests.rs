@@ -429,6 +429,7 @@ test!(
 
 // big num
 test!(test_raw_big_num, "#0x0", |_| ZPtr::big_num([F::zero(); 8]));
+test!(test_raw_comm, "#c0x0", |_| ZPtr::comm([F::zero(); 8]));
 test!(
     test_raw_big_num2,
     "#0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3",
@@ -439,13 +440,31 @@ test!(
         ZPtr::big_num(lurk_hasher().hash(&preimg).try_into().unwrap())
     }
 );
+test!(
+    test_raw_comm2,
+    "#c0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3",
+    |_| {
+        let mut preimg = Vec::with_capacity(24);
+        preimg.extend([F::zero(); 8]);
+        preimg.extend(ZPtr::num(F::from_canonical_u32(123)).flatten());
+        ZPtr::comm(lurk_hasher().hash(&preimg).try_into().unwrap())
+    }
+);
 test!(test_big_num_to_comm, "(comm #0x0)", |_| ZPtr::comm(
+    [F::zero(); 8]
+));
+test!(test_comm_to_big_num, "(bignum #c0x0)", |_| ZPtr::big_num(
     [F::zero(); 8]
 ));
 test!(
     test_big_num_to_comm_to_big_num,
     "(bignum (comm #0x0))",
     |_| ZPtr::big_num([F::zero(); 8])
+);
+test!(
+    test_comm_to_big_num_to_comm,
+    "(comm (bignum #c0x0))",
+    |_| ZPtr::comm([F::zero(); 8])
 );
 test!(test_big_num_equal1, "(= #0x0 #0x1)", |z| z.intern_nil());
 test!(test_big_num_equal2, "(= #0x0 #0x0)", intern_t);

@@ -256,14 +256,17 @@ pub fn parse_numeric<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Synt
     }
 }
 
-pub fn parse_big_num<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
+pub fn parse_prefixed_hex_digest<F: Field>(
+    prefix: &'static str,
+    digest_size: usize,
+) -> impl Fn(Span<'_>) -> ParseResult<'_, F, (Pos, Vec<F>)> {
     move |from: Span<'_>| {
-        let (i, _) = tag("#0x")(from)?;
+        let (i, _) = tag(prefix)(from)?;
         let (i, digits) = base::parse_litbase_digits(base::LitBase::Hex)(i)?;
         let (i, be_bytes) = be_bytes_from_digits(base::LitBase::Hex, &digits, i)?;
         let mut num = BigUint::from_bytes_be(&be_bytes);
-        let mut res = Vec::with_capacity(DIGEST_SIZE); // This is stored in little-endian
-        for _ in 0..DIGEST_SIZE {
+        let mut res = Vec::with_capacity(digest_size); // This is stored in little-endian
+        for _ in 0..digest_size {
             let rem = &num % F::order();
             res.push(F::from_canonical_u32(rem.try_into().unwrap()));
             num /= F::order();
@@ -278,8 +281,22 @@ pub fn parse_big_num<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Synt
             )
         } else {
             let pos = Pos::from_upto(from, i);
-            Ok((i, Syntax::BigNum(pos, res.try_into().unwrap())))
+            Ok((i, (pos, res)))
         }
+    }
+}
+
+pub fn parse_big_num<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
+    move |from: Span<'_>| {
+        let (i, (pos, res)) = parse_prefixed_hex_digest("#0x", DIGEST_SIZE)(from)?;
+        Ok((i, Syntax::BigNum(pos, res.try_into().unwrap())))
+    }
+}
+
+pub fn parse_comm<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
+    move |from: Span<'_>| {
+        let (i, (pos, res)) = parse_prefixed_hex_digest("#c0x", DIGEST_SIZE)(from)?;
+        Ok((i, Syntax::Comm(pos, res.try_into().unwrap())))
     }
 }
 
@@ -432,6 +449,7 @@ pub fn parse_syntax<F: Field>(
                 parse_list(state.clone(), meta, create_unknown_packages),
             ),
             parse_numeric(),
+            parse_comm(),
             parse_big_num(),
             context(
                 "symbol",
