@@ -78,8 +78,8 @@
                               (let ((score (score (open code-commitment) guess)))
                                 (if (eq (car score) code-length)
                                     :correct
-                                    score))))
-                            :bad-code))
+                                    score)))
+                            :bad-code)))
 
 !(def g0 (make-scoring-fn (commit '(1 2 3 4)) 4 6))
 ;; (emit (cons :g0 g0))
