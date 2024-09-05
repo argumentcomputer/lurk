@@ -398,8 +398,13 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     }
 
     #[inline]
-    pub fn intern_big_num(&mut self, c: [F; 8]) -> ZPtr<F> {
+    pub fn intern_big_num(&mut self, c: [F; DIGEST_SIZE]) -> ZPtr<F> {
         self.memoize_atom_dag(ZPtr::big_num(c))
+    }
+
+    #[inline]
+    pub fn intern_comm(&mut self, c: [F; DIGEST_SIZE]) -> ZPtr<F> {
+        self.memoize_atom_dag(ZPtr::comm(c))
     }
 
     #[inline]
@@ -516,6 +521,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
             Syntax::U64(_, u) => self.intern_u64(*u),
             Syntax::I64(..) => bail!("Transient error: Signed integers are not yet supported. Using `(- 0 x)` instead of `-x` might work as a temporary workaround."),
             Syntax::BigNum(_, c) => self.intern_big_num(*c),
+            Syntax::Comm(_, c) => self.intern_comm(*c),
             Syntax::String(_, s) => self.intern_string(s),
             Syntax::Symbol(_, s) => self.intern_symbol(s),
             Syntax::List(_, xs) => {
@@ -918,7 +924,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
             ),
             Tag::Char => format!("'{}'", get_char(&zptr.digest)),
             Tag::BigNum => format!("#{:#x}", field_elts_to_biguint(&zptr.digest)),
-            Tag::Comm => format!("(comm #{:#x})", field_elts_to_biguint(&zptr.digest)),
+            Tag::Comm => format!("#c{:#x}", field_elts_to_biguint(&zptr.digest)),
             Tag::Str => format!("\"{}\"", self.fetch_string(zptr)),
             Tag::Builtin | Tag::Sym | Tag::Key | Tag::Nil => {
                 state.borrow().fmt_to_string(&self.fetch_symbol(zptr))
@@ -1082,11 +1088,11 @@ mod test {
         assert_eq!(zstore.fmt_with_state(state, &zero_big_num), "#0x0");
 
         let zero_comm = ZPtr::comm([BabyBear::zero(); 8]);
-        assert_eq!(zstore.fmt_with_state(state, &zero_comm), "(comm #0x0)");
+        assert_eq!(zstore.fmt_with_state(state, &zero_comm), "#c0x0");
 
         let mut one_comm = ZPtr::comm([BabyBear::zero(); 8]);
         one_comm.digest[0] = BabyBear::one();
-        assert_eq!(zstore.fmt_with_state(state, &one_comm), "(comm #0x1)");
+        assert_eq!(zstore.fmt_with_state(state, &one_comm), "#c0x1");
 
         let mut preimg = Vec::with_capacity(24);
         preimg.extend([BabyBear::zero(); 8]);
@@ -1098,7 +1104,7 @@ mod test {
         );
         assert_eq!(
             zstore.fmt_with_state(state, &ZPtr::comm(digest)),
-            "(comm #0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3)"
+            "#c0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3"
         );
 
         let empty_str = zstore.intern_string("");

@@ -17,6 +17,8 @@ pub enum Syntax<F> {
     I64(Pos, bool, u64),
     /// A big numeric type stored in little-endian
     BigNum(Pos, [F; DIGEST_SIZE]),
+    /// A commitment hash digest stored in little-endian
+    Comm(Pos, [F; DIGEST_SIZE]),
     /// A hierarchical symbol: foo, foo.bar.baz or keyword :foo
     Symbol(Pos, SymbolRef),
     /// A string literal: "foobar", "foo\nbar"
@@ -39,6 +41,7 @@ impl<F> Syntax<F> {
             | Self::U64(pos, _)
             | Self::I64(pos, ..)
             | Self::BigNum(pos, _)
+            | Self::Comm(pos, _)
             | Self::Symbol(pos, _)
             | Self::String(pos, _)
             | Self::Char(pos, _)
@@ -56,6 +59,7 @@ impl<F: fmt::Display + PrimeField> fmt::Display for Syntax<F> {
             Self::U64(_, x) => write!(f, "{x}u64"),
             Self::I64(_, sign, x) => write!(f, "{}{x}i64", if *sign { "-" } else { "" }),
             Self::BigNum(_, c) => write!(f, "#{:#x}", field_elts_to_biguint(c)),
+            Self::Comm(_, c) => write!(f, "#c{:#x}", field_elts_to_biguint(c)),
             Self::Symbol(_, x) => write!(f, "{x}"),
             Self::String(_, x) => write!(f, "\"{}\"", x.escape_default()),
             Self::Char(_, x) => {

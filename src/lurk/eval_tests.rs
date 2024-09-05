@@ -442,10 +442,18 @@ test!(
 test!(test_big_num_to_comm, "(comm #0x0)", |_| ZPtr::comm(
     [F::zero(); 8]
 ));
+test!(test_comm_to_big_num, "(bignum #c0x0)", |_| ZPtr::big_num(
+    [F::zero(); 8]
+));
 test!(
     test_big_num_to_comm_to_big_num,
     "(bignum (comm #0x0))",
     |_| ZPtr::big_num([F::zero(); 8])
+);
+test!(
+    test_comm_to_big_num_to_comm,
+    "(comm (bignum #c0x0))",
+    |_| ZPtr::comm([F::zero(); 8])
 );
 test!(test_big_num_equal1, "(= #0x0 #0x1)", |z| z.intern_nil());
 test!(test_big_num_equal2, "(= #0x0 #0x0)", intern_t);
