@@ -275,6 +275,9 @@ pub struct ZStore<F, H: Chipset<F>> {
     pub hashes3: FxHashMap<[F; HASH3_SIZE], [F; DIGEST_SIZE]>,
     pub hashes4: FxHashMap<[F; HASH4_SIZE], [F; DIGEST_SIZE]>,
     pub hashes6: FxHashMap<[F; HASH6_SIZE], [F; DIGEST_SIZE]>,
+    pub hashes3_diff: FxHashMap<[F; HASH3_SIZE], [F; DIGEST_SIZE]>,
+    pub hashes4_diff: FxHashMap<[F; HASH4_SIZE], [F; DIGEST_SIZE]>,
+    pub hashes6_diff: FxHashMap<[F; HASH6_SIZE], [F; DIGEST_SIZE]>,
     str_cache: FxHashMap<String, ZPtr<F>>,
     sym_cache: FxHashMap<Symbol, ZPtr<F>>,
     syn_cache: FxHashMap<Syntax<F>, ZPtr<F>>,
@@ -313,6 +316,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         }
         let digest = into_sized(&self.hasher.hash3.execute_simple(&preimg));
         self.hashes3.insert(preimg, digest);
+        self.hashes3_diff.insert(preimg, digest);
         digest
     }
 
@@ -322,6 +326,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         }
         let digest = into_sized(&self.hasher.hash4.execute_simple(&preimg));
         self.hashes4.insert(preimg, digest);
+        self.hashes4_diff.insert(preimg, digest);
         digest
     }
 
@@ -331,6 +336,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         }
         let digest = into_sized(&self.hasher.hash6.execute_simple(&preimg));
         self.hashes6.insert(preimg, digest);
+        self.hashes6_diff.insert(preimg, digest);
         digest
     }
 
@@ -990,6 +996,9 @@ pub fn lurk_zstore() -> ZStore<BabyBear, LurkChip> {
         hashes3: Default::default(),
         hashes4: Default::default(),
         hashes6: Default::default(),
+        hashes3_diff: Default::default(),
+        hashes4_diff: Default::default(),
+        hashes6_diff: Default::default(),
         str_cache: Default::default(),
         sym_cache: Default::default(),
         syn_cache: Default::default(),
