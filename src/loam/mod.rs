@@ -11,7 +11,7 @@ use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::FxHashMap;
 
 use crate::lurk::chipset::LurkChip;
-use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
+use crate::lurk::state::BUILTIN_SYMBOLS;
 use crate::lurk::tag::Tag;
 use crate::lurk::zstore::{self, lurk_zstore, ZPtr, ZStore};
 
@@ -231,7 +231,7 @@ impl WidePtr {
     fn nil() -> Self {
         // FIXME: cache, don't do expensive read repeatedly.
         let zstore = &mut lurk_zstore();
-        let ZPtr { tag, digest } = zstore.intern_nil();
+        let ZPtr { tag, digest } = *zstore.nil();
         Self(Wide::widen(tag.elt()), Wide(digest))
     }
 
@@ -338,8 +338,5 @@ trait LoamProgram {
 
 // TODO: This can use a hashtable lookup, or could even be known at compile-time (but how to make that non-brittle since iter() is not const?).
 pub(crate) fn lurk_sym_index(name: &str) -> Option<usize> {
-    LURK_PACKAGE_SYMBOLS_NAMES
-        .iter()
-        .filter(|name| **name != "nil")
-        .position(|s| *s == name)
+    BUILTIN_SYMBOLS.iter().position(|s| *s == name)
 }

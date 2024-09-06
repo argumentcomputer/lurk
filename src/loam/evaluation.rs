@@ -14,7 +14,7 @@ use crate::loam::memory::{
 };
 use crate::loam::{LEWrap, LoamProgram, Num, Ptr, PtrEq, Wide, WidePtr, LE};
 use crate::lurk::chipset::LurkChip;
-use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
+use crate::lurk::state::BUILTIN_SYMBOLS;
 use crate::lurk::tag::Tag;
 use crate::lurk::zstore::{builtin_vec, lurk_zstore, ZPtr, ZStore};
 
@@ -175,7 +175,7 @@ impl Ptr {
         if idx >= 18 {
             idx += 1;
         }
-        LURK_PACKAGE_SYMBOLS_NAMES[idx]
+        BUILTIN_SYMBOLS[idx]
     }
 }
 

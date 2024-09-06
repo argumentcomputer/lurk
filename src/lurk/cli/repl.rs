@@ -39,6 +39,7 @@ use crate::{
             Error, Span,
         },
         state::{State, StateRcCell},
+        symbol::Symbol,
         tag::Tag,
         zstore::{ZPtr, ZStore, DIGEST_SIZE},
     },
@@ -121,7 +122,6 @@ pub(crate) struct Repl<F: PrimeField32, H: Chipset<F>> {
     pub(crate) state: StateRcCell,
     pwd_path: Utf8PathBuf,
     pub(crate) meta_cmds: MetaCmdsMap<F, H>,
-    pub(crate) nil: ZPtr<F>,
 }
 
 impl Repl<BabyBear, LurkChip> {
@@ -132,7 +132,6 @@ impl Repl<BabyBear, LurkChip> {
         let eval_idx = toplevel.get_by_name("eval").index;
         let egress_idx = toplevel.get_by_name("egress").index;
         let env = zstore.intern_empty_env();
-        let nil = zstore.intern_nil();
         Self {
             zstore,
             queries,
@@ -144,7 +143,6 @@ impl Repl<BabyBear, LurkChip> {
             state: State::init_lurk_state().rccell(),
             pwd_path: current_dir().expect("Couldn't get current directory"),
             meta_cmds: meta_cmds(),
-            nil,
         }
     }
 }
@@ -224,7 +222,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             bail!("Missing first argument")
         }
         let (arg, rst) = self.zstore.fetch_tuple2(args);
-        if rst.tag != Tag::Nil {
+        if rst != self.zstore.nil() {
             bail!("Only one argument is supported")
         }
         Ok(arg)
@@ -239,24 +237,29 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             bail!("Missing second argument")
         }
         let (arg2, rst) = self.zstore.fetch_tuple2(rst);
-        if rst.tag != Tag::Nil {
+        if rst != self.zstore.nil() {
             bail!("Only two arguments are supported")
         }
         Ok((arg1, arg2))
     }
 
     pub(crate) fn car_cdr(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>) {
-        match zptr.tag {
-            Tag::Cons => self.zstore.fetch_tuple2(zptr),
-            Tag::Nil => (&self.nil, &self.nil),
-            _ => panic!("Invalid ZPtr"),
+        if zptr.tag == Tag::Cons {
+            self.zstore.fetch_tuple2(zptr)
+        } else if zptr == self.zstore.nil() {
+            (self.zstore.nil(), self.zstore.nil())
+        } else {
+            panic!("Invalid ZPtr")
         }
     }
 
-    fn input_marker(&self) -> String {
+    fn prompt_marker(&self) -> String {
         let state = self.state.borrow();
-        let current_package_name = state.fmt_to_string(state.get_current_package_name());
-        format!("{current_package_name}> ")
+        let root_package = state
+            .get_package(&Symbol::root_sym())
+            .expect("Root package is missing");
+        let package_name_formatted = root_package.fmt_to_string(state.get_current_package_name());
+        format!("{package_name_formatted}> ")
     }
 
     #[inline]
@@ -336,11 +339,11 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
     }
 
     fn manual_egression(&self, egress_input: &[F], queries_tmp: &mut QueryRecord<F>) -> ZPtr<F> {
-        let digest = self
+        let egress_output = self
             .toplevel
             .execute_by_index(self.egress_idx, egress_input, queries_tmp, None)
             .expect("Egression failed");
-        ZPtr::from_flat_digest(Tag::from_field(&egress_input[0]), &digest)
+        ZPtr::from_flat_digest(Tag::from_field(&egress_output[0]), &egress_output[1..])
     }
 
     pub(crate) fn format_debug_data(&mut self) -> FormattedDebugData<'_> {
@@ -531,12 +534,12 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
             let syntax_start = syntax_start - usize::from(is_meta);
             let potential_commentaries = &input[..syntax_start];
             let actual_syntax = &input[syntax_start..new_input.location_offset()];
-            let input_marker = &self.input_marker();
+            let prompt_marker = &self.prompt_marker();
             if actual_syntax.contains('\n') {
                 // print the expression on a new line to avoid messing with the user's formatting
-                print!("{potential_commentaries}{input_marker}\n{actual_syntax}");
+                print!("{potential_commentaries}{prompt_marker}\n{actual_syntax}");
             } else {
-                print!("{potential_commentaries}{input_marker}{actual_syntax}");
+                print!("{potential_commentaries}{prompt_marker}{actual_syntax}");
             }
             std::io::stdout().flush()?;
             // wait for ENTER to be pressed
@@ -597,7 +600,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         }
 
         loop {
-            match editor.readline(&self.input_marker()) {
+            match editor.readline(&self.prompt_marker()) {
                 Ok(mut line) => {
                     editor.add_history_entry(&line)?;
 

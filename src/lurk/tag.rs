@@ -8,21 +8,21 @@ use serde::{Deserialize, Serialize};
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, FromPrimitive,
 )]
 pub enum Tag {
-    Nil = 0,
-    Cons,
-    Sym,
-    Fun,
+    U64 = 2, // 0 and 1 are reserved for nil and t inside the vm
     Num,
-    Str,
-    Char,
-    Comm,
-    U64,
-    Key,
-    Env,
-    Err,
-    Thunk,
-    Builtin,
     BigNum,
+    Comm,
+    Char,
+    Str,
+    Key,
+    Fun,
+    Builtin,
+    Sym,
+    Cons,
+    Env,
+    Thunk,
+    Err,
+    Nil, // delete me
 }
 
 impl Tag {
@@ -57,7 +57,6 @@ mod test {
     #[test]
     fn test_tag_index_roundtrip() {
         for tag in [
-            Tag::Nil,
             Tag::Cons,
             Tag::Sym,
             Tag::Fun,

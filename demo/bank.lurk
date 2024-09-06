@@ -207,13 +207,13 @@ ledger2
 ;; Unfortunately, this functional commitment doesn't let us maintain state.
 ;; Let's turn our single-transaction function into a chained function.
 
-!(def chain<-db (lambda (db salt)
+!(def chain<-db (lambda (db secret)
                    (letrec ((foo (lambda (state msg)
                                    (let ((new-state ((fn<-db state) msg)))
-                                     (cons new-state (hide salt (foo new-state)))))))
+                                     (cons new-state (hide secret (foo new-state)))))))
                      (foo db))))
 
-;; We'll call this on our ledger, and protect write-access with a salt value #0x999.
+;; We'll call this on our ledger, and protect write-access with a secret value #0x999.
 
 !(commit (chain<-db ledger #0x999))
 

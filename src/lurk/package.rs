@@ -1,8 +1,6 @@
 use anyhow::{bail, Result};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::sync::Arc;
 
 use super::symbol::Symbol;
 
@@ -11,9 +9,9 @@ pub(crate) type SymbolRef = Arc<Symbol>;
 #[derive(Debug)]
 pub struct Package {
     name: SymbolRef,
-    symbols: HashMap<String, SymbolRef>,
-    names: HashMap<SymbolRef, String>,
-    local: HashSet<SymbolRef>,
+    symbols: FxHashMap<String, SymbolRef>,
+    names: FxHashMap<SymbolRef, String>,
+    local: FxHashSet<SymbolRef>,
 }
 
 impl Package {

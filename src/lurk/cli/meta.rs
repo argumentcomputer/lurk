@@ -16,7 +16,7 @@ use crate::{
             repl::Repl,
         },
         package::{Package, SymbolRef},
-        state::lurk_sym,
+        state::builtin_sym,
         tag::Tag,
         zstore::{ZPtr, DIGEST_SIZE},
     },
@@ -50,8 +50,8 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             if result.tag == Tag::Err {
                 bail!("Reduction error: {}", repl.fmt(&result));
             }
-            if result.tag == Tag::Nil {
-                eprintln!("`assert` failed. {} evaluates to nil", repl.fmt(&expr));
+            if &result == repl.zstore.nil() {
+                eprintln!("assert failed. {} evaluates to nil", repl.fmt(&expr));
                 std::process::exit(1);
             }
             Ok(())
@@ -78,7 +78,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
                 repl.memoize_dag(result1.tag, &result1.digest);
                 repl.memoize_dag(result2.tag, &result2.digest);
                 eprintln!(
-                    "`assert-eq` failed. {} ≠ {}",
+                    "assert-eq failed. {} ≠ {}",
                     repl.fmt(&result1),
                     repl.fmt(&result2)
                 );
@@ -99,7 +99,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             let (result, _) = repl.reduce_aux(&expr)?;
             if result.tag != Tag::Err {
                 eprintln!(
-                    "`assert-error` failed. {} doesn't result on evaluation error.",
+                    "assert-error failed. {} doesn't result on evaluation error.",
                     repl.fmt(&expr)
                 );
                 std::process::exit(1);
@@ -129,7 +129,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
                 repl.memoize_dag(expected.tag, &expected.digest);
                 // DAG for `emitted` has already been memoized
                 eprintln!(
-                    "`assert-emitted` failed. Expected {} but got {}",
+                    "assert-emitted failed. Expected {} but got {}",
                     repl.fmt(&expected),
                     repl.fmt(&emitted)
                 );
@@ -163,7 +163,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         ],
         example: &["(+ 1 1)", "!(debug)", "!(debug (+ 1 1))"],
         run: |repl, args, _path| {
-            if args.tag != Tag::Nil {
+            if args != repl.zstore.nil() {
                 let expr = *repl.peek1(args)?;
                 let result = repl.handle_non_meta(&expr);
                 debug_mode(&repl.format_debug_data())?;
@@ -201,9 +201,9 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         example: &["!(def foo (lambda () 123))"],
         run: |repl, args, _path| {
             let (&sym, _) = repl.peek2(args)?;
-            let let_ = repl.zstore.intern_symbol(&lurk_sym("let"));
+            let let_ = repl.zstore.intern_symbol(&builtin_sym("let"));
             let bindings = repl.zstore.intern_list([*args]);
-            let current_env = repl.zstore.intern_symbol(&lurk_sym("current-env"));
+            let current_env = repl.zstore.intern_symbol(&builtin_sym("current-env"));
             let current_env_call = repl.zstore.intern_list([current_env]);
             let expr = repl.zstore.intern_list([let_, bindings, current_env_call]);
             let (output, _) = repl.reduce_aux(&expr)?;
@@ -230,9 +230,9 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         ],
         run: |repl, args, _path| {
             let (&sym, _) = repl.peek2(args)?;
-            let letrec = repl.zstore.intern_symbol(&lurk_sym("letrec"));
+            let letrec = repl.zstore.intern_symbol(&builtin_sym("letrec"));
             let bindings = repl.zstore.intern_list([*args]);
-            let current_env = repl.zstore.intern_symbol(&lurk_sym("current-env"));
+            let current_env = repl.zstore.intern_symbol(&builtin_sym("current-env"));
             let current_env_call = repl.zstore.intern_list([current_env]);
             let expr = repl
                 .zstore
@@ -420,7 +420,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
     };
 
     fn call(repl: &mut Repl<F, H>, call_expr: &ZPtr<F>) -> Result<ZPtr<F>> {
-        if call_expr.tag == Tag::Nil {
+        if call_expr == repl.zstore.nil() {
             bail!("Missing callable object");
         }
         let (&callable, _) = repl.zstore.fetch_tuple2(call_expr);
@@ -491,6 +491,21 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         },
     };
 
+    fn validate_binding_var(repl: &Repl<F, H>, zptr: &ZPtr<F>) -> Result<()> {
+        match zptr.tag {
+            Tag::Builtin => Ok(()),
+            Tag::Sym => {
+                let zstore = &repl.zstore;
+                if zptr.digest != zstore.nil().digest && zptr.digest != zstore.t().digest {
+                    Ok(())
+                } else {
+                    bail!("Illegal binding");
+                }
+            }
+            _ => bail!("Illegal binding"),
+        }
+    }
+
     const TRANSITION: Self = Self {
         name: "transition",
         summary: "Chains a callable object and binds the next state to a variable",
@@ -500,9 +515,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         run: |repl, args, _path| {
             let (&new_state_sym, rest) = repl.car_cdr(args);
             let (&current_state_expr, &call_args) = repl.car_cdr(rest);
-            if new_state_sym.tag != Tag::Sym {
-                bail!("First argument must be a symbol");
-            }
+            Self::validate_binding_var(repl, &new_state_sym)?;
             let (current_state, _) = repl.reduce_aux(&current_state_expr)?;
             if current_state.tag != Tag::Cons {
                 bail!("Current state must reduce to a pair");
@@ -561,7 +574,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
                         let (head, tail) = repl.car_cdr(symbols);
                         let sym = repl.zstore.fetch_symbol(head);
                         symbols_vec.push(SymbolRef::new(sym));
-                        if tail.tag == Tag::Nil {
+                        if tail == repl.zstore.nil() {
                             break;
                         }
                         symbols = tail;
@@ -640,9 +653,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         ],
         run: |repl, args, _path| {
             let (&sym, &path) = repl.peek2(args)?;
-            if sym.tag != Tag::Sym {
-                bail!("Binding variable must be a symbol");
-            }
+            Self::validate_binding_var(repl, &sym)?;
             if path.tag != Tag::Str {
                 bail!("Path must be a string");
             }
@@ -686,10 +697,8 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             let (&name, rest) = repl.car_cdr(args);
             let (&vars, rest) = repl.car_cdr(rest);
             let (&body, &props) = repl.car_cdr(rest);
-            if name.tag != Tag::Sym {
-                bail!("Protocol name must be a symbol");
-            }
-            if !matches!(vars.tag, Tag::Cons | Tag::Nil) {
+            Self::validate_binding_var(repl, &name)?;
+            if vars.tag != Tag::Cons && &vars != repl.zstore.nil() {
                 bail!("Protocol vars must be a list");
             }
 
@@ -711,7 +720,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             let lang = get_prop(
                 "lang",
                 |_| true, // accept anything for now
-                repl.nil,
+                *repl.zstore.nil(),
             )?;
 
             let description = get_prop("description", |val| val.tag == Tag::Str, empty_str)?;
@@ -732,7 +741,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         ],
         example: &["!(help)", "!(help prove)"],
         run: |repl, args, _path| {
-            if args.tag != Tag::Nil {
+            if args != repl.zstore.nil() {
                 let arg = repl.peek1(args)?;
                 if !matches!(arg.tag, Tag::Sym | Tag::Builtin) {
                     bail!("Argument must be a symbol");
@@ -779,7 +788,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         info: &["Prove a Lurk reduction, persists the proof and prints its key"],
         example: &["'(1 2 3)", "!(prove)", "!(prove '(1 2 3))"],
         run: |repl, args, _path| {
-            if args.tag != Tag::Nil {
+            if args != repl.zstore.nil() {
                 let expr = *repl.peek1(args)?;
                 repl.handle_non_meta(&expr)?;
             }
@@ -891,7 +900,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         }
         repl.memoize_dag(Tag::Cons, &io_data.digest);
         let (claim, post_verify_predicate) = repl.zstore.fetch_tuple2(&io_data);
-        if claim.tag == Tag::Nil {
+        if claim == repl.zstore.nil() {
             bail!("Pre-verification predicate rejected the input");
         }
         if claim.tag != Tag::Cons {
@@ -901,12 +910,12 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
     }
 
     fn post_verify_check(repl: &mut Repl<F, H>, post_verify_predicate: ZPtr<F>) -> Result<()> {
-        if post_verify_predicate.tag != Tag::Nil {
+        if &post_verify_predicate != repl.zstore.nil() {
             let post_verify_call = repl.zstore.intern_list([post_verify_predicate]);
             let empty_env = repl.zstore.intern_empty_env();
             let (post_verify_result, _) =
                 repl.reduce_aux_with_env(&post_verify_call, &empty_env)?;
-            if post_verify_result.tag == Tag::Nil {
+            if &post_verify_result == repl.zstore.nil() {
                 bail!("Post-verification predicate rejected the input");
             }
         }

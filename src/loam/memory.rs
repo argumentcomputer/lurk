@@ -10,7 +10,7 @@ use crate::{
     lurk::{
         chipset::LurkChip,
         eval::EvalErr,
-        state::{StateRcCell, LURK_PACKAGE_SYMBOLS_NAMES},
+        state::{StateRcCell, BUILTIN_SYMBOLS},
         tag::Tag,
         zstore::{self, builtin_vec, lurk_zstore, ZPtr, ZStore},
     },
@@ -540,12 +540,12 @@ pub fn initial_builtin_relation() -> Vec<(Wide, Dual<LEWrap>)> {
 }
 
 pub fn initial_builtin_addr() -> LE {
-    LE::from_canonical_u64(LURK_PACKAGE_SYMBOLS_NAMES.len() as u64)
+    LE::from_canonical_u64(BUILTIN_SYMBOLS.len() as u64)
 }
 
 pub fn initial_nil_relation() -> Vec<(Wide, Dual<LEWrap>)> {
     let zstore = &mut lurk_zstore();
-    let ZPtr { tag: _, digest } = zstore.intern_nil();
+    let ZPtr { tag: _, digest } = *zstore.nil();
     vec![(Wide(digest), Dual(LEWrap(LE::from_canonical_u64(0u64))))]
 }
 

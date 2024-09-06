@@ -252,10 +252,6 @@ macro_rules! block {
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let $tgt:ident = $a:ident; $($tail:tt)+ }, $ops:expr) => {{
-        let $tgt = $a;
-        $crate::block!({ $($tail)* }, $ops)
-    }};
     ({ let $tgt:ident = $e:expr; $($tail:tt)+ }, $ops:expr) => {{
         $ops.push($crate::lair::expr::OpE::Const($crate::var!($tgt), $e.to_field()));
         let $tgt = $crate::var!($tgt);

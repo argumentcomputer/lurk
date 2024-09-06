@@ -9,7 +9,7 @@ use crate::loam::lurk_sym_index;
 use crate::loam::memory::{initial_tag_relation, Memory};
 use crate::loam::{LEWrap, LoamProgram, Num, Ptr, PtrEq, Wide, WidePtr, LE};
 use crate::lurk::chipset::LurkChip;
-use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
+use crate::lurk::state::BUILTIN_SYMBOLS;
 use crate::lurk::tag::Tag;
 use crate::lurk::zstore::{builtin_vec, lurk_zstore, ZPtr};
 

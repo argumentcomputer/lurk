@@ -16,7 +16,7 @@ use crate::{
             syntax::{parse_maybe_meta, parse_space},
             Error, Span,
         },
-        state::{lurk_sym, State, StateRcCell, LURK_PACKAGE_SYMBOLS_NAMES},
+        state::{lurk_sym, State, StateRcCell, BUILTIN_SYMBOLS},
         symbol::Symbol,
         syntax::Syntax,
         tag::Tag,
@@ -27,6 +27,7 @@ use super::{
     big_num::field_elts_to_biguint,
     chipset::{lurk_hasher, LurkChip},
     eval::EvalErr,
+    state::builtin_sym,
 };
 
 pub(crate) const DIGEST_SIZE: usize = 8;
@@ -281,11 +282,13 @@ pub struct ZStore<F, H: Chipset<F>> {
     str_cache: FxHashMap<String, ZPtr<F>>,
     sym_cache: FxHashMap<Symbol, ZPtr<F>>,
     syn_cache: FxHashMap<Syntax<F>, ZPtr<F>>,
+    nil: ZPtr<F>,
+    t: ZPtr<F>,
 }
 
 impl Default for ZStore<BabyBear, LurkChip> {
     fn default() -> Self {
-        Self {
+        let mut zstore = Self {
             hasher: lurk_hasher(),
             dag: Default::default(),
             hashes3: Default::default(),
@@ -297,29 +300,23 @@ impl Default for ZStore<BabyBear, LurkChip> {
             str_cache: Default::default(),
             sym_cache: Default::default(),
             syn_cache: Default::default(),
-        }
+            nil: ZPtr::null(Tag::Sym),
+            t: ZPtr::null(Tag::Sym),
+        };
+        zstore.nil = zstore.intern_symbol(&lurk_sym("nil"));
+        zstore.t = zstore.intern_symbol(&lurk_sym("t"));
+        zstore
     }
-}
-
-static NIL: OnceCell<Symbol> = OnceCell::new();
-fn nil() -> &'static Symbol {
-    NIL.get_or_init(|| lurk_sym("nil"))
 }
 
 static QUOTE: OnceCell<Symbol> = OnceCell::new();
 fn quote() -> &'static Symbol {
-    QUOTE.get_or_init(|| lurk_sym("quote"))
+    QUOTE.get_or_init(|| builtin_sym("quote"))
 }
 
 static BUILTIN_VEC: OnceCell<Vec<Symbol>> = OnceCell::new();
 pub(crate) fn builtin_vec() -> &'static Vec<Symbol> {
-    BUILTIN_VEC.get_or_init(|| {
-        LURK_PACKAGE_SYMBOLS_NAMES
-            .into_iter()
-            .filter(|sym| sym != &"nil")
-            .map(lurk_sym)
-            .collect()
-    })
+    BUILTIN_VEC.get_or_init(|| BUILTIN_SYMBOLS.into_iter().map(builtin_sym).collect())
 }
 
 impl<F: Field, H: Chipset<F>> ZStore<F, H> {
@@ -458,7 +455,6 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 let tag = if is_keyword { Tag::Key } else { Tag::Sym };
                 self.intern_null(tag)
             } else {
-                let is_nil = sym == nil();
                 let is_builtin = builtin_vec().contains(sym);
                 let mut zptr = self.intern_null(Tag::Sym);
                 let mut iter = sym.path().iter().peekable();
@@ -466,9 +462,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                     let is_last = iter.peek().is_none();
                     let str_zptr = self.intern_string(s);
                     let tag = if is_last {
-                        if is_nil {
-                            Tag::Nil
-                        } else if is_builtin {
+                        if is_builtin {
                             Tag::Builtin
                         } else if is_keyword {
                             Tag::Key
@@ -488,8 +482,13 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     }
 
     #[inline]
-    pub fn intern_nil(&mut self) -> ZPtr<F> {
-        self.intern_symbol(nil())
+    pub fn nil(&self) -> &ZPtr<F> {
+        &self.nil
+    }
+
+    #[inline]
+    pub fn t(&self) -> &ZPtr<F> {
+        &self.t
     }
 
     #[inline]
@@ -511,8 +510,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     where
         <I as IntoIterator>::IntoIter: DoubleEndedIterator,
     {
-        let nil = self.intern_nil();
-        self.intern_list_full(xs, nil)
+        self.intern_list_full(xs, self.nil)
     }
 
     #[inline]
@@ -714,6 +712,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
             };
         }
         match tag {
+            Tag::Nil => panic!("delete me"),
             Tag::Str => loop {
                 if digest == zeros {
                     self.memoize_atom_dag(ZPtr { tag, digest: zeros });
@@ -789,7 +788,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 recurse!(trd_tag, trd_digest);
                 memoize_tuple3!(fst_tag, fst_digest, snd_tag, snd_digest, trd_tag, trd_digest);
             }
-            Tag::Sym | Tag::Key | Tag::Nil | Tag::Builtin => (), // these should be already memoized
+            Tag::Sym | Tag::Key | Tag::Builtin => (), // these should be already memoized
             Tag::Num | Tag::U64 | Tag::Char | Tag::Err | Tag::BigNum | Tag::Comm => {
                 self.memoize_atom_dag(ZPtr {
                     tag,
@@ -866,22 +865,19 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     where
         F: PrimeField32,
     {
-        assert!(matches!(
-            zptr.tag,
-            Tag::Sym | Tag::Nil | Tag::Builtin | Tag::Key
-        ));
+        assert!(matches!(zptr.tag, Tag::Sym | Tag::Builtin | Tag::Key));
         Symbol::new_from_vec(self.fetch_symbol_path(zptr), zptr.tag == Tag::Key)
     }
 
     pub fn fetch_list<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> (Vec<&ZPtr<F>>, Option<&'a ZPtr<F>>) {
-        assert!(matches!(zptr.tag, Tag::Cons | Tag::Nil));
+        assert!(zptr.tag == Tag::Cons || zptr == &self.nil);
         let mut elts = vec![];
         while zptr.tag == Tag::Cons {
             let (car, cdr) = self.fetch_tuple2(zptr);
             elts.push(car);
             zptr = cdr;
         }
-        if zptr.tag == Tag::Nil {
+        if zptr == &self.nil {
             (elts, None)
         } else {
             (elts, Some(zptr))
@@ -938,6 +934,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         F: PrimeField32,
     {
         match zptr.tag {
+            Tag::Nil => panic!("delete me"),
             Tag::Num => format!("{}n", zptr.digest[0]),
             Tag::U64 => format!(
                 "{}",
@@ -950,7 +947,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
             Tag::BigNum => format!("#{:#x}", field_elts_to_biguint(&zptr.digest)),
             Tag::Comm => format!("#c{:#x}", field_elts_to_biguint(&zptr.digest)),
             Tag::Str => format!("\"{}\"", self.fetch_string(zptr)),
-            Tag::Builtin | Tag::Sym | Tag::Key | Tag::Nil => {
+            Tag::Builtin | Tag::Sym | Tag::Key => {
                 state.borrow().fmt_to_string(&self.fetch_symbol(zptr))
             }
             Tag::Cons => {
@@ -964,7 +961,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
             }
             Tag::Fun => {
                 let (args, body, _) = self.fetch_tuple3(zptr);
-                if args.tag == Tag::Nil {
+                if args == &self.nil {
                     format!("<Fun () {}>", self.fmt_with_state(state, body))
                 } else {
                     format!(
@@ -1008,19 +1005,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
 
 #[inline]
 pub fn lurk_zstore() -> ZStore<BabyBear, LurkChip> {
-    ZStore {
-        hasher: lurk_hasher(),
-        dag: Default::default(),
-        hashes3: Default::default(),
-        hashes4: Default::default(),
-        hashes6: Default::default(),
-        hashes3_diff: Default::default(),
-        hashes4_diff: Default::default(),
-        hashes6_diff: Default::default(),
-        str_cache: Default::default(),
-        sym_cache: Default::default(),
-        syn_cache: Default::default(),
-    }
+    ZStore::default()
 }
 
 #[cfg(test)]
@@ -1111,8 +1096,7 @@ mod test {
         let mut zstore = lurk_zstore();
         let state = &State::init_lurk_state().rccell();
 
-        let nil = zstore.intern_nil();
-        assert_eq!(zstore.fmt_with_state(state, &nil), "nil");
+        assert_eq!(zstore.fmt_with_state(state, &zstore.nil), "nil");
 
         let a_char = ZPtr::char('a');
         assert_eq!(zstore.fmt_with_state(state, &a_char), "'a'");
