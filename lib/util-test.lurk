@@ -1,5 +1,25 @@
 !(load "util.lurk")
 
+
+;; todo
+!(assert-error (todo :rest-of-owl))
+
+;; break
+!(assert-error (error :nasty 123))
+
+;; assert
+!(assert-eq 9 (assert 9))
+!(assert-error (assert (= 5 (+ 2 2))))
+
+;; ensure
+!(assert-eq 5 (ensure 5))
+; current framework doesn't allow testing this.
+;!(assert-error (ensure nil))
+
+;; member
+!(assert (member? 2 '(1 2 3)))
+!(assert (not (member? 4 '(1 2 3 ))))
+
 ;; position
 !(assert-eq 2 (position :c '(:a :b :c :d)))
 
@@ -57,3 +77,9 @@
 
 ;; expt
 !(assert-eq 32 (expt 2 5))
+
+;; compose
+!(assert-eq 36 (let ((square (lambda (x) (* x x)))
+                     (double (lambda (x) (* 2 x)))
+                     (double-then-square (compose square double)))
+                 (double-then-square 3)))
