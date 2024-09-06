@@ -205,6 +205,7 @@ impl<H: Chipset<BabyBear>> Repl<BabyBear, H> {
             let io_proof_bytes = bincode::serialize(&io_proof)?;
             std::fs::write(proof_path, io_proof_bytes)?;
         }
+        println!("Proof key: \"{proof_key}\"");
         Ok(proof_key)
     }
 }

@@ -783,8 +783,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
                 let expr = *repl.peek1(args)?;
                 repl.handle_non_meta(&expr)?;
             }
-            let proof_key = repl.prove_last_reduction()?;
-            println!("Proof key: \"{proof_key}\"");
+            repl.prove_last_reduction()?;
             Ok(())
         },
     };
