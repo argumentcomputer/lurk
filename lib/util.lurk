@@ -1,15 +1,15 @@
-!(def position (lambda (elt list)
-                 (letrec ((aux (lambda (list)
-                                 (if (eq (car list) elt)
+!(def position (lambda (elt l)
+                 (letrec ((aux (lambda (l)
+                                 (if (eq (car l) elt)
                                      0
-                                     (+ 1 (aux (cdr list)))))))
-                   (if list (aux list)))))
+                                     (+ 1 (aux (cdr l)))))))
+                   (if l (aux l)))))
 
-!(defrec nth (lambda (n list)
-               (if list
+!(defrec nth (lambda (n l)
+               (if l
                    (if (= n 0)
-                       (car list)
-                       (nth (- n 1) (cdr list))))))
+                       (car l)
+                       (nth (- n 1) (cdr l))))))
 
 
 !(defrec nth-cdr (lambda (n l)
@@ -17,7 +17,7 @@
                        l
                        (cdr (nth-cdr (- n 1) l)))))
 
-!(def nth (lambda (n list) (car (nth-cdr n list))))
+!(def nth (lambda (n l) (car (nth-cdr n l))))
 
 !(defrec apply (lambda (f args)
                  (if args
@@ -58,3 +58,26 @@
                                 (if b
                                     (cons (cons (car a) (car b)) (aux (cdr a) (cdr b))))))))
               (aux a b))))
+
+!(defrec sort (lambda (l)
+                (if (cdr l)
+                    (let ((sorted-cdr (sort (cdr l))))
+                      (if (< (car l) (car sorted-cdr))
+                          (cons (car l) sorted-cdr)
+                        (cons (car sorted-cdr)
+                              (sort (cons (car l)
+                                          (cdr sorted-cdr))))))
+                  l)))
+
+!(defrec map (lambda (f l)
+               (if l
+                   (cons (f (car l)) (map f (cdr l))))))
+
+!(def permute (lambda (l seed)
+                (let ((committed (map (lambda (elt)
+                                        (bignum (hide (bignum (commit seed))
+                                                      elt)))
+                                      l))
+                      (sorted (sort committed)))
+                  (map (lambda (c) (open c)) sorted))))
+
