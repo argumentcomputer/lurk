@@ -51,3 +51,5 @@
 !(assert-eq '(d b c a e) (permute '(a b c d e) 123))
 !(assert-eq '(e d a c b) (permute '(a b c d e) 987))
 
+;; expt
+!(assert-eq 32 (expt 2 5))

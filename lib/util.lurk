@@ -86,3 +86,9 @@
                       (sorted (sort committed)))
                   (map (lambda (c) (open c)) sorted))))
 
+!(defrec expt (lambda (b e)
+                (if (= e 0)
+                    1
+                    (if (= (% e 2) 1) ;; (odd? e)
+                        (* b (expt (* b b) (/ (- e 1) 2)))
+                        (expt (* b b) (/ e 2))))))
