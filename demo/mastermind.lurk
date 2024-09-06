@@ -145,7 +145,7 @@
                                 ;; Only player 2 will be able to prove this, due to make-scoring-fn's interface.
                                 (let ((game2 (make-scoring-fn code-comm2 expected-code-length num-choices)))
                                   (if (eq game2 :bad-code)
-                                      (cons :winner-1)
+                                      (cons :winner-1 nil)
                                       (play ensure-valid-code game1 game2 guess2 guess1 max-rounds)))))))))))))
 
 ;; Player 1 supplies a bad code. Player 2 supplies a good code.
