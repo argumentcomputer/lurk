@@ -78,7 +78,7 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, 
         eval_unop(&builtins),
         eval_binop_num(&builtins),
         eval_binop_misc(&builtins),
-        eval_begin(&builtins),
+        eval_begin(),
         eval_list(),
         open_comm(),
         equal(&builtins),
@@ -1127,42 +1127,33 @@ pub fn eval_list<F: AbstractField + Ord>() -> FuncE<F> {
     )
 }
 
-pub fn eval_begin<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
+pub fn eval_begin<F: AbstractField + Ord>() -> FuncE<F> {
     func!(
         partial fn eval_begin(rest_tag, rest, env): [2] {
-            let err_tag = Tag::Err;
-            let cons_tag = Tag::Cons;
-            let invalid_form = EvalErr::InvalidForm;
             match rest_tag {
+                Tag::Nil => {
+                    return (rest_tag, rest)
+                }
                 Tag::Cons => {
-                    let (expr_tag, expr, rest_tag, rest) = load(rest);
-                    let (val_tag, val) = call(eval, expr_tag, expr, env);
-                    match val_tag {
+                    let (head_tag, head, rest_tag, rest) = load(rest);
+                    let (head_tag, head) = call(eval, head_tag, head, env);
+                    match head_tag {
                         Tag::Err => {
-                            return (val_tag, val)
+                            return (head_tag, head)
                         }
                     };
                     match rest_tag {
                         Tag::Nil => {
-                            return (val_tag, val)
-                        }
-                        Tag::Cons => {
-                            let builtin_tag = Tag::Builtin;
-                            let begin = builtins.index("begin");
-                            let smaller_expr = store(builtin_tag, begin, rest_tag, rest);
-                            let (val_tag, val) = call(eval, cons_tag, smaller_expr, env);
-                            return (val_tag, val)
+                            return (head_tag, head)
                         }
                     };
-                    return (err_tag, invalid_form)
-                }
-                Tag::Nil => {
-                    let nil_tag = Tag::Nil;
-                    let nil = 0;
-                    return (nil_tag, nil)
+                    let (res_tag, res) = call(eval_begin, rest_tag, rest, env);
+                    return (res_tag, res)
                 }
             };
-            return (err_tag, invalid_form)
+            let err_tag = Tag::Err;
+            let err = EvalErr::InvalidForm;
+            return (err_tag, err)
         }
     )
 }
@@ -1886,7 +1877,7 @@ mod test {
         expect_eq(eval_unop.width(), expect!["78"]);
         expect_eq(eval_binop_num.width(), expect!["107"]);
         expect_eq(eval_binop_misc.width(), expect!["70"]);
-        expect_eq(eval_begin.width(), expect!["72"]);
+        expect_eq(eval_begin.width(), expect!["68"]);
         expect_eq(eval_list.width(), expect!["72"]);
         expect_eq(eval_let.width(), expect!["92"]);
         expect_eq(eval_letrec.width(), expect!["96"]);
