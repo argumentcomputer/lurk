@@ -7,6 +7,12 @@
 !(assert-eq :c (nth 2 '(:a :b :c :d)))
 !(assert-eq :c (nth 2 '(:a :b :c :d)))
 
+;; append
+!(assert-eq nil (append nil nil))
+!(assert-eq '(1) (append '(1) nil))
+!(assert-eq '(1) (append nil '(1)))
+!(assert-eq '(1 2 3 4) (append '(1 2) '(3 4)))
+
 ;; apply
 !(assert-eq 27 (apply (lambda (x y z) (* x (+ y z))) '(3 4 5)))
 
@@ -15,12 +21,6 @@
 (emit (cons :getf-2 (getf '(:a 1 :b 2 :c 3) :b))) ; 30 iterations
 
 !(assert-eq nil (getf '(:a 1 :b 2 :c 3) :d))
-
-;; append
-!(assert-eq nil (append nil nil))
-!(assert-eq '(1) (append '(1) nil))
-!(assert-eq '(1) (append nil '(1)))
-!(assert-eq '(1 2 3 4) (append '(1 2) '(3 4)))
 
 ;; assoc
 !(assert-eq '(:b . 2) (assoc :b '((:a . 1) (:b . 2) (:c . 3))))
@@ -50,3 +50,4 @@
 ;; permute
 !(assert-eq '(d b c a e) (permute '(a b c d e) 123))
 !(assert-eq '(e d a c b) (permute '(a b c d e) 987))
+
