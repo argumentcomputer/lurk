@@ -19,6 +19,11 @@
 
 !(def nth (lambda (n l) (car (nth-cdr n l))))
 
+!(defrec append (lambda (x y)
+                  (if x
+                      (cons (car x) (append (cdr x) y))
+                      y)))
+
 !(defrec apply (lambda (f args)
                  (if args
                      (if (cdr args)

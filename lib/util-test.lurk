@@ -16,6 +16,12 @@
 
 !(assert-eq nil (getf '(:a 1 :b 2 :c 3) :d))
 
+;; append
+!(assert-eq nil (append nil nil))
+!(assert-eq '(1) (append '(1) nil))
+!(assert-eq '(1) (append nil '(1)))
+!(assert-eq '(1 2 3 4) (append '(1 2) '(3 4)))
+
 ;; assoc
 !(assert-eq '(:b . 2) (assoc :b '((:a . 1) (:b . 2) (:c . 3))))
 (emit (cons :assoc-b (assoc :b '((:a . 1) (:b . 2) (:c . 3))))) ;; 29 iterations
