@@ -264,6 +264,12 @@ test!(
 );
 test!(test_begin_empty, "(begin)", |z| z.intern_nil());
 test!(test_begin, "(begin 1 2 3)", |_| uint(3));
+test!(test_list, "(list)", |z| z.intern_nil());
+test!(test_list2, "(list (+ 1 1) \"hi\")", |z| {
+    let hi = z.intern_string("hi");
+    let two = uint(2);
+    z.intern_list([two, hi])
+});
 test!(test_quote, "'(x 1 :foo)", |z| {
     let x = z.intern_symbol(&user_sym("x"));
     let one = uint(1);

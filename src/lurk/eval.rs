@@ -79,6 +79,7 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, 
         eval_binop_num(&builtins),
         eval_binop_misc(&builtins),
         eval_begin(&builtins),
+        eval_list(),
         open_comm(),
         equal(&builtins),
         equal_inner(),
@@ -682,6 +683,10 @@ pub fn eval<F: AbstractField + Ord>(builtins: &BuiltinMemo<'_, F>) -> FuncE<F> {
                                         }
                                     }
                                 }
+                                "list" => {
+                                    let (expr_tag, expr) = call(eval_list, rest_tag, rest, env);
+                                    return (expr_tag, expr)
+                                }
                                 "+", "-", "*", "/", "%", "=", "<", ">", "<=", ">=" => {
                                     let rest_not_cons = sub(rest_tag, cons_tag);
                                     if rest_not_cons {
@@ -1085,6 +1090,39 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
                     return eq
                 }
             }
+        }
+    )
+}
+
+pub fn eval_list<F: AbstractField + Ord>() -> FuncE<F> {
+    func!(
+        partial fn eval_list(rest_tag, rest, env): [2] {
+            match rest_tag {
+                Tag::Nil => {
+                    return (rest_tag, rest)
+                }
+                Tag::Cons => {
+                    let (head_tag, head, rest_tag, rest) = load(rest);
+                    let (head_tag, head) = call(eval, head_tag, head, env);
+                    match head_tag {
+                        Tag::Err => {
+                            return (head_tag, head)
+                        }
+                    };
+                    let (rest_tag, rest) = call(eval_list, rest_tag, rest, env);
+                    match rest_tag {
+                        Tag::Err => {
+                            return (rest_tag, rest)
+                        }
+                    };
+                    let cons_tag = Tag::Cons;
+                    let cons = store(head_tag, head, rest_tag, rest);
+                    return (cons_tag, cons)
+                }
+            };
+            let err_tag = Tag::Err;
+            let err = EvalErr::InvalidForm;
+            return (err_tag, err)
         }
     )
 }
@@ -1813,6 +1851,7 @@ mod test {
         let eval_binop_num = FuncChip::from_name("eval_binop_num", toplevel);
         let eval_binop_misc = FuncChip::from_name("eval_binop_misc", toplevel);
         let eval_begin = FuncChip::from_name("eval_begin", toplevel);
+        let eval_list = FuncChip::from_name("eval_list", toplevel);
         let eval_let = FuncChip::from_name("eval_let", toplevel);
         let eval_letrec = FuncChip::from_name("eval_letrec", toplevel);
         let open_comm = FuncChip::from_name("open_comm", toplevel);
@@ -1841,13 +1880,14 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["91"]);
-        expect_eq(eval.width(), expect!["154"]);
+        expect_eq(eval.width(), expect!["155"]);
         expect_eq(eval_opening_unop.width(), expect!["96"]);
         expect_eq(eval_hide.width(), expect!["114"]);
         expect_eq(eval_unop.width(), expect!["78"]);
         expect_eq(eval_binop_num.width(), expect!["107"]);
         expect_eq(eval_binop_misc.width(), expect!["70"]);
         expect_eq(eval_begin.width(), expect!["72"]);
+        expect_eq(eval_list.width(), expect!["72"]);
         expect_eq(eval_let.width(), expect!["92"]);
         expect_eq(eval_letrec.width(), expect!["96"]);
         expect_eq(open_comm.width(), expect!["49"]);
@@ -1857,9 +1897,9 @@ mod test {
         expect_eq(apply.width(), expect!["99"]);
         expect_eq(env_lookup.width(), expect!["49"]);
         expect_eq(ingress.width(), expect!["100"]);
-        expect_eq(ingress_builtin.width(), expect!["50"]);
+        expect_eq(ingress_builtin.width(), expect!["51"]);
         expect_eq(egress.width(), expect!["77"]);
-        expect_eq(egress_builtin.width(), expect!["50"]);
+        expect_eq(egress_builtin.width(), expect!["51"]);
         expect_eq(hash_24_8.width(), expect!["493"]);
         expect_eq(hash_32_8.width(), expect!["655"]);
         expect_eq(hash_48_8.width(), expect!["975"]);
