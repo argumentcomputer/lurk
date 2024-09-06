@@ -13,6 +13,10 @@
 !(assert-eq '(1) (append nil '(1)))
 !(assert-eq '(1 2 3 4) (append '(1 2) '(3 4)))
 
+;; revappend
+!(assert-eq '(3 2 1 4 5 6) (revappend '(1 2 3) '(4 5 6)))
+!(assert-eq '(4 5 6) (revappend '() '(4 5 6)))
+
 ;; apply
 !(assert-eq 27 (apply (lambda (x y z) (* x (+ y z))) '(3 4 5)))
 

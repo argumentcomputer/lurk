@@ -24,6 +24,12 @@
                       (cons (car x) (append (cdr x) y))
                       y)))
 
+;; More efficient version of (append (reverse x) y)
+!(defrec revappend (lambda (x y)
+                     (if x
+                         (revappend (cdr x) (cons (car x) y))
+                         y)))
+
 !(defrec apply (lambda (f args)
                  (if args
                      (if (cdr args)
