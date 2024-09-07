@@ -32,7 +32,7 @@
 
 !(defrec macroexpand-all (lambda (macro-env src)
                            (let ((expanded (macroexpand macro-env src)))
-                             (if (type-eqq '(cons) expanded)
+                             (if (type-eqq (cons) expanded)
                                  (let ((head (car expanded)))
                                    (if (member? head '(let letrec))
                                        (cons head (cons (map (lambda (binding)

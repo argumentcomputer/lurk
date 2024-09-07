@@ -9,7 +9,7 @@
 !(assert (immediate? 'q'))
 !(assert (not (immediate? (cons 1 2))))
 !(assert (not (immediate? 'sym)))
-;!(assert (immediate? (lambda () nil)))
+!(assert (immediate? (lambda () nil)))
 
 
 !(def macro-env ())
@@ -42,7 +42,6 @@
 
 !(assert-eq 123 (macroexpand-1 () 123))
 
-;!(debug (macroexpand-1 '(and a b c) macro-env))
 !(assert-eq '(if a (and b c)) (macroexpand-1 macro-env '(and a b c)))
 !(assert-eq t (macroexpand-1 macro-env '(and)))
 
