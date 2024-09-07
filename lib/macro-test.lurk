@@ -57,6 +57,7 @@
 !(assert-eq
   '(let ((a (baz 1 2 3)) (b (letrec ((c (baz 9 8 7))) c)))
     (begin
+     (lambda (x y z) (cons 9 (baz 11)))
      (if (if a (if b c))
          (if a (if b c))
          (if (baz x)
@@ -66,6 +67,7 @@
                                     (b (letrec ((c (bar 9 8 7)))
                                          c)))
                                (begin
+                                (lambda (x y z) (cons 9 (foo 11)))
                                 (or (and a b c)
                                  (if (foo x) (bar y) (and (bar x) (foo y))))))))
 

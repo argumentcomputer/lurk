@@ -16,7 +16,7 @@
 !(def macroexpand-1 (lambda (macro-env src)
                       (if (type-eqq '(cons) src)
                           (let ((head (car src)))
-                            (if (type-eqq symbol head)
+                            (if (type-eqq symbol head) ;; This excludes builtins.
                                 (let ((macro-fun (cdr (assoc head macro-env))))
                                   (if macro-fun
                                       (macro-fun src)
@@ -39,7 +39,11 @@
                                                                (list (car binding) (macroexpand-all macro-env (cadr binding))))
                                                              (cadr expanded))
                                                         (macroexpand-all macro-env (cddr expanded))))
-                                       (map (macroexpand-all macro-env) expanded)))
+                                       (if (eq head 'lambda)
+                                           (cons 'lambda
+                                                 (cons (cadr expanded)
+                                                       (map (macroexpand-all macro-env) (cddr expanded))))
+                                       (map (macroexpand-all macro-env) expanded))))
                                  expanded))))
 
 !(def eval-with-macro-env (lambda (macro-env src env)
