@@ -53,6 +53,9 @@
 
 !(assert-eq '(if a (if b c)) (macroexpand-all macro-env '(and a b c)))
 !(assert-eq '(if a a (if b b c)) (macroexpand-all macro-env '(or a b c)))
+!(assert-eq '(list (baz 1)) (macroexpand-all macro-env '(list (bar 1))))
+;; Don't macroexpand quoted.
+!(assert-eq '(quote (bar 1)) (macroexpand-all macro-env '(quote (bar 1))))
 
 !(assert-eq
   '(let ((a (baz 1 2 3)) (b (letrec ((c (baz 9 8 7))) c)))

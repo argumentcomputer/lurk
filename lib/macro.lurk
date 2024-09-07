@@ -34,16 +34,18 @@
                            (let ((expanded (macroexpand macro-env src)))
                              (if (type-eqq (cons) expanded)
                                  (let ((head (car expanded)))
-                                   (if (member? head '(let letrec))
-                                       (cons head (cons (map (lambda (binding)
-                                                               (list (car binding) (macroexpand-all macro-env (cadr binding))))
-                                                             (cadr expanded))
-                                                        (macroexpand-all macro-env (cddr expanded))))
-                                       (if (eq head 'lambda)
-                                           (cons 'lambda
-                                                 (cons (cadr expanded)
-                                                       (map (macroexpand-all macro-env) (cddr expanded))))
-                                       (map (macroexpand-all macro-env) expanded))))
+                                   (if (eq head 'quote)
+                                       src
+                                       (if (member? head '(let letrec))
+                                           (cons head (cons (map (lambda (binding)
+                                                                   (list (car binding) (macroexpand-all macro-env (cadr binding))))
+                                                                 (cadr expanded))
+                                                            (macroexpand-all macro-env (cddr expanded))))
+                                           (if (eq head 'lambda)
+                                               (cons 'lambda
+                                                     (cons (cadr expanded)
+                                                           (map (macroexpand-all macro-env) (cddr expanded))))
+                                               (map (macroexpand-all macro-env) expanded)))))
                                  expanded))))
 
 !(def eval-with-macro-env (lambda (macro-env src env)
