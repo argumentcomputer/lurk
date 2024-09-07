@@ -1,3 +1,46 @@
+!(def not (lambda (x) (if x nil t)))
+
+;; TODO: tests, but WYSIWYG.
+!(def caar (lambda (x) (car (car x))))
+!(def cadr (lambda (x) (car (cdr x))))
+!(def cdar (lambda (x) (cdr (car x))))
+!(def cddr (lambda (x) (cdr (cdr x))))
+!(def caaar (lambda (x) (car (car (car x)))))
+!(def caadr (lambda (x) (car (car (cdr x)))))
+!(def cadar (lambda (x) (car (cdr (car x)))))
+!(def caddr (lambda (x) (car (cdr (cdr x)))))
+!(def cdaar (lambda (x) (cdr (car (car x)))))
+!(def cdadr (lambda (x) (cdr (car (cdar x)))))
+!(def caddr (lambda (x) (car (cdr (cdr x)))))
+!(def cdddr (lambda (x) (cdr (cdr (cdr x)))))
+
+!(def todo (lambda (x)
+             (begin
+              (emit (list :todo x))
+              ;; this will error
+              (break))))
+
+!(def error (lambda (type data)
+              (begin
+               (emit (list :error (list type data)))
+              ;; this will error
+              (break))))
+
+;; Unprovable -- guarantees a code path will not lead to a proof.
+!(def fail (lambda () (open #0x0)))
+
+;; This should be a macro, so we can include the unevaluated form in the error.
+!(def assert (lambda (x) (if x x (error :assertion-failure nil))))
+
+;; This should be a macro, so we can include the unevaluated form in the error.
+!(def ensure (lambda (x) (if x x (fail))))
+
+!(defrec member? (lambda (x l)
+                   (if l
+                       (if (eq x (car l))
+                           x
+                           (member? x (cdr l))))))
+
 !(def position (lambda (elt l)
                  (letrec ((aux (lambda (l)
                                  (if (eq (car l) elt)
@@ -23,6 +66,12 @@
                   (if x
                       (cons (car x) (append (cdr x) y))
                       y)))
+
+;; More efficient version of (append (reverse x) y)
+!(defrec revappend (lambda (x y)
+                     (if x
+                         (revappend (cdr x) (cons (car x) y))
+                         y)))
 
 !(defrec apply (lambda (f args)
                  (if args
@@ -86,3 +135,14 @@
                       (sorted (sort committed)))
                   (map (lambda (c) (open c)) sorted))))
 
+;; exponentiate: b^e
+!(defrec expt (lambda (b e)
+                (if (= e 0)
+                    1
+                    (if (= (% e 2) 1) ;; (odd? e)
+                        (* b (expt (* b b) (/ (- e 1) 2)))
+                        (expt (* b b) (/ e 2))))))
+
+;; todo: make variadic when possible
+!(def compose (lambda (a b)
+                (lambda (x) (a (b x)))))

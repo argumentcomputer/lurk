@@ -1,0 +1,57 @@
+;;; Lurk doesn't (yet) support macros explicitly, so let's add a poor-man's macro compiler.
+!(load "util.lurk")
+
+!(def not-immediate? (lambda (x)
+                       (if (type-eqq x x)
+                           t
+                           (if (type-eqq (0) x)
+                               t))))
+
+!(def immediate? (lambda (x) (not (not-immediate? x))))
+
+!(def bind-macro (lambda (name macro-env macro-fun)
+                   (cons (cons name macro-fun) macro-env)))
+
+;; macro-env is an alist of (name . macro-function).
+!(def macroexpand-1 (lambda (macro-env src)
+                      (if (type-eqq '(cons) src)
+                          (let ((head (car src)))
+                            (if (type-eqq symbol head) ;; This excludes builtins.
+                                (let ((macro-fun (cdr (assoc head macro-env))))
+                                  (if macro-fun
+                                      (macro-fun src)
+                                      src))
+                                src))
+                          src)))
+
+!(defrec macroexpand (lambda (macro-env src)
+                       (let ((expanded (macroexpand-1 macro-env src)))
+                         (if (eq src expanded)
+                             src
+                             (macroexpand macro-env expanded)))))
+
+!(defrec macroexpand-all (lambda (macro-env src)
+                           (let ((expanded (macroexpand macro-env src)))
+                             (if (type-eqq (cons) expanded)
+                                 (let ((head (car expanded)))
+                                   (if (eq head 'quote)
+                                       src
+                                       (if (member? head '(let letrec))
+                                           (cons head (cons (map (lambda (binding)
+                                                                   (list (car binding) (macroexpand-all macro-env (cadr binding))))
+                                                                 (cadr expanded))
+                                                            (macroexpand-all macro-env (cddr expanded))))
+                                           (if (eq head 'lambda)
+                                               (cons 'lambda
+                                                     (cons (cadr expanded)
+                                                           (map (macroexpand-all macro-env) (cddr expanded))))
+                                               (map (macroexpand-all macro-env) expanded)))))
+                                 expanded))))
+
+!(def eval-with-macro-env (lambda (macro-env src env)
+                            (eval (macroexpand-all src) env)))
+
+!(def eval-with-macro-env1 (lambda (macro-env src)
+                            (eval (macroexpand-all macro-env src))))
+
+!(def evl (lambda (macro-env src) (eval-with-macro-env1 macro-env src)))

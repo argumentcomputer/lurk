@@ -1,5 +1,24 @@
 !(load "util.lurk")
 
+;; todo
+!(assert-error (todo :rest-of-owl))
+
+;; break
+!(assert-error (error :nasty 123))
+
+;; assert
+!(assert-eq 9 (assert 9))
+!(assert-error (assert (= 5 (+ 2 2))))
+
+;; ensure
+!(assert-eq 5 (ensure 5))
+; current framework doesn't allow testing this.
+;!(assert-error (ensure nil))
+
+;; member
+!(assert (member? 2 '(1 2 3)))
+!(assert (not (member? 4 '(1 2 3 ))))
+
 ;; position
 !(assert-eq 2 (position :c '(:a :b :c :d)))
 
@@ -12,6 +31,10 @@
 !(assert-eq '(1) (append '(1) nil))
 !(assert-eq '(1) (append nil '(1)))
 !(assert-eq '(1 2 3 4) (append '(1 2) '(3 4)))
+
+;; revappend
+!(assert-eq '(3 2 1 4 5 6) (revappend '(1 2 3) '(4 5 6)))
+!(assert-eq '(4 5 6) (revappend '() '(4 5 6)))
 
 ;; apply
 !(assert-eq 27 (apply (lambda (x y z) (* x (+ y z))) '(3 4 5)))
@@ -50,3 +73,12 @@
 ;; permute
 !(assert-eq '(d b c a e) (permute '(a b c d e) 123))
 !(assert-eq '(e d a c b) (permute '(a b c d e) 987))
+
+;; expt
+!(assert-eq 32 (expt 2 5))
+
+;; compose
+!(assert-eq 36 (let ((square (lambda (x) (* x x)))
+                     (double (lambda (x) (* 2 x)))
+                     (double-then-square (compose square double)))
+                 (double-then-square 3)))
