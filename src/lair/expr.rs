@@ -16,7 +16,7 @@ impl std::fmt::Display for Var {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VarList(List<Var>);
+pub struct VarList(pub List<Var>);
 
 impl VarList {
     #[inline]

@@ -459,7 +459,6 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 self.intern_null(tag)
             } else {
                 let is_nil = sym == nil();
-                let is_builtin = builtin_vec().contains(sym);
                 let mut zptr = self.intern_null(Tag::Sym);
                 let mut iter = sym.path().iter().peekable();
                 while let Some(s) = iter.next() {
@@ -468,8 +467,6 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                     let tag = if is_last {
                         if is_nil {
                             Tag::Nil
-                        } else if is_builtin {
-                            Tag::Builtin
                         } else if is_keyword {
                             Tag::Key
                         } else {

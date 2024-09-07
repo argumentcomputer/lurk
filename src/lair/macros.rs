@@ -365,4 +365,27 @@ macro_rules! block {
         let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
+    ({ match_many $var:ident [$cloj:expr] { $( $raw:expr $(, $other_raw:expr)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
+        let ops = $ops.into();
+        let mut branches = Vec::new();
+        #[allow(clippy::redundant_closure_call)]
+        {
+            $(
+                branches.push((
+                    $cloj($raw),
+                    $crate::block_init!( $branch )
+                ));
+                $(
+                    branches.push((
+                        $cloj($other_raw),
+                        $crate::block_init!( $branch )
+                    ));
+                )*
+            )*
+        }
+        let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;
+        let cases = $crate::lair::expr::CasesE { branches, default };
+        let ctrl = $crate::lair::expr::CtrlE::MatchMany($var, cases);
+        $crate::lair::expr::BlockE { ops, ctrl }
+    }};
 }
