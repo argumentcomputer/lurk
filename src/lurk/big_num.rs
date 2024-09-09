@@ -111,7 +111,10 @@ pub fn field_elts_to_biguint<F: PrimeField>(elts: &[F]) -> BigUint {
 mod test {
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
-    use sphinx_core::{stark::StarkMachine, utils::BabyBearPoseidon2};
+    use sphinx_core::{
+        stark::{StarkGenericConfig, StarkMachine},
+        utils::BabyBearPoseidon2,
+    };
 
     use crate::{
         air::debug::debug_chip_constraints_and_queries_with_sharding,
@@ -177,6 +180,6 @@ mod test {
 
         let (pk, _vk) = machine.setup(&LairMachineProgram);
         let shard = Shard::new(&queries);
-        machine.debug_constraints(&pk, shard.clone());
+        machine.debug_constraints(&pk, vec![shard], &mut machine.config().challenger());
     }
 }
