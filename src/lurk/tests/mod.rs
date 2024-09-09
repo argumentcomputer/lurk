@@ -3,7 +3,10 @@ mod lang;
 
 use p3_baby_bear::BabyBear as F;
 use p3_field::AbstractField;
-use sphinx_core::{stark::StarkMachine, utils::BabyBearPoseidon2};
+use sphinx_core::{
+    stark::{StarkGenericConfig, StarkMachine},
+    utils::BabyBearPoseidon2,
+};
 
 use crate::{
     air::debug::debug_chip_constraints_and_queries_with_sharding,
@@ -44,7 +47,7 @@ fn run_tests<C2: Chipset<F>>(
 
     let lurk_main = FuncChip::from_name("lurk_main", toplevel);
     let result = toplevel
-        .execute(lurk_main.func, &input, &mut record, None)
+        .execute(&lurk_main.func, &input, &mut record, None)
         .unwrap();
 
     assert_eq!(result.as_ref(), &expected_cloj(zstore).flatten());
@@ -67,5 +70,6 @@ fn run_tests<C2: Chipset<F>>(
         record.expect_public_values().len(),
     );
     let (pk, _) = machine.setup(&LairMachineProgram);
-    machine.debug_constraints(&pk, full_shard);
+    let mut challenger = machine.config().challenger();
+    machine.debug_constraints(&pk, vec![full_shard], &mut challenger);
 }

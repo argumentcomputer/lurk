@@ -12,7 +12,7 @@ use rustyline::{
     Completer, Editor, Helper, Highlighter, Hinter,
 };
 use sphinx_core::{
-    stark::{LocalProver, StarkGenericConfig},
+    stark::{DefaultProver, MachineProver, StarkGenericConfig},
     utils::SphinxCoreOpts,
 };
 use std::{fmt::Debug, io::Write, marker::PhantomData};
@@ -20,7 +20,7 @@ use std::{fmt::Debug, io::Write, marker::PhantomData};
 use crate::{
     lair::{
         chipset::{Chipset, NoChip},
-        execute::{DebugEntry, DebugEntryKind, QueryRecord, QueryResult, Shard},
+        execute::{DebugEntry, DebugEntryKind, QueryRecord, QueryResult, ShardingConfig},
         lair_chip::LairMachineProgram,
         toplevel::Toplevel,
     },
@@ -169,6 +169,7 @@ impl<C1: Chipset<BabyBear>, C2: Chipset<BabyBear>> Repl<BabyBear, C1, C2> {
         let machine = new_machine(&self.toplevel);
         let (pk, vk) = machine.setup(&LairMachineProgram);
         let challenger_p = &mut machine.config().challenger();
+        let prover = DefaultProver::new(machine);
         let must_prove = if !proof_path.exists() {
             true
         } else {
@@ -177,18 +178,22 @@ impl<C1: Chipset<BabyBear>, C2: Chipset<BabyBear>> Repl<BabyBear, C1, C2> {
                 let machine_proof = cached_proof.into_machine_proof();
                 let challenger_v = &mut challenger_p.clone();
                 // force an overwrite if verification goes wrong
-                machine.verify(&vk, &machine_proof, challenger_v).is_err()
+                prover
+                    .machine()
+                    .verify(&vk, &machine_proof, challenger_v)
+                    .is_err()
             } else {
                 // force an overwrite if deserialization goes wrong
                 true
             }
         };
         if must_prove {
-            let challenger_v = &mut challenger_p.clone();
-            let shard = Shard::new(&self.queries);
             let opts = SphinxCoreOpts::default();
-            let machine_proof = machine.prove::<LocalProver<_, _>>(&pk, shard, challenger_p, opts);
-            machine
+            let challenger_v = &mut challenger_p.clone();
+            let sharded = ShardingConfig::default().shard(&self.queries);
+            let machine_proof = prover.prove(&pk, sharded, challenger_p, opts)?;
+            prover
+                .machine()
                 .verify(&vk, &machine_proof, challenger_v)
                 .expect("Proof verification failed");
             let crypto_proof: CryptoProof = machine_proof.into();

@@ -69,9 +69,9 @@ impl<'a, T> ColumnMutSlice<'a, T> {
     }
 }
 
-impl<'a, F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
+impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> FuncChip<F, C1, C2> {
     /// Per-row parallel trace generation
-    pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
+    pub fn generate_trace(&self, shard: &Shard<F>) -> RowMajorMatrix<F> {
         let func_queries = &shard.queries().func_queries()[self.func.index];
         let range = shard.get_func_range(self.func.index);
         let width = self.width();
@@ -125,7 +125,7 @@ impl<'a, F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2
                     slice,
                     queries,
                     requires,
-                    self.toplevel,
+                    &self.toplevel,
                     result.depth,
                     depth_requires,
                 );
@@ -436,7 +436,7 @@ mod tests {
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
     use sphinx_core::{
-        stark::{LocalProver, MachineRecord, StarkGenericConfig, StarkMachine},
+        stark::{DefaultProver, MachineProver, StarkGenericConfig, StarkMachine},
         utils::{BabyBearPoseidon2, SphinxCoreOpts},
     };
 
@@ -693,8 +693,7 @@ mod tests {
 
         let lair_chips = build_lair_chip_vector(&ack_chip);
 
-        let shard = Shard::new(&queries);
-        let shards = shard.clone().shard(&ShardingConfig::default());
+        let shards = ShardingConfig::default().shard(&queries);
         assert!(
             shards.len() > 1,
             "lair_shard_test must have more than one shard"
@@ -716,12 +715,15 @@ mod tests {
         let (pk, vk) = machine.setup(&LairMachineProgram);
         let mut challenger_p = machine.config().challenger();
         let mut challenger_v = machine.config().challenger();
-        let shard = Shard::new(&queries);
 
-        machine.debug_constraints(&pk, shard.clone());
+        machine.debug_constraints(&pk, shards.clone(), &mut machine.config().challenger());
         let opts = SphinxCoreOpts::default();
-        let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
-        machine
+        let prover = DefaultProver::new(machine);
+        let proof = prover
+            .prove(&pk, shards, &mut challenger_p, opts)
+            .expect("proof generates");
+        prover
+            .machine()
             .verify(&vk, &proof, &mut challenger_v)
             .expect("proof verifies");
     }

@@ -3,7 +3,7 @@ use hashbrown::HashMap;
 use itertools::Itertools;
 use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::FxHashMap;
-use sphinx_core::stark::{Indexed, MachineRecord};
+use sphinx_core::{stark::MachineRecord, utils::SphinxCoreOpts};
 use std::ops::Range;
 
 use crate::{
@@ -75,14 +75,14 @@ pub struct QueryRecord<F: PrimeField32> {
 }
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
-pub struct Shard<'a, F: PrimeField32> {
+pub struct Shard<F: PrimeField32> {
     pub(crate) index: u32,
     // TODO: remove this `Option` once Sphinx no longer requires `Default`
-    pub(crate) queries: Option<&'a QueryRecord<F>>,
+    pub(crate) queries: Option<QueryRecord<F>>,
     pub(crate) shard_config: ShardingConfig,
 }
 
-impl<'a, F: PrimeField32> Shard<'a, F> {
+impl<F: PrimeField32> Shard<F> {
     /// Creates a new initial shard from the given `QueryRecord`.
     ///
     /// # Note
@@ -90,17 +90,19 @@ impl<'a, F: PrimeField32> Shard<'a, F> {
     /// Make sure to call `.shard()` on a `Shard` created by `new` when generating
     /// the traces, otherwise you will only get the first shard's trace.
     #[inline]
-    pub fn new(queries: &'a QueryRecord<F>) -> Self {
+    pub fn new(queries: &QueryRecord<F>) -> Self {
         Shard {
             index: 0,
-            queries: queries.into(),
+            queries: Some(queries.clone()),
             shard_config: ShardingConfig::default(),
         }
     }
 
     #[inline]
     pub fn queries(&self) -> &QueryRecord<F> {
-        self.queries.expect("Missing query record reference")
+        self.queries
+            .as_ref()
+            .expect("Missing query record reference")
     }
 
     pub fn get_func_range(&self, func_index: usize) -> Range<usize> {
@@ -123,18 +125,9 @@ impl<'a, F: PrimeField32> Shard<'a, F> {
     }
 }
 
-impl<'a, F: PrimeField32> Indexed for Shard<'a, F> {
-    fn index(&self) -> u32 {
-        self.index
-    }
-}
-
-impl<'a, F: PrimeField32> MachineRecord for Shard<'a, F> {
-    type Config = ShardingConfig;
-
-    fn set_index(&mut self, index: u32) {
-        self.index = index
-    }
+impl<F: PrimeField32> MachineRecord for Shard<F> {
+    // type Config = ShardingConfig; // FIXME
+    type Config = SphinxCoreOpts;
 
     fn stats(&self) -> HashMap<String, usize> {
         // TODO: use `IndexMap` instead so the original insertion order is kept
@@ -183,38 +176,6 @@ impl<'a, F: PrimeField32> MachineRecord for Shard<'a, F> {
         // just a no-op because `generate_dependencies` is a no-op
     }
 
-    fn shard(self, config: &Self::Config) -> Vec<Self> {
-        let queries = self.queries();
-        let shard_size = config.max_shard_size as usize;
-        let max_num_func_rows: usize = queries
-            .func_queries
-            .iter()
-            .map(|q| q.len())
-            .max()
-            .unwrap_or_default();
-        // TODO: This snippet or equivalent is needed for memory sharding
-        // let max_num_mem_rows: usize = queries
-        //     .mem_queries
-        //     .iter()
-        //     .map(|q| q.len())
-        //     .max()
-        //     .unwrap_or_default();
-        // let max_num_rows = max_num_func_rows.max(max_num_mem_rows);
-        let max_num_rows = max_num_func_rows;
-
-        let remainder = max_num_rows % shard_size;
-        let num_shards = max_num_rows / shard_size + if remainder > 0 { 1 } else { 0 };
-        let mut shards = Vec::with_capacity(num_shards);
-        for shard_index in 0..num_shards {
-            shards.push(Shard {
-                index: shard_index as u32,
-                queries: self.queries,
-                shard_config: *config,
-            });
-        }
-        shards
-    }
-
     fn public_values<F2: AbstractField>(&self) -> Vec<F2> {
         self.expect_public_values()
             .iter()
@@ -237,6 +198,39 @@ impl Default for ShardingConfig {
                 |s| s.parse::<u32>().unwrap_or(DEFAULT_SHARD_SIZE),
             ),
         }
+    }
+}
+
+impl ShardingConfig {
+    pub fn shard<F: PrimeField32>(&self, queries: &QueryRecord<F>) -> Vec<Shard<F>> {
+        let shard_size = self.max_shard_size as usize;
+        let max_num_func_rows: usize = queries
+            .func_queries
+            .iter()
+            .map(|q| q.len())
+            .max()
+            .unwrap_or_default();
+        // TODO: This snippet or equivalent is needed for memory sharding
+        // let max_num_mem_rows: usize = queries
+        //     .mem_queries
+        //     .iter()
+        //     .map(|q| q.len())
+        //     .max()
+        //     .unwrap_or_default();
+        // let max_num_rows = max_num_func_rows.max(max_num_mem_rows);
+        let max_num_rows = max_num_func_rows;
+
+        let remainder = max_num_rows % shard_size;
+        let num_shards = max_num_rows / shard_size + if remainder > 0 { 1 } else { 0 };
+        let mut shards = Vec::with_capacity(num_shards);
+        for shard_index in 0..num_shards {
+            shards.push(Shard {
+                index: shard_index as u32,
+                queries: Some(queries.clone()),
+                shard_config: *self,
+            });
+        }
+        shards
     }
 }
 
