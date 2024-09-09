@@ -1,5 +1,5 @@
 !(prove (cons 1 2))
-!(verify "5eb9efba6f028b458dbaa0cdb059711342e7f35031de89f5c6c6e5891a3136")
+!(verify "4668bed30416bfbdbb8011df22ff919ececd2607357b77638a1131b395dc23")
 
 !(defprotocol my-protocol (hash pair)
   (cons
@@ -13,7 +13,7 @@
 
 !(prove-protocol my-protocol
   "repl-test-protocol-proof"
-  #0x896994f6258a01fbc7f21a81cb28a537259c3e97cc62da0a2773c63f9b4168
+  #0x818e61a96cb66761e3a7a338bfd7e374fade81e70455ad6b63e63438823bbc
   '(13 . 17))
 
 !(verify-protocol my-protocol "repl-test-protocol-proof")

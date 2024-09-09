@@ -103,7 +103,7 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, 
         egress(&digests),
         hash_24_8(),
         hash_32_8(),
-        hash_48_8(),
+        hash_40_8(),
         u64_add(),
         u64_sub(),
         u64_mul(),
@@ -268,22 +268,22 @@ pub fn ingress<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
                     return (tag, ptr)
                 }
                 Tag::Thunk => {
-                    let (fst_tag, padding: [7], fst_digest: [8], snd_digest: [8]) = preimg(hash_24_8, digest);
-                    assert_eq!(padding, zeros);
+                    let (fst_tag_full: [8], fst_digest: [8], snd_digest: [8]) = preimg(hash_24_8, digest);
                     let env_tag = Tag::Env;
-                    let (fst_tag, fst_ptr) = call(ingress, fst_tag, padding, fst_digest);
-                    let (_snd_tag, snd_ptr) = call(ingress, env_tag, padding, snd_digest);
+                    let (fst_tag, fst_ptr) = call(ingress, fst_tag_full, fst_digest);
+                    let (_snd_tag, snd_ptr) = call(ingress, env_tag, zeros, snd_digest);
                     let ptr = store(fst_tag, fst_ptr, snd_ptr);
                     return (tag, ptr)
                 }
                 Tag::Fun => {
-                    let (fst_tag_full: [8], fst_digest: [8],
-                         snd_tag_full: [8], snd_digest: [8],
-                         trd_tag_full: [8], trd_digest: [8]) = preimg(hash_48_8, digest);
-                    let (fst_tag, fst_ptr) = call(ingress, fst_tag_full, fst_digest);
-                    let (snd_tag, snd_ptr) = call(ingress, snd_tag_full, snd_digest);
-                    let (_trd_tag, trd_ptr) = call(ingress, trd_tag_full, trd_digest);
-                    let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr, trd_ptr);
+                    let (args_tag_full: [8], args_digest: [8],
+                         body_tag_full: [8], body_digest: [8],
+                                             env_digest: [8]) = preimg(hash_40_8, digest);
+                    let env_tag = Tag::Env;
+                    let (args_tag, args_ptr) = call(ingress, args_tag_full, args_digest);
+                    let (body_tag, body_ptr) = call(ingress, body_tag_full, body_digest);
+                    let (_env_tag, env_ptr) = call(ingress, env_tag, zeros, env_digest);
+                    let ptr = store(args_tag, args_ptr, body_tag, body_ptr, env_ptr);
                     return (tag, ptr)
                 }
                 Tag::Env => {
@@ -291,17 +291,13 @@ pub fn ingress<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
                         let zero = 0;
                         return (tag, zero)
                     }
-                    let (sym_digest: [8],
-                         val_tag, padding: [7],
-                         val_digest: [8],
-                         env_digest: [8]) = preimg(hash_32_8, digest);
-                    assert_eq!(padding, zeros);
-                    let sym_tag = Tag::Sym;
-                    let env_tag = Tag::Env;
-                    let (_sym_tag, sym_ptr) = call(ingress, sym_tag, padding, sym_digest);
-                    let (val_tag, val_ptr) = call(ingress, val_tag, padding, val_digest);
-                    let (_env_tag, env_ptr) = call(ingress, env_tag, padding, env_digest);
-                    let ptr = store(sym_ptr, val_tag, val_ptr, env_ptr);
+                    let (var_tag_full: [8], var_digest: [8],
+                         val_tag_full: [8], val_digest: [8],
+                                            env_digest: [8]) = preimg(hash_40_8, digest);
+                    let (var_tag, var_ptr) = call(ingress, var_tag_full, var_digest);
+                    let (val_tag, val_ptr) = call(ingress, val_tag_full, val_digest);
+                    let (_tag, env_ptr) = call(ingress, tag, zeros, env_digest); // `tag` is `Tag::Env`
+                    let ptr = store(var_tag, var_ptr, val_tag, val_ptr, env_ptr);
                     return (tag, ptr)
                 }
             }
@@ -375,17 +371,16 @@ pub fn egress<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
                     return (tag, digest)
                 }
                 Tag::Fun => {
-                    let (fst_tag, fst_ptr, snd_tag, snd_ptr, trd_ptr) = load(val);
-                    let trd_tag = Tag::Env;
-                    let (fst_tag, fst_digest: [8]) = call(egress, fst_tag, fst_ptr);
-                    let (snd_tag, snd_digest: [8]) = call(egress, snd_tag, snd_ptr);
-                    let (trd_tag, trd_digest: [8]) = call(egress, trd_tag, trd_ptr);
+                    let (args_tag, args_ptr, body_tag, body_ptr, env_ptr) = load(val);
+                    let (args_tag, args_digest: [8]) = call(egress, args_tag, args_ptr);
+                    let (body_tag, body_digest: [8]) = call(egress, body_tag, body_ptr);
+                    let env_tag = Tag::Env;
+                    let (_env_tag, env_digest: [8]) = call(egress, env_tag, env_ptr);
 
                     let padding = [0; 7];
-                    let fst_tag_full: [8] = (fst_tag, padding);
-                    let snd_tag_full: [8] = (snd_tag, padding);
-                    let trd_tag_full: [8] = (trd_tag, padding);
-                    let digest: [8] = call(hash_48_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest, trd_tag_full, trd_digest);
+                    let args_tag_full: [8] = (args_tag, padding);
+                    let body_tag_full: [8] = (body_tag, padding);
+                    let digest: [8] = call(hash_40_8, args_tag_full, args_digest, body_tag_full, body_digest, env_digest);
                     return (tag, digest)
                 }
                 Tag::Env => {
@@ -393,16 +388,15 @@ pub fn egress<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
                         let digest = [0; 8];
                         return (tag, digest)
                     }
-                    let (sym_ptr, val_tag, val_ptr, env_ptr) = load(val);
-                    let sym_tag = Tag::Sym;
-                    let env_tag = Tag::Env;
-                    let (_sym_tag, sym_digest: [8]) = call(egress, sym_tag, sym_ptr);
+                    let (var_tag, var_ptr, val_tag, val_ptr, env_ptr) = load(val);
+                    let (var_tag, var_digest: [8]) = call(egress, var_tag, var_ptr);
                     let (val_tag, val_digest: [8]) = call(egress, val_tag, val_ptr);
-                    let (_env_tag, env_digest: [8]) = call(egress, env_tag, env_ptr);
+                    let (_tag, env_digest: [8]) = call(egress, tag, env_ptr); // `tag` is `Tag::Env`
 
                     let padding = [0; 7];
+                    let var_tag_full: [8] = (var_tag, padding);
                     let val_tag_full: [8] = (val_tag, padding);
-                    let digest: [8] = call(hash_32_8, sym_digest, val_tag_full, val_digest, env_digest);
+                    let digest: [8] = call(hash_40_8, var_tag_full, var_digest, val_tag_full, val_digest, env_digest);
                     return (tag, digest)
                 }
             }
@@ -428,10 +422,10 @@ pub fn hash_32_8<F>() -> FuncE<F> {
     )
 }
 
-pub fn hash_48_8<F>() -> FuncE<F> {
+pub fn hash_40_8<F>() -> FuncE<F> {
     func!(
-        invertible fn hash_48_8(preimg: [48]): [8] {
-            let img: [8] = extern_call(hash_48_8, preimg);
+        invertible fn hash_40_8(preimg: [40]): [8] {
+            let img: [8] = extern_call(hash_40_8, preimg);
             return img
         }
     )
@@ -549,7 +543,7 @@ pub fn eval<F: AbstractField + Ord>() -> FuncE<F> {
                             // body in the extended environment
                             let (body_tag, body, body_env) = load(res);
                             // `expr` is the symbol
-                            let thunk_env = store(expr, res_tag, res, body_env);
+                            let thunk_env = store(expr_tag, expr, res_tag, res, body_env);
                             let (res_tag, res) = call(eval, body_tag, body, thunk_env);
                             return (res_tag, res)
                         }
@@ -621,9 +615,9 @@ pub fn eval_builtin_expr<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> Fu
                             return (res_tag, res)
                         }
                         "lambda" => {
-                            // first element: lambda symbol
-                            // second element: parameter list
-                            // third element: body
+                            // first element: parameter list
+                            // second element: body
+                            // third element: env
                             // A function (more precisely, a closure) is an object with a
                             // parameter list, a body and an environment
                             let res_tag = Tag::Fun;
@@ -1056,11 +1050,11 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
                     if !a_and_b {
                         return zero
                     }
-                    let (a_fst: [2], a_snd: [2], a_trd: [2]) = load(a);
-                    let (b_fst: [2], b_snd: [2], b_trd: [2]) = load(b);
+                    let (a_fst: [2], a_snd: [2], a_trd) = load(a);
+                    let (b_fst: [2], b_snd: [2], b_trd) = load(b);
                     let fst_eq = call(equal_inner, a_fst, b_fst);
                     let snd_eq = call(equal_inner, a_snd, b_snd);
-                    let trd_eq = call(equal_inner, a_trd, b_trd);
+                    let trd_eq = call(equal_inner, a_tag, a_trd, a_tag, b_trd); // `a_tag` is `Tag::Env`
                     let eq = mul(fst_eq, snd_eq);
                     let eq = mul(eq, trd_eq);
                     return eq
@@ -1601,7 +1595,7 @@ pub fn eval_let<F: AbstractField + Ord>() -> FuncE<F> {
                                     return (val_tag, val)
                                 }
                             };
-                            let ext_env = store(param, val_tag, val, env);
+                            let ext_env = store(param_tag, param, val_tag, val, env);
                             let rest_binds_not_nil = sub(nil_tag, rest_binds_tag);
                             if rest_binds_not_nil {
                                 let (res_tag, res) = call(eval_let, rest_binds_tag, rest_binds, body_tag, body, ext_env);
@@ -1656,7 +1650,7 @@ pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
 
                             let thunk_tag = Tag::Thunk;
                             let thunk = store(expr_tag, expr, env);
-                            let ext_env = store(param, thunk_tag, thunk, env);
+                            let ext_env = store(param_tag, param, thunk_tag, thunk, env);
                             // this will preemptively evaluate the thunk, so that we do not skip evaluation in case
                             // the variable is not used inside the letrec body, and furthermore it follows a strict
                             // evaluation order
@@ -1743,7 +1737,7 @@ pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
                                         }
                                     };
                                     // and store it in the environment
-                                    let ext_env = store(param, arg_tag, arg, func_env);
+                                    let ext_env = store(param_tag, param, arg_tag, arg, func_env);
                                     let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
                                     let (res_tag, res) = call(apply, fun_tag, ext_fun, rest_args_tag, rest_args, args_env);
 
@@ -1772,7 +1766,7 @@ pub fn env_lookup<F: AbstractField>() -> FuncE<F> {
                 let err = EvalErr::UnboundVar;
                 return (err_tag, err)
             }
-            let (y, val_tag, val, tail_env) = load(env);
+            let (_y_tag, y, val_tag, val, tail_env) = load(env);
             let y_digest: [8] = load(y);
             let not_eq = sub(x_digest, y_digest);
             if !not_eq {
@@ -1829,7 +1823,7 @@ mod test {
         let egress = FuncChip::from_name("egress", toplevel);
         let hash_24_8 = FuncChip::from_name("hash_24_8", toplevel);
         let hash_32_8 = FuncChip::from_name("hash_32_8", toplevel);
-        let hash_48_8 = FuncChip::from_name("hash_48_8", toplevel);
+        let hash_40_8 = FuncChip::from_name("hash_40_8", toplevel);
         let u64_add = FuncChip::from_name("u64_add", toplevel);
         let u64_sub = FuncChip::from_name("u64_sub", toplevel);
         let u64_mul = FuncChip::from_name("u64_mul", toplevel);
@@ -1860,12 +1854,12 @@ mod test {
         expect_eq(equal_inner.width(), expect!["57"]);
         expect_eq(car_cdr.width(), expect!["61"]);
         expect_eq(apply.width(), expect!["100"]);
-        expect_eq(env_lookup.width(), expect!["49"]);
+        expect_eq(env_lookup.width(), expect!["50"]);
         expect_eq(ingress.width(), expect!["105"]);
-        expect_eq(egress.width(), expect!["81"]);
+        expect_eq(egress.width(), expect!["82"]);
         expect_eq(hash_24_8.width(), expect!["493"]);
         expect_eq(hash_32_8.width(), expect!["655"]);
-        expect_eq(hash_48_8.width(), expect!["975"]);
+        expect_eq(hash_40_8.width(), expect!["815"]);
         expect_eq(u64_add.width(), expect!["53"]);
         expect_eq(u64_sub.width(), expect!["53"]);
         expect_eq(u64_mul.width(), expect!["85"]);
@@ -1894,26 +1888,24 @@ mod test {
             let digest: List<_> = digest.into();
 
             let mut queries = QueryRecord::new(toplevel);
-            queries.inject_inv_queries("hash_32_8", toplevel, &zstore.hashes4);
+            queries.inject_inv_queries("hash_32_8", toplevel, &zstore.hashes32);
 
             let mut ingress_args = [F::zero(); 16];
             ingress_args[0] = tag;
             ingress_args[8..].copy_from_slice(&digest);
 
-            toplevel
+            let ingress_out = toplevel
                 .execute(ingress, &ingress_args, &mut queries, None)
                 .unwrap();
-            let ingress_out_ptr = queries.get_output(ingress, &ingress_args)[0];
 
-            let egress_args = &[tag, ingress_out_ptr];
-            toplevel
-                .execute(egress, egress_args, &mut queries, None)
+            let egress_out = toplevel
+                .execute(egress, &ingress_out, &mut queries, None)
                 .unwrap();
-            let egress_out = queries.get_output(egress, egress_args);
 
+            assert_eq!(tag, egress_out[0]);
             assert_eq!(
-                egress_out,
                 digest.as_ref(),
+                &egress_out[1..],
                 "ingress -> egress doesn't roundtrip"
             );
 

@@ -52,9 +52,9 @@ fn run_test(
     config: BabyBearPoseidon2,
 ) {
     let mut record = QueryRecord::new(toplevel);
-    record.inject_inv_queries("hash_24_8", toplevel, &zstore.hashes3);
-    record.inject_inv_queries("hash_32_8", toplevel, &zstore.hashes4);
-    record.inject_inv_queries("hash_48_8", toplevel, &zstore.hashes6);
+    record.inject_inv_queries("hash_24_8", toplevel, &zstore.hashes24);
+    record.inject_inv_queries("hash_32_8", toplevel, &zstore.hashes32);
+    record.inject_inv_queries("hash_40_8", toplevel, &zstore.hashes40);
 
     let mut input = [F::zero(); 24];
     input[..16].copy_from_slice(&zptr.flatten());
@@ -416,12 +416,12 @@ test!(test_secret, "(secret (commit 123))", |_| ZPtr::big_num(
 ));
 test!(
     test_func_big_num_app,
-    "(begin (commit (lambda (x) x)) (#0x629c897f61a5642e960a29514399063940eda913d91e90396c98287cbfa0f4 42))",
+    "(begin (commit (lambda (x) x)) (#0x83420bafb3cb56870b10b498607c0a6314b0ea331328bbb232c74078abb5dc 42))",
     |_| uint(42)
 );
 test!(
     test_func_comm_app,
-    "(begin (commit (lambda (x) x)) ((comm #0x629c897f61a5642e960a29514399063940eda913d91e90396c98287cbfa0f4) 42))",
+    "(begin (commit (lambda (x) x)) ((comm #0x83420bafb3cb56870b10b498607c0a6314b0ea331328bbb232c74078abb5dc) 42))",
     |_| uint(42)
 );
 

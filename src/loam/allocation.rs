@@ -13,7 +13,7 @@ use crate::loam::{LEWrap, Ptr, Wide, WidePtr, LE};
 
 use crate::lurk::chipset::{lurk_hasher, LurkHasher};
 use crate::lurk::tag::Tag;
-use crate::lurk::zstore::{DIGEST_SIZE, HASH3_SIZE, HASH4_SIZE, HASH6_SIZE};
+use crate::lurk::zstore::{DIGEST_SIZE, HASH3_SIZE, HASH4_SIZE};
 
 use crate::lurk::{
     chipset::LurkChip,
@@ -85,26 +85,26 @@ impl Allocator {
         }
     }
 
-    /// TODO: reorg for duplicate code
-    pub fn import_hashes6(&mut self, hashes6: &FxHashMap<[LE; HASH6_SIZE], [LE; DIGEST_SIZE]>) {
-        for (preimage, digest) in hashes6 {
-            let preimage_vec = preimage
-                .chunks(8)
-                .map(|chunk| Wide::from_slice(chunk))
-                .collect::<Vec<_>>();
-            let digest_wide = Wide(digest.clone());
+    // /// TODO: reorg for duplicate code
+    // pub fn import_hashes6(&mut self, hashes6: &FxHashMap<[LE; HASH6_SIZE], [LE; DIGEST_SIZE]>) {
+    //     for (preimage, digest) in hashes6 {
+    //         let preimage_vec = preimage
+    //             .chunks(8)
+    //             .map(|chunk| Wide::from_slice(chunk))
+    //             .collect::<Vec<_>>();
+    //         let digest_wide = Wide(digest.clone());
 
-            self.digest_cache
-                .insert(preimage_vec.clone(), digest_wide.clone());
+    //         self.digest_cache
+    //             .insert(preimage_vec.clone(), digest_wide.clone());
 
-            self.preimage_cache.insert(digest_wide, preimage_vec);
-        }
-    }
+    //         self.preimage_cache.insert(digest_wide, preimage_vec);
+    //     }
+    // }
 
     pub fn import_zstore(&mut self, zstore: &ZStore<LE, LurkChip>) {
-        self.import_hashes3(&zstore.hashes3);
-        self.import_hashes4(&zstore.hashes4);
-        self.import_hashes6(&zstore.hashes6);
+        self.import_hashes3(&zstore.hashes24);
+        self.import_hashes4(&zstore.hashes32);
+        // self.import_hashes6(&zstore.hashes48);
     }
 
     pub fn alloc_addr(&mut self, tag: LE, initial_addr: LE) -> LE {

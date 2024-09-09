@@ -330,7 +330,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         ],
         example: &[
             "!(hide (bignum (commit 123)) 42)",
-            "!(hide #0x3719f5d02845123a80da4f5077c803ba0ce1964e08289a9d020603c1f3c450 42)",
+            "!(hide #0x4a902d7be96d1021a473353bd59247ea4c0f0688b5bae0c833a1f624b77ede 42)",
         ],
         run: |repl, args, _path| {
             let (&secret_expr, &payload_expr) = repl.peek2(args)?;
@@ -388,7 +388,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         info: &[],
         example: &[
             "!(commit 123)",
-            "!(open #0x3719f5d02845123a80da4f5077c803ba0ce1964e08289a9d020603c1f3c450)",
+            "!(open #0x4a902d7be96d1021a473353bd59247ea4c0f0688b5bae0c833a1f624b77ede)",
         ],
         run: |repl, args, _path| {
             let expr = *repl.peek1(args)?;
@@ -407,7 +407,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         info: &[],
         example: &[
             "!(commit 123)",
-            "!(fetch #0x3719f5d02845123a80da4f5077c803ba0ce1964e08289a9d020603c1f3c450)",
+            "!(fetch #0x4a902d7be96d1021a473353bd59247ea4c0f0688b5bae0c833a1f624b77ede)",
         ],
         run: |repl, args, _path| {
             let expr = *repl.peek1(args)?;
@@ -444,7 +444,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         info: &["It's also capable of opening persisted commitments."],
         example: &[
             "(commit (lambda (x) x))",
-            "!(call #0x3f2e7102a9f8a303255b90724f24f4eb05b61e99723ca838cf30671676c86a 0)",
+            "!(call #0x83420bafb3cb56870b10b498607c0a6314b0ea331328bbb232c74078abb5dc 0)",
         ],
         run: |repl, args, _path| {
             Self::call(repl, args)?;
@@ -483,7 +483,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
                        (let ((counter (+ counter x)))
                          (cons counter (commit (add counter)))))))
                (add 0)))",
-            "!(chain #0x8ef25bc2228ca9799db65fd2b137a7b0ebccbfc04cf8530133e60087d403db 1)",
+            "!(chain #0x5a34ed7712c5fd2f324feb0e1764b27bac9259c4b663e4601e678939a9363d 1)",
         ],
         run: |repl, args, _path| {
             let cons = Self::call(repl, args)?;
@@ -594,9 +594,9 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         example: &[
             "!(defpackage abc)",
             "!(in-package abc)",
-            "!(def two (.lurk.+ 1 1))",
-            "!(in-package .lurk.user)",
-            ".lurk.user.abc.two",
+            "!(def two (.lurk.builtin.+ 1 1))",
+            "!(in-package .lurk-user)",
+            ".lurk-user.abc.two",
         ],
         run: |repl, args, _path| {
             let arg = repl.peek1(args)?;
@@ -936,7 +936,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
             "(commit '(13 . 17))",
             "!(prove-protocol my-protocol",
             "  \"protocol-proof\"",
-            "  #0x896994f6258a01fbc7f21a81cb28a537259c3e97cc62da0a2773c63f9b4168",
+            "  #0x818e61a96cb66761e3a7a338bfd7e374fade81e70455ad6b63e63438823bbc",
             "  '(13 . 17))",
         ],
         run: |repl, args, _path| {

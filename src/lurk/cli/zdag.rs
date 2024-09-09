@@ -29,11 +29,11 @@ impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
             .expect("Data missing from ZStore's DAG");
         match zptr_type {
             ZPtrType::Atom => (),
-            ZPtrType::Tuple2(a, b) | ZPtrType::Compact2(a, b) => {
+            ZPtrType::Tuple2(a, b) | ZPtrType::Compact10(a, b) => {
                 self.populate_with(a, zstore, cache);
                 self.populate_with(b, zstore, cache);
             }
-            ZPtrType::Tuple3(a, b, c) | ZPtrType::Compact3(a, b, c) => {
+            ZPtrType::Compact110(a, b, c) => {
                 self.populate_with(a, zstore, cache);
                 self.populate_with(b, zstore, cache);
                 self.populate_with(c, zstore, cache);
@@ -66,20 +66,19 @@ impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
             match &zptr_type {
                 ZPtrType::Atom => (),
                 ZPtrType::Tuple2(a, b) => {
-                    zstore.hashes4.insert(ZPtr::flatten2(a, b), zptr.digest);
+                    let preimg = ZPtr::flatten2(a, b);
+                    zstore.hashes32.insert(preimg, zptr.digest);
+                    zstore.hashes32_diff.insert(preimg, zptr.digest);
                 }
-                ZPtrType::Tuple3(a, b, c) => {
-                    zstore.hashes6.insert(ZPtr::flatten3(a, b, c), zptr.digest);
+                ZPtrType::Compact10(a, b) => {
+                    let preimg = ZPtr::flatten_compact10(a, b);
+                    zstore.hashes24.insert(preimg, zptr.digest);
+                    zstore.hashes24_diff.insert(preimg, zptr.digest);
                 }
-                ZPtrType::Compact2(a, b) => {
-                    zstore
-                        .hashes3
-                        .insert(ZPtr::flatten_compact2(a, b), zptr.digest);
-                }
-                ZPtrType::Compact3(a, b, c) => {
-                    zstore
-                        .hashes4
-                        .insert(ZPtr::flatten_compact3(a, b, c), zptr.digest);
+                ZPtrType::Compact110(a, b, c) => {
+                    let preimg = ZPtr::flatten_compact110(a, b, c);
+                    zstore.hashes40.insert(preimg, zptr.digest);
+                    zstore.hashes40_diff.insert(preimg, zptr.digest);
                 }
             }
             zstore.dag.insert(zptr, zptr_type);

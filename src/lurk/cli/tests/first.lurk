@@ -35,17 +35,17 @@
 ;; test calling functional commitments
 !(call (lambda (x) x) 0)
 !(commit (eval '(lambda (x) x)))
-!(call #0x3f2e7102a9f8a303255b90724f24f4eb05b61e99723ca838cf30671676c86a 0)
-!(call (comm #0x3f2e7102a9f8a303255b90724f24f4eb05b61e99723ca838cf30671676c86a) 0)
+!(call #0x83420bafb3cb56870b10b498607c0a6314b0ea331328bbb232c74078abb5dc 0)
+!(call (comm #0x83420bafb3cb56870b10b498607c0a6314b0ea331328bbb232c74078abb5dc) 0)
 
 ;; test chain and transition
 !(commit (eval '(letrec ((add (lambda (counter x)
                        (let ((counter (+ counter x)))
                          (cons counter (commit (add counter)))))))
                (add 0))))
-!(chain #0x8ef25bc2228ca9799db65fd2b137a7b0ebccbfc04cf8530133e60087d403db 1)
+!(chain #0x5a34ed7712c5fd2f324feb0e1764b27bac9259c4b663e4601e678939a9363d 1)
 
-!(def state0 (cons nil (comm #0x8ef25bc2228ca9799db65fd2b137a7b0ebccbfc04cf8530133e60087d403db)))
+!(def state0 (cons nil (comm #0x5a34ed7712c5fd2f324feb0e1764b27bac9259c4b663e4601e678939a9363d)))
 !(transition state1 state0 1)
 !(assert-eq (car state1) 1)
 !(fetch (cdr state1))
@@ -59,7 +59,7 @@
                          (cons counter (bignum (commit (add counter))))))))
                (add 0))))
 
-!(def state0 (cons nil #0x5c438d9aaadaaaa1f7ee1a5f3deaa400c29cbf1ab51240e667c1120a5ca0f8))
+!(def state0 (cons nil #0x3782a9f09a9311ba5f9d41718c470ca6e83a1701cb00a90cd0a590b94f3da3))
 !(transition state1 state0 1)
 !(assert-eq (car state1) 1)
 !(fetch (cdr state1))
@@ -70,10 +70,10 @@
 ;; test packages
 !(defpackage abc)
 !(in-package abc)
-!(def two (.lurk.+ 1 1))
-!(in-package .lurk.user)
-!(assert-eq .lurk.user.abc.two 2)
-!(import .lurk.user.abc.two)
+!(def two (.lurk.builtin.+ 1 1))
+!(in-package .lurk-user)
+!(assert-eq .lurk-user.abc.two 2)
+!(import .lurk-user.abc.two)
 !(assert-eq two 2)
 
 ;; test dump-expr/load-expr
