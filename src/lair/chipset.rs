@@ -5,7 +5,7 @@ use crate::air::builder::{LookupBuilder, Record, RequireRecord};
 
 use super::execute::QueryRecord;
 
-pub trait Chipset<F>: Sync {
+pub trait Chipset<F>: Send + Sync + 'static + Clone {
     fn input_size(&self) -> usize;
 
     fn output_size(&self) -> usize;
@@ -45,6 +45,7 @@ pub trait Chipset<F>: Sync {
     ) -> Vec<AB::Expr>;
 }
 
+#[derive(Clone)]
 pub struct Nochip;
 
 impl<F> Chipset<F> for Nochip {

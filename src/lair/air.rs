@@ -130,13 +130,13 @@ fn eval_depth<F: Field, AB>(
     out.extend(dep_depth.iter().cloned());
 }
 
-impl<'a, AB, H: Chipset<AB::F>> Air<AB> for FuncChip<'a, AB::F, H>
+impl<AB, H: Chipset<AB::F>> Air<AB> for FuncChip<AB::F, H>
 where
     AB: AirBuilder + LookupBuilder,
     <AB as AirBuilder>::Var: Debug,
 {
     fn eval(&self, builder: &mut AB) {
-        self.func.eval(builder, self.toplevel, self.layout_sizes)
+        self.func.eval(builder, &self.toplevel, self.layout_sizes)
     }
 }
 

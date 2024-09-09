@@ -9,7 +9,6 @@ use p3_matrix::dense::{RowMajorMatrix, RowMajorMatrixView};
 use p3_matrix::stack::VerticalPair;
 use p3_matrix::Matrix;
 use sphinx_core::air::MachineAir;
-use sphinx_core::stark::MachineRecord;
 use std::collections::BTreeMap;
 
 type LocalRowView<'a, F> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatrixView<'a, F>>;
@@ -118,14 +117,13 @@ impl<F: PrimeField32> TraceQueries<F> {
 /// Helper function to execute and test queries and constraints using `debug_constraints_collecting_queries`
 pub fn debug_chip_constraints_and_queries_with_sharding<F: PrimeField32, C: Chipset<F>>(
     record: &QueryRecord<F>,
-    chips: &[LairChip<'_, F, C>],
+    chips: &[LairChip<F, C>],
     config: Option<ShardingConfig>,
 ) {
-    let full_shard = Shard::new(record);
     let shards = if let Some(config) = config {
-        full_shard.shard(&config)
+        config.shard(record)
     } else {
-        vec![full_shard]
+        vec![Shard::new(&record.clone())]
     };
 
     let lookup_queries: Vec<_> = shards

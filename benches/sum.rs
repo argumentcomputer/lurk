@@ -4,7 +4,7 @@ use p3_field::AbstractField;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use sphinx_core::{
     air::MachineAir,
-    stark::{LocalProver, StarkGenericConfig, StarkMachine},
+    stark::{DefaultProver, MachineProver, StarkGenericConfig, StarkMachine},
     utils::{BabyBearPoseidon2, SphinxCoreOpts},
 };
 use std::time::Duration;
@@ -50,11 +50,7 @@ fn build_lurk_expr(n: usize) -> String {
 fn setup<H: Chipset<BabyBear>>(
     n: usize,
     toplevel: &Toplevel<BabyBear, H>,
-) -> (
-    List<BabyBear>,
-    FuncChip<'_, BabyBear, H>,
-    QueryRecord<BabyBear>,
-) {
+) -> (List<BabyBear>, FuncChip<BabyBear, H>, QueryRecord<BabyBear>) {
     let code = build_lurk_expr(n);
 
     let zstore = &mut lurk_zstore();
@@ -130,7 +126,10 @@ fn e2e(c: &mut Criterion) {
                 let mut challenger_p = machine.config().challenger();
                 let opts = SphinxCoreOpts::default();
                 let shard = Shard::new(&record);
-                machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
+                let prover = DefaultProver::new(machine);
+                prover
+                    .prove(&pk, vec![shard], &mut challenger_p, opts)
+                    .unwrap();
             },
             BatchSize::SmallInput,
         )
