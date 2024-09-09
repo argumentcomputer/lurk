@@ -505,3 +505,23 @@ test!(test_equal_non_num, "(= 'a 'a)", |_| ZPtr::err(
 test!(test_equal_non_num2, "(= (comm #0x0) (comm #0x0))", |_| {
     ZPtr::err(EvalErr::ArgNotNumber)
 });
+test!(
+    test_shadow_err1,
+    "(let ((nil 1)) (+ nil 1))",
+    |_| ZPtr::err(EvalErr::IllegalBindingVar)
+);
+test!(test_shadow_err2, "(letrec ((nil 1)) (+ nil 1))", |_| {
+    ZPtr::err(EvalErr::IllegalBindingVar)
+});
+test!(test_shadow_err3, "((lambda (nil) (+ nil 1)) 1)", |_| {
+    ZPtr::err(EvalErr::IllegalBindingVar)
+});
+test!(test_shadow_err4, "(let ((t 1)) (+ t 1))", |_| ZPtr::err(
+    EvalErr::IllegalBindingVar
+));
+test!(test_shadow_err5, "(letrec ((t 1)) (+ t 1))", |_| ZPtr::err(
+    EvalErr::IllegalBindingVar
+));
+test!(test_shadow_err6, "((lambda (t) (+ t 1)) 1)", |_| ZPtr::err(
+    EvalErr::IllegalBindingVar
+));
