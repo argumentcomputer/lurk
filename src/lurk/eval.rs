@@ -29,17 +29,17 @@ impl DigestIndex {
     }
 }
 
-struct TagNil;
-impl TagNil {
-    fn to_field<F: AbstractField>(&self) -> F {
-        F::zero()
-    }
+enum ReservedTag {
+    Nil,
+    T,
 }
 
-pub struct TagT;
-impl TagT {
+impl ReservedTag {
     fn to_field<F: AbstractField>(&self) -> F {
-        F::one()
+        match self {
+            ReservedTag::Nil => F::zero(),
+            ReservedTag::T => F::one(),
+        }
     }
 }
 
@@ -91,6 +91,7 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, 
         eval_binop_misc(&digests),
         eval_begin(),
         eval_list(),
+        coerce_if_sym(),
         open_comm(),
         equal(&digests),
         equal_inner(),
@@ -184,7 +185,7 @@ pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
 ///     return
 /// }
 /// ```
-pub fn preallocate_symbols<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn preallocate_symbols<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     let mut ops = Vec::with_capacity(2 * digests.0.len());
     let arr_var = Var {
         name: "arr",
@@ -210,7 +211,7 @@ pub fn preallocate_symbols<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> 
     }
 }
 
-pub fn ingress<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn ingress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     func!(
         fn ingress(tag_full: [8], digest: [8]): [2] {
             let zeros = [0; 7];
@@ -239,14 +240,14 @@ pub fn ingress<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
                     let nil_digest = Array(digests.digest("nil").clone());
                     let not_nil = sub(digest, nil_digest);
                     if !not_nil {
-                        let nil_tag = TagNil;
+                        let nil_tag = ReservedTag::Nil;
                         let ptr = digests.ptr("nil");
                         return (nil_tag, ptr)
                     }
                     let t_digest = Array(digests.digest("t").clone());
                     let not_t = sub(digest, t_digest);
                     if !not_t {
-                        let t_tag = TagT;
+                        let t_tag = ReservedTag::T;
                         let ptr = digests.ptr("t");
                         return (t_tag, ptr)
                     }
@@ -315,7 +316,7 @@ pub fn ingress<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
     )
 }
 
-pub fn egress<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn egress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     func!(
         fn egress(tag, val): [9] {
             match tag {
@@ -329,12 +330,12 @@ pub fn egress<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
                     let bytes: [4] = load(val);
                     return (tag, bytes, padding)
                 }
-                TagNil => {
+                ReservedTag::Nil => {
                     let sym_tag = Tag::Sym;
                     let digest = Array(digests.digest("nil").clone());
                     return (sym_tag, digest)
                 }
-                TagT => {
+                ReservedTag::T => {
                     let sym_tag = Tag::Sym;
                     let digest = Array(digests.digest("t").clone());
                     return (sym_tag, digest)
@@ -539,7 +540,7 @@ pub fn big_num_lessthan<F>() -> FuncE<F> {
     )
 }
 
-pub fn eval<F: AbstractField + Ord>() -> FuncE<F> {
+pub fn eval<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval(expr_tag, expr, env): [2] {
             match expr_tag {
@@ -588,10 +589,10 @@ pub fn eval<F: AbstractField + Ord>() -> FuncE<F> {
     )
 }
 
-pub fn eval_builtin_expr<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn eval_builtin_expr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     func!(
         partial fn eval_builtin_expr(head, rest_tag, rest, env): [2] {
-            let nil_tag = TagNil;
+            let nil_tag = ReservedTag::Nil;
             let cons_tag = Tag::Cons;
             let err_tag = Tag::Err;
             let invalid_form = EvalErr::InvalidForm;
@@ -651,12 +652,14 @@ pub fn eval_builtin_expr<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> Fu
                                     return (snd_tag, snd)
                                 }
                             };
+                            let fst_tag = call(coerce_if_sym, fst_tag);
+                            let snd_tag = call(coerce_if_sym, snd_tag);
                             let type_not_eq = sub(fst_tag, snd_tag);
                             if type_not_eq {
                                 let nil = digests.ptr("nil");
                                 return (nil_tag, nil)
                             }
-                            let t_tag = TagT;
+                            let t_tag = ReservedTag::T;
                             let t = digests.ptr("t");
                             return (t_tag, t)
                         }
@@ -667,12 +670,14 @@ pub fn eval_builtin_expr<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> Fu
                                     return (snd_tag, snd)
                                 }
                             };
+                            let fst_tag = call(coerce_if_sym, fst_tag);
+                            let snd_tag = call(coerce_if_sym, snd_tag);
                             let type_not_eqq = sub(fst_tag, snd_tag);
                             if type_not_eqq {
                                 let nil = digests.ptr("nil");
                                 return (nil_tag, nil)
                             }
-                            let t_tag = TagT;
+                            let t_tag = ReservedTag::T;
                             let t = digests.ptr("t");
                             return (t_tag, t)
                         }
@@ -707,7 +712,7 @@ pub fn eval_builtin_expr<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> Fu
                     }
                     let (expr_tag, expr, rest_tag, rest) = load(rest);
                     match rest_tag {
-                        TagNil => {
+                        ReservedTag::Nil => {
                             // Eval must be called twice, first with the original env and then
                             // with an empty env
                             let (res_tag, res) = call(eval, expr_tag, expr, env);
@@ -784,7 +789,7 @@ pub fn eval_builtin_expr<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> Fu
                 "breakpoint" => {
                     breakpoint;
                     match rest_tag {
-                        TagNil => {
+                        ReservedTag::Nil => {
                             let nil = digests.ptr("nil");
                             return (nil_tag, nil)
                         }
@@ -812,10 +817,10 @@ pub fn eval_builtin_expr<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> Fu
                     }
                     let (t_branch_tag, t_branch, rest_tag, rest) = load(rest);
                     match rest_tag {
-                        TagNil => {
+                        ReservedTag::Nil => {
                             let (val_tag, val) = call(eval, expr_tag, expr, env);
                             match val_tag {
-                                TagNil, Tag::Err => {
+                                ReservedTag::Nil, Tag::Err => {
                                     return (val_tag, val)
                                 }
                             };
@@ -830,7 +835,7 @@ pub fn eval_builtin_expr<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> Fu
                             }
                             let (val_tag, val) = call(eval, expr_tag, expr, env);
                             match val_tag {
-                                TagNil => {
+                                ReservedTag::Nil => {
                                     let (res_tag, res) = call(eval, f_branch_tag, f_branch, env);
                                     return (res_tag, res)
                                 }
@@ -877,7 +882,21 @@ pub fn eval_builtin_expr<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> Fu
     )
 }
 
-pub fn open_comm<F: AbstractField + Ord>() -> FuncE<F> {
+pub fn coerce_if_sym<F: AbstractField>() -> FuncE<F> {
+    func!(
+        fn coerce_if_sym(tag): [1] {
+            match tag {
+                ReservedTag::Nil, ReservedTag::T => {
+                    let sym_tag = Tag::Sym;
+                    return sym_tag
+                }
+            };
+            return tag
+        }
+    )
+}
+
+pub fn open_comm<F: AbstractField>() -> FuncE<F> {
     func!(
         fn open_comm(hash_ptr): [2] {
             let comm_hash: [8] = load(hash_ptr);
@@ -888,11 +907,11 @@ pub fn open_comm<F: AbstractField + Ord>() -> FuncE<F> {
     )
 }
 
-pub fn car_cdr<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn car_cdr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     func!(
         partial fn car_cdr(rest_tag, rest, env): [4] {
             let nil = digests.ptr("nil");
-            let nil_tag = TagNil;
+            let nil_tag = ReservedTag::Nil;
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let invalid_form = EvalErr::InvalidForm;
@@ -914,7 +933,7 @@ pub fn car_cdr<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
                     let (car_tag, car, cdr_tag, cdr) = load(val);
                     return (car_tag, car, cdr_tag, cdr)
                 }
-                TagNil => {
+                ReservedTag::Nil => {
                     return (nil_tag, nil, nil_tag, nil)
                 }
                 Tag::Str => {
@@ -935,12 +954,12 @@ pub fn car_cdr<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
     )
 }
 
-pub fn equal<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn equal<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     func!(
         partial fn equal(rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
-            let nil_tag = TagNil;
+            let nil_tag = ReservedTag::Nil;
             let invalid_form = EvalErr::InvalidForm;
             let rest_not_cons = sub(rest_tag, cons_tag);
             if rest_not_cons {
@@ -970,7 +989,7 @@ pub fn equal<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
             };
             let is_equal_inner = call(equal_inner, val1_tag, val1, val2_tag, val2);
             if is_equal_inner {
-                let t_tag = TagT;
+                let t_tag = ReservedTag::T;
                 let t = digests.ptr("t");
                 return (t_tag, t)
             }
@@ -979,7 +998,7 @@ pub fn equal<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
     )
 }
 
-pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
+pub fn equal_inner<F: AbstractField>() -> FuncE<F> {
     func!(
         fn equal_inner(a_tag, a, b_tag, b): [1] {
             let not_eq_tag = sub(a_tag, b_tag);
@@ -1074,11 +1093,11 @@ pub fn equal_inner<F: AbstractField + Ord>() -> FuncE<F> {
     )
 }
 
-pub fn eval_list<F: AbstractField + Ord>() -> FuncE<F> {
+pub fn eval_list<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_list(rest_tag, rest, env): [2] {
             match rest_tag {
-                TagNil => {
+                ReservedTag::Nil => {
                     return (rest_tag, rest)
                 }
                 Tag::Cons => {
@@ -1107,11 +1126,11 @@ pub fn eval_list<F: AbstractField + Ord>() -> FuncE<F> {
     )
 }
 
-pub fn eval_begin<F: AbstractField + Ord>() -> FuncE<F> {
+pub fn eval_begin<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_begin(rest_tag, rest, env): [2] {
             match rest_tag {
-                TagNil => {
+                ReservedTag::Nil => {
                     return (rest_tag, rest)
                 }
                 Tag::Cons => {
@@ -1122,7 +1141,7 @@ pub fn eval_begin<F: AbstractField + Ord>() -> FuncE<F> {
                             return (head_tag, head)
                         }
                     };
-                    let nil_tag = TagNil;
+                    let nil_tag = ReservedTag::Nil;
                     let rest_not_nil = sub(nil_tag, rest_tag);
                     if rest_not_nil {
                         let (res_tag, res) = call(eval_begin, rest_tag, rest, env);
@@ -1138,13 +1157,13 @@ pub fn eval_begin<F: AbstractField + Ord>() -> FuncE<F> {
     )
 }
 
-pub fn eval_binop_num<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn eval_binop_num<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     func!(
         partial fn eval_binop_num(head, exp1_tag, exp1, exp2_tag, exp2, env): [2] {
             let err_tag = Tag::Err;
             let num_tag = Tag::Num;
             let u64_tag = Tag::U64;
-            let nil_tag = TagNil;
+            let nil_tag = ReservedTag::Nil;
             let err_div_zero = EvalErr::DivByZero;
             let t = digests.ptr("t");
             let nil = digests.ptr("nil");
@@ -1160,7 +1179,7 @@ pub fn eval_binop_num<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE
                     return (val2_tag, val2)
                 }
             };
-            let t_tag = TagT;
+            let t_tag = ReservedTag::T;
             let tags: [2] = (val1_tag, val2_tag);
             match tags {
                 [Tag::U64, Tag::U64] => {
@@ -1315,7 +1334,7 @@ pub fn eval_binop_num<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE
     )
 }
 
-pub fn eval_binop_misc<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn eval_binop_misc<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     func!(
         partial fn eval_binop_misc(head, exp1_tag, exp1, exp2_tag, exp2, env): [2] {
             let err_tag = Tag::Err;
@@ -1358,12 +1377,12 @@ pub fn eval_binop_misc<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> Func
     )
 }
 
-pub fn eval_unop<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn eval_unop<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     func!(
         partial fn eval_unop(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
-            let nil_tag = TagNil;
+            let nil_tag = ReservedTag::Nil;
             let invalid_form = EvalErr::InvalidForm;
             let rest_not_cons = sub(rest_tag, cons_tag);
             if rest_not_cons {
@@ -1385,7 +1404,7 @@ pub fn eval_unop<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
                 "atom" => {
                     let val_not_cons = sub(val_tag, cons_tag);
                     if val_not_cons {
-                        let t_tag = TagT;
+                        let t_tag = ReservedTag::T;
                         let t = digests.ptr("t");
                         return (t_tag, t)
                     }
@@ -1458,12 +1477,12 @@ pub fn eval_unop<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
     )
 }
 
-pub fn eval_opening_unop<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn eval_opening_unop<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     func!(
         partial fn eval_opening_unop(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
-            let nil_tag = TagNil;
+            let nil_tag = ReservedTag::Nil;
             let invalid_form = EvalErr::InvalidForm;
             let rest_not_cons = sub(rest_tag, cons_tag);
             if rest_not_cons {
@@ -1516,12 +1535,12 @@ pub fn eval_opening_unop<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> Fu
     )
 }
 
-pub fn eval_hide<F: AbstractField + Ord>() -> FuncE<F> {
+pub fn eval_hide<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_hide(rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
-            let nil_tag = TagNil;
+            let nil_tag = ReservedTag::Nil;
             let invalid_form = EvalErr::InvalidForm;
             let rest_not_cons = sub(rest_tag, cons_tag);
             if rest_not_cons {
@@ -1566,19 +1585,19 @@ pub fn eval_hide<F: AbstractField + Ord>() -> FuncE<F> {
     )
 }
 
-pub fn eval_let<F: AbstractField + Ord>() -> FuncE<F> {
+pub fn eval_let<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_let(binds_tag, binds, body_tag, body, env): [2] {
             let err_tag = Tag::Err;
             let invalid_form = EvalErr::InvalidForm;
             match binds_tag {
-                TagNil => {
+                ReservedTag::Nil => {
                     let (res_tag, res) = call(eval, body_tag, body, env);
                     return (res_tag, res)
                 }
                 Tag::Cons => {
                     let cons_tag = Tag::Cons;
-                    let nil_tag = TagNil;
+                    let nil_tag = ReservedTag::Nil;
                     // `binds` is a list of bindings
                     let (bind_tag, bind, rest_binds_tag, rest_binds) = load(binds);
                     let bind_not_cons = sub(bind_tag, cons_tag);
@@ -1625,13 +1644,13 @@ pub fn eval_let<F: AbstractField + Ord>() -> FuncE<F> {
     )
 }
 
-pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
+pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_letrec(binds_tag, binds, body_tag, body, env): [2] {
             let err_tag = Tag::Err;
             let invalid_form = EvalErr::InvalidForm;
             match binds_tag {
-                TagNil => {
+                ReservedTag::Nil => {
                     let (res_tag, res) = call(eval, body_tag, body, env);
                     return (res_tag, res)
                 }
@@ -1652,7 +1671,7 @@ pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
                     match param_tag {
                         Tag::Sym, Tag::Builtin => {
                             let (expr_tag, expr, rest_tag, _rest) = load(rest);
-                            let nil_tag = TagNil;
+                            let nil_tag = ReservedTag::Nil;
                             let rest_not_nil = sub(rest_tag, nil_tag);
                             if rest_not_nil {
                                 return (err_tag, invalid_form)
@@ -1688,7 +1707,7 @@ pub fn eval_letrec<F: AbstractField + Ord>() -> FuncE<F> {
     )
 }
 
-pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
+pub fn apply<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn apply(head_tag, head, args_tag, args, args_env): [2] {
             // Constants, tags, etc
@@ -1708,7 +1727,7 @@ pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
             let (params_tag, params, body_tag, body, func_env) = load(head);
 
             match params_tag {
-                TagNil => {
+                ReservedTag::Nil => {
                     let (res_tag, res) = call(eval, body_tag, body, func_env);
                     match res_tag {
                         Tag::Err => {
@@ -1716,7 +1735,7 @@ pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
                         }
                     };
                     match args_tag {
-                        TagNil => {
+                        ReservedTag::Nil => {
                             return (res_tag, res)
                         }
                         Tag::Cons => {
@@ -1730,7 +1749,7 @@ pub fn apply<F: AbstractField + Ord>() -> FuncE<F> {
                 }
                 Tag::Cons => {
                     match args_tag {
-                        TagNil => {
+                        ReservedTag::Nil => {
                             // Undersaturated application
                             return (head_tag, head)
                         }
@@ -1823,6 +1842,7 @@ mod test {
         let eval_list = FuncChip::from_name("eval_list", toplevel);
         let eval_let = FuncChip::from_name("eval_let", toplevel);
         let eval_letrec = FuncChip::from_name("eval_letrec", toplevel);
+        let coerce_if_sym = FuncChip::from_name("coerce_if_sym", toplevel);
         let open_comm = FuncChip::from_name("open_comm", toplevel);
         let equal = FuncChip::from_name("equal", toplevel);
         let equal_inner = FuncChip::from_name("equal_inner", toplevel);
@@ -1859,6 +1879,7 @@ mod test {
         expect_eq(eval_list.width(), expect!["72"]);
         expect_eq(eval_let.width(), expect!["93"]);
         expect_eq(eval_letrec.width(), expect!["97"]);
+        expect_eq(coerce_if_sym.width(), expect!["9"]);
         expect_eq(open_comm.width(), expect!["50"]);
         expect_eq(equal.width(), expect!["82"]);
         expect_eq(equal_inner.width(), expect!["57"]);

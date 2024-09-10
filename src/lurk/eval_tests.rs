@@ -345,6 +345,10 @@ test!(
 );
 test!(test_type_eq1, "(type-eq 1 (+ 1 2))", |z| *z.t());
 test!(test_type_eq2, "(type-eq (+ 1 1) 'a')", |z| *z.nil());
+test!(test_type_eq3, "(type-eq nil t)", |z| *z.t());
+test!(test_type_eq4, "(type-eq 'a t)", |z| *z.t());
+test!(test_type_eq5, "(type-eq 'cons t)", |z| *z.nil());
+test!(test_type_eq6, "(type-eq 'cons 'let)", |z| *z.t());
 test!(test_type_eqq1, "(type-eqq (nil) (cons 1 2))", |z| *z.t());
 test!(test_type_eqq2, "(type-eqq 2 'a')", |z| *z.nil());
 test!(test_breakpoint, "(breakpoint)", |z| *z.nil());
