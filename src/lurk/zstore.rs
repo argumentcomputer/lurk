@@ -1,11 +1,12 @@
 use anyhow::{bail, Result};
 use core::str;
+use indexmap::IndexSet;
 use itertools::Itertools;
 use nom::{sequence::preceded, Parser};
 use once_cell::sync::OnceCell;
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, Field, PrimeField32};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
@@ -220,11 +221,16 @@ impl<F: AbstractField + Copy> ZPtr<F> {
     }
 }
 
+/// Specifies the dependencies of a `ZPtr` in a Merkle DAG for content-addressing
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum ZPtrType<F> {
+    /// A leaf datum without children
     Atom,
+    /// Consumes the tag and digest of two children `ZPtr`s
     Tuple2(ZPtr<F>, ZPtr<F>),
+    /// Ignores the tag of the second `ZPtr`
     Compact10(ZPtr<F>, ZPtr<F>),
+    /// Ignores the tag of the third `ZPtr`
     Compact110(ZPtr<F>, ZPtr<F>, ZPtr<F>),
 }
 
@@ -304,9 +310,9 @@ fn quote() -> &'static Symbol {
     QUOTE.get_or_init(|| builtin_sym("quote"))
 }
 
-static BUILTIN_VEC: OnceCell<Vec<Symbol>> = OnceCell::new();
-pub(crate) fn builtin_vec() -> &'static Vec<Symbol> {
-    BUILTIN_VEC.get_or_init(|| BUILTIN_SYMBOLS.into_iter().map(builtin_sym).collect())
+static BUILTIN_SET: OnceCell<IndexSet<Symbol, FxBuildHasher>> = OnceCell::new();
+pub(crate) fn builtin_set() -> &'static IndexSet<Symbol, FxBuildHasher> {
+    BUILTIN_SET.get_or_init(|| BUILTIN_SYMBOLS.into_iter().map(builtin_sym).collect())
 }
 
 impl<F: Field, H: Chipset<F>> ZStore<F, H> {
@@ -437,7 +443,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 let tag = if is_keyword { Tag::Key } else { Tag::Sym };
                 self.intern_null(tag)
             } else {
-                let is_builtin = builtin_vec().contains(sym);
+                let is_builtin = builtin_set().contains(sym);
                 let mut zptr = self.intern_null(Tag::Sym);
                 let mut iter = sym.path().iter().peekable();
                 while let Some(s) = iter.next() {

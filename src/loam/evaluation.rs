@@ -16,7 +16,7 @@ use crate::loam::{LEWrap, LoamProgram, Num, Ptr, PtrEq, Wide, WidePtr, LE};
 use crate::lurk::chipset::LurkChip;
 use crate::lurk::state::BUILTIN_SYMBOLS;
 use crate::lurk::tag::Tag;
-use crate::lurk::zstore::{builtin_vec, lurk_zstore, ZPtr, ZStore};
+use crate::lurk::zstore::{builtin_set, lurk_zstore, ZPtr, ZStore};
 
 use p3_field::{AbstractField, Field, PrimeField32};
 

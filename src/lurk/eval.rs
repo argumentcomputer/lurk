@@ -174,6 +174,16 @@ pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
     )
 }
 
+/// ```ignore
+/// fn preallocate_symbols(): [0] {
+///     let arr: [8] = Array(<symbol 0 digest>);
+///     let _ptr = store(arr);
+///     let arr: [8] = Array(<symbol 1 digest>);
+///     let _ptr = store(arr);
+///     ...
+///     return
+/// }
+/// ```
 pub fn preallocate_symbols<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> FuncE<F> {
     let mut ops = Vec::with_capacity(2 * digests.0.len());
     let arr_var = Var {
@@ -186,7 +196,7 @@ pub fn preallocate_symbols<F: AbstractField + Ord>(digests: &Digests<'_, F>) -> 
     };
     for digest in digests.0.values() {
         ops.push(OpE::Array(arr_var, digest.clone()));
-        ops.push(OpE::Store(ptr_var, [arr_var].into())); // TODO: replace by `Preallocate(digest.clone())`
+        ops.push(OpE::Store(ptr_var, [arr_var].into()));
     }
     let ops = ops.into();
     let ctrl = CtrlE::Return([].into()); // TODO: replace by `Exit`

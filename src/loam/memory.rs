@@ -12,7 +12,7 @@ use crate::{
         eval::EvalErr,
         state::{StateRcCell, BUILTIN_SYMBOLS},
         tag::Tag,
-        zstore::{self, builtin_vec, lurk_zstore, ZPtr, ZStore},
+        zstore::{self, builtin_set, lurk_zstore, ZPtr, ZStore},
     },
 };
 
@@ -528,7 +528,7 @@ impl Store {
 
 pub fn initial_builtin_relation() -> Vec<(Wide, Dual<LEWrap>)> {
     let zstore = &mut lurk_zstore();
-    builtin_vec()
+    builtin_set()
         .iter()
         .enumerate()
         .map(|(i, name)| {
