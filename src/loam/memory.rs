@@ -83,6 +83,14 @@ impl PPtr {
         PPtr(Ptr(tag.elt(), LE::from_canonical_u32(addr)))
     }
 
+    fn nil() -> Self {
+        PPtr(Ptr::nil())
+    }
+
+    fn t() -> Self {
+        PPtr(Ptr::t())
+    }
+
     fn num(addr: u32) -> Self {
         PPtr::new(Tag::Num, addr)
     }
@@ -347,7 +355,6 @@ impl Store {
                 ptr
             }
             Tag::Sym => PPtr(vptr.0),
-            Tag::Nil => PPtr(vptr.0),
             Tag::Num => PPtr(vptr.0),
             Tag::Err => PPtr(vptr.0),
             Tag::Builtin => PPtr(vptr.0),
@@ -435,7 +442,6 @@ impl Store {
             let tag = ptr.tag();
             match tag {
                 Tag::Sym => memory.sym_digest_mem.push((*digest, ptr.addr())),
-                Tag::Nil => memory.nil_digest_mem.push((*digest, ptr.addr())),
                 Tag::Builtin => memory.builtin_digest_mem.push((*digest, ptr.addr())),
                 Tag::Num => (),
                 _ => panic!("unimplemented: {:?}", &ptr),
@@ -462,14 +468,14 @@ impl Store {
     }
 
     pub fn fetch_list<'a>(&'a self, mut ptr: &'a PPtr) -> (Vec<&PPtr>, Option<&'a PPtr>) {
-        assert!(matches!(ptr.tag(), Tag::Cons | Tag::Nil));
+        assert!(ptr.tag() == Tag::Cons || ptr == &PPtr::nil());
         let mut elts = vec![];
         while ptr.tag() == Tag::Cons {
             let (car, cdr) = self.fetch_tuple2(ptr);
             elts.push(car);
             ptr = cdr;
         }
-        if ptr.tag() == Tag::Nil {
+        if ptr == &PPtr::nil() {
             (elts, None)
         } else {
             (elts, Some(ptr))
@@ -484,7 +490,7 @@ impl Store {
     pub fn fmt(&self, zstore: &ZStore<LE, LurkChip>, ptr: &PPtr) -> String {
         match ptr.tag() {
             Tag::Num => format!("{}n", ptr.addr()),
-            Tag::Builtin | Tag::BigNum | Tag::Sym | Tag::Key | Tag::Nil => self
+            Tag::Builtin | Tag::BigNum | Tag::Sym | Tag::Key => self
                 .pptr_digest
                 .get(ptr)
                 .map(|digest| {
@@ -506,7 +512,7 @@ impl Store {
             }
             Tag::Fun => {
                 let (args, body, _) = self.fetch_tuple3(ptr);
-                if args.tag() == Tag::Nil {
+                if args == &PPtr::nil() {
                     format!("<Fun () {}>", self.fmt(zstore, body))
                 } else {
                     format!(

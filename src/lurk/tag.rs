@@ -22,7 +22,6 @@ pub enum Tag {
     Env,
     Thunk,
     Err,
-    Nil, // delete me
 }
 
 impl Tag {

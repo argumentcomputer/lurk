@@ -668,7 +668,6 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
             };
         }
         match tag {
-            Tag::Nil => panic!("delete me"),
             Tag::Str => loop {
                 if digest == zeros {
                     self.memoize_atom_dag(ZPtr { tag, digest: zeros });
@@ -889,7 +888,6 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         F: PrimeField32,
     {
         match zptr.tag {
-            Tag::Nil => panic!("delete me"),
             Tag::Num => format!("{}n", zptr.digest[0]),
             Tag::U64 => format!(
                 "{}",
