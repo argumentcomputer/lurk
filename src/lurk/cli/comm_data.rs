@@ -50,7 +50,7 @@ impl<F: std::hash::Hash + Eq + Default + Copy> CommData<F> {
     where
         F: Field,
     {
-        ZPtr::comm(zstore.hash24(self.build_preimg()))
+        ZPtr::comm(zstore.hash3(self.build_preimg()))
     }
 
     #[inline]
@@ -58,7 +58,7 @@ impl<F: std::hash::Hash + Eq + Default + Copy> CommData<F> {
     where
         F: Field,
     {
-        zstore.hash24(self.build_preimg()); // make zstore aware of this hash
+        zstore.hash3(self.build_preimg()); // make zstore aware of this hash
         self.zdag.populate_zstore(zstore);
     }
 }

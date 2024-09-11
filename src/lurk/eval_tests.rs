@@ -52,9 +52,9 @@ fn run_test(
     config: BabyBearPoseidon2,
 ) {
     let mut record = QueryRecord::new(toplevel);
-    record.inject_inv_queries("hash_24_8", toplevel, &zstore.hashes24);
-    record.inject_inv_queries("hash_32_8", toplevel, &zstore.hashes32);
-    record.inject_inv_queries("hash_40_8", toplevel, &zstore.hashes40);
+    record.inject_inv_queries("hash_24_8", toplevel, &zstore.hashes3);
+    record.inject_inv_queries("hash_32_8", toplevel, &zstore.hashes4);
+    record.inject_inv_queries("hash_40_8", toplevel, &zstore.hashes5);
 
     let mut input = [F::zero(); 24];
     input[..16].copy_from_slice(&zptr.flatten());

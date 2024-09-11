@@ -67,18 +67,18 @@ impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
                 ZPtrType::Atom => (),
                 ZPtrType::Tuple2(a, b) => {
                     let preimg = ZPtr::flatten2(a, b);
-                    zstore.hashes32.insert(preimg, zptr.digest);
-                    zstore.hashes32_diff.insert(preimg, zptr.digest);
+                    zstore.hashes4.insert(preimg, zptr.digest);
+                    zstore.hashes4_diff.insert(preimg, zptr.digest);
                 }
                 ZPtrType::Compact10(a, b) => {
                     let preimg = ZPtr::flatten_compact10(a, b);
-                    zstore.hashes24.insert(preimg, zptr.digest);
-                    zstore.hashes24_diff.insert(preimg, zptr.digest);
+                    zstore.hashes3.insert(preimg, zptr.digest);
+                    zstore.hashes3_diff.insert(preimg, zptr.digest);
                 }
                 ZPtrType::Compact110(a, b, c) => {
                     let preimg = ZPtr::flatten_compact110(a, b, c);
-                    zstore.hashes40.insert(preimg, zptr.digest);
-                    zstore.hashes40_diff.insert(preimg, zptr.digest);
+                    zstore.hashes5.insert(preimg, zptr.digest);
+                    zstore.hashes5_diff.insert(preimg, zptr.digest);
                 }
             }
             zstore.dag.insert(zptr, zptr_type);

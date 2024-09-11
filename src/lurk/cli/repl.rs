@@ -269,9 +269,9 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
 
     fn prepare_queries(&mut self) {
         self.queries.clean();
-        let hash_24_8 = std::mem::take(&mut self.zstore.hashes24_diff);
-        let hash_32_8 = std::mem::take(&mut self.zstore.hashes32_diff);
-        let hash_40_8 = std::mem::take(&mut self.zstore.hashes40_diff);
+        let hash_24_8 = std::mem::take(&mut self.zstore.hashes3_diff);
+        let hash_32_8 = std::mem::take(&mut self.zstore.hashes4_diff);
+        let hash_40_8 = std::mem::take(&mut self.zstore.hashes5_diff);
         self.queries
             .inject_inv_queries_owned("hash_24_8", &self.toplevel, hash_24_8);
         self.queries

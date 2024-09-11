@@ -34,11 +34,9 @@ use super::{
 pub(crate) const DIGEST_SIZE: usize = 8;
 
 pub(crate) const ZPTR_SIZE: usize = 2 * DIGEST_SIZE;
-pub(crate) const HASH3_SIZE: usize = DIGEST_SIZE + ZPTR_SIZE;
-pub(crate) const HASH4_SIZE: usize = 2 * ZPTR_SIZE;
-
-const COMPACT10_SIZE: usize = ZPTR_SIZE + DIGEST_SIZE;
-pub(crate) const COMPACT110_SIZE: usize = 2 * ZPTR_SIZE + DIGEST_SIZE;
+pub(crate) const HASH3_SIZE: usize = 3 * DIGEST_SIZE;
+pub(crate) const HASH4_SIZE: usize = 4 * DIGEST_SIZE;
+pub(crate) const HASH5_SIZE: usize = 5 * DIGEST_SIZE;
 
 fn digest_from_field<F: AbstractField + Copy>(f: F) -> [F; DIGEST_SIZE] {
     let mut digest = [F::zero(); DIGEST_SIZE];
@@ -205,14 +203,14 @@ impl<F: AbstractField + Copy> ZPtr<F> {
         buffer.extract()
     }
 
-    pub fn flatten_compact10(a: &ZPtr<F>, b: &ZPtr<F>) -> [F; COMPACT10_SIZE] {
+    pub fn flatten_compact10(a: &ZPtr<F>, b: &ZPtr<F>) -> [F; HASH3_SIZE] {
         let mut buffer = SizedBuffer::default();
         buffer.write_slice(&a.flatten());
         buffer.write_slice(&b.digest);
         buffer.extract()
     }
 
-    pub fn flatten_compact110(a: &ZPtr<F>, b: &ZPtr<F>, c: &ZPtr<F>) -> [F; COMPACT110_SIZE] {
+    pub fn flatten_compact110(a: &ZPtr<F>, b: &ZPtr<F>, c: &ZPtr<F>) -> [F; HASH5_SIZE] {
         let mut buffer = SizedBuffer::default();
         buffer.write_slice(&a.flatten());
         buffer.write_slice(&b.flatten());
@@ -237,19 +235,19 @@ pub enum ZPtrType<F> {
 /// This struct selects what the hash functions are in a given chipset
 #[derive(Clone)]
 pub struct Hasher<F, H: Chipset<F>> {
-    hash24: H,
-    hash32: H,
-    hash40: H,
+    hash3: H,
+    hash4: H,
+    hash5: H,
     _p: PhantomData<F>,
 }
 
 impl<F, H: Chipset<F>> Hasher<F, H> {
     #[inline]
-    pub fn new(hash24: H, hash32: H, hash40: H) -> Self {
+    pub fn new(hash3: H, hash4: H, hash5: H) -> Self {
         Self {
-            hash24,
-            hash32,
-            hash40,
+            hash3,
+            hash4,
+            hash5,
             _p: PhantomData,
         }
     }
@@ -257,9 +255,9 @@ impl<F, H: Chipset<F>> Hasher<F, H> {
     #[inline]
     pub fn hash(&self, preimg: &[F]) -> Vec<F> {
         match preimg.len() {
-            24 => self.hash24.execute_simple(preimg),
-            32 => self.hash32.execute_simple(preimg),
-            40 => self.hash40.execute_simple(preimg),
+            HASH3_SIZE => self.hash3.execute_simple(preimg),
+            HASH4_SIZE => self.hash4.execute_simple(preimg),
+            HASH5_SIZE => self.hash5.execute_simple(preimg),
             _ => panic!("Preimage size not supported"),
         }
     }
@@ -269,12 +267,12 @@ impl<F, H: Chipset<F>> Hasher<F, H> {
 pub struct ZStore<F, H: Chipset<F>> {
     hasher: Hasher<F, H>,
     pub(crate) dag: FxHashMap<ZPtr<F>, ZPtrType<F>>,
-    pub hashes24: FxHashMap<[F; 24], [F; DIGEST_SIZE]>,
-    pub hashes32: FxHashMap<[F; 32], [F; DIGEST_SIZE]>,
-    pub hashes40: FxHashMap<[F; 40], [F; DIGEST_SIZE]>,
-    pub hashes24_diff: FxHashMap<[F; 24], [F; DIGEST_SIZE]>,
-    pub hashes32_diff: FxHashMap<[F; 32], [F; DIGEST_SIZE]>,
-    pub hashes40_diff: FxHashMap<[F; 40], [F; DIGEST_SIZE]>,
+    pub hashes3: FxHashMap<[F; HASH3_SIZE], [F; DIGEST_SIZE]>,
+    pub hashes4: FxHashMap<[F; HASH4_SIZE], [F; DIGEST_SIZE]>,
+    pub hashes5: FxHashMap<[F; HASH5_SIZE], [F; DIGEST_SIZE]>,
+    pub hashes3_diff: FxHashMap<[F; HASH3_SIZE], [F; DIGEST_SIZE]>,
+    pub hashes4_diff: FxHashMap<[F; HASH4_SIZE], [F; DIGEST_SIZE]>,
+    pub hashes5_diff: FxHashMap<[F; HASH5_SIZE], [F; DIGEST_SIZE]>,
     str_cache: FxHashMap<String, ZPtr<F>>,
     sym_cache: FxHashMap<Symbol, ZPtr<F>>,
     syn_cache: FxHashMap<Syntax<F>, ZPtr<F>>,
@@ -287,12 +285,12 @@ impl Default for ZStore<BabyBear, LurkChip> {
         let mut zstore = Self {
             hasher: lurk_hasher(),
             dag: Default::default(),
-            hashes24: Default::default(),
-            hashes32: Default::default(),
-            hashes40: Default::default(),
-            hashes24_diff: Default::default(),
-            hashes32_diff: Default::default(),
-            hashes40_diff: Default::default(),
+            hashes3: Default::default(),
+            hashes4: Default::default(),
+            hashes5: Default::default(),
+            hashes3_diff: Default::default(),
+            hashes4_diff: Default::default(),
+            hashes5_diff: Default::default(),
             str_cache: Default::default(),
             sym_cache: Default::default(),
             syn_cache: Default::default(),
@@ -321,39 +319,39 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         &self.hasher
     }
 
-    pub(crate) fn hash24(&mut self, preimg: [F; 24]) -> [F; DIGEST_SIZE] {
-        if let Some(img) = self.hashes24.get(&preimg) {
+    pub(crate) fn hash3(&mut self, preimg: [F; HASH3_SIZE]) -> [F; DIGEST_SIZE] {
+        if let Some(img) = self.hashes3.get(&preimg) {
             return *img;
         }
-        let digest = into_sized(&self.hasher.hash24.execute_simple(&preimg));
-        self.hashes24.insert(preimg, digest);
-        self.hashes24_diff.insert(preimg, digest);
+        let digest = into_sized(&self.hasher.hash3.execute_simple(&preimg));
+        self.hashes3.insert(preimg, digest);
+        self.hashes3_diff.insert(preimg, digest);
         digest
     }
 
-    fn hash32(&mut self, preimg: [F; 32]) -> [F; DIGEST_SIZE] {
-        if let Some(img) = self.hashes32.get(&preimg) {
+    fn hash4(&mut self, preimg: [F; HASH4_SIZE]) -> [F; DIGEST_SIZE] {
+        if let Some(img) = self.hashes4.get(&preimg) {
             return *img;
         }
-        let digest = into_sized(&self.hasher.hash32.execute_simple(&preimg));
-        self.hashes32.insert(preimg, digest);
-        self.hashes32_diff.insert(preimg, digest);
+        let digest = into_sized(&self.hasher.hash4.execute_simple(&preimg));
+        self.hashes4.insert(preimg, digest);
+        self.hashes4_diff.insert(preimg, digest);
         digest
     }
 
-    fn hash40(&mut self, preimg: [F; 40]) -> [F; DIGEST_SIZE] {
-        if let Some(img) = self.hashes40.get(&preimg) {
+    fn hash5(&mut self, preimg: [F; HASH5_SIZE]) -> [F; DIGEST_SIZE] {
+        if let Some(img) = self.hashes5.get(&preimg) {
             return *img;
         }
-        let digest = into_sized(&self.hasher.hash40.execute_simple(&preimg));
-        self.hashes40.insert(preimg, digest);
-        self.hashes40_diff.insert(preimg, digest);
+        let digest = into_sized(&self.hasher.hash5.execute_simple(&preimg));
+        self.hashes5.insert(preimg, digest);
+        self.hashes5_diff.insert(preimg, digest);
         digest
     }
 
     pub fn intern_tuple2(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>) -> ZPtr<F> {
         let preimg = ZPtr::flatten2(&a, &b);
-        let digest = self.hash32(preimg);
+        let digest = self.hash4(preimg);
         let zptr = ZPtr { tag, digest };
         self.dag.insert(zptr, ZPtrType::Tuple2(a, b));
         zptr
@@ -361,7 +359,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
 
     fn intern_compact10(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>) -> ZPtr<F> {
         let preimg = ZPtr::flatten_compact10(&a, &b);
-        let digest = self.hash24(preimg);
+        let digest = self.hash3(preimg);
         let zptr = ZPtr { tag, digest };
         self.dag.insert(zptr, ZPtrType::Compact10(a, b));
         zptr
@@ -369,7 +367,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
 
     fn intern_compact110(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>, c: ZPtr<F>) -> ZPtr<F> {
         let preimg = ZPtr::flatten_compact110(&a, &b, &c);
-        let digest = self.hash40(preimg);
+        let digest = self.hash5(preimg);
         let zptr = ZPtr { tag, digest };
         self.dag.insert(zptr, ZPtrType::Compact110(a, b, c));
         zptr
@@ -1008,7 +1006,7 @@ mod test {
         } = zstore.read("(cons \"hi\" (lambda (x) x))").unwrap();
 
         let record = &mut QueryRecord::new(&toplevel);
-        record.inject_inv_queries("hash_32_8", &toplevel, &zstore.hashes32);
+        record.inject_inv_queries("hash_32_8", &toplevel, &zstore.hashes4);
 
         let mut input = [BabyBear::zero(); 24];
         input[0] = expr_tag.to_field();

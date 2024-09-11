@@ -13,7 +13,7 @@ use crate::loam::{LEWrap, Ptr, Wide, WidePtr, LE};
 
 use crate::lurk::chipset::{lurk_hasher, LurkHasher};
 use crate::lurk::tag::Tag;
-use crate::lurk::zstore::{COMPACT110_SIZE, DIGEST_SIZE, HASH3_SIZE, HASH4_SIZE};
+use crate::lurk::zstore::{DIGEST_SIZE, HASH3_SIZE, HASH4_SIZE, HASH5_SIZE};
 
 use crate::lurk::{
     chipset::LurkChip,
@@ -86,10 +86,7 @@ impl Allocator {
     }
 
     // /// TODO: reorg for duplicate code
-    pub fn import_hashes5(
-        &mut self,
-        hashes5: &FxHashMap<[LE; COMPACT110_SIZE], [LE; DIGEST_SIZE]>,
-    ) {
+    pub fn import_hashes5(&mut self, hashes5: &FxHashMap<[LE; HASH5_SIZE], [LE; DIGEST_SIZE]>) {
         for (preimage, digest) in hashes5 {
             let preimage_vec = preimage
                 .chunks(8)
@@ -105,9 +102,9 @@ impl Allocator {
     }
 
     pub fn import_zstore(&mut self, zstore: &ZStore<LE, LurkChip>) {
-        self.import_hashes3(&zstore.hashes24);
-        self.import_hashes4(&zstore.hashes32);
-        self.import_hashes5(&zstore.hashes40);
+        self.import_hashes3(&zstore.hashes3);
+        self.import_hashes4(&zstore.hashes4);
+        self.import_hashes5(&zstore.hashes5);
     }
 
     pub fn alloc_addr(&mut self, tag: LE, initial_addr: LE) -> LE {
