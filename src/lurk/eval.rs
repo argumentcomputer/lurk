@@ -546,7 +546,7 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
             match expr_tag {
                 Tag::Builtin, Tag::Sym => {
                     let expr_digest: [8] = load(expr);
-                    let (res_tag, res) = call(env_lookup, expr_digest, env);
+                    let (res_tag, res) = call(env_lookup, expr_tag, expr_digest, env);
                     match res_tag {
                         Tag::Thunk => {
                             // In the case the result is a thunk we extend
@@ -1789,19 +1789,20 @@ pub fn apply<F: AbstractField>() -> FuncE<F> {
 
 pub fn env_lookup<F: AbstractField>() -> FuncE<F> {
     func!(
-        fn env_lookup(x_digest: [8], env): [2] {
+        fn env_lookup(x_tag_digest: [9], env): [2] {
             if !env {
                 let err_tag = Tag::Err;
                 let err = EvalErr::UnboundVar;
                 return (err_tag, err)
             }
-            let (_y_tag, y, val_tag, val, tail_env) = load(env);
+            let (y_tag, y, val_tag, val, tail_env) = load(env);
             let y_digest: [8] = load(y);
-            let not_eq = sub(x_digest, y_digest);
+            let y_tag_digest: [9] = (y_tag, y_digest);
+            let not_eq = sub(x_tag_digest, y_tag_digest);
             if !not_eq {
                 return (val_tag, val)
             }
-            let (res_tag, res) = call(env_lookup, x_digest, tail_env);
+            let (res_tag, res) = call(env_lookup, x_tag_digest, tail_env);
             return (res_tag, res)
         }
     )
@@ -1885,7 +1886,7 @@ mod test {
         expect_eq(equal_inner.width(), expect!["57"]);
         expect_eq(car_cdr.width(), expect!["61"]);
         expect_eq(apply.width(), expect!["100"]);
-        expect_eq(env_lookup.width(), expect!["50"]);
+        expect_eq(env_lookup.width(), expect!["52"]);
         expect_eq(ingress.width(), expect!["105"]);
         expect_eq(egress.width(), expect!["82"]);
         expect_eq(hash_24_8.width(), expect!["493"]);

@@ -497,6 +497,23 @@ test!(test_shadow4, "(let ((cons 1)) (cons cons cons))", |z| {
 
 // errors
 test!(test_unbound_var, "a", |_| ZPtr::err(EvalErr::UnboundVar));
+test_raw!(
+    test_unbound_var2,
+    |z| {
+        // binding the built-in `cons` but evaluating a `Tag::Sym`-tagged `cons`
+        // should resuld in an unbound var error
+        let let_ = z.intern_symbol(&builtin_sym("let"));
+        let cons = z.intern_symbol(&builtin_sym("cons"));
+        let one = uint(1);
+        assert_eq!(cons.tag, Tag::Builtin);
+        let mut cons_sym = cons.clone();
+        cons_sym.tag = Tag::Sym;
+        let binding = z.intern_list([cons, one]);
+        let bindings = z.intern_list([binding]);
+        z.intern_list([let_, bindings, cons_sym])
+    },
+    |_| ZPtr::err(EvalErr::UnboundVar)
+);
 test!(test_div_by_zero_fel, "(/ 1n 0n)", |_| ZPtr::err(
     EvalErr::DivByZero
 ));
