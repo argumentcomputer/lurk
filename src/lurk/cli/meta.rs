@@ -16,7 +16,11 @@ use crate::{
             repl::Repl,
         },
         package::{Package, SymbolRef},
-        state::builtin_sym,
+        state::{
+            builtin_package_symbol, builtin_sym, lurk_package_symbol, BUILTIN_PACKAGE_NAME,
+            LURK_PACKAGE_NAME,
+        },
+        symbol::Symbol,
         tag::Tag,
         zstore::{ZPtr, DIGEST_SIZE},
     },
@@ -549,7 +553,22 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
                 _ => bail!("Package name must be a string or a symbol"),
             };
             println!("{}", repl.state.borrow().fmt_to_string(&name));
-            let package = Package::new(name);
+            let mut package = Package::new(name);
+            {
+                let state = repl.state.borrow();
+                let lurk_package = state
+                    .get_package(&lurk_package_symbol())
+                    .expect("lurk package is missing");
+                let builtin_package = state
+                    .get_package(&builtin_package_symbol())
+                    .expect("builtin package is missing");
+                package
+                    .use_package(lurk_package)
+                    .expect("all symbols in the lurk package are importable");
+                package
+                    .use_package(builtin_package)
+                    .expect("all symbols in the builtin package are importable");
+            }
             repl.state.borrow_mut().add_package(package);
             Ok(())
         },

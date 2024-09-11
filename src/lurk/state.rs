@@ -243,6 +243,18 @@ pub fn meta_package_symbol() -> Symbol {
     lurk_sym(META_PACKAGE_NAME)
 }
 
+/// Returns the symbol corresponding to the name of the lurk package
+#[inline]
+pub fn lurk_package_symbol() -> Symbol {
+    Symbol::sym(&[LURK_PACKAGE_NAME])
+}
+
+/// Returns the symbol corresponding to the name of the builtin package
+#[inline]
+pub fn builtin_package_symbol() -> Symbol {
+    Symbol::sym(&[LURK_PACKAGE_NAME, BUILTIN_PACKAGE_NAME])
+}
+
 /// Returns the symbol in the user package given the symbol name
 #[inline]
 pub fn user_sym(name: &str) -> Symbol {
