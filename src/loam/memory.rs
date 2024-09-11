@@ -543,6 +543,27 @@ pub fn initial_builtin_addr() -> LE {
     LE::from_canonical_u64(BUILTIN_SYMBOLS.len() as u64)
 }
 
+pub fn initial_symbol_relation() -> Vec<(Wide, Dual<LEWrap>)> {
+    let zstore = &mut lurk_zstore();
+
+    let ZPtr {
+        tag: _,
+        digest: nil_digest,
+    } = *zstore.nil();
+    let ZPtr {
+        tag: _,
+        digest: t_digest,
+    } = *zstore.t();
+    vec![
+        (Wide(nil_digest), Dual(LEWrap(LE::zero()))),
+        (Wide(t_digest), Dual(LEWrap(LE::one()))),
+    ]
+}
+
+pub fn initial_symbol_addr() -> LE {
+    LE::from_canonical_u64(2)
+}
+
 pub fn initial_nil_relation() -> Vec<(Wide, Dual<LEWrap>)> {
     let zstore = &mut lurk_zstore();
     let ZPtr { tag: _, digest } = *zstore.nil();

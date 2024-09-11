@@ -13,7 +13,7 @@ use crate::loam::{LEWrap, Ptr, Wide, WidePtr, LE};
 
 use crate::lurk::chipset::{lurk_hasher, LurkHasher};
 use crate::lurk::tag::Tag;
-use crate::lurk::zstore::{DIGEST_SIZE, HASH3_SIZE, HASH4_SIZE};
+use crate::lurk::zstore::{COMPACT110_SIZE, DIGEST_SIZE, HASH3_SIZE, HASH4_SIZE};
 
 use crate::lurk::{
     chipset::LurkChip,
@@ -86,25 +86,28 @@ impl Allocator {
     }
 
     // /// TODO: reorg for duplicate code
-    // pub fn import_hashes6(&mut self, hashes6: &FxHashMap<[LE; HASH6_SIZE], [LE; DIGEST_SIZE]>) {
-    //     for (preimage, digest) in hashes6 {
-    //         let preimage_vec = preimage
-    //             .chunks(8)
-    //             .map(|chunk| Wide::from_slice(chunk))
-    //             .collect::<Vec<_>>();
-    //         let digest_wide = Wide(digest.clone());
+    pub fn import_hashes5(
+        &mut self,
+        hashes5: &FxHashMap<[LE; COMPACT110_SIZE], [LE; DIGEST_SIZE]>,
+    ) {
+        for (preimage, digest) in hashes5 {
+            let preimage_vec = preimage
+                .chunks(8)
+                .map(|chunk| Wide::from_slice(chunk))
+                .collect::<Vec<_>>();
+            let digest_wide = Wide(digest.clone());
 
-    //         self.digest_cache
-    //             .insert(preimage_vec.clone(), digest_wide.clone());
+            self.digest_cache
+                .insert(preimage_vec.clone(), digest_wide.clone());
 
-    //         self.preimage_cache.insert(digest_wide, preimage_vec);
-    //     }
-    // }
+            self.preimage_cache.insert(digest_wide, preimage_vec);
+        }
+    }
 
     pub fn import_zstore(&mut self, zstore: &ZStore<LE, LurkChip>) {
         self.import_hashes3(&zstore.hashes24);
         self.import_hashes4(&zstore.hashes32);
-        // self.import_hashes6(&zstore.hashes48);
+        self.import_hashes5(&zstore.hashes40);
     }
 
     pub fn alloc_addr(&mut self, tag: LE, initial_addr: LE) -> LE {
@@ -141,18 +144,17 @@ impl Allocator {
 
         digest
     }
-    // TODO: refactor to share code with hash4
-    pub fn hash6(&mut self, a: Wide, b: Wide, c: Wide, d: Wide, e: Wide, f: Wide) -> Wide {
-        let mut preimage = Vec::with_capacity(32);
+
+    pub fn hash5(&mut self, a: Wide, b: Wide, c: Wide, d: Wide, e: Wide) -> Wide {
+        let mut preimage = Vec::with_capacity(40);
 
         preimage.extend(&a.0);
         preimage.extend(&b.0);
         preimage.extend(&c.0);
         preimage.extend(&d.0);
         preimage.extend(&e.0);
-        preimage.extend(&f.0);
 
-        let preimage_vec = vec![a, b, c, d];
+        let preimage_vec = vec![a, b, c, d, e];
 
         if let Some(digest) = self.digest_cache.get(&preimage_vec) {
             return digest.clone();
@@ -169,6 +171,7 @@ impl Allocator {
 
         digest
     }
+
     pub fn unhash4(&mut self, digest: &Wide) -> [Wide; 4] {
         let mut preimage = [Wide::widen(LE::from_canonical_u32(0)); 4];
 
@@ -181,13 +184,13 @@ impl Allocator {
             .unwrap()
     }
 
-    pub fn unhash6(&mut self, digest: &Wide) -> [Wide; 6] {
-        let mut preimage = [Wide::widen(LE::from_canonical_u32(0)); 6];
+    pub fn unhash5(&mut self, digest: &Wide) -> [Wide; 5] {
+        let mut preimage = [Wide::widen(LE::from_canonical_u32(0)); 5];
 
         self.preimage_cache
             .get(digest)
             .map(|digest| {
-                preimage.copy_from_slice(&digest[..6]);
+                preimage.copy_from_slice(&digest[..5]);
                 preimage
             })
             .unwrap()
@@ -197,6 +200,7 @@ impl Allocator {
 #[cfg(feature = "loam")]
 ascent! {
     // #![trace]
+
     struct AllocationProgram {
         allocator: Allocator,
     }
@@ -247,7 +251,9 @@ ascent! {
         alloc(tag, value), if *tag == Tag::Cons.elt(),
         let addr = LEWrap(_self.alloc_addr(Tag::Cons.elt(), LE::zero()));
     // Populating cons(...) triggers allocation in cons mem.
-    cons_mem(car, cdr, Dual(addr)) <-- cons(car, cdr), let addr = LEWrap(_self.alloc_addr(Tag::Cons.elt(), LE::zero()));
+    cons_mem(car, cdr, Dual(addr)) <--
+        cons(car, cdr),
+        let addr = LEWrap(_self.alloc_addr(Tag::Cons.elt(), LE::zero()));
 
     // Register cons value.
     ptr_value(ptr, value) <-- cons_digest_mem(value, addr), let ptr = Ptr(Tag::Cons.elt(), addr.0.0);
@@ -656,6 +662,17 @@ mod test {
         };
 
         println!("{}", prog.relation_sizes_summary());
+    }
+
+    #[test]
+    fn test_cons_simple() {
+        test_aux("(1n . 2n)", "(2n . 4n)");
+    }
+
+    #[test]
+    fn test_cons() {
+        test_aux("((1n . 2n) . (2n . 4n))", "((2n . 4n) . (4n . 8n))");
+        test_aux("((1n . 2n) . (2n . 4n))", "((2n . 4n) . (4n . 8n))");
     }
 
     #[test]
