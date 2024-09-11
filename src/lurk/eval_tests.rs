@@ -506,7 +506,7 @@ test_raw!(
         let cons = z.intern_symbol(&builtin_sym("cons"));
         let one = uint(1);
         assert_eq!(cons.tag, Tag::Builtin);
-        let mut cons_sym = cons.clone();
+        let mut cons_sym = cons;
         cons_sym.tag = Tag::Sym;
         let binding = z.intern_list([cons, one]);
         let bindings = z.intern_list([binding]);

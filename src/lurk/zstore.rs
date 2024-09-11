@@ -38,7 +38,7 @@ pub(crate) const HASH3_SIZE: usize = DIGEST_SIZE + ZPTR_SIZE;
 pub(crate) const HASH4_SIZE: usize = 2 * ZPTR_SIZE;
 
 const COMPACT10_SIZE: usize = ZPTR_SIZE + DIGEST_SIZE;
-const COMPACT110_SIZE: usize = 2 * ZPTR_SIZE + DIGEST_SIZE;
+pub(crate) const COMPACT110_SIZE: usize = 2 * ZPTR_SIZE + DIGEST_SIZE;
 
 fn digest_from_field<F: AbstractField + Copy>(f: F) -> [F; DIGEST_SIZE] {
     let mut digest = [F::zero(); DIGEST_SIZE];
