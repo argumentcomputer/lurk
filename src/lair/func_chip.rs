@@ -25,37 +25,37 @@ impl LayoutSizes {
     }
 }
 
-pub struct FuncChip<'a, F, H: Chipset<F>> {
-    pub(crate) func: &'a Func<F>,
-    pub(crate) toplevel: &'a Toplevel<F, H>,
+pub struct FuncChip<F, H: Chipset<F>> {
+    pub(crate) func: Func<F>,
+    pub(crate) toplevel: Toplevel<F, H>,
     pub(crate) layout_sizes: LayoutSizes,
 }
 
-impl<'a, F, H: Chipset<F>> FuncChip<'a, F, H> {
+impl<F: Clone, H: Chipset<F>> FuncChip<F, H> {
     #[inline]
-    pub fn from_name(name: &'static str, toplevel: &'a Toplevel<F, H>) -> Self {
+    pub fn from_name(name: &'static str, toplevel: &Toplevel<F, H>) -> Self {
         let func = toplevel.get_by_name(name);
         Self::from_func(func, toplevel)
     }
 
     #[inline]
-    pub fn from_index(idx: usize, toplevel: &'a Toplevel<F, H>) -> Self {
+    pub fn from_index(idx: usize, toplevel: &Toplevel<F, H>) -> Self {
         let func = toplevel.get_by_index(idx);
         Self::from_func(func, toplevel)
     }
 
     #[inline]
-    pub fn from_func(func: &'a Func<F>, toplevel: &'a Toplevel<F, H>) -> Self {
+    pub fn from_func(func: &Func<F>, toplevel: &Toplevel<F, H>) -> Self {
         let layout_sizes = func.compute_layout_sizes(toplevel);
         Self {
-            func,
-            toplevel,
+            func: func.clone(),         // FIXME
+            toplevel: toplevel.clone(), // FIXME
             layout_sizes,
         }
     }
 
     #[inline]
-    pub fn from_toplevel(toplevel: &'a Toplevel<F, H>) -> Vec<Self> {
+    pub fn from_toplevel(toplevel: &Toplevel<F, H>) -> Vec<Self> {
         toplevel
             .map
             .get_pairs()
@@ -71,18 +71,18 @@ impl<'a, F, H: Chipset<F>> FuncChip<'a, F, H> {
 
     #[inline]
     pub fn func(&self) -> &Func<F> {
-        self.func
+        &self.func
     }
 
     #[inline]
     pub fn toplevel(&self) -> &Toplevel<F, H> {
-        self.toplevel
+        &self.toplevel
     }
 }
 
-impl<'a, F: Sync, H: Chipset<F>> BaseAir<F> for FuncChip<'a, F, H> {
+impl<F: Sync, H: Chipset<F>> BaseAir<F> for FuncChip<F, H> {
     fn width(&self) -> usize {
-        self.width()
+        self.layout_sizes.total()
     }
 }
 

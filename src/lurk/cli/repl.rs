@@ -12,7 +12,7 @@ use rustyline::{
     Completer, Editor, Helper, Highlighter, Hinter,
 };
 use sphinx_core::{
-    stark::{LocalProver, StarkGenericConfig, StarkMachine},
+    stark::{DefaultProver, MachineProver, StarkGenericConfig, StarkMachine},
     utils::{BabyBearPoseidon2, SphinxCoreOpts},
 };
 use std::io::Write;
@@ -21,7 +21,7 @@ use std::{fmt::Debug, marker::PhantomData};
 use crate::{
     lair::{
         chipset::Chipset,
-        execute::{DebugEntry, DebugEntryKind, QueryRecord, QueryResult, Shard},
+        execute::{DebugEntry, DebugEntryKind, QueryRecord, QueryResult, ShardingConfig},
         func_chip::FuncChip,
         lair_chip::{build_chip_vector, LairChip, LairMachineProgram},
         toplevel::Toplevel,
@@ -148,9 +148,7 @@ impl Repl<BabyBear, LurkChip> {
 }
 
 impl<H: Chipset<BabyBear>> Repl<BabyBear, H> {
-    pub(crate) fn stark_machine(
-        &self,
-    ) -> StarkMachine<BabyBearPoseidon2, LairChip<'_, BabyBear, H>> {
+    pub(crate) fn stark_machine(&self) -> StarkMachine<BabyBearPoseidon2, LairChip<BabyBear, H>> {
         let lurk_main_chip = FuncChip::from_index(self.lurk_main_idx, &self.toplevel);
         StarkMachine::new(
             BabyBearPoseidon2::new(),
@@ -176,6 +174,7 @@ impl<H: Chipset<BabyBear>> Repl<BabyBear, H> {
         let machine = self.stark_machine();
         let (pk, vk) = machine.setup(&LairMachineProgram);
         let challenger_p = &mut machine.config().challenger();
+        let prover = DefaultProver::new(machine);
         let must_prove = if !proof_path.exists() {
             true
         } else {
@@ -184,18 +183,22 @@ impl<H: Chipset<BabyBear>> Repl<BabyBear, H> {
                 let machine_proof = io_proof.into_machine_proof();
                 let challenger_v = &mut challenger_p.clone();
                 // force an overwrite if verification goes wrong
-                machine.verify(&vk, &machine_proof, challenger_v).is_err()
+                prover
+                    .machine()
+                    .verify(&vk, &machine_proof, challenger_v)
+                    .is_err()
             } else {
                 // force an overwrite if deserialization goes wrong
                 true
             }
         };
         if must_prove {
-            let challenger_v = &mut challenger_p.clone();
-            let shard = Shard::new(&self.queries);
             let opts = SphinxCoreOpts::default();
-            let machine_proof = machine.prove::<LocalProver<_, _>>(&pk, shard, challenger_p, opts);
-            machine
+            let challenger_v = &mut challenger_p.clone();
+            let sharded = ShardingConfig::default().shard(&self.queries);
+            let machine_proof = prover.prove(&pk, sharded, challenger_p, opts)?;
+            prover
+                .machine()
                 .verify(&vk, &machine_proof, challenger_v)
                 .expect("Proof verification failed");
             let crypto_proof: CryptoProof = machine_proof.into();

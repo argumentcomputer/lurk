@@ -19,8 +19,8 @@ use super::{
     relations::OuterCallRelation,
 };
 
-pub enum LairChip<'a, F, H: Chipset<F>> {
-    Func(FuncChip<'a, F, H>),
+pub enum LairChip<F, H: Chipset<F>> {
+    Func(FuncChip<F, H>),
     Mem(MemChip<F>),
     Bytes(BytesChip<F>),
     Entrypoint {
@@ -29,7 +29,7 @@ pub enum LairChip<'a, F, H: Chipset<F>> {
     },
 }
 
-impl<'a, F, H: Chipset<F>> LairChip<'a, F, H> {
+impl<F, H: Chipset<F>> LairChip<F, H> {
     #[inline]
     pub fn entrypoint(func: &Func<F>) -> Self {
         let partial = if func.partial { DEPTH_W } else { 0 };
@@ -41,17 +41,17 @@ impl<'a, F, H: Chipset<F>> LairChip<'a, F, H> {
     }
 }
 
-impl<'a, F: PrimeField32, H: Chipset<F>> WithEvents<'a> for LairChip<'_, F, H> {
-    type Events = &'a Shard<'a, F>;
+impl<'a, F: PrimeField32, H: Chipset<F>> WithEvents<'a> for LairChip<F, H> {
+    type Events = &'a Shard<F>;
 }
 
-impl<'a, F: PrimeField32, H: Chipset<F>> EventLens<LairChip<'a, F, H>> for Shard<'a, F> {
-    fn events(&self) -> <LairChip<'a, F, H> as WithEvents<'_>>::Events {
+impl<F: PrimeField32, H: Chipset<F>> EventLens<LairChip<F, H>> for Shard<F> {
+    fn events(&self) -> <LairChip<F, H> as WithEvents<'_>>::Events {
         self
     }
 }
 
-impl<'a, F: Field + Sync, H: Chipset<F>> BaseAir<F> for LairChip<'a, F, H> {
+impl<F: Field + Sync, H: Chipset<F>> BaseAir<F> for LairChip<F, H> {
     fn width(&self) -> usize {
         match self {
             Self::Func(func_chip) => func_chip.width(),
@@ -72,8 +72,8 @@ impl<F: AbstractField> MachineProgram<F> for LairMachineProgram {
     }
 }
 
-impl<'a, F: PrimeField32, H: Chipset<F>> MachineAir<F> for LairChip<'a, F, H> {
-    type Record = Shard<'a, F>;
+impl<F: PrimeField32, H: Chipset<F>> MachineAir<F> for LairChip<F, H> {
+    type Record = Shard<F>;
     type Program = LairMachineProgram;
 
     fn name(&self) -> String {
@@ -97,7 +97,7 @@ impl<'a, F: PrimeField32, H: Chipset<F>> MachineAir<F> for LairChip<'a, F, H> {
             Self::Mem(mem_chip) => mem_chip.generate_trace(shard.events()),
             Self::Bytes(bytes_chip) => {
                 // TODO: Shard the byte events differently?
-                if shard.index() == 0 {
+                if shard.events().index == 0 {
                     bytes_chip.generate_trace(&shard.events().queries().bytes)
                 } else {
                     bytes_chip.generate_trace(&Default::default())
@@ -147,7 +147,7 @@ impl<'a, F: PrimeField32, H: Chipset<F>> MachineAir<F> for LairChip<'a, F, H> {
     }
 }
 
-impl<'a, AB, H: Chipset<AB::F>> Air<AB> for LairChip<'a, AB::F, H>
+impl<AB, H: Chipset<AB::F>> Air<AB> for LairChip<AB::F, H>
 where
     AB: AirBuilderWithPublicValues + LookupBuilder + PairBuilder,
     <AB as AirBuilder>::Var: std::fmt::Debug,
@@ -187,9 +187,9 @@ where
     }
 }
 
-pub fn build_lair_chip_vector<'a, F: PrimeField32, H: Chipset<F>>(
-    entry_func_chip: &FuncChip<'a, F, H>,
-) -> Vec<LairChip<'a, F, H>> {
+pub fn build_lair_chip_vector<F: PrimeField32, H: Chipset<F>>(
+    entry_func_chip: &FuncChip<F, H>,
+) -> Vec<LairChip<F, H>> {
     let toplevel = &entry_func_chip.toplevel;
     let func = &entry_func_chip.func;
     let mut chip_vector = Vec::with_capacity(2 + toplevel.map.size() + MEM_TABLE_SIZES.len());
@@ -206,20 +206,19 @@ pub fn build_lair_chip_vector<'a, F: PrimeField32, H: Chipset<F>>(
 
 #[inline]
 pub fn build_chip_vector_from_lair_chips<
-    'a,
     F: PrimeField32,
     H: Chipset<F>,
-    I: IntoIterator<Item = LairChip<'a, F, H>>,
+    I: IntoIterator<Item = LairChip<F, H>>,
 >(
     lair_chips: I,
-) -> Vec<Chip<F, LairChip<'a, F, H>>> {
+) -> Vec<Chip<F, LairChip<F, H>>> {
     lair_chips.into_iter().map(Chip::new).collect()
 }
 
 #[inline]
-pub fn build_chip_vector<'a, F: PrimeField32, H: Chipset<F>>(
-    entry_func_chip: &FuncChip<'a, F, H>,
-) -> Vec<Chip<F, LairChip<'a, F, H>>> {
+pub fn build_chip_vector<F: PrimeField32, H: Chipset<F>>(
+    entry_func_chip: &FuncChip<F, H>,
+) -> Vec<Chip<F, LairChip<F, H>>> {
     build_chip_vector_from_lair_chips(build_lair_chip_vector(entry_func_chip))
 }
 
@@ -230,9 +229,10 @@ mod tests {
     use super::*;
 
     use p3_baby_bear::BabyBear;
+    use sphinx_core::stark::MachineProver;
     use sphinx_core::utils::BabyBearPoseidon2;
     use sphinx_core::{
-        stark::{LocalProver, StarkGenericConfig, StarkMachine},
+        stark::{DefaultProver, StarkGenericConfig, StarkMachine},
         utils::SphinxCoreOpts,
     };
 
@@ -260,10 +260,14 @@ mod tests {
         let mut challenger_v = machine.config().challenger();
         let shard = Shard::new(&queries);
 
-        machine.debug_constraints(&pk, shard.clone());
+        machine.debug_constraints(&pk, vec![shard.clone()], &mut machine.config().challenger());
         let opts = SphinxCoreOpts::default();
-        let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
-        machine
+        let prover = DefaultProver::new(machine);
+        let proof = prover
+            .prove(&pk, vec![shard], &mut challenger_p, opts)
+            .unwrap();
+        prover
+            .machine()
             .verify(&vk, &proof, &mut challenger_v)
             .expect("proof verifies");
     }
