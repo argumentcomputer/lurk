@@ -174,8 +174,8 @@ impl Allocator {
 
         self.preimage_cache
             .get(digest)
-            .map(|digest| {
-                preimage.copy_from_slice(&digest[..4]);
+            .map(|preimg| {
+                preimage.copy_from_slice(&preimg[..4]);
                 preimage
             })
             .unwrap()
@@ -186,8 +186,8 @@ impl Allocator {
 
         self.preimage_cache
             .get(digest)
-            .map(|digest| {
-                preimage.copy_from_slice(&digest[..5]);
+            .map(|preimg| {
+                preimage.copy_from_slice(&preimg[..5]);
                 preimage
             })
             .unwrap()
