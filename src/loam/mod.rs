@@ -11,7 +11,7 @@ use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::FxHashMap;
 
 use crate::lurk::chipset::LurkChip;
-use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
+use crate::lurk::state::BUILTIN_SYMBOLS;
 use crate::lurk::tag::Tag;
 use crate::lurk::zstore::{self, lurk_zstore, ZPtr, ZStore};
 
@@ -58,19 +58,18 @@ pub struct Ptr(pub LE, pub LE);
 
 impl Ptr {
     fn nil() -> Self {
-        // nil is zeroth element in the nil-typed table.
-        Self(Tag::Nil.elt(), LE::from_canonical_u32(0))
+        Self(Tag::Sym.elt(), LE::zero())
+    }
+
+    /// make this const
+    fn t() -> Self {
+        Self(Tag::Sym.elt(), LE::one())
     }
 
     /// make this const
     fn builtin(op: &str) -> Self {
         let addr = lurk_sym_index(op).unwrap();
         Self(Tag::Builtin.elt(), LE::from_canonical_u32(addr as u32))
-    }
-
-    /// make this const
-    fn t() -> Self {
-        Self::builtin("t")
     }
 
     /// make this const
@@ -113,11 +112,12 @@ impl Ptr {
         self.0 == Tag::Cons.elt()
     }
     fn is_nil(&self) -> bool {
-        // TODO: should we also check value?
-        self.0 == Tag::Nil.elt()
+        *self == Ptr::nil()
     }
     fn is_sym(&self) -> bool {
-        self.0 == Tag::Sym.elt()
+        // TODO: this is hardcoded to not consider nil/t as syms that should be
+        // looked up in head position -- not sure how this is going to be in-circuit
+        self.0 == Tag::Sym.elt() && self.1 != LE::zero() && self.1 != LE::one()
     }
 
     fn is_builtin(&self) -> bool {
@@ -231,7 +231,7 @@ impl WidePtr {
     fn nil() -> Self {
         // FIXME: cache, don't do expensive read repeatedly.
         let zstore = &mut lurk_zstore();
-        let ZPtr { tag, digest } = zstore.intern_nil();
+        let ZPtr { tag, digest } = *zstore.nil();
         Self(Wide::widen(tag.elt()), Wide(digest))
     }
 
@@ -294,12 +294,12 @@ trait LoamProgram {
         self.allocator_mut().hash4(a, b, c, d)
     }
 
-    fn unhash6(&mut self, digest: &Wide) -> [Wide; 6] {
-        self.allocator_mut().unhash6(digest)
+    fn unhash5(&mut self, digest: &Wide) -> [Wide; 5] {
+        self.allocator_mut().unhash5(digest)
     }
 
-    fn hash6(&mut self, a: Wide, b: Wide, c: Wide, d: Wide, e: Wide, f: Wide) -> Wide {
-        self.allocator_mut().hash6(a, b, c, d, e, f)
+    fn hash5(&mut self, a: Wide, b: Wide, c: Wide, d: Wide, e: Wide) -> Wide {
+        self.allocator_mut().hash5(a, b, c, d, e)
     }
 
     fn export_memory(&self) -> VirtualMemory {
@@ -338,8 +338,5 @@ trait LoamProgram {
 
 // TODO: This can use a hashtable lookup, or could even be known at compile-time (but how to make that non-brittle since iter() is not const?).
 pub(crate) fn lurk_sym_index(name: &str) -> Option<usize> {
-    LURK_PACKAGE_SYMBOLS_NAMES
-        .iter()
-        .filter(|name| **name != "nil")
-        .position(|s| *s == name)
+    BUILTIN_SYMBOLS.iter().position(|s| *s == name)
 }

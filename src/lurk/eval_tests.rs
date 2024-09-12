@@ -18,7 +18,7 @@ use crate::{
 use super::{
     chipset::{lurk_hasher, LurkChip},
     eval::{build_lurk_toplevel, EvalErr},
-    state::{lurk_sym, user_sym},
+    state::{builtin_sym, user_sym},
     symbol::Symbol,
     tag::Tag,
     zstore::{ZPtr, ZStore},
@@ -52,9 +52,12 @@ fn run_test(
     config: BabyBearPoseidon2,
 ) {
     let mut record = QueryRecord::new(toplevel);
-    record.inject_inv_queries("hash_24_8", toplevel, &zstore.hashes3);
-    record.inject_inv_queries("hash_32_8", toplevel, &zstore.hashes4);
-    record.inject_inv_queries("hash_48_8", toplevel, &zstore.hashes6);
+    let hashes3 = std::mem::take(&mut zstore.hashes3_diff);
+    let hashes4 = std::mem::take(&mut zstore.hashes4_diff);
+    let hashes5 = std::mem::take(&mut zstore.hashes5_diff);
+    record.inject_inv_queries_owned("hash3", toplevel, hashes3);
+    record.inject_inv_queries_owned("hash4", toplevel, hashes4);
+    record.inject_inv_queries_owned("hash5", toplevel, hashes5);
 
     let mut input = [F::zero(); 24];
     input[..16].copy_from_slice(&zptr.flatten());
@@ -184,10 +187,6 @@ fn uint(u: u64) -> ZPtr<F> {
     ZPtr::u64(u)
 }
 
-fn intern_t(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
-    zstore.intern_symbol(&lurk_sym("t"))
-}
-
 // self-evaluating
 test!(test_num, "1", |_| uint(1));
 test!(test_char, "'a'", |_| ZPtr::char('a'));
@@ -195,8 +194,8 @@ test!(test_str, "\"abc\"", |z| z.intern_string("abc"));
 test!(test_key, ":hi", |z| z.intern_symbol(&Symbol::key(&["hi"])));
 test!(test_u64, "1u64", |_| ZPtr::u64(1));
 test!(test_field_elem, "1n", |_| ZPtr::num(F::one()));
-test!(test_t, "t", intern_t);
-test!(test_nil, "nil", |z| z.intern_nil());
+test!(test_t, "t", |z| *z.t());
+test!(test_nil, "nil", |z| *z.nil());
 test_raw!(test_fun, trivial_id_fun, trivial_id_fun);
 test_raw!(test_comm, |_| ZPtr::null(Tag::Comm), |_| ZPtr::null(
     Tag::Comm
@@ -218,7 +217,7 @@ test!(test_app_err2, "((lambda () a) 2)", |_| ZPtr::err(
 test!(test_if, "(if 1 1 0)", |_| uint(1));
 test!(test_if2, "(if nil 1 0)", |_| uint(0));
 test!(test_if3, "(if 1 1)", |_| uint(1));
-test!(test_if4, "(if nil 1)", |z| z.intern_nil());
+test!(test_if4, "(if nil 1)", |z| *z.nil());
 test!(test_let, "(let ((x 0) (y 1)) x)", |_| uint(0));
 test!(test_let2, "(let ((x 0) (y 1)) y)", |_| uint(1));
 test!(test_add, "(+ 1 2)", |_| uint(3));
@@ -226,45 +225,45 @@ test!(test_sub, "(- 5 2)", |_| uint(3));
 test!(test_mul, "(* 2 3)", |_| uint(6));
 test!(test_div, "(/ 6 3)", |_| uint(2));
 test!(test_arith, "(+ (* 2 2) (* 2 3))", |_| uint(10));
-test!(test_num_eq, "(= 0 1)", |z| z.intern_nil());
-test!(test_num_eq2, "(= 1 1)", intern_t);
+test!(test_num_eq, "(= 0 1)", |z| *z.nil());
+test!(test_num_eq2, "(= 1 1)", |z| *z.t());
 test!(
     test_num_eq3,
     "(= 3844955657946763191 18057789389824918841)",
-    |z| z.intern_nil()
+    |z| *z.nil()
 );
 test!(
     test_num_eq4,
     "(= 3844955657946763191 3844955657946763191)",
-    intern_t
+    |z| *z.t()
 );
-test!(test_num_eq5, "(= 0n 1n)", |z| z.intern_nil());
-test!(test_num_eq6, "(= 1n 1n)", intern_t);
-test!(test_u64_order1, "(>= 0 1)", |z| z.intern_nil());
-test!(test_u64_order2, "(>= 1 1)", intern_t);
-test!(test_u64_order3, "(>= 2 1)", intern_t);
-test!(test_u64_order4, "(<= 0 1)", intern_t);
-test!(test_u64_order5, "(<= 1 1)", intern_t);
-test!(test_u64_order6, "(<= 2 1)", |z| z.intern_nil());
-test!(test_u64_order7, "(> 0 1)", |z| z.intern_nil());
-test!(test_u64_order8, "(> 1 1)", |z| z.intern_nil());
-test!(test_u64_order9, "(> 2 1)", intern_t);
-test!(test_u64_order10, "(< 0 1)", intern_t);
-test!(test_u64_order11, "(< 1 1)", |z| z.intern_nil());
-test!(test_u64_order12, "(< 2 1)", |z| z.intern_nil());
+test!(test_num_eq5, "(= 0n 1n)", |z| *z.nil());
+test!(test_num_eq6, "(= 1n 1n)", |z| *z.t());
+test!(test_u64_order1, "(>= 0 1)", |z| *z.nil());
+test!(test_u64_order2, "(>= 1 1)", |z| *z.t());
+test!(test_u64_order3, "(>= 2 1)", |z| *z.t());
+test!(test_u64_order4, "(<= 0 1)", |z| *z.t());
+test!(test_u64_order5, "(<= 1 1)", |z| *z.t());
+test!(test_u64_order6, "(<= 2 1)", |z| *z.nil());
+test!(test_u64_order7, "(> 0 1)", |z| *z.nil());
+test!(test_u64_order8, "(> 1 1)", |z| *z.nil());
+test!(test_u64_order9, "(> 2 1)", |z| *z.t());
+test!(test_u64_order10, "(< 0 1)", |z| *z.t());
+test!(test_u64_order11, "(< 1 1)", |z| *z.nil());
+test!(test_u64_order12, "(< 2 1)", |z| *z.nil());
 test!(
     test_u64_order13,
     "(< 3844955657946763191 18057789389824918841)",
-    intern_t
+    |z| *z.t()
 );
 test!(
     test_u64_order14,
     "(<= 3844955657946763191 3844955657946763191)",
-    intern_t
+    |z| *z.t()
 );
-test!(test_begin_empty, "(begin)", |z| z.intern_nil());
+test!(test_begin_empty, "(begin)", |z| *z.nil());
 test!(test_begin, "(begin 1 2 3)", |_| uint(3));
-test!(test_list, "(list)", |z| z.intern_nil());
+test!(test_list, "(list)", |z| *z.nil());
 test!(test_list2, "(list (+ 1 1) \"hi\")", |z| {
     let hi = z.intern_string("hi");
     let two = uint(2);
@@ -288,62 +287,58 @@ test!(test_car, "(car (cons 0 1))", |_| uint(0));
 test!(test_cdr, "(cdr (cons 0 1))", |_| uint(1));
 test!(test_strcons, "(strcons 'a' \"bc\")", |z| z
     .intern_string("abc"));
-test!(test_eq1, "(eq (cons 1 2) '(1 . 2))", intern_t);
-test!(test_eq2, "(eq (cons 1 3) '(1 . 2))", |z| z.intern_nil());
-test!(test_eq3, "(eq :a :a)", intern_t);
-test!(test_eq4, "(eq :a :b)", |z| z.intern_nil());
-test!(test_eq5, "(eq 'a 'a)", intern_t);
-test!(test_eq6, "(eq 'a 'b)", |z| z.intern_nil());
-test!(test_eq7, "(eq nil nil)", intern_t);
-test!(test_eq8, "(eq t t)", intern_t);
-test!(test_eq9, "(eq t nil)", |z| z.intern_nil());
-test!(test_eq10, "(eq 'a' 'b')", |z| z.intern_nil());
-test!(test_eq11, "(eq 'a' 'a')", intern_t);
-test!(test_eq12, "(eq \"abc\" \"abd\")", |z| z.intern_nil());
-test!(test_eq13, "(eq \"abc\" \"abc\")", intern_t);
-test!(test_eq14, "(eq (cons 'a 1) (cons 'a 2))", |z| z
-    .intern_nil());
-test!(test_eq15, "(eq (cons :a 1) (cons :a 1))", intern_t);
-test!(test_eq16, "(eq (lambda (x) x) (lambda (x) x))", intern_t);
-test!(test_eq17, "(eq (lambda (x) x) (lambda (y) y))", |z| z
-    .intern_nil());
+test!(test_eq1, "(eq (cons 1 2) '(1 . 2))", |z| *z.t());
+test!(test_eq2, "(eq (cons 1 3) '(1 . 2))", |z| *z.nil());
+test!(test_eq3, "(eq :a :a)", |z| *z.t());
+test!(test_eq4, "(eq :a :b)", |z| *z.nil());
+test!(test_eq5, "(eq 'a 'a)", |z| *z.t());
+test!(test_eq6, "(eq 'a 'b)", |z| *z.nil());
+test!(test_eq7, "(eq nil nil)", |z| *z.t());
+test!(test_eq8, "(eq t t)", |z| *z.t());
+test!(test_eq9, "(eq t nil)", |z| *z.nil());
+test!(test_eq10, "(eq 'a' 'b')", |z| *z.nil());
+test!(test_eq11, "(eq 'a' 'a')", |z| *z.t());
+test!(test_eq12, "(eq \"abc\" \"abd\")", |z| *z.nil());
+test!(test_eq13, "(eq \"abc\" \"abc\")", |z| *z.t());
+test!(test_eq14, "(eq (cons 'a 1) (cons 'a 2))", |z| *z.nil());
+test!(test_eq15, "(eq (cons :a 1) (cons :a 1))", |z| *z.t());
+test!(test_eq16, "(eq (lambda (x) x) (lambda (x) x))", |z| *z.t());
+test!(test_eq17, "(eq (lambda (x) x) (lambda (y) y))", |z| *z
+    .nil());
 test!(
     test_eq18,
     "(eq (let ((x 1)) (current-env)) (let ((x 1)) (current-env)))",
-    intern_t
+    |z| *z.t()
 );
 test!(
     test_eq19,
     "(eq (let ((x 1)) (current-env)) (current-env))",
-    |z| z.intern_nil()
+    |z| *z.nil()
 );
 test_raw!(
     test_eq20,
     |z| {
-        let eq = z.intern_symbol(&lurk_sym("eq"));
-        let t = z.intern_symbol(&lurk_sym("t"));
+        let eq = z.intern_symbol(&builtin_sym("eq"));
         let env = z.intern_empty_env();
-        let arg1 = z.intern_thunk(t, env);
-        let arg2 = z.intern_thunk(t, env);
+        let arg1 = z.intern_thunk(*z.t(), env);
+        let arg2 = z.intern_thunk(*z.t(), env);
         z.intern_list([eq, arg1, arg2])
     },
-    intern_t
+    |z| *z.t()
 );
 test_raw!(
     test_eq21,
     |z| {
-        let eq = z.intern_symbol(&lurk_sym("eq"));
-        let nil = z.intern_nil();
-        let t = z.intern_symbol(&lurk_sym("t"));
+        let eq = z.intern_symbol(&builtin_sym("eq"));
         let env = z.intern_empty_env();
-        let arg1 = z.intern_thunk(nil, env);
-        let arg2 = z.intern_thunk(t, env);
+        let arg1 = z.intern_thunk(*z.nil(), env);
+        let arg2 = z.intern_thunk(*z.t(), env);
         z.intern_list([eq, arg1, arg2])
     },
-    |z| z.intern_nil()
+    |z| *z.nil()
 );
-test!(test_eq22, "(eq 1n 0n)", |z| z.intern_nil());
-test!(test_eq23, "(eq 1n 1n)", intern_t);
+test!(test_eq22, "(eq 1n 0n)", |z| *z.nil());
+test!(test_eq23, "(eq 1n 1n)", |z| *z.t());
 
 test!(
     test_misc1,
@@ -351,11 +346,15 @@ test!(
        (car ((cdr ones))))",
     |_| uint(1)
 );
-test!(test_type_eq1, "(type-eq 1 (+ 1 2))", intern_t);
-test!(test_type_eq2, "(type-eq (+ 1 1) 'a')", |z| z.intern_nil());
-test!(test_type_eqq1, "(type-eqq (nil) (cons 1 2))", intern_t);
-test!(test_type_eqq2, "(type-eqq 2 'a')", |z| z.intern_nil());
-test!(test_breakpoint, "(breakpoint)", |z| z.intern_nil());
+test!(test_type_eq1, "(type-eq 1 (+ 1 2))", |z| *z.t());
+test!(test_type_eq2, "(type-eq (+ 1 1) 'a')", |z| *z.nil());
+test!(test_type_eq3, "(type-eq nil t)", |z| *z.t());
+test!(test_type_eq4, "(type-eq 'a t)", |z| *z.t());
+test!(test_type_eq5, "(type-eq 'cons t)", |z| *z.nil());
+test!(test_type_eq6, "(type-eq 'cons 'let)", |z| *z.t());
+test!(test_type_eqq1, "(type-eqq (nil) (cons 1 2))", |z| *z.t());
+test!(test_type_eqq2, "(type-eqq 2 'a')", |z| *z.nil());
+test!(test_breakpoint, "(breakpoint)", |z| *z.nil());
 test!(test_breakpoint2, "(breakpoint (+ 1 1))", |_| uint(2));
 
 // coercions
@@ -416,7 +415,7 @@ test!(test_hide2, "(hide (commit 321) 123)", |_| ZPtr::err(
 test!(test_open_roundtrip, "(open (commit 123))", |_| uint(123));
 test!(
     test_open_raw_roundtrip,
-    "(begin (commit 123n) (open #0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3))",
+    "(begin (commit 123n) (open #0x20a6e497cdc1145d6684f0d31474f160ddf2832673d1d57885a5f28a732882))",
     |_| ZPtr::num(F::from_canonical_u32(123))
 );
 test!(test_secret, "(secret (commit 123))", |_| ZPtr::big_num(
@@ -424,12 +423,12 @@ test!(test_secret, "(secret (commit 123))", |_| ZPtr::big_num(
 ));
 test!(
     test_func_big_num_app,
-    "(begin (commit (lambda (x) x)) (#0x3f2e7102a9f8a303255b90724f24f4eb05b61e99723ca838cf30671676c86a 42))",
+    "(begin (commit (lambda (x) x)) (#0x83420bafb3cb56870b10b498607c0a6314b0ea331328bbb232c74078abb5dc 42))",
     |_| uint(42)
 );
 test!(
     test_func_comm_app,
-    "(begin (commit (lambda (x) x)) ((comm #0x3f2e7102a9f8a303255b90724f24f4eb05b61e99723ca838cf30671676c86a) 42))",
+    "(begin (commit (lambda (x) x)) ((comm #0x83420bafb3cb56870b10b498607c0a6314b0ea331328bbb232c74078abb5dc) 42))",
     |_| uint(42)
 );
 
@@ -438,7 +437,7 @@ test!(test_raw_big_num, "#0x0", |_| ZPtr::big_num([F::zero(); 8]));
 test!(test_raw_comm, "#c0x0", |_| ZPtr::comm([F::zero(); 8]));
 test!(
     test_raw_big_num2,
-    "#0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3",
+    "#0x20a6e497cdc1145d6684f0d31474f160ddf2832673d1d57885a5f28a732882",
     |_| {
         let mut preimg = Vec::with_capacity(24);
         preimg.extend([F::zero(); 8]);
@@ -448,7 +447,7 @@ test!(
 );
 test!(
     test_raw_comm2,
-    "#c0x4b51f7ca76e9700190d753b328b34f3f59e0ad3c70c486645b5890068862f3",
+    "#c0x20a6e497cdc1145d6684f0d31474f160ddf2832673d1d57885a5f28a732882",
     |_| {
         let mut preimg = Vec::with_capacity(24);
         preimg.extend([F::zero(); 8]);
@@ -472,27 +471,52 @@ test!(
     "(comm (bignum #c0x0))",
     |_| ZPtr::comm([F::zero(); 8])
 );
-test!(test_big_num_equal1, "(= #0x0 #0x1)", |z| z.intern_nil());
-test!(test_big_num_equal2, "(= #0x0 #0x0)", intern_t);
-test!(test_big_num_order1, "(>= #0x0 #0x1)", |z| z.intern_nil());
-test!(test_big_num_order2, "(>= #0x1 #0x1)", intern_t);
-test!(test_big_num_order3, "(>= #0x2 #0x1)", intern_t);
-test!(test_big_num_order4, "(<= #0x0 #0x1)", intern_t);
-test!(test_big_num_order5, "(<= #0x1 #0x1)", intern_t);
-test!(test_big_num_order6, "(<= #0x2 #0x1)", |z| z.intern_nil());
-test!(test_big_num_order7, "(> #0x0 #0x1)", |z| z.intern_nil());
-test!(test_big_num_order8, "(> #0x1 #0x1)", |z| z.intern_nil());
-test!(test_big_num_order9, "(> #0x2 #0x1)", intern_t);
-test!(test_big_num_order10, "(< #0x0 #0x1)", intern_t);
-test!(test_big_num_order11, "(< #0x1 #0x1)", |z| z.intern_nil());
-test!(test_big_num_order12, "(< #0x2 #0x1)", |z| z.intern_nil());
-test!(test_big_num_order13, "(< #0x17084a3b94580234614c1ebde7dbb24bc3cb26ba2a84d1355c06cca90b8fb7 #0x7b4dd31c2678ef3c257cda6a06f0c830aaeab011c2c4e7fa9a27c699550539)", intern_t);
-test!(test_big_num_order14, "(<= #0x17084a3b94580234614c1ebde7dbb24bc3cb26ba2a84d1355c06cca90b8fb7 #0x17084a3b94580234614c1ebde7dbb24bc3cb26ba2a84d1355c06cca90b8fb7)", intern_t);
-test!(test_big_num_order15, "(eq #0x17084a3b94580234614c1ebde7dbb24bc3cb26ba2a84d1355c06cca90b8fb7 #0x7b4dd31c2678ef3c257cda6a06f0c830aaeab011c2c4e7fa9a27c699550539)", |z| z.intern_nil());
-test!(test_big_num_order16, "(eq #0x17084a3b94580234614c1ebde7dbb24bc3cb26ba2a84d1355c06cca90b8fb7 #0x17084a3b94580234614c1ebde7dbb24bc3cb26ba2a84d1355c06cca90b8fb7)", intern_t);
+test!(test_big_num_equal1, "(= #0x0 #0x1)", |z| *z.nil());
+test!(test_big_num_equal2, "(= #0x0 #0x0)", |z| *z.t());
+test!(test_big_num_order1, "(>= #0x0 #0x1)", |z| *z.nil());
+test!(test_big_num_order2, "(>= #0x1 #0x1)", |z| *z.t());
+test!(test_big_num_order3, "(>= #0x2 #0x1)", |z| *z.t());
+test!(test_big_num_order4, "(<= #0x0 #0x1)", |z| *z.t());
+test!(test_big_num_order5, "(<= #0x1 #0x1)", |z| *z.t());
+test!(test_big_num_order6, "(<= #0x2 #0x1)", |z| *z.nil());
+test!(test_big_num_order7, "(> #0x0 #0x1)", |z| *z.nil());
+test!(test_big_num_order8, "(> #0x1 #0x1)", |z| *z.nil());
+test!(test_big_num_order9, "(> #0x2 #0x1)", |z| *z.t());
+test!(test_big_num_order10, "(< #0x0 #0x1)", |z| *z.t());
+test!(test_big_num_order11, "(< #0x1 #0x1)", |z| *z.nil());
+test!(test_big_num_order12, "(< #0x2 #0x1)", |z| *z.nil());
+test!(test_big_num_order13, "(< #0x17084a3b94580234614c1ebde7dbb24bc3cb26ba2a84d1355c06cca90b8fb7 #0x7b4dd31c2678ef3c257cda6a06f0c830aaeab011c2c4e7fa9a27c699550539)", |z| *z.t());
+test!(test_big_num_order14, "(<= #0x17084a3b94580234614c1ebde7dbb24bc3cb26ba2a84d1355c06cca90b8fb7 #0x17084a3b94580234614c1ebde7dbb24bc3cb26ba2a84d1355c06cca90b8fb7)", |z| *z.t());
+test!(test_big_num_order15, "(eq #0x17084a3b94580234614c1ebde7dbb24bc3cb26ba2a84d1355c06cca90b8fb7 #0x7b4dd31c2678ef3c257cda6a06f0c830aaeab011c2c4e7fa9a27c699550539)", |z| *z.nil());
+test!(test_big_num_order16, "(eq #0x17084a3b94580234614c1ebde7dbb24bc3cb26ba2a84d1355c06cca90b8fb7 #0x17084a3b94580234614c1ebde7dbb24bc3cb26ba2a84d1355c06cca90b8fb7)", |z| *z.t());
+
+// shadowing built-ins
+test!(test_shadow1, "(let ((cons 1)) (+ cons 1))", |_| uint(2));
+test!(test_shadow2, "(letrec ((cons 1)) (+ cons 1))", |_| uint(2));
+test!(test_shadow3, "((lambda (cons) (+ cons 1)) 1)", |_| uint(2));
+test!(test_shadow4, "(let ((cons 1)) (cons cons cons))", |z| {
+    z.intern_cons(uint(1), uint(1))
+});
 
 // errors
 test!(test_unbound_var, "a", |_| ZPtr::err(EvalErr::UnboundVar));
+test_raw!(
+    test_unbound_var2,
+    |z| {
+        // binding the built-in `cons` but evaluating a `Tag::Sym`-tagged `cons`
+        // should resuld in an unbound var error
+        let let_ = z.intern_symbol(&builtin_sym("let"));
+        let cons = z.intern_symbol(&builtin_sym("cons"));
+        let one = uint(1);
+        assert_eq!(cons.tag, Tag::Builtin);
+        let mut cons_sym = cons;
+        cons_sym.tag = Tag::Sym;
+        let binding = z.intern_list([cons, one]);
+        let bindings = z.intern_list([binding]);
+        z.intern_list([let_, bindings, cons_sym])
+    },
+    |_| ZPtr::err(EvalErr::UnboundVar)
+);
 test!(test_div_by_zero_fel, "(/ 1n 0n)", |_| ZPtr::err(
     EvalErr::DivByZero
 ));
@@ -505,3 +529,23 @@ test!(test_equal_non_num, "(= 'a 'a)", |_| ZPtr::err(
 test!(test_equal_non_num2, "(= (comm #0x0) (comm #0x0))", |_| {
     ZPtr::err(EvalErr::ArgNotNumber)
 });
+test!(
+    test_shadow_err1,
+    "(let ((nil 1)) (+ nil 1))",
+    |_| ZPtr::err(EvalErr::IllegalBindingVar)
+);
+test!(test_shadow_err2, "(letrec ((nil 1)) (+ nil 1))", |_| {
+    ZPtr::err(EvalErr::IllegalBindingVar)
+});
+test!(test_shadow_err3, "((lambda (nil) (+ nil 1)) 1)", |_| {
+    ZPtr::err(EvalErr::IllegalBindingVar)
+});
+test!(test_shadow_err4, "(let ((t 1)) (+ t 1))", |_| ZPtr::err(
+    EvalErr::IllegalBindingVar
+));
+test!(test_shadow_err5, "(letrec ((t 1)) (+ t 1))", |_| ZPtr::err(
+    EvalErr::IllegalBindingVar
+));
+test!(test_shadow_err6, "((lambda (t) (+ t 1)) 1)", |_| ZPtr::err(
+    EvalErr::IllegalBindingVar
+));

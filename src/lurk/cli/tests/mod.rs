@@ -10,6 +10,7 @@ fn test_meta_commands() {
     assert!(repl
         .load_file("src/lurk/cli/tests/first.lurk".into(), false)
         .is_ok());
+    let mut repl = Repl::new();
     assert!(repl
         .load_file("src/lurk/cli/tests/second.lurk".into(), false)
         .is_ok());
@@ -24,6 +25,7 @@ fn test_meta_commands_with_proofs() {
     assert!(repl
         .load_file("src/lurk/cli/tests/prove.lurk".into(), false)
         .is_ok());
+    let mut repl = Repl::new();
     assert!(repl
         .load_file("src/lurk/cli/tests/verify.lurk".into(), false)
         .is_ok());

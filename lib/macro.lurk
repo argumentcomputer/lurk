@@ -2,10 +2,14 @@
 !(load "util.lurk")
 
 !(def not-immediate? (lambda (x)
-                       (if (type-eqq x x)
-                           t
-                           (if (type-eqq (0) x)
-                               t))))
+                       (if (eq nil x)
+                           nil
+                           (if (eq t x)
+                               nil
+                               (if (type-eqq x x)
+                                   t
+                                   (if (type-eqq (0) x)
+                                       t))))))
 
 !(def immediate? (lambda (x) (not (not-immediate? x))))
 

@@ -44,6 +44,11 @@ impl State {
         self.symbol_packages.insert(package.name().clone(), package);
     }
 
+    /// Retrieves a package by its name
+    pub fn get_package(&self, package_name: &Symbol) -> Option<&Package> {
+        self.symbol_packages.get(package_name)
+    }
+
     /// Sets the current package of the state
     pub fn set_current_package(&mut self, package_name: SymbolRef) -> Result<()> {
         if self.symbol_packages.contains_key(&package_name) {
@@ -174,28 +179,38 @@ impl State {
         let keyword_package = Package::new(SymbolRef::new(Symbol::root_key()));
 
         // bootstrap the lurk package
-        let mut lurk_package = Package::new(root_package.intern(LURK_PACKAGE_SYMBOL_NAME));
-        for symbol_name in LURK_PACKAGE_SYMBOLS_NAMES {
-            lurk_package.intern(symbol_name.to_string());
+        let mut lurk_package = Package::new(root_package.intern(LURK_PACKAGE_NAME));
+        for symbol_name in LURK_SYMBOLS {
+            lurk_package.intern(symbol_name);
+        }
+
+        // bootstrap the builtin package
+        let mut builtin_package = Package::new(lurk_package.intern(BUILTIN_PACKAGE_NAME));
+        for symbol_name in BUILTIN_SYMBOLS {
+            builtin_package.intern(symbol_name);
         }
 
         // bootstrap the meta package
-        let mut meta_package = Package::new(lurk_package.intern(META_PACKAGE_SYMBOL_NAME));
-        for symbol_name in META_PACKAGE_SYMBOLS_NAMES {
-            meta_package.intern(symbol_name.to_string());
+        let mut meta_package = Package::new(lurk_package.intern(META_PACKAGE_NAME));
+        for symbol_name in META_SYMBOLS {
+            meta_package.intern(symbol_name);
         }
 
         // bootstrap the user package
-        let mut user_package = Package::new(lurk_package.intern(USER_PACKAGE_SYMBOL_NAME));
+        let mut user_package = Package::new(root_package.intern(USER_PACKAGE_NAME));
         user_package
             .use_package(&lurk_package)
             .expect("all symbols in the lurk package are importable");
+        user_package
+            .use_package(&builtin_package)
+            .expect("all symbols in the builtin package are importable");
 
         // initiate the state with the lurk user package then add the others
         let mut state = Self::new_with_package(user_package);
         state.add_package(root_package);
         state.add_package(keyword_package);
         state.add_package(lurk_package);
+        state.add_package(builtin_package);
         state.add_package(meta_package);
         state
     }
@@ -210,22 +225,28 @@ impl Default for State {
     }
 }
 
-/// Returns the symbol in the Lurk package given the symbol name
+/// Returns the symbol in the `.lurk` package given the symbol name
 #[inline]
 pub fn lurk_sym(name: &str) -> Symbol {
-    Symbol::sym(&[LURK_PACKAGE_SYMBOL_NAME, name])
+    Symbol::sym(&[LURK_PACKAGE_NAME, name])
+}
+
+/// Returns the symbol in the `.lurk.builtin` package given the symbol name
+#[inline]
+pub fn builtin_sym(name: &str) -> Symbol {
+    Symbol::sym(&[LURK_PACKAGE_NAME, BUILTIN_PACKAGE_NAME, name])
 }
 
 /// Returns the symbol corresponding to the name of the meta package
 #[inline]
 pub fn meta_package_symbol() -> Symbol {
-    lurk_sym(META_PACKAGE_SYMBOL_NAME)
+    lurk_sym(META_PACKAGE_NAME)
 }
 
 /// Returns the symbol in the user package given the symbol name
 #[inline]
 pub fn user_sym(name: &str) -> Symbol {
-    Symbol::sym(&[LURK_PACKAGE_SYMBOL_NAME, USER_PACKAGE_SYMBOL_NAME, name])
+    Symbol::sym(&[USER_PACKAGE_NAME, name])
 }
 
 static INITIAL_LURK_STATE_CELL: OnceCell<State> = OnceCell::new();
@@ -235,11 +256,14 @@ pub fn initial_lurk_state() -> &'static State {
     INITIAL_LURK_STATE_CELL.get_or_init(State::init_lurk_state)
 }
 
-const LURK_PACKAGE_SYMBOL_NAME: &str = "lurk";
-const USER_PACKAGE_SYMBOL_NAME: &str = "user";
-const META_PACKAGE_SYMBOL_NAME: &str = "meta";
+const LURK_PACKAGE_NAME: &str = "lurk";
+const BUILTIN_PACKAGE_NAME: &str = "builtin";
+const META_PACKAGE_NAME: &str = "meta";
+const USER_PACKAGE_NAME: &str = "lurk-user";
 
-pub(crate) const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 40] = [
+pub(crate) const LURK_SYMBOLS: [&str; 2] = ["nil", "t"];
+
+pub(crate) const BUILTIN_SYMBOLS: [&str; 38] = [
     "atom",
     "begin",
     "car",
@@ -261,14 +285,12 @@ pub(crate) const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 40] = [
     "lambda",
     "let",
     "letrec",
-    "nil",
     "u64",
     "open",
     "quote",
     "secret",
     "strcons",
     "list",
-    "t",
     "+",
     "-",
     "*",
@@ -282,7 +304,7 @@ pub(crate) const LURK_PACKAGE_SYMBOLS_NAMES: [&str; 40] = [
     "breakpoint",
 ];
 
-const META_PACKAGE_SYMBOLS_NAMES: [&str; 30] = [
+const META_SYMBOLS: [&str; 30] = [
     "def",
     "defrec",
     "load",

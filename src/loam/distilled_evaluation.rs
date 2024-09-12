@@ -9,9 +9,9 @@ use crate::loam::lurk_sym_index;
 use crate::loam::memory::{initial_tag_relation, Memory};
 use crate::loam::{LEWrap, LoamProgram, Num, Ptr, PtrEq, Wide, WidePtr, LE};
 use crate::lurk::chipset::LurkChip;
-use crate::lurk::state::LURK_PACKAGE_SYMBOLS_NAMES;
+use crate::lurk::state::BUILTIN_SYMBOLS;
 use crate::lurk::tag::Tag;
-use crate::lurk::zstore::{builtin_vec, lurk_zstore, ZPtr};
+use crate::lurk::zstore::{builtin_set, lurk_zstore, ZPtr};
 
 use p3_field::{AbstractField, Field, PrimeField32};
 
@@ -57,11 +57,11 @@ ascent! {
     relation hash4_rel(Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, tag, digest)
 
     // Final
-    relation hash6(Wide, Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, e, f)
+    relation hash5(Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, e)
     // Signal
-    relation unhash6(Wide); // (tag, digest)
+    relation unhash5(Wide); // (tag, digest)
     // Final
-    relation hash6_rel(Wide, Wide, Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, e, f, tag, digest)
+    relation hash5_rel(Wide, Wide, Wide, Wide, Wide, Wide); // (a, b, c, d, e, digest)
 
     // Signal
     relation egress(Ptr); // (ptr)
@@ -143,33 +143,31 @@ ascent! {
         fun_mem(args, body, closed_env, addr),
         let fun = Ptr(Tag::Fun.elt(), *addr);
 
-    // Populate ptr_value if a fun_rel has been hashed in hash6_rel.
+    // Populate ptr_value if a fun_rel has been hashed in hash5_rel.
     ptr_value(fun, digest) <--
         fun_rel(args, body, closed_env, fun),
         ptr_value(args, args_value), ptr_value(body, body_value), ptr_value(closed_env, closed_env_value),
-        hash6_rel(
+        hash5_rel(
             args.wide_tag(),
             args_value,
             body.wide_tag(),
             body_value,
-            closed_env.wide_tag(),
             closed_env_value,
             digest,
         );
     // Other way around
     fun_rel(args, body, closed_env, fun) <--
         ptr_value(fun, digest), if fun.tag() == Tag::Fun,
-        hash6_rel(
+        hash5_rel(
             args_tag,
             args_value,
             body_tag,
             body_value,
-            closed_env_tag,
             closed_env_value,
             digest,
         ),
         ptr_value(args, args_value), ptr_value(body, body_value), ptr_value(closed_env, closed_env_value),
-        if args.wide_tag() == *args_tag && body.wide_tag() == *body_tag && closed_env.wide_tag() == *closed_env_tag;
+        if args.wide_tag() == *args_tag && body.wide_tag() == *body_tag && Tag::Cons == closed_env.tag();
 
     ////////////////////////////////////////////////////////////////////////////////
     // Thunk
@@ -218,7 +216,6 @@ ascent! {
     relation sym_digest_mem(Wide, LE); // (digest, addr)
 
     ptr_value(ptr, value) <-- sym_digest_mem(value, addr), let ptr = Ptr(Tag::Sym.elt(), *addr);
-    // todo: sym_value
 
     ////////////////////////////////////////////////////////////////////////////////
     // Builtin
@@ -227,16 +224,6 @@ ascent! {
     relation builtin_digest_mem(Wide, LE); // (digest, addr)
 
     ptr_value(ptr, value) <-- builtin_digest_mem(value, addr), let ptr = Ptr(Tag::Builtin.elt(), *addr);
-    // todo: builtin_value
-
-    ////////////////////////////////////////////////////////////////////////////////
-    // Nil
-
-    // Final
-    // Can this be combined with sym_digest_mem? Can it be eliminated? (probably eventually).
-    relation nil_digest_mem(Wide, LE); // (digest, addr)
-
-    ptr_value(ptr, value) <-- nil_digest_mem(value, addr), let ptr = Ptr(Tag::Nil.elt(), *addr);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Num
@@ -271,17 +258,16 @@ ascent! {
         tag(y_tag, wide_y_tag);
 
     // mark ingress funs for unhashing
-    unhash6(digest) <-- ingress(ptr), if ptr.is_fun(), ptr_value(ptr, digest);
+    unhash5(digest) <-- ingress(ptr), if ptr.is_fun(), ptr_value(ptr, digest);
 
-    hash6_rel(a, b, c, d, e, f, digest) <--
-        unhash6(digest), let [a, b, c, d, e, f] = _self.allocator.unhash6(digest);
+    hash5_rel(a, b, c, d, e, digest) <--
+        unhash5(digest), let [a, b, c, d, e] = _self.allocator.unhash5(digest);
 
-    alloc(x_tag, x_value), alloc(y_tag, y_value), alloc(z_tag, z_value) <--
-        unhash6(digest),
-        hash6_rel(wide_x_tag, x_value, wide_y_tag, y_value, wide_z_tag, z_value, digest),
+    alloc(x_tag, x_value), alloc(y_tag, y_value), alloc(Tag::Cons.elt(), z_value) <--
+        unhash5(digest),
+        hash5_rel(wide_x_tag, x_value, wide_y_tag, y_value, z_value, digest),
         tag(x_tag, wide_x_tag),
-        tag(y_tag, wide_y_tag),
-        tag(z_tag, wide_z_tag);
+        tag(y_tag, wide_y_tag);
 
     ////////////////////////////////////////////////////////////////////////////////
     // Egress path
@@ -320,15 +306,15 @@ ascent! {
         hash4(a, b, c, d), let digest = _self.allocator.hash4(*a, *b, *c, *d);
 
     // Fun
-    hash6(args.wide_tag(), args_value, body.wide_tag(), body_value, closed_env.wide_tag(), closed_env_value) <--
+    hash5(args.wide_tag(), args_value, body.wide_tag(), body_value, closed_env_value) <--
         egress(fun),
         fun_rel(args, body, closed_env, fun),
         ptr_value(args, args_value),
         ptr_value(body, body_value),
         ptr_value(closed_env, closed_env_value);
 
-    hash6_rel(a, b, c, d, e, f, digest) <--
-        hash6(a, b, c, d, e, f), let digest = _self.allocator.hash6(*a, *b, *c, *d, *e, *f);
+    hash5_rel(a, b, c, d, e, digest) <--
+        hash5(a, b, c, d, e), let digest = _self.allocator.hash5(*a, *b, *c, *d, *e);
 
     ////////////////////////////////////////////////////////////////////////////////
     // eval
@@ -1022,7 +1008,6 @@ impl DistilledEvaluationProgram {
 
         self.sym_digest_mem = memory.sym_digest_mem;
         self.builtin_digest_mem = memory.builtin_digest_mem;
-        self.nil_digest_mem = memory.nil_digest_mem;
     }
 }
 

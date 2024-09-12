@@ -192,7 +192,7 @@ ledger2
 
 ;; Now we can open the committed ledger transfer function on a transaction.
 
-!(call #0x85f1987c8573c6f96400270b87e2d215f8fe88b3c0b919acdae0cee9fcd5e2 '(1 0 2))
+!(call #0x266ad08765995fadb14f1efa2ade34af5669ccbc0fc2426ab4847c099c36e5 '(1 0 2))
 
 ;; And the record reflects that Church sent one unit to Satoshi.
 
@@ -202,41 +202,41 @@ ledger2
 
 ;; We can verify the proof..
 
-!(verify "447db46bdf1630b04d14ba94e793493e3aa5a5221e7cf9d9b2a18bad83ec59")
+!(verify "8bace909ec303b99d8355fc5308ae6967dbdf556a0d621c2cc853d436520a1")
 
 ;; Unfortunately, this functional commitment doesn't let us maintain state.
 ;; Let's turn our single-transaction function into a chained function.
 
-!(def chain<-db (lambda (db salt)
+!(def chain<-db (lambda (db secret)
                    (letrec ((foo (lambda (state msg)
                                    (let ((new-state ((fn<-db state) msg)))
-                                     (cons new-state (hide salt (foo new-state)))))))
+                                     (cons new-state (hide secret (foo new-state)))))))
                      (foo db))))
 
-;; We'll call this on our ledger, and protect write-access with a salt value #0x999.
+;; We'll call this on our ledger, and protect write-access with a secret value #0x999.
 
 !(commit (chain<-db ledger #0x999))
 
 ;; Now we can transfer one unit from Church to Satoshi like before.
 
-!(chain #0x369702221fb6c0118dd8d2cd6299c8c1b095579076b378762d4168c37ff2c '(1 0 2))
+!(chain #0x85a7b9db0ace246928729f8559ec6732e39955797ca7b3684da5ca65d31bb1 '(1 0 2))
 
 !(prove)
 
-!(verify "8b4210c0343682fb1d60d6e6159958aee9c3fc1956235ea33b857be2619589")
+!(verify "328001e09d7c13b746e2613197ef61181cf2dfff408ce83c06a9cd9d298851")
 
 ;; Then we can transfer 5 more, proceeding from the new head of the chain.
 
-!(chain #0x4e45e27336abf9d4039593d0655bca393cbea54de651b7a32a265d5002c051 '(5 0 2))
+!(chain #0x29bad6bf2c02a583336bb375d83bf8c320015dbeb4752956fe5234075dca68 '(5 0 2))
 
 !(prove)
 
-!(verify "575cb510eddc56d66cbb857ab6ab84dbb574bd565183a0878adbf69fb82603")
+!(verify "5ee44f52fcb62c88535775c4ee3b634a91a5c52be467f8d58bd6bebf837ad3")
 
 ;; And once more, this time we'll transfer 20 from Turing to Church.
 
-!(chain #0x1402764a9df0f83e60189990db00311bcfc1ae72e97d11e049a1b0309332ff '(20 1 0))
+!(chain #0x707aa8fdf6e887c1cc4f18ffe06aa2b3c175bb6d917fdb97b1eeb96f8e715d '(20 1 0))
 
 !(prove)
 
-!(verify "701727df3cd00c62c33c8324aa6462438574f9598c10e485e14466a80d0668")
+!(verify "5e5dda667246d9426db1b221730bb648533823b24fb7dbf7bd71363d14100f")
