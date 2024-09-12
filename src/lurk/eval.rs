@@ -157,7 +157,7 @@ impl EvalErr {
 pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn lurk_main(full_expr_tag: [8], expr_digest: [8], env_digest: [8]): [16] {
-            let _foo: [0] = call(preallocate_symbols,); // TODO: replace by `exec`
+            let _foo: [0] = call(preallocate_symbols,); // TODO: replace by `exec` - needs to be constrained to run though
             // Ingress on expr
             let (expr_tag, expr) = call(ingress, full_expr_tag, expr_digest);
             // Ingress on env
@@ -178,9 +178,13 @@ pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
 /// ```ignore
 /// fn preallocate_symbols(): [0] {
 ///     let arr: [8] = Array(<symbol 0 digest>);
-///     let _ptr = store(arr);
+///     let ptr = store(arr);
+///     let addr = <symbol 0 address>;
+///     assert_eq!(ptr, addr);
 ///     let arr: [8] = Array(<symbol 1 digest>);
-///     let _ptr = store(arr);
+///     let ptr = store(arr);
+///     let addr = <symbol 1 address>;
+///     assert_eq!(ptr, addr);
 ///     ...
 ///     return
 /// }
@@ -192,12 +196,19 @@ pub fn preallocate_symbols<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<
         size: DIGEST_SIZE,
     };
     let ptr_var = Var {
-        name: "_ptr",
+        name: "ptr",
         size: 1,
     };
-    for digest in digests.0.values() {
+    let addr_var = Var {
+        name: "addr",
+        size: 1,
+    };
+    for (name, digest) in &digests.0 {
+        let addr = digests.ptr(name).to_field();
         ops.push(OpE::Array(arr_var, digest.clone()));
         ops.push(OpE::Store(ptr_var, [arr_var].into()));
+        ops.push(OpE::Const(addr_var, addr));
+        ops.push(OpE::AssertEq(ptr_var, addr_var));
     }
     let ops = ops.into();
     let ctrl = CtrlE::Return([].into()); // TODO: replace by `Exit`
