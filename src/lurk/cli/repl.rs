@@ -269,15 +269,15 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
 
     fn prepare_queries(&mut self) {
         self.queries.clean();
-        let hash_24_8 = std::mem::take(&mut self.zstore.hashes3_diff);
-        let hash_32_8 = std::mem::take(&mut self.zstore.hashes4_diff);
-        let hash_40_8 = std::mem::take(&mut self.zstore.hashes5_diff);
+        let hashes3 = std::mem::take(&mut self.zstore.hashes3_diff);
+        let hashes4 = std::mem::take(&mut self.zstore.hashes4_diff);
+        let hashes5 = std::mem::take(&mut self.zstore.hashes5_diff);
         self.queries
-            .inject_inv_queries_owned("hash_24_8", &self.toplevel, hash_24_8);
+            .inject_inv_queries_owned("hash3", &self.toplevel, hashes3);
         self.queries
-            .inject_inv_queries_owned("hash_32_8", &self.toplevel, hash_32_8);
+            .inject_inv_queries_owned("hash4", &self.toplevel, hashes4);
         self.queries
-            .inject_inv_queries_owned("hash_40_8", &self.toplevel, hash_40_8);
+            .inject_inv_queries_owned("hash5", &self.toplevel, hashes5);
     }
 
     fn build_input(&self, expr: &ZPtr<F>, env: &ZPtr<F>) -> [F; INPUT_SIZE] {
@@ -292,9 +292,9 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         self.zstore.memoize_dag(
             tag,
             digest,
-            self.queries.get_inv_queries("hash_24_8", &self.toplevel),
-            self.queries.get_inv_queries("hash_32_8", &self.toplevel),
-            self.queries.get_inv_queries("hash_40_8", &self.toplevel),
+            self.queries.get_inv_queries("hash3", &self.toplevel),
+            self.queries.get_inv_queries("hash4", &self.toplevel),
+            self.queries.get_inv_queries("hash5", &self.toplevel),
         )
     }
 

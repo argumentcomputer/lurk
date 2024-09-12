@@ -426,7 +426,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         let (&callable, _) = repl.zstore.fetch_tuple2(call_expr);
         match callable.tag {
             Tag::BigNum | Tag::Comm => {
-                let inv_hashes3 = repl.queries.get_inv_queries("hash_24_8", &repl.toplevel);
+                let inv_hashes3 = repl.queries.get_inv_queries("hash3", &repl.toplevel);
                 if !inv_hashes3.contains_key(callable.digest.as_slice()) {
                     // try to fetch a persisted commitment
                     Self::fetch_comm_data(repl, &callable.digest, None)?;
@@ -458,7 +458,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         }
         let (_, next_callable) = repl.zstore.fetch_tuple2(cons);
         if matches!(next_callable.tag, Tag::Comm | Tag::BigNum) {
-            let inv_hashes3 = repl.queries.get_inv_queries("hash_24_8", &repl.toplevel);
+            let inv_hashes3 = repl.queries.get_inv_queries("hash3", &repl.toplevel);
             let preimg = inv_hashes3
                 .get(next_callable.digest.as_slice())
                 .expect("Preimage must be known");

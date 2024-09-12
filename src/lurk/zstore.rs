@@ -604,9 +604,9 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         &mut self,
         tag: Tag,
         mut digest: &'a [F],
-        hash24_inv: &'a FxHashMap<List<F>, List<F>>,
-        hash32_inv: &'a FxHashMap<List<F>, List<F>>,
-        hash40_inv: &'a FxHashMap<List<F>, List<F>>,
+        hashes3_inv: &'a FxHashMap<List<F>, List<F>>,
+        hashes4_inv: &'a FxHashMap<List<F>, List<F>>,
+        hashes5_inv: &'a FxHashMap<List<F>, List<F>>,
     ) where
         F: PrimeField32,
     {
@@ -620,7 +620,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         let zeros = [F::zero(); DIGEST_SIZE];
         macro_rules! recurse {
             ($tag:expr, $digest:expr) => {
-                self.memoize_dag($tag, $digest, hash24_inv, hash32_inv, hash40_inv);
+                self.memoize_dag($tag, $digest, hashes3_inv, hashes4_inv, hashes5_inv);
             };
         }
         macro_rules! memoize_tuple2_or_compact {
@@ -673,7 +673,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                     self.memoize_atom_dag(ZPtr { tag, digest: zeros });
                     break;
                 }
-                let preimg = hash32_inv.get(digest).expect("Hash32 preimg not found");
+                let preimg = hashes4_inv.get(digest).expect("Hash32 preimg not found");
                 let (head, tail) = preimg.split_at(ZPTR_SIZE);
                 let head_digest = &head[DIGEST_SIZE..];
                 let tail_digest = &tail[DIGEST_SIZE..];
@@ -682,7 +682,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 zptr = ZPtr::from_flat_data(tail);
             },
             Tag::Cons => loop {
-                let preimg = hash32_inv.get(digest).expect("Hash32 preimg not found");
+                let preimg = hashes4_inv.get(digest).expect("Hash32 preimg not found");
                 let (car, cdr) = preimg.split_at(ZPTR_SIZE);
                 let (car_tag, car_digest) = car.split_at(DIGEST_SIZE);
                 let (cdr_tag, cdr_digest) = cdr.split_at(DIGEST_SIZE);
@@ -698,7 +698,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 zptr = ZPtr::from_flat_data(cdr);
             },
             Tag::Thunk => {
-                let preimg = hash24_inv.get(digest).expect("Hash24 preimg not found");
+                let preimg = hashes3_inv.get(digest).expect("Hash24 preimg not found");
                 let (fst, snd_digest) = preimg.split_at(ZPTR_SIZE);
                 let (fst_tag, fst_digest) = fst.split_at(DIGEST_SIZE);
                 let fst_tag = Tag::from_field(&fst_tag[0]);
@@ -712,7 +712,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                     self.memoize_atom_dag(ZPtr { tag, digest: zeros });
                     break;
                 }
-                let preimg = hash40_inv.get(digest).expect("Hash40 preimg not found");
+                let preimg = hashes5_inv.get(digest).expect("Hash40 preimg not found");
                 let (var, rst) = preimg.split_at(ZPTR_SIZE);
                 let (val, env_digest) = rst.split_at(ZPTR_SIZE);
                 let (var_tag, var_digest) = var.split_at(DIGEST_SIZE);
@@ -730,7 +730,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 };
             },
             Tag::Fun => {
-                let preimg = hash40_inv.get(digest).expect("Hash40 preimg not found");
+                let preimg = hashes5_inv.get(digest).expect("Hash40 preimg not found");
                 let (args, rest) = preimg.split_at(ZPTR_SIZE);
                 let (body, env_digest) = rest.split_at(ZPTR_SIZE);
                 let (args_tag, args_digest) = args.split_at(DIGEST_SIZE);
@@ -1004,7 +1004,7 @@ mod test {
         } = zstore.read("(cons \"hi\" (lambda (x) x))").unwrap();
 
         let record = &mut QueryRecord::new(&toplevel);
-        record.inject_inv_queries("hash_32_8", &toplevel, &zstore.hashes4);
+        record.inject_inv_queries("hash4", &toplevel, &zstore.hashes4);
 
         let mut input = [BabyBear::zero(); 24];
         input[0] = expr_tag.to_field();
@@ -1020,9 +1020,9 @@ mod test {
         zstore.memoize_dag(
             output_tag,
             output_digest,
-            record.get_inv_queries("hash_24_8", &toplevel),
-            record.get_inv_queries("hash_32_8", &toplevel),
-            record.get_inv_queries("hash_40_8", &toplevel),
+            record.get_inv_queries("hash3", &toplevel),
+            record.get_inv_queries("hash4", &toplevel),
+            record.get_inv_queries("hash5", &toplevel),
         );
 
         let zptr = ZPtr {

@@ -102,9 +102,9 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, 
         env_lookup(),
         ingress(&digests),
         egress(&digests),
-        hash_24_8(),
-        hash_32_8(),
-        hash_40_8(),
+        hash3(),
+        hash4(),
+        hash5(),
         u64_add(),
         u64_sub(),
         u64_mul(),
@@ -275,7 +275,7 @@ pub fn ingress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                         return (tag, zero)
                     }
                     let (fst_tag_full: [8], fst_digest: [8],
-                         snd_tag_full: [8], snd_digest: [8]) = preimg(hash_32_8, digest);
+                         snd_tag_full: [8], snd_digest: [8]) = preimg(hash4, digest);
                     let (fst_tag, fst_ptr) = call(ingress, fst_tag_full, fst_digest);
                     let (snd_tag, snd_ptr) = call(ingress, snd_tag_full, snd_digest);
                     let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr);
@@ -283,14 +283,14 @@ pub fn ingress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                 }
                 Tag::Cons => {
                     let (fst_tag_full: [8], fst_digest: [8],
-                         snd_tag_full: [8], snd_digest: [8]) = preimg(hash_32_8, digest);
+                         snd_tag_full: [8], snd_digest: [8]) = preimg(hash4, digest);
                     let (fst_tag, fst_ptr) = call(ingress, fst_tag_full, fst_digest);
                     let (snd_tag, snd_ptr) = call(ingress, snd_tag_full, snd_digest);
                     let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr);
                     return (tag, ptr)
                 }
                 Tag::Thunk => {
-                    let (fst_tag_full: [8], fst_digest: [8], snd_digest: [8]) = preimg(hash_24_8, digest);
+                    let (fst_tag_full: [8], fst_digest: [8], snd_digest: [8]) = preimg(hash3, digest);
                     let env_tag = Tag::Env;
                     let (fst_tag, fst_ptr) = call(ingress, fst_tag_full, fst_digest);
                     let (_snd_tag, snd_ptr) = call(ingress, env_tag, zeros, snd_digest);
@@ -300,7 +300,7 @@ pub fn ingress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                 Tag::Fun => {
                     let (args_tag_full: [8], args_digest: [8],
                          body_tag_full: [8], body_digest: [8],
-                                             env_digest: [8]) = preimg(hash_40_8, digest);
+                                             env_digest: [8]) = preimg(hash5, digest);
                     let env_tag = Tag::Env;
                     let (args_tag, args_ptr) = call(ingress, args_tag_full, args_digest);
                     let (body_tag, body_ptr) = call(ingress, body_tag_full, body_digest);
@@ -315,7 +315,7 @@ pub fn ingress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                     }
                     let (var_tag_full: [8], var_digest: [8],
                          val_tag_full: [8], val_digest: [8],
-                                            env_digest: [8]) = preimg(hash_40_8, digest);
+                                            env_digest: [8]) = preimg(hash5, digest);
                     let (var_tag, var_ptr) = call(ingress, var_tag_full, var_digest);
                     let (val_tag, val_ptr) = call(ingress, val_tag_full, val_digest);
                     let (_tag, env_ptr) = call(ingress, tag, zeros, env_digest); // `tag` is `Tag::Env`
@@ -367,7 +367,7 @@ pub fn egress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                     let padding = [0; 7];
                     let fst_tag_full: [8] = (fst_tag, padding);
                     let snd_tag_full: [8] = (snd_tag, padding);
-                    let digest: [8] = call(hash_32_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
+                    let digest: [8] = call(hash4, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
                     return (tag, digest)
                 }
                 Tag::Cons => {
@@ -378,7 +378,7 @@ pub fn egress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                     let padding = [0; 7];
                     let fst_tag_full: [8] = (fst_tag, padding);
                     let snd_tag_full: [8] = (snd_tag, padding);
-                    let digest: [8] = call(hash_32_8, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
+                    let digest: [8] = call(hash4, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
                     return (tag, digest)
                 }
                 Tag::Thunk => {
@@ -389,7 +389,7 @@ pub fn egress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
 
                     let padding = [0; 7];
                     let fst_tag_full: [8] = (fst_tag, padding);
-                    let digest: [8] = call(hash_24_8, fst_tag_full, fst_digest, snd_digest);
+                    let digest: [8] = call(hash3, fst_tag_full, fst_digest, snd_digest);
                     return (tag, digest)
                 }
                 Tag::Fun => {
@@ -402,7 +402,7 @@ pub fn egress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                     let padding = [0; 7];
                     let args_tag_full: [8] = (args_tag, padding);
                     let body_tag_full: [8] = (body_tag, padding);
-                    let digest: [8] = call(hash_40_8, args_tag_full, args_digest, body_tag_full, body_digest, env_digest);
+                    let digest: [8] = call(hash5, args_tag_full, args_digest, body_tag_full, body_digest, env_digest);
                     return (tag, digest)
                 }
                 Tag::Env => {
@@ -418,7 +418,7 @@ pub fn egress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                     let padding = [0; 7];
                     let var_tag_full: [8] = (var_tag, padding);
                     let val_tag_full: [8] = (val_tag, padding);
-                    let digest: [8] = call(hash_40_8, var_tag_full, var_digest, val_tag_full, val_digest, env_digest);
+                    let digest: [8] = call(hash5, var_tag_full, var_digest, val_tag_full, val_digest, env_digest);
                     return (tag, digest)
                 }
             }
@@ -426,28 +426,28 @@ pub fn egress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     )
 }
 
-pub fn hash_24_8<F>() -> FuncE<F> {
+pub fn hash3<F>() -> FuncE<F> {
     func!(
-        invertible fn hash_24_8(preimg: [24]): [8] {
-            let img: [8] = extern_call(hash_24_8, preimg);
+        invertible fn hash3(preimg: [24]): [8] {
+            let img: [8] = extern_call(hasher3, preimg);
             return img
         }
     )
 }
 
-pub fn hash_32_8<F>() -> FuncE<F> {
+pub fn hash4<F>() -> FuncE<F> {
     func!(
-        invertible fn hash_32_8(preimg: [32]): [8] {
-            let img: [8] = extern_call(hash_32_8, preimg);
+        invertible fn hash4(preimg: [32]): [8] {
+            let img: [8] = extern_call(hasher4, preimg);
             return img
         }
     )
 }
 
-pub fn hash_40_8<F>() -> FuncE<F> {
+pub fn hash5<F>() -> FuncE<F> {
     func!(
-        invertible fn hash_40_8(preimg: [40]): [8] {
-            let img: [8] = extern_call(hash_40_8, preimg);
+        invertible fn hash5(preimg: [40]): [8] {
+            let img: [8] = extern_call(hasher5, preimg);
             return img
         }
     )
@@ -911,7 +911,7 @@ pub fn open_comm<F: AbstractField>() -> FuncE<F> {
     func!(
         fn open_comm(hash_ptr): [2] {
             let comm_hash: [8] = load(hash_ptr);
-            let (_secret: [8], payload_tag, padding: [7], val_digest: [8]) = preimg(hash_24_8, comm_hash);
+            let (_secret: [8], payload_tag, padding: [7], val_digest: [8]) = preimg(hash3, comm_hash);
             let (payload_tag, payload_ptr) = call(ingress, payload_tag, padding, val_digest);
             return (payload_tag, payload_ptr)
         }
@@ -1516,7 +1516,7 @@ pub fn eval_opening_unop<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F>
                     let (val_tag, val_digest: [8]) = call(egress, val_tag, val);
                     let padding = [0; 7];
                     let zero = 0;
-                    let comm_hash: [8] = call(hash_24_8, zero, padding, val_tag, padding, val_digest);
+                    let comm_hash: [8] = call(hash3, zero, padding, val_tag, padding, val_digest);
                     let comm_tag = Tag::Comm;
                     let comm_ptr = store(comm_hash);
                     return (comm_tag, comm_ptr)
@@ -1526,7 +1526,7 @@ pub fn eval_opening_unop<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F>
             match val_tag {
                 Tag::Comm, Tag::BigNum => {
                     let comm_hash: [8] = load(val);
-                    let (secret: [8], tag, padding: [7], val_digest: [8]) = preimg(hash_24_8, comm_hash);
+                    let (secret: [8], tag, padding: [7], val_digest: [8]) = preimg(hash3, comm_hash);
                     match head [|sym| digests.ptr(sym).to_field()] {
                         "open" => {
                             let (tag, ptr) = call(ingress, tag, padding, val_digest);
@@ -1584,7 +1584,7 @@ pub fn eval_hide<F: AbstractField>() -> FuncE<F> {
                     let secret: [8] = load(val1);
                     let (val2_tag, val2_digest: [8]) = call(egress, val2_tag, val2);
                     let padding = [0; 7];
-                    let comm_hash: [8] = call(hash_24_8, secret, val2_tag, padding, val2_digest);
+                    let comm_hash: [8] = call(hash3, secret, val2_tag, padding, val2_digest);
                     let comm_ptr = store(comm_hash);
                     let comm_tag = Tag::Comm;
                     return (comm_tag, comm_ptr)
@@ -1863,9 +1863,9 @@ mod test {
         let env_lookup = FuncChip::from_name("env_lookup", toplevel);
         let ingress = FuncChip::from_name("ingress", toplevel);
         let egress = FuncChip::from_name("egress", toplevel);
-        let hash_24_8 = FuncChip::from_name("hash_24_8", toplevel);
-        let hash_32_8 = FuncChip::from_name("hash_32_8", toplevel);
-        let hash_40_8 = FuncChip::from_name("hash_40_8", toplevel);
+        let hash3 = FuncChip::from_name("hash3", toplevel);
+        let hash4 = FuncChip::from_name("hash4", toplevel);
+        let hash5 = FuncChip::from_name("hash5", toplevel);
         let u64_add = FuncChip::from_name("u64_add", toplevel);
         let u64_sub = FuncChip::from_name("u64_sub", toplevel);
         let u64_mul = FuncChip::from_name("u64_mul", toplevel);
@@ -1900,9 +1900,9 @@ mod test {
         expect_eq(env_lookup.width(), expect!["52"]);
         expect_eq(ingress.width(), expect!["105"]);
         expect_eq(egress.width(), expect!["82"]);
-        expect_eq(hash_24_8.width(), expect!["493"]);
-        expect_eq(hash_32_8.width(), expect!["655"]);
-        expect_eq(hash_40_8.width(), expect!["815"]);
+        expect_eq(hash3.width(), expect!["493"]);
+        expect_eq(hash4.width(), expect!["655"]);
+        expect_eq(hash5.width(), expect!["815"]);
         expect_eq(u64_add.width(), expect!["53"]);
         expect_eq(u64_sub.width(), expect!["53"]);
         expect_eq(u64_mul.width(), expect!["85"]);
@@ -1919,7 +1919,7 @@ mod test {
 
         let ingress = toplevel.get_by_name("ingress");
         let egress = toplevel.get_by_name("egress");
-        let hash_32_8_chip = FuncChip::from_name("hash_32_8", toplevel);
+        let hash4_chip = FuncChip::from_name("hash4", toplevel);
 
         let state = State::init_lurk_state().rccell();
 
@@ -1931,7 +1931,7 @@ mod test {
             let digest: List<_> = digest.into();
 
             let mut queries = QueryRecord::new(toplevel);
-            queries.inject_inv_queries("hash_32_8", toplevel, &zstore.hashes4);
+            queries.inject_inv_queries("hash4", toplevel, &zstore.hashes4);
 
             let mut ingress_args = [F::zero(); 16];
             ingress_args[0] = tag;
@@ -1952,8 +1952,8 @@ mod test {
                 "ingress -> egress doesn't roundtrip"
             );
 
-            let hash_32_8_trace = hash_32_8_chip.generate_trace(&Shard::new(&queries));
-            debug_constraints_collecting_queries(&hash_32_8_chip, &[], None, &hash_32_8_trace);
+            let hash4_trace = hash4_chip.generate_trace(&Shard::new(&queries));
+            debug_constraints_collecting_queries(&hash4_chip, &[], None, &hash4_trace);
         };
 
         assert_ingress_egress_correctness("~()");

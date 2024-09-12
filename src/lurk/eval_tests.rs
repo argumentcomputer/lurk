@@ -52,9 +52,12 @@ fn run_test(
     config: BabyBearPoseidon2,
 ) {
     let mut record = QueryRecord::new(toplevel);
-    record.inject_inv_queries("hash_24_8", toplevel, &zstore.hashes3);
-    record.inject_inv_queries("hash_32_8", toplevel, &zstore.hashes4);
-    record.inject_inv_queries("hash_40_8", toplevel, &zstore.hashes5);
+    let hashes3 = std::mem::take(&mut zstore.hashes3_diff);
+    let hashes4 = std::mem::take(&mut zstore.hashes4_diff);
+    let hashes5 = std::mem::take(&mut zstore.hashes5_diff);
+    record.inject_inv_queries_owned("hash3", toplevel, hashes3);
+    record.inject_inv_queries_owned("hash4", toplevel, hashes4);
+    record.inject_inv_queries_owned("hash5", toplevel, hashes5);
 
     let mut input = [F::zero(); 24];
     input[..16].copy_from_slice(&zptr.flatten());
