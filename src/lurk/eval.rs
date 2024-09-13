@@ -1193,6 +1193,36 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
                     let (res_tag, res) = call(eval_opening_unop, head, rest_tag, rest, env);
                     return (res_tag, res)
                 }
+                "apply" => {
+                    let rest_not_cons = sub(rest_tag, cons_tag);
+                    if rest_not_cons {
+                        return (err_tag, invalid_form)
+                    }
+                    let (fst_tag, fst, rest_tag, rest) = load(rest);
+                    let rest_not_cons = sub(rest_tag, cons_tag);
+                    if rest_not_cons {
+                        return (err_tag, invalid_form)
+                    }
+                    let (fst_tag, fst) = call(eval, fst_tag, fst, env);
+                    match fst_tag {
+                        Tag::Err => {
+                            return (fst_tag, fst)
+                        }
+                    };
+                    let (snd_tag, snd, rest_tag, _rest) = load(rest);
+                    let rest_not_nil = sub(rest_tag, nil_tag);
+                    if rest_not_nil {
+                        return (err_tag, invalid_form)
+                    }
+                    let (snd_tag, snd) = call(eval, snd_tag, snd, env);
+                    match snd_tag {
+                        Tag::Err => {
+                            return (snd_tag, snd)
+                        }
+                    };
+                    let (res_tag, res) = call(apply, fst_tag, fst, snd_tag, snd, env);
+                    return (res_tag, res)
+                }
                 // TODO: other built-ins
             }
         }

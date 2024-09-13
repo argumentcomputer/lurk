@@ -265,6 +265,7 @@ pub(crate) const LURK_SYMBOLS: [&str; 2] = ["nil", "t"];
 
 pub(crate) const BUILTIN_SYMBOLS: [&str; 39] = [
     "atom",
+    "apply",
     "begin",
     "car",
     "cdr",
