@@ -127,7 +127,7 @@ fn native_lurk_funcs<F: PrimeField32>(
         car_cdr(digests),
         eval_let(),
         eval_letrec(),
-        apply(),
+        apply(&digests),
         env_lookup(),
         ingress(digests),
         egress(digests),
@@ -197,6 +197,7 @@ pub enum EvalErr {
     ApplyNonFunc,
     ParamsNotList,
     ParamNotSymbol,
+    ParamInvalidRest,
     ArgsNotList,
     InvalidArg,
     DivByZero,
@@ -2062,7 +2063,7 @@ pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn apply<F: AbstractField>() -> FuncE<F> {
+pub fn apply<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     func!(
         partial fn apply(head_tag, head, args_tag, args, args_env): [2] {
             // Constants, tags, etc
@@ -2103,13 +2104,93 @@ pub fn apply<F: AbstractField>() -> FuncE<F> {
                     return (err_tag, err)
                 }
                 Tag::Cons => {
+                    // check if the only params left are "&rest <var>"
+                    let (param_tag, param, rest_params_tag, rest_params) = load(params);
+                    match param_tag {
+                        Tag::Sym, Tag::Builtin => {
+                            let rest_sym = digests.ptr("&rest");
+                            let is_not_rest_sym = sub(param, rest_sym);
+                            if !is_not_rest_sym {
+                                // check the next param in the list
+                                match rest_params_tag {
+                                    ReservedTag::Nil => {
+                                        let err = EvalErr::ParamInvalidRest;
+                                        return (err_tag, err)
+                                    }
+                                    Tag::Cons => {
+                                        let (param_tag, param, rest_params_tag, rest_params) = load(rest_params);
+                                        match param_tag {
+                                            Tag::Sym, Tag::Builtin => {
+                                                match rest_params_tag {
+                                                    ReservedTag::Nil => {
+                                                        // evaluate all the remaining arguments and collect into a list
+                                                        let (arg_tag, arg) = call(eval_list, args_tag, args, args_env);
+                                                        match arg_tag {
+                                                            Tag::Err => {
+                                                                return (arg_tag, arg)
+                                                            }
+                                                        };
+
+                                                        // and store it in the environment
+                                                        let ext_env = store(param_tag, param, arg_tag, arg, func_env);
+                                                        let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
+                                                        let nil_tag = ReservedTag::Nil;
+                                                        let nil = digests.ptr("nil");
+                                                        let (res_tag, res) = call(apply, fun_tag, ext_fun, nil_tag, nil, args_env);
+
+                                                        return (res_tag, res)
+                                                    }
+                                                };
+                                                let err = EvalErr::ParamInvalidRest;
+                                                return (err_tag, err)
+                                            }
+                                        };
+                                        let err = EvalErr::IllegalBindingVar;
+                                        return (err_tag, err)
+                                    }
+                                };
+                                let err = EvalErr::ParamsNotList;
+                                return (err_tag, err)
+                            }
+                            // FIXME: this is the same as the code below
+                            match args_tag {
+                                ReservedTag::Nil => {
+                                    // Undersaturated application
+                                    return (head_tag, head)
+                                }
+                                Tag::Cons => {
+                                    let (arg_tag, arg, rest_args_tag, rest_args) = load(args);
+                                    match param_tag {
+                                        Tag::Sym, Tag::Builtin => {
+                                            // evaluate the argument
+                                            let (arg_tag, arg) = call(eval, arg_tag, arg, args_env);
+                                            match arg_tag {
+                                                Tag::Err => {
+                                                    return (arg_tag, arg)
+                                                }
+                                            };
+                                            // and store it in the environment
+                                            let ext_env = store(param_tag, param, arg_tag, arg, func_env);
+                                            let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
+                                            let (res_tag, res) = call(apply, fun_tag, ext_fun, rest_args_tag, rest_args, args_env);
+
+                                            return (res_tag, res)
+                                        }
+                                    };
+                                    let err = EvalErr::IllegalBindingVar;
+                                    return (err_tag, err)
+                                }
+                            };
+                            let err = EvalErr::ArgsNotList;
+                            return (err_tag, err)
+                        }
+                    };
                     match args_tag {
                         InternalTag::Nil => {
                             // Undersaturated application
                             return (head_tag, head)
                         }
                         Tag::Cons => {
-                            let (param_tag, param, rest_params_tag, rest_params) = load(params);
                             let (arg_tag, arg, rest_args_tag, rest_args) = load(args);
                             match param_tag {
                                 Tag::Sym, Tag::Builtin, Tag::Coroutine => {

@@ -261,7 +261,7 @@ const BUILTIN_PACKAGE_NAME: &str = "builtin";
 const META_PACKAGE_NAME: &str = "meta";
 const USER_PACKAGE_NAME: &str = "lurk-user";
 
-pub(crate) const LURK_SYMBOLS: [&str; 2] = ["nil", "t"];
+pub(crate) const LURK_SYMBOLS: [&str; 3] = ["nil", "t", "&rest"];
 
 pub(crate) const BUILTIN_SYMBOLS: [&str; 39] = [
     "atom",
