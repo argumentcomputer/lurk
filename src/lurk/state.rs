@@ -263,7 +263,7 @@ const USER_PACKAGE_NAME: &str = "lurk-user";
 
 pub(crate) const LURK_SYMBOLS: [&str; 3] = ["nil", "t", "&rest"];
 
-pub(crate) const BUILTIN_SYMBOLS: [&str; 39] = [
+pub(crate) const BUILTIN_SYMBOLS: [&str; 40] = [
     "atom",
     "apply",
     "begin",

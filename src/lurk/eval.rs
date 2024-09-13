@@ -2063,7 +2063,7 @@ pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn apply<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn apply(head_tag, head, args_tag, args, args_env): [2] {
             // Constants, tags, etc
@@ -2108,12 +2108,12 @@ pub fn apply<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                     let (param_tag, param, rest_params_tag, rest_params) = load(params);
                     match param_tag {
                         Tag::Sym, Tag::Builtin => {
-                            let rest_sym = digests.ptr("&rest");
+                            let rest_sym = digests.lurk_symbol_ptr("&rest");
                             let is_not_rest_sym = sub(param, rest_sym);
                             if !is_not_rest_sym {
                                 // check the next param in the list
                                 match rest_params_tag {
-                                    ReservedTag::Nil => {
+                                    InternalTag::Nil => {
                                         let err = EvalErr::ParamInvalidRest;
                                         return (err_tag, err)
                                     }
@@ -2122,7 +2122,7 @@ pub fn apply<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                                         match param_tag {
                                             Tag::Sym, Tag::Builtin => {
                                                 match rest_params_tag {
-                                                    ReservedTag::Nil => {
+                                                    InternalTag::Nil => {
                                                         // evaluate all the remaining arguments and collect into a list
                                                         let (arg_tag, arg) = call(eval_list, args_tag, args, args_env);
                                                         match arg_tag {
@@ -2134,8 +2134,8 @@ pub fn apply<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                                                         // and store it in the environment
                                                         let ext_env = store(param_tag, param, arg_tag, arg, func_env);
                                                         let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
-                                                        let nil_tag = ReservedTag::Nil;
-                                                        let nil = digests.ptr("nil");
+                                                        let nil_tag = InternalTag::Nil;
+                                                        let nil = digests.lurk_symbol_ptr("nil");
                                                         let (res_tag, res) = call(apply, fun_tag, ext_fun, nil_tag, nil, args_env);
 
                                                         return (res_tag, res)
@@ -2154,7 +2154,7 @@ pub fn apply<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                             }
                             // FIXME: this is the same as the code below
                             match args_tag {
-                                ReservedTag::Nil => {
+                                InternalTag::Nil => {
                                     // Undersaturated application
                                     return (head_tag, head)
                                 }
@@ -2307,10 +2307,10 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["97"]);
-        expect_eq(preallocate_symbols.width(), expect!["168"]);
+        expect_eq(preallocate_symbols.width(), expect!["176"]);
         expect_eq(eval_coroutine_expr.width(), expect!["10"]);
         expect_eq(eval.width(), expect!["77"]);
-        expect_eq(eval_builtin_expr.width(), expect!["142"]);
+        expect_eq(eval_builtin_expr.width(), expect!["149"]);
         expect_eq(eval_opening_unop.width(), expect!["97"]);
         expect_eq(eval_hide.width(), expect!["115"]);
         expect_eq(eval_unop.width(), expect!["78"]);
@@ -2325,7 +2325,7 @@ mod test {
         expect_eq(equal.width(), expect!["82"]);
         expect_eq(equal_inner.width(), expect!["59"]);
         expect_eq(car_cdr.width(), expect!["61"]);
-        expect_eq(apply.width(), expect!["101"]);
+        expect_eq(apply.width(), expect!["114"]);
         expect_eq(env_lookup.width(), expect!["52"]);
         expect_eq(ingress.width(), expect!["105"]);
         expect_eq(egress.width(), expect!["82"]);
