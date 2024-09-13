@@ -188,6 +188,9 @@ test!(test_app_err, "(a)", |_| ZPtr::err(EvalErr::UnboundVar));
 test!(test_app_err2, "((lambda () a) 2)", |_| ZPtr::err(
     EvalErr::UnboundVar
 ));
+test!(test_app_err3, "(apply (lambda (x) x) 1)", |_| ZPtr::err(
+    EvalErr::ArgsNotList
+));
 
 // builtins
 test!(test_if, "(if 1 1 0)", |_| uint(1));
