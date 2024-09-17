@@ -4,7 +4,12 @@ use itertools::Itertools;
 use p3_baby_bear::BabyBear;
 use p3_field::PrimeField32;
 use rustc_hash::FxHashMap;
+use serde::{Deserialize, Serialize};
 use sphinx_core::stark::StarkGenericConfig;
+use std::{
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
+};
 
 use crate::{
     lair::{chipset::Chipset, lair_chip::LairMachineProgram},
@@ -12,7 +17,7 @@ use crate::{
         big_num::field_elts_to_biguint,
         cli::{
             paths::{commits_dir, proofs_dir},
-            proofs::IOProof,
+            proofs::{get_verifier_version, IOProof},
             repl::Repl,
         },
         package::{Package, SymbolRef},
@@ -22,7 +27,12 @@ use crate::{
     },
 };
 
-use super::{comm_data::CommData, debug::debug_mode, lurk_data::LurkData, proofs::ProtocolProof};
+use super::{
+    comm_data::CommData,
+    debug::debug_mode,
+    lurk_data::LurkData,
+    proofs::{ChainProof, ProtocolProof},
+};
 
 #[allow(dead_code)]
 #[allow(clippy::type_complexity)]
@@ -165,7 +175,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         run: |repl, args, _path| {
             if args != repl.zstore.nil() {
                 let expr = *repl.peek1(args)?;
-                let result = repl.handle_non_meta(&expr);
+                let result = repl.handle_non_meta(&expr, None);
                 debug_mode(&repl.format_debug_data())?;
                 result.map(|_| ())
             } else {
@@ -416,7 +426,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         },
     };
 
-    fn call(repl: &mut Repl<F, H>, call_expr: &ZPtr<F>) -> Result<ZPtr<F>> {
+    fn call(repl: &mut Repl<F, H>, call_expr: &ZPtr<F>, env: Option<ZPtr<F>>) -> Result<ZPtr<F>> {
         if call_expr == repl.zstore.nil() {
             bail!("Missing callable object");
         }
@@ -431,7 +441,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             }
             _ => (),
         }
-        repl.handle_non_meta(call_expr)
+        repl.handle_non_meta(call_expr, env)
     }
 
     const CALL: Self = Self {
@@ -444,7 +454,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             "!(call #c0x361877c9845ddda6aa16dd6c6bcd26fcea7b93930106a19f5d7d5cf10a9015 0)",
         ],
         run: |repl, args, _path| {
-            Self::call(repl, args)?;
+            Self::call(repl, args, None)?;
             Ok(())
         },
     };
@@ -483,7 +493,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             "!(chain #c0x4b0eb13f048385909480e765f4eefec94c304edf9e01b2170869c9cdf8eb11 1)",
         ],
         run: |repl, args, _path| {
-            let cons = Self::call(repl, args)?;
+            let cons = Self::call(repl, args, None)?;
             Self::persist_chain_comm(repl, &cons)
         },
     };
@@ -503,6 +513,26 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         }
     }
 
+    fn transition_call(
+        repl: &mut Repl<F, H>,
+        current_state_expr: &ZPtr<F>,
+        call_args: ZPtr<F>,
+        env: Option<ZPtr<F>>,
+    ) -> Result<ZPtr<F>> {
+        let (current_state, _) = repl.reduce_aux(current_state_expr)?;
+        if current_state.tag != Tag::Cons {
+            bail!("Current state must reduce to a pair");
+        }
+        // reduce `call_args` elements
+        let list_sym = repl.zstore.intern_symbol(&builtin_sym("list"));
+        let list_expr = repl.zstore.intern_cons(list_sym, call_args);
+        let (call_args, _) = repl.reduce_aux(&list_expr)?;
+        repl.memoize_dag(current_state.tag, &current_state.digest);
+        let (_, &callable) = repl.zstore.fetch_tuple2(&current_state);
+        let call_expr = repl.zstore.intern_cons(callable, call_args);
+        Self::call(repl, &call_expr, env)
+    }
+
     const TRANSITION: Self = Self {
         name: "transition",
         summary: "Chains a callable object and binds the next state to a variable",
@@ -510,20 +540,13 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         info: &["It has the same side effects of the `chain` meta command."],
         example: &["!(transition new-state old-state input0)"],
         run: |repl, args, _path| {
-            let (&new_state_sym, rest) = repl.car_cdr(args);
+            let (&next_state_sym, rest) = repl.car_cdr(args);
+            Self::validate_binding_var(repl, &next_state_sym)?;
             let (&current_state_expr, &call_args) = repl.car_cdr(rest);
-            Self::validate_binding_var(repl, &new_state_sym)?;
-            let (current_state, _) = repl.reduce_aux(&current_state_expr)?;
-            if current_state.tag != Tag::Cons {
-                bail!("Current state must reduce to a pair");
-            }
-            repl.memoize_dag(current_state.tag, &current_state.digest);
-            let (_, &callable) = repl.zstore.fetch_tuple2(&current_state);
-            let call_expr = repl.zstore.intern_cons(callable, call_args);
-            let cons = Self::call(repl, &call_expr)?;
+            let cons = Self::transition_call(repl, &current_state_expr, call_args, None)?;
             Self::persist_chain_comm(repl, &cons)?;
-            println!("{}", repl.fmt(&new_state_sym));
-            repl.env = repl.zstore.intern_env(new_state_sym, cons, repl.env);
+            println!("{}", repl.fmt(&next_state_sym));
+            repl.env = repl.zstore.intern_env(next_state_sym, cons, repl.env);
             Ok(())
         },
     };
@@ -723,6 +746,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             let description = get_prop("description", |val| val.tag == Tag::Str, empty_str)?;
 
             let protocol = repl.zstore.intern_list([vars, body, lang, description]);
+            println!("{}", repl.fmt(&name));
             repl.env = repl.zstore.intern_env(name, protocol, repl.env);
             Ok(())
         },
@@ -787,7 +811,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         run: |repl, args, _path| {
             if args != repl.zstore.nil() {
                 let expr = *repl.peek1(args)?;
-                repl.handle_non_meta(&expr)?;
+                repl.handle_non_meta(&expr, None)?;
             }
             repl.prove_last_reduction()?;
             Ok(())
@@ -1032,6 +1056,9 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
 
             let protocol_proof_bytes = std::fs::read(path_str)?;
             let ProtocolProof { crypto_proof, args } = bincode::deserialize(&protocol_proof_bytes)?;
+            if args.has_opaque_data() {
+                bail!("Arguments can't have opaque data");
+            }
             let args = args.populate_zstore(&mut repl.zstore);
             let (args_vec_reduced, None) = repl.zstore.fetch_list(&args) else {
                 bail!("Arguments must be a list");
@@ -1072,6 +1099,190 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
             Ok(())
         },
     };
+
+    const MICRO_CHAIN_SERVE: Self = Self {
+        name: "micro-chain-serve",
+        summary:
+            "Starts a server to manage state transitions by receiving proofs of chained callables.",
+        format: "!(micro-chain-serve <addr_str> <state_expr>)",
+        info: &["The initial state must follow the format of chain outputs."],
+        example: &["!(micro-chain-serve \"127.0.0.1:1234\" (some-callable init-arg0 init-arg1))"],
+        run: |repl, args, _path| {
+            let (addr, &state_expr) = repl.peek2(args)?;
+            if addr.tag != Tag::Str {
+                bail!("Address must be a string");
+            }
+            let addr_str = repl.zstore.fetch_string(addr);
+            let (mut state, _) = repl.reduce_aux(&state_expr)?;
+            if state.tag != Tag::Cons {
+                bail!("Initial state must be a pair");
+            }
+
+            let listener = TcpListener::bind(&addr_str)?;
+            println!("Listening at {addr_str}");
+            let empty_env = repl.zstore.intern_empty_env();
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(mut stream) => match read_data::<Request>(&mut stream)? {
+                        Request::Get => {
+                            repl.memoize_dag(Tag::Cons, &state.digest);
+                            let lurk_data = LurkData::new(state, &repl.zstore);
+                            write_data(&mut stream, lurk_data)?;
+                        }
+                        Request::Transition(chain_proof) => {
+                            let ChainProof {
+                                crypto_proof,
+                                call_args,
+                                next_state,
+                            } = chain_proof;
+                            if next_state.zptr.tag != Tag::Cons {
+                                write_data(&mut stream, Response::NextStateNotCons)?;
+                                continue;
+                            }
+                            if next_state.has_opaque_data() {
+                                write_data(&mut stream, Response::NextStateIsOpaque)?;
+                                continue;
+                            }
+                            let (_, callable) = repl.zstore.fetch_tuple2(&state);
+                            let expr = repl.zstore.intern_cons(*callable, call_args);
+                            let machine_proof = crypto_proof.into_machine_proof(
+                                &expr,
+                                &empty_env,
+                                &next_state.zptr,
+                            );
+                            let machine = repl.stark_machine();
+                            let (_, vk) = machine.setup(&LairMachineProgram);
+                            let challenger = &mut machine.config().challenger();
+                            if machine.verify(&vk, &machine_proof, challenger).is_err() {
+                                write_data(
+                                    &mut stream,
+                                    Response::ProofVerificationFailed(
+                                        get_verifier_version().to_string(),
+                                    ),
+                                )?;
+                                continue;
+                            }
+                            write_data(&mut stream, Response::ProofAccepted)?;
+                            state = next_state.zptr;
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("Connection failed: {e}");
+                    }
+                }
+            }
+            Ok(())
+        },
+    };
+
+    const MICRO_CHAIN_GET: Self = Self {
+        name: "micro-chain-get",
+        summary: "Binds the current state from a micro-chain server to a symbol",
+        format: "!(micro-chain-get <addr_str> <symbol>)",
+        info: &[],
+        example: &["!(micro-chain-get \"127.0.0.1:1234\" state0)"],
+        run: |repl, args, _path| {
+            let (addr, &state_sym) = repl.peek2(args)?;
+            if addr.tag != Tag::Str {
+                bail!("Address must be a string");
+            }
+            Self::validate_binding_var(repl, &state_sym)?;
+            let addr_str = repl.zstore.fetch_string(addr);
+            let stream = &mut TcpStream::connect(addr_str)?;
+            write_data(stream, Request::Get)?;
+            let lurk_data: LurkData<F> = read_data(stream)?;
+            let state = lurk_data.populate_zstore(&mut repl.zstore);
+            println!("{}", repl.fmt(&state_sym));
+            repl.env = repl.zstore.intern_env(state_sym, state, repl.env);
+            Ok(())
+        },
+    };
+
+    const MICRO_CHAIN_TRANSITION: Self = Self {
+        name: "micro-chain-transition",
+        summary:
+            "Proves a state transition via chaining and sends the proof to a micro-chain server",
+        format: "!(micro-chain-transition <addr_str> <symbol> <state_expr> <call_args>)",
+        info: &["The transition is successful iff the proof is accepted by the server"],
+        example: &["!(micro-chain-transition \"127.0.0.1:1234\" state1 state0 arg0 arg1)"],
+        run: |repl, args, _path| {
+            let (&addr, rest) = repl.car_cdr(args);
+            if addr.tag != Tag::Str {
+                bail!("Address must be a string");
+            }
+            let (&next_state_sym, rest) = repl.car_cdr(rest);
+            Self::validate_binding_var(repl, &next_state_sym)?;
+            let (&current_state_expr, &call_args) = repl.car_cdr(rest);
+            let empty_env = repl.zstore.intern_empty_env();
+            let state =
+                Self::transition_call(repl, &current_state_expr, call_args, Some(empty_env))?;
+            let proof_key = repl.prove_last_reduction()?;
+            let io_proof = Self::load_io_proof(&proof_key)?;
+            let crypto_proof = io_proof.crypto_proof;
+            let next_state = LurkData::new(state, &repl.zstore);
+            let chain_proof = ChainProof {
+                crypto_proof,
+                call_args,
+                next_state,
+            };
+            let addr_str = repl.zstore.fetch_string(&addr);
+            let stream = &mut TcpStream::connect(addr_str)?;
+            write_data(stream, Request::Transition(chain_proof))?;
+            match read_data::<Response>(stream)? {
+                Response::ProofAccepted => {
+                    println!("Proof accepted by the server");
+                    println!("{}", repl.fmt(&next_state_sym));
+                    repl.env = repl.zstore.intern_env(next_state_sym, state, repl.env);
+                }
+                Response::NextStateNotCons => bail!("Next state is not a pair"),
+                Response::NextStateIsOpaque => bail!("Next state can't be opaque"),
+                Response::ProofVerificationFailed(verifier_version) => {
+                    let mut msg = "Proof verification failed".to_string();
+                    if verifier_version != get_verifier_version() {
+                        msg.push_str(
+                            "\nWarning: proof was created for a different verifier version",
+                        );
+                    }
+                    bail!(msg);
+                }
+                Response::State(_) => unreachable!(),
+            }
+            Ok(())
+        },
+    };
+}
+
+#[derive(Serialize, Deserialize)]
+enum Request {
+    Get,
+    Transition(ChainProof),
+}
+
+#[derive(Serialize, Deserialize)]
+enum Response {
+    State(LurkData<F>),
+    ProofAccepted,
+    NextStateNotCons,
+    NextStateIsOpaque,
+    ProofVerificationFailed(String),
+}
+
+fn read_data<T: for<'a> Deserialize<'a>>(stream: &mut TcpStream) -> Result<T> {
+    let mut size_bytes = [0; 8];
+    stream.read_exact(&mut size_bytes)?;
+    let size = usize::from_le_bytes(size_bytes);
+    let mut data_buffer = vec![0; size];
+    stream.read_exact(&mut data_buffer)?;
+    let data = bincode::deserialize(&data_buffer)?;
+    Ok(data)
+}
+
+fn write_data<T: Serialize>(stream: &mut TcpStream, data: T) -> Result<()> {
+    let data_bytes = bincode::serialize(&data)?;
+    stream.write_all(&data_bytes.len().to_le_bytes())?;
+    stream.write_all(&data_bytes)?;
+    stream.flush()?;
+    Ok(())
 }
 
 fn copy_inner<'a, T: Copy + 'a, I: IntoIterator<Item = &'a T>>(xs: I) -> Vec<T> {
@@ -1110,6 +1321,9 @@ pub(crate) fn meta_cmds<H: Chipset<F>>() -> MetaCmdsMap<F, H> {
         MetaCmd::DEFPROTOCOL,
         MetaCmd::PROVE_PROTOCOL,
         MetaCmd::VERIFY_PROTOCOL,
+        MetaCmd::MICRO_CHAIN_SERVE,
+        MetaCmd::MICRO_CHAIN_GET,
+        MetaCmd::MICRO_CHAIN_TRANSITION,
         MetaCmd::HELP,
     ]
     .map(|mc| (mc.name, mc))
