@@ -1100,12 +1100,27 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         },
     };
 
+    fn build_comm_data(repl: &mut Repl<F, H>, digest: &[F]) -> CommData<F> {
+        let inv_hashes3 = repl.queries.get_inv_queries("hash3", &repl.toplevel);
+        let callable_preimg = inv_hashes3
+            .get(digest)
+            .expect("Missing commitment preimage");
+        let secret = ZPtr::from_flat_digest(Tag::BigNum, &callable_preimg[..DIGEST_SIZE]);
+        let payload = ZPtr::from_flat_data(&callable_preimg[DIGEST_SIZE..]);
+        repl.memoize_dag(secret.tag, &secret.digest);
+        repl.memoize_dag(payload.tag, &payload.digest);
+        CommData::new(secret, payload, &repl.zstore)
+    }
+
     const MICRO_CHAIN_SERVE: Self = Self {
         name: "micro-chain-serve",
         summary:
             "Starts a server to manage state transitions by receiving proofs of chained callables.",
         format: "!(micro-chain-serve <addr_str> <state_expr>)",
-        info: &["The initial state must follow the format of chain outputs."],
+        info: &[
+            "The initial state must follow the format of a chain output whose next",
+            "callable is a commitment.",
+        ],
         example: &["!(micro-chain-serve \"127.0.0.1:1234\" (some-callable init-arg0 init-arg1))"],
         run: |repl, args, _path| {
             let (addr, &state_expr) = repl.peek2(args)?;
@@ -1113,9 +1128,18 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
                 bail!("Address must be a string");
             }
             let addr_str = repl.zstore.fetch_string(addr);
-            let (mut state, _) = repl.reduce_aux(&state_expr)?;
+            let (state, _) = repl.reduce_aux(&state_expr)?;
             if state.tag != Tag::Cons {
                 bail!("Initial state must be a pair");
+            }
+            repl.memoize_dag(Tag::Cons, &state.digest);
+
+            // chain result and callable from the server's state
+            let (&(mut state_chain_result), &(mut state_callable)) =
+                repl.zstore.fetch_tuple2(&state);
+
+            if state_callable.tag != Tag::Comm {
+                bail!("The next callable must be a commitment");
             }
 
             let listener = TcpListener::bind(&addr_str)?;
@@ -1125,31 +1149,49 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
                 match stream {
                     Ok(mut stream) => match read_data::<Request>(&mut stream)? {
                         Request::Get => {
-                            repl.memoize_dag(Tag::Cons, &state.digest);
-                            let lurk_data = LurkData::new(state, &repl.zstore);
-                            write_data(&mut stream, lurk_data)?;
+                            // provide the data that fully specifies the current state
+                            repl.memoize_dag(state_chain_result.tag, &state_chain_result.digest);
+                            let chain_result = LurkData::new(state_chain_result, &repl.zstore);
+
+                            let comm_data =
+                                Self::build_comm_data(repl, state_callable.digest.as_slice());
+
+                            write_data(&mut stream, Response::State(chain_result, comm_data))?;
                         }
                         Request::Transition(chain_proof) => {
                             let ChainProof {
                                 crypto_proof,
                                 call_args,
-                                next_state,
-                            } = chain_proof;
-                            if next_state.zptr.tag != Tag::Cons {
-                                write_data(&mut stream, Response::NextStateNotCons)?;
+                                chain_result,
+                                next_callable,
+                            } = *chain_proof;
+                            if chain_result.has_opaque_data() {
+                                write_data(&mut stream, Response::ChainResultIsOpaque)?;
                                 continue;
                             }
-                            if next_state.has_opaque_data() {
-                                write_data(&mut stream, Response::NextStateIsOpaque)?;
+                            if next_callable.secret.tag != Tag::BigNum {
+                                write_data(&mut stream, Response::NextCallableSecretNotBigNum)?;
                                 continue;
                             }
-                            let (_, callable) = repl.zstore.fetch_tuple2(&state);
-                            let expr = repl.zstore.intern_cons(*callable, call_args);
-                            let machine_proof = crypto_proof.into_machine_proof(
-                                &expr,
-                                &empty_env,
-                                &next_state.zptr,
-                            );
+                            if next_callable.payload_has_opaque_data() {
+                                write_data(&mut stream, Response::NextCallablePayloadIsOpaque)?;
+                                continue;
+                            }
+                            // the expression is a call whose callable is part of the server state
+                            // and the arguments are provided by the client
+                            let expr = repl.zstore.intern_cons(state_callable, call_args);
+                            let next_callable_zptr = next_callable.commit(&mut repl.zstore);
+
+                            // the result is a pair composed by the chain result and next callable
+                            // provided by the client
+                            let result = repl
+                                .zstore
+                                .intern_cons(chain_result.zptr, next_callable_zptr);
+
+                            // and now the proof must verify, meaning that the user must have
+                            // used the correct callable from the server state
+                            let machine_proof =
+                                crypto_proof.into_machine_proof(&expr, &empty_env, &result);
                             let machine = repl.stark_machine();
                             let (_, vk) = machine.setup(&LairMachineProgram);
                             let challenger = &mut machine.config().challenger();
@@ -1162,8 +1204,12 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
                                 )?;
                                 continue;
                             }
+
+                            // everything went okay... transition to the next state
                             write_data(&mut stream, Response::ProofAccepted)?;
-                            state = next_state.zptr;
+                            state_chain_result = chain_result.populate_zstore(&mut repl.zstore);
+                            next_callable.populate_zstore(&mut repl.zstore);
+                            state_callable = next_callable_zptr;
                         }
                     },
                     Err(e) => {
@@ -1190,8 +1236,15 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
             let addr_str = repl.zstore.fetch_string(addr);
             let stream = &mut TcpStream::connect(addr_str)?;
             write_data(stream, Request::Get)?;
-            let lurk_data: LurkData<F> = read_data(stream)?;
-            let state = lurk_data.populate_zstore(&mut repl.zstore);
+            let Response::State(chain_result, next_callable) = read_data(stream)? else {
+                unreachable!()
+            };
+            let state_chain_result = chain_result.populate_zstore(&mut repl.zstore);
+            let state_next_callable = next_callable.commit(&mut repl.zstore);
+            next_callable.populate_zstore(&mut repl.zstore);
+            let state = repl
+                .zstore
+                .intern_cons(state_chain_result, state_next_callable);
             println!("{}", repl.fmt(&state_sym));
             repl.env = repl.zstore.intern_env(state_sym, state, repl.env);
             Ok(())
@@ -1216,26 +1269,36 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
             let empty_env = repl.zstore.intern_empty_env();
             let state =
                 Self::transition_call(repl, &current_state_expr, call_args, Some(empty_env))?;
+            if state.tag != Tag::Cons {
+                bail!("New state is not a pair");
+            }
+            let (&state_chain_result, &state_callable) = repl.zstore.fetch_tuple2(&state);
+            if state_callable.tag != Tag::Comm {
+                bail!("Next callable is not a commitment");
+            }
+
             let proof_key = repl.prove_last_reduction()?;
             let io_proof = Self::load_io_proof(&proof_key)?;
             let crypto_proof = io_proof.crypto_proof;
-            let next_state = LurkData::new(state, &repl.zstore);
+
+            let chain_result = LurkData::new(state_chain_result, &repl.zstore);
+            let next_callable = Self::build_comm_data(repl, state_callable.digest.as_slice());
+
             let chain_proof = ChainProof {
                 crypto_proof,
                 call_args,
-                next_state,
+                chain_result,
+                next_callable,
             };
             let addr_str = repl.zstore.fetch_string(&addr);
             let stream = &mut TcpStream::connect(addr_str)?;
-            write_data(stream, Request::Transition(chain_proof))?;
+            write_data(stream, Request::Transition(chain_proof.into()))?;
             match read_data::<Response>(stream)? {
                 Response::ProofAccepted => {
                     println!("Proof accepted by the server");
                     println!("{}", repl.fmt(&next_state_sym));
                     repl.env = repl.zstore.intern_env(next_state_sym, state, repl.env);
                 }
-                Response::NextStateNotCons => bail!("Next state is not a pair"),
-                Response::NextStateIsOpaque => bail!("Next state can't be opaque"),
                 Response::ProofVerificationFailed(verifier_version) => {
                     let mut msg = "Proof verification failed".to_string();
                     if verifier_version != get_verifier_version() {
@@ -1245,7 +1308,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
                     }
                     bail!(msg);
                 }
-                Response::State(_) => unreachable!(),
+                _ => unreachable!(),
             }
             Ok(())
         },
@@ -1255,15 +1318,16 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
 #[derive(Serialize, Deserialize)]
 enum Request {
     Get,
-    Transition(ChainProof),
+    Transition(Box<ChainProof>),
 }
 
 #[derive(Serialize, Deserialize)]
 enum Response {
-    State(LurkData<F>),
+    State(LurkData<F>, CommData<F>),
     ProofAccepted,
-    NextStateNotCons,
-    NextStateIsOpaque,
+    ChainResultIsOpaque,
+    NextCallableSecretNotBigNum,
+    NextCallablePayloadIsOpaque,
     ProofVerificationFailed(String),
 }
 

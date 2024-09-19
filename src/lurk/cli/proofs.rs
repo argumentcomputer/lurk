@@ -17,7 +17,7 @@ use crate::{
     },
 };
 
-use super::{lurk_data::LurkData, zdag::ZDag};
+use super::{comm_data::CommData, lurk_data::LurkData, zdag::ZDag};
 
 #[derive(Serialize, Deserialize)]
 struct CryptoShardProof {
@@ -200,5 +200,6 @@ impl ProtocolProof {
 pub(crate) struct ChainProof {
     pub(crate) crypto_proof: CryptoProof,
     pub(crate) call_args: ZPtr<F>,
-    pub(crate) next_state: LurkData<F>,
+    pub(crate) chain_result: LurkData<F>,
+    pub(crate) next_callable: CommData<F>,
 }

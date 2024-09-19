@@ -45,12 +45,19 @@ impl<F: std::hash::Hash + Eq + Default + Copy> CommData<F> {
         preimg
     }
 
+    fn compute_hash<H: Chipset<F>>(&self, zstore: &mut ZStore<F, H>) -> [F; DIGEST_SIZE]
+    where
+        F: Field,
+    {
+        zstore.hash3(self.build_preimg())
+    }
+
     #[inline]
     pub(crate) fn commit<H: Chipset<F>>(&self, zstore: &mut ZStore<F, H>) -> ZPtr<F>
     where
         F: Field,
     {
-        ZPtr::comm(zstore.hash3(self.build_preimg()))
+        ZPtr::comm(self.compute_hash(zstore))
     }
 
     #[inline]
@@ -58,7 +65,13 @@ impl<F: std::hash::Hash + Eq + Default + Copy> CommData<F> {
     where
         F: Field,
     {
-        zstore.hash3(self.build_preimg()); // make zstore aware of this hash
+        let digest = self.compute_hash(zstore);
+        zstore.intern_comm(digest);
         self.zdag.populate_zstore(zstore);
+    }
+
+    #[inline]
+    pub(crate) fn payload_has_opaque_data(&self) -> bool {
+        self.zdag.has_opaque_data(&self.payload)
     }
 }
