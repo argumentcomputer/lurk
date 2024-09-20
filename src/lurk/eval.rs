@@ -12,6 +12,7 @@ use crate::{
         toplevel::Toplevel,
         List, Name,
     },
+    lurk::big_num::field_elts_to_biguint,
 };
 
 use super::{
@@ -208,7 +209,7 @@ pub fn preallocate_symbols<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<
         ops.push(OpE::Array(arr_var, digest.clone()));
         ops.push(OpE::Store(ptr_var, [arr_var].into()));
         ops.push(OpE::Const(addr_var, addr));
-        ops.push(OpE::AssertEq(ptr_var, addr_var));
+        ops.push(OpE::AssertEq(ptr_var, addr_var, None));
     }
     let ops = ops.into();
     let ctrl = CtrlE::Return([].into()); // TODO: replace by `Exit`
@@ -781,7 +782,7 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F>
                     let (expr_tag, expr) = call(eval_begin, rest_tag, rest, env);
                     return (expr_tag, expr)
                 }
-                "current-env", "empty-env" => {
+                "current-env", "empty-env", "fail" => {
                     let rest_not_nil = sub(rest_tag, nil_tag);
                     if rest_not_nil {
                         return (err_tag, invalid_form)
@@ -794,6 +795,12 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F>
                         "empty-env" => {
                             let env = 0;
                             return (env_tag, env)
+                        }
+                        "fail" => {
+                            let zero = 0;
+                            let one = 1;
+                            assert_eq!(zero, one, |_, _| "Explicit fail encountered".to_string());
+                            return (zero, zero)
                         }
                     }
                 }
@@ -907,11 +914,15 @@ pub fn coerce_if_sym<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn open_comm<F: AbstractField>() -> FuncE<F> {
+pub fn open_comm<F: PrimeField32>() -> FuncE<F> {
     func!(
         fn open_comm(hash_ptr): [2] {
             let comm_hash: [8] = load(hash_ptr);
-            let (_secret: [8], payload_tag, padding: [7], val_digest: [8]) = preimg(hash3, comm_hash);
+            let (_secret: [8], payload_tag, padding: [7], val_digest: [8]) = preimg(
+                hash3,
+                comm_hash,
+                |fs| format!("Preimage not found for #{:#x}", field_elts_to_biguint(fs))
+            );
             let (payload_tag, payload_ptr) = call(ingress, payload_tag, padding, val_digest);
             return (payload_tag, payload_ptr)
         }
@@ -1488,7 +1499,7 @@ pub fn eval_unop<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     )
 }
 
-pub fn eval_opening_unop<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn eval_opening_unop<F: PrimeField32>(digests: &Digests<'_, F>) -> FuncE<F> {
     func!(
         partial fn eval_opening_unop(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
@@ -1526,7 +1537,11 @@ pub fn eval_opening_unop<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F>
             match val_tag {
                 Tag::Comm, Tag::BigNum => {
                     let comm_hash: [8] = load(val);
-                    let (secret: [8], tag, padding: [7], val_digest: [8]) = preimg(hash3, comm_hash);
+                    let (secret: [8], tag, padding: [7], val_digest: [8]) = preimg(
+                        hash3,
+                        comm_hash,
+                        |fs| format!("Preimage not found for #{:#x}", field_elts_to_biguint(fs))
+                    );
                     match head [|sym| digests.ptr(sym).to_field()] {
                         "open" => {
                             let (tag, ptr) = call(ingress, tag, padding, val_digest);
@@ -1879,9 +1894,9 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["97"]);
-        expect_eq(preallocate_symbols.width(), expect!["164"]);
+        expect_eq(preallocate_symbols.width(), expect!["168"]);
         expect_eq(eval.width(), expect!["75"]);
-        expect_eq(eval_builtin_expr.width(), expect!["141"]);
+        expect_eq(eval_builtin_expr.width(), expect!["142"]);
         expect_eq(eval_opening_unop.width(), expect!["97"]);
         expect_eq(eval_hide.width(), expect!["115"]);
         expect_eq(eval_unop.width(), expect!["78"]);

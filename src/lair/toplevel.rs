@@ -284,7 +284,7 @@ impl<F: Field + Ord> CtrlE<F> {
                     // Collect all constants as vars
                     let fs_vars = push_const_array(fs, &mut ops, ctx);
                     // Assert equality of matched vars
-                    ops.push(Op::AssertEq(vars.clone(), fs_vars));
+                    ops.push(Op::AssertEq(vars.clone(), fs_vars, None));
                     let block = block.check_and_link_with_ops(ops, ctx);
                     ctx.restore_bind_state(state);
                     vec.push((fs.clone(), block))
@@ -323,7 +323,7 @@ impl<F: Field + Ord> CtrlE<F> {
                 ops.push(Op::Const(F::zero()));
                 let zero = ctx.new_var();
                 let zeros = (0..size).map(|_| zero).collect();
-                ops.push(Op::AssertEq(vars.clone(), zeros));
+                ops.push(Op::AssertEq(vars.clone(), zeros, None));
                 let false_block = false_block.check_and_link_with_ops(ops, ctx);
 
                 if size == 1 {
@@ -351,14 +351,16 @@ impl<F: Field + Ord> OpE<F> {
     fn check_and_link<H: Chipset<F>>(&self, ops: &mut Vec<Op<F>>, ctx: &mut CheckCtx<'_, H>) {
         match self {
             OpE::AssertNe(a, b) => {
+                assert_eq!(a.size, b.size);
                 let a = use_var(a, ctx).into();
                 let b = use_var(b, ctx).into();
                 ops.push(Op::AssertNe(a, b));
             }
-            OpE::AssertEq(a, b) => {
+            OpE::AssertEq(a, b, fmt) => {
+                assert_eq!(a.size, b.size);
                 let a = use_var(a, ctx).into();
                 let b = use_var(b, ctx).into();
-                ops.push(Op::AssertEq(a, b));
+                ops.push(Op::AssertEq(a, b, *fmt));
             }
             OpE::Contains(a, b) => {
                 assert_eq!(b.size, 1);
@@ -465,7 +467,7 @@ impl<F: Field + Ord> OpE<F> {
                 ops.push(Op::Call(name_idx, inp));
                 out.iter().for_each(|t| bind_new(t, ctx));
             }
-            OpE::PreImg(out, name, inp) => {
+            OpE::PreImg(out, name, inp, fmt) => {
                 let name_idx = ctx
                     .info_map
                     .get_index_of(name)
@@ -481,7 +483,7 @@ impl<F: Field + Ord> OpE<F> {
                 assert_eq!(out.total_size(), input_size);
                 assert_eq!(inp.total_size(), output_size);
                 let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
-                ops.push(Op::PreImg(name_idx, inp));
+                ops.push(Op::PreImg(name_idx, inp, *fmt));
                 out.iter().for_each(|t| bind_new(t, ctx));
             }
             OpE::Store(ptr, vals) => {
