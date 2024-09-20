@@ -338,7 +338,7 @@ impl<F: PrimeField32> Op<F> {
                     push_depth(index, slice, ctx, result.depth);
                 }
             }
-            Op::PreImg(idx, out) => {
+            Op::PreImg(idx, out, _) => {
                 let func = ctx.toplevel.get_by_index(*idx);
                 let out = out.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let inv_map = ctx.queries.inv_func_queries[*idx]

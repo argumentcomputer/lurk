@@ -7,10 +7,13 @@
 use super::{map::Map, List, Name};
 
 /// The type for Lair operations
+#[allow(clippy::type_complexity)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Op<F> {
-    /// `AssertEq(x, y)` makes sure `x` is equal to `y`
-    AssertEq(List<usize>, List<usize>),
+    /// `AssertEq(x, y, fmt)` makes sure `x` is equal to `y`. If `fmt` is `Some`,
+    /// use it to format an error message and bail at runtime instead of panicking
+    /// when `x` is not equal to `y`
+    AssertEq(List<usize>, List<usize>, Option<fn(&[F], &[F]) -> String>),
     /// `AssertNe(x, y)` makes sure `x` is unequal to `y`
     AssertNe(List<usize>, List<usize>),
     /// `Contains(x, y)` makes sure an array `x` contains the value `y`
@@ -31,10 +34,12 @@ pub enum Op<F> {
     /// at index `i` in the toplevel when applied to the arguments at positions
     /// `[a, b, ...]` in the stack
     Call(usize, List<usize>),
-    /// `PreImg(i, [a, b, ...])` extends the stack with the latest preimage
+    /// `PreImg(i, [a, b, ...], fmt)` extends the stack with the latest preimage
     /// (beware of non-injectivity) of the function of index `i` when called with
-    /// arguments at positions `[a, b, ...]` in the stack
-    PreImg(usize, List<usize>),
+    /// arguments at positions `[a, b, ...]` in the stack. If `fmt` is `Some`,
+    /// use it to format an error message and bail at runtime instead of panicking
+    /// when the preimage is not available
+    PreImg(usize, List<usize>, Option<fn(&[F]) -> String>),
     /// `Store([y, ...])` pushes the pointer to `[y, ...]` to the stack
     Store(List<usize>),
     /// `Load(len, y)` extends the stack with the `len` values that is pointed by `y`

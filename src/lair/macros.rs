@@ -79,7 +79,11 @@ macro_rules! block {
         $crate::block!({ $($tail)* }, $ops)
     }};
     ({ assert_eq!($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
-        $ops.push($crate::lair::expr::OpE::AssertEq($a, $b));
+        $ops.push($crate::lair::expr::OpE::AssertEq($a, $b, None));
+        $crate::block!({ $($tail)* }, $ops)
+    }};
+    ({ assert_eq!($a:ident, $b:ident, $fmt:expr); $($tail:tt)+ }, $ops:expr) => {{
+        $ops.push($crate::lair::expr::OpE::AssertEq($a, $b, Some($fmt)));
         $crate::block!({ $($tail)* }, $ops)
     }};
     ({ assert_ne!($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
@@ -214,7 +218,15 @@ macro_rules! block {
         let func = $crate::lair::Name(stringify!($func));
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         let inp = [$($arg),*].into();
-        $ops.push($crate::lair::expr::OpE::PreImg(out, func, inp));
+        $ops.push($crate::lair::expr::OpE::PreImg(out, func, inp, None));
+        $(let $tgt = $crate::var!($tgt $(, $size)?);)*
+        $crate::block!({ $($tail)* }, $ops)
+    }};
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = preimg($func:ident, $($arg:ident),*, $fmt:expr); $($tail:tt)+ }, $ops:expr) => {{
+        let func = $crate::lair::Name(stringify!($func));
+        let out = [$($crate::var!($tgt $(, $size)?)),*].into();
+        let inp = [$($arg),*].into();
+        $ops.push($crate::lair::expr::OpE::PreImg(out, func, inp, Some($fmt)));
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
         $crate::block!({ $($tail)* }, $ops)
     }};
@@ -222,7 +234,7 @@ macro_rules! block {
         let func = $crate::lair::Name(stringify!($func));
         let out = [$crate::var!($tgt $(, $size)?)].into();
         let inp = [$($arg),*].into();
-        $ops.push($crate::lair::expr::OpE::PreImg(out, func, inp));
+        $ops.push($crate::lair::expr::OpE::PreImg(out, func, inp, None));
         let $tgt = $crate::var!($tgt $(, $size)?);
         $crate::block!({ $($tail)* }, $ops)
     }};

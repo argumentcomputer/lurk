@@ -11,7 +11,6 @@ use crate::{
     air::builder::Record,
     gadgets::bytes::{record::BytesRecord, ByteRecord},
     lair::provenance::DepthLessThan,
-    lurk::big_num::field_elts_to_biguint,
 };
 
 use super::{
@@ -474,19 +473,23 @@ impl<F: PrimeField32> Func<F> {
         }
         while let Some(exec_entry) = exec_entries_stack.pop() {
             match exec_entry {
-                ExecEntry::Op(Op::AssertEq(a, b)) => {
-                    for (a, b) in a.iter().zip(b.iter()) {
-                        let a = map[*a];
-                        let b = map[*b];
-                        assert_eq!(a, b);
+                ExecEntry::Op(Op::AssertEq(a, b, fmt)) => {
+                    if let Some(fmt) = fmt {
+                        let a: Vec<_> = a.iter().map(|i| map[*i]).collect();
+                        let b: Vec<_> = b.iter().map(|i| map[*i]).collect();
+                        if a != b {
+                            bail!(fmt(&a, &b));
+                        }
+                    } else {
+                        for (a, b) in a.iter().zip(b.iter()) {
+                            assert_eq!(map[*a], map[*b]);
+                        }
                     }
                 }
                 ExecEntry::Op(Op::AssertNe(a, b)) => {
                     let mut unequal = false;
                     for (a, b) in a.iter().zip(b.iter()) {
-                        let a = map[*a];
-                        let b = map[*b];
-                        if a != b {
+                        if map[*a] != map[*b] {
                             unequal = true;
                             break;
                         }
@@ -559,14 +562,18 @@ impl<F: PrimeField32> Func<F> {
                         push_block_exec_entries!(&func.body);
                     }
                 }
-                ExecEntry::Op(Op::PreImg(callee_index, out)) => {
+                ExecEntry::Op(Op::PreImg(callee_index, out, fmt)) => {
                     let out = out.iter().map(|v| map[*v]).collect::<List<_>>();
                     let Some(inp) = queries.inv_func_queries[*callee_index]
                         .as_ref()
                         .expect("Missing inverse map")
                         .get(&out)
                     else {
-                        bail!("Preimg not found for #{:#x}", field_elts_to_biguint(&out))
+                        if let Some(fmt) = fmt {
+                            bail!(fmt(&out))
+                        } else {
+                            panic!("Preimg not found for {:?}", out);
+                        }
                     };
                     let inp = inp.to_vec();
                     if let Some((query_idx, _, result)) =

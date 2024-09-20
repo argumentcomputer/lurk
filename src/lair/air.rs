@@ -296,7 +296,7 @@ impl<F: Field> Op<F> {
                     .collect();
                 constrain_inequality_witness(sel.clone(), coeffs, diffs, builder);
             }
-            Op::AssertEq(a, b) => {
+            Op::AssertEq(a, b, _) => {
                 for (a, b) in a.iter().zip(b.iter()) {
                     let a = &map[*a];
                     let b = &map[*b];
@@ -407,7 +407,7 @@ impl<F: Field> Op<F> {
                     sel.clone(),
                 );
             }
-            Op::PreImg(idx, out) => {
+            Op::PreImg(idx, out, _) => {
                 let func = toplevel.get_by_index(*idx);
                 let mut inp = Vec::with_capacity(func.input_size);
                 for _ in 0..func.input_size {

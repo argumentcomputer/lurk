@@ -42,10 +42,13 @@ impl<const N: usize> From<[Var; N]> for VarList {
 }
 
 /// Interface for basic Lair operations
+#[allow(clippy::type_complexity)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OpE<F> {
-    /// `AssertEq(x, y)` makes sure `x` is equal to `y`
-    AssertEq(Var, Var),
+    /// `AssertEq(x, y, fmt)` makes sure `x` is equal to `y`. If `fmt` is `Some`,
+    /// use it to format an error message and bail at runtime instead of panicking
+    /// when `x` is not equal to `y`
+    AssertEq(Var, Var, Option<fn(&[F], &[F]) -> String>),
     /// `AssertNe(x, y)` makes sure `x` is unequal to `y`
     AssertNe(Var, Var),
     /// `Contains(x, y)` makes sure an array `x` contains the value `y`
@@ -73,9 +76,11 @@ pub enum OpE<F> {
     /// `Call([x, ...], foo, [y, ...])` binds `x, ...` to the output of `foo`
     /// when applied to the arguments `y, ...`
     Call(VarList, Name, VarList),
-    /// `PreImg([x, ...], foo, [y, ...])` binds `x, ...` to the latest preimage
-    /// (beware of non-injectivity) of `foo` when called with arguments `y, ...`
-    PreImg(VarList, Name, VarList),
+    /// `PreImg([x, ...], foo, [y, ...], fmt)` binds `x, ...` to the latest preimage
+    /// (beware of non-injectivity) of `foo` when called with arguments `y, ...`.
+    /// If `fmt` is `Some`, use it to format an error message and bail at runtime
+    /// instead of panicking when the preimage is not available
+    PreImg(VarList, Name, VarList, Option<fn(&[F]) -> String>),
     /// `Store(x, [y, ...])` binds `x` to a pointer to `[y, ...]`
     Store(Var, VarList),
     /// `Load([x, ...], y)` binds `[x, ...]` to the values that is pointed by `y`
