@@ -1,6 +1,10 @@
 # NOTE: This script is a slightly modified version from https://github.com/HorizenLabs/poseidon2/blob/main/poseidon2_rust_params.sage
 #       The modifications were made to support generating multiple constants for different t values.
-from math import inf
+#       A recent modification added generation for efficient partial MDS matrices
+from functools import partial
+from itertools import product, chain
+from math import *
+from multiprocessing import Pool
 
 PRIME = 2013265921 # BabyBear
 FIELD_SIZE = len(PRIME.bits())
@@ -274,6 +278,35 @@ def algorithm_3(M, num_cells, F):
 
     return [True, None]
 
+def generate_matrix_candidate(field_size, num_cells, grain_gen, F):
+    return matrix.diagonal([F(grain_random_bits(grain_gen, field_size)) for _ in range(0, num_cells)])
+
+def get_skips(num_cells, num_skips):
+    return product(range(num_cells - 2), repeat=num_skips)
+
+def get_diags(num_cells, num_skips, F):
+    diags = list()
+
+    for skip_list in get_skips(num_cells, num_skips):
+        steps = [0] * num_cells
+        for x in skip_list:
+            steps[x] += 1
+
+        shift_list = [0, 0]
+        for i in range(num_cells - 2):
+            shift_list.append(shift_list[-1] + 1 + steps[i])
+
+        new_vect = vector(map(lambda x: F(1 << x), shift_list))
+        new_vect[0] = -2
+        diags.append(new_vect)
+
+    diags.reverse() # Prioritize checking matrices with smaller entries first
+
+    return diags
+
+def generate_efficient_matrix_candidates(num_cells, num_skips, F) -> list:
+    return [matrix.diagonal(F, vect) for vect in get_diags(num_cells, num_skips, F)]
+
 def generate_matrix_partial(field_size, num_cells, grain_gen, F):
     M = None
     if num_cells == 2:
@@ -281,82 +314,119 @@ def generate_matrix_partial(field_size, num_cells, grain_gen, F):
     elif num_cells == 3:
         M = matrix(F, [[F(2), F(1), F(1)], [F(1), F(2), F(1)], [F(1), F(1), F(3)]])
     else:
-        M_circulant = matrix.circulant(vector([F(0)] + [F(1) for _ in range(0, num_cells - 1)]))
-        M_diagonal = matrix.diagonal([F(grain_random_bits(grain_gen, field_size)) for _ in range(0, num_cells)])
-        M = M_circulant + M_diagonal
-        while check_minpoly_condition(M, num_cells) == False:
-            M_diagonal = matrix.diagonal([F(grain_random_bits(grain_gen, field_size)) for _ in range(0, num_cells)])
+        M_circulant = matrix.circulant(vector([F(0)] + [F(1) for _ in range(num_cells - 1)]))
+        for i in range(4): # 4 is a random choice here, but anything bigger would take too long
+            candidates = generate_efficient_matrix_candidates(num_cells, i, F)
+            for candidate in candidates:
+                M = M_circulant + candidate + matrix.identity(F, num_cells)
+                if check_minpoly_condition(M, num_cells) == True:
+                    return M
+        else:
+            M_diagonal = generate_matrix_candidate(field_size, num_cells, grain_gen, F)
             M = M_circulant + M_diagonal
+            while check_minpoly_condition(M, num_cells) == False:
+                M_diagonal = generate_matrix_candidate(field_size, num_cells, grain_gen, F)
+                M = M_circulant + M_diagonal
 
-    if(algorithm_1(M, num_cells, F)[0] == False or algorithm_2(M, num_cells, F)[0] == False or algorithm_3(M, num_cells, F)[0] == False):
-        raise Exception("Generated partial matrix is not secure w.r.t. subspace trails.")
     return M
 
-def print_field_elt(value, p):
+def final_check(M, num_cells, F):
+    if(algorithm_1(M, num_cells, F)[0] == False or algorithm_2(M, num_cells, F)[0] == False or algorithm_3(M, num_cells, F)[0] == False):
+        raise Exception("Generated partial matrix is not secure w.r.t. subspace trails.")
+
+
+def printed_field_elt(value, p):
     l = len(hex(p - 1))
     if l % 2 == 1:
         l = l + 1
     value = hex(int(value))[2:]
     value = "0x" + value.zfill(l - 2)
 
-    print(f"BabyBear::from_canonical_u32({value}),")
+    return f"BabyBear::from_canonical_u32({value}),"
 
-def generate_constants_file():
-    alpha = get_alpha(PRIME)
-
-    print("""
+def generate_head():
+    header_strings = [
+"""
 //! This module defines all of the constants used by the Poseidon 2 hasher
 //! The constants are generated using the `poseidon2_rust_params.sage` script which is a
 //! modified version of the script found at
 //! https://github.com/HorizenLabs/poseidon2/blob/main/poseidon2_rust_params.sage
-    """)
-    print()
-    print("use lazy_static::lazy_static;")
-    print("use hybrid_array::{Array, typenum::*};")
-    print("use p3_baby_bear::BabyBear;")
-    print("use p3_field::AbstractField;")
-    print()
-    for t in range(4, 52, 4):
-        r_f_fixed, r_p_fixed, _, _ = poseidon_calc_final_numbers_fixed(PRIME, t, alpha, 128, True, FIELD_SIZE)
+""",
+    "\n",
+    "use lazy_static::lazy_static;",
+    "use hybrid_array::{Array, typenum::*};",
+    "use p3_baby_bear::BabyBear;",
+    "use p3_field::AbstractField;",
+    "\n"
+    ]
+    return "\n".join(header_strings)
 
-        print("// +++ t = {0}, R_F = {1}, R_P = {2} +++".format(t, r_f_fixed, r_p_fixed))
-        print("lazy_static! {")
-        init_sequence = init_generator(FIELD_SIZE, t, r_f_fixed, r_p_fixed)
+def generate_arity_data(t, alpha):
+    r_f_fixed, r_p_fixed, _, _ = poseidon_calc_final_numbers_fixed(PRIME, t, alpha, 128, True, FIELD_SIZE)
+    init_sequence = init_generator(FIELD_SIZE, t, r_f_fixed, r_p_fixed)
+    F = GF(PRIME)
+    grain_gen = grain_sr_generator(init_sequence)
 
-        F = GF(PRIME)
-        grain_gen = grain_sr_generator(init_sequence)
+    # Round constants
+    (full_round_constants, partial_round_constants) = generate_constants(FIELD_SIZE, t, r_f_fixed, r_p_fixed, PRIME, grain_gen)
 
-        # Round constants
-        (full_round_constants, partial_round_constants) = generate_constants(FIELD_SIZE, t, r_f_fixed, r_p_fixed, PRIME, grain_gen)
+    # Matrix
+    matrix_partial = generate_matrix_partial(FIELD_SIZE, t, grain_gen, F)
+    final_check(matrix_partial, t, F)
+    matrix_partial_diag_plus_one = [matrix_partial[i,i] for i in range(t)]
 
-        # Matrix
-        matrix_partial = generate_matrix_partial(FIELD_SIZE, t, grain_gen, F)
-        matrix_partial_diag_plus_one = [matrix_partial[i,i] for i in range(t)]
+    return r_f_fixed, r_p_fixed, full_round_constants, partial_round_constants, matrix_partial_diag_plus_one
 
-        # Efficient partial matrix (diagonal - 1)
-        print(f"pub static ref MATRIX_DIAG_{t}_BABYBEAR: Array<BabyBear, U{t}> = Array::try_from([")
-        for val in matrix_partial_diag_plus_one:
-            print_field_elt(val - 1, PRIME) # Subtract one to get the values M where the final partial matrix P = 1 + M
-        print("].as_ref()).unwrap();")
-        print()
+def generate_arity_string(t, r_f_fixed, r_p_fixed, matrix_partial_diag_plus_one, full_round_constants, partial_round_constants):
+    header = f"// +++ t = {t}, R_F = {r_f_fixed}, R_P = {r_p_fixed} +++"
+    lazy_static_start = "lazy_static! {"
+    lazy_static_end = "}\n"
 
-        print("pub static ref FULL_RC_{}_{}: [[BabyBear; {}]; {}] = [".format(t, r_f_fixed, t, r_f_fixed))
-        for (i,val) in enumerate(full_round_constants):
-            if i % t == 0:
-                print("[", end="")
-            print_field_elt(val, PRIME)
-            if i % t == t - 1:
-                print("],")
-        print("];")
+    # Partial round Matrix
+    partial_matrix_header = f"pub static ref MATRIX_DIAG_{t}_BABYBEAR: Array<BabyBear, U{t}> = Array::try_from(["
+    partial_matrix_vals = [printed_field_elt(val - 1, PRIME) for val in matrix_partial_diag_plus_one]
+    partial_matrix_end = "].as_ref()).unwrap();\n"
 
-        print()
+    # Full round constants
+    full_rc_header = f"pub static ref FULL_RC_{t}_{r_f_fixed}: [[BabyBear; {t}]; {r_f_fixed}] = ["
+    full_rc_vals = []
+    for (i,val) in enumerate(full_round_constants):
+        if i % t == 0:
+            full_rc_vals.append("[")
+        full_rc_vals.append(printed_field_elt(val, PRIME))
+        if i % t == t - 1:
+            full_rc_vals.append("],\n")
+    full_rc_end = "];\n"
 
-        print("pub static ref PART_RC_{}_{}: [BabyBear; {}] = [".format(t, r_p_fixed, r_p_fixed))
-        for val in partial_round_constants:
-            print_field_elt(val, PRIME)
-        print("];")
-        print("}")
-        print()
+    # Partial round constants
+    partial_rc_header = f"pub static ref PART_RC_{t}_{r_p_fixed}: [BabyBear; {r_p_fixed}] = ["
+    partial_rc_vals = []
+    for val in partial_round_constants:
+        partial_rc_vals.append(printed_field_elt(val, PRIME))
+    partial_rc_end = "];\n"
+
+    return "\n".join(chain(
+        [header], [lazy_static_start], [partial_matrix_header],
+        partial_matrix_vals, [partial_matrix_end], [full_rc_header],
+        full_rc_vals, [full_rc_end], [partial_rc_header], partial_rc_vals,
+        [partial_rc_end], [lazy_static_end]
+    ))
+
+def arity_func(t, alpha):
+    r_f_fixed, r_p_fixed, full_rc, part_rc, part_mat = generate_arity_data(t, alpha)
+    return generate_arity_string(t, r_f_fixed, r_p_fixed, part_mat, full_rc, part_rc)
+
+def generate_constants_file():
+    alpha = get_alpha(PRIME)
+
+    pool = Pool(processes=12)
+
+    file_head = generate_head()
+    inputs = range(4, 52, 4)
+    outputs = pool.map(partial(arity_func, alpha=alpha), inputs)
+
+    print(file_head)
+    print("\n".join(outputs))
 
 if __name__ == '__main__':
     generate_constants_file()
