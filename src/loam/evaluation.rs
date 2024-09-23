@@ -5,6 +5,7 @@
 use num_traits::FromPrimitive;
 use p3_baby_bear::BabyBear;
 use rustc_hash::FxHashMap;
+use strum::EnumCount;
 
 use crate::loam::allocation::Allocator;
 use crate::loam::lurk_sym_index;
@@ -189,9 +190,9 @@ impl Tag {
     }
 
     pub fn wide_relation() -> Vec<(LE, Wide)> {
-        (0..Self::count())
+        (0..Self::COUNT)
             .map(|i| {
-                let tag = Tag::from_u32(i as u32 + 2).unwrap();
+                let tag = Tag::from_u32(i as u32).unwrap();
                 (tag.elt(), tag.value())
             })
             .collect()

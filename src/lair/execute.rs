@@ -1,9 +1,8 @@
 use anyhow::{bail, Result};
 use hashbrown::HashMap;
-use indexmap::IndexMap;
 use itertools::Itertools;
 use p3_field::{AbstractField, PrimeField32};
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::FxHashMap;
 use sphinx_core::stark::{Indexed, MachineRecord};
 use std::ops::Range;
 
@@ -17,10 +16,8 @@ use super::{
     bytecode::{Ctrl, Func, Op},
     chipset::Chipset,
     toplevel::Toplevel,
-    List,
+    FxIndexMap, List,
 };
-
-type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 
 type QueryMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
 type InvQueryMap<F> = FxHashMap<List<F>, List<F>>;

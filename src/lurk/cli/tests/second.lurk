@@ -1,17 +1,17 @@
 ;; test fetching data from first.lurk
-!(fetch #0x77096cf6a7692e3c7e0ddb3bb6e82cf1c2d00d0984be91ce453c91b60b1bcb)
-!(assert-eq (open #0x77096cf6a7692e3c7e0ddb3bb6e82cf1c2d00d0984be91ce453c91b60b1bcb) 42)
+!(fetch #0x22b5fa9cf049349a7d0e5fdeef38e865b79e13a9feb29730c845973af08bef)
+!(assert-eq (open #0x22b5fa9cf049349a7d0e5fdeef38e865b79e13a9feb29730c845973af08bef) 42)
 
 ;; test open
-!(open #0x4be65b0be0e53c98cbde4451413f4205573b7cbf51b1778500759407e2cd88)
-!(assert-eq (open #0x4be65b0be0e53c98cbde4451413f4205573b7cbf51b1778500759407e2cd88) 42)
+!(open #0x91542a0e943be900a067ecd113d8b3340e0aed1c3c00eb06768a318c17a885)
+!(assert-eq (open #0x91542a0e943be900a067ecd113d8b3340e0aed1c3c00eb06768a318c17a885) 42)
 
 ;; test call/chain
-!(call #0x83420bafb3cb56870b10b498607c0a6314b0ea331328bbb232c74078abb5dc 0)
-!(chain #0x5a34ed7712c5fd2f324feb0e1764b27bac9259c4b663e4601e678939a9363d 1)
+!(call #0x361877c9845ddda6aa16dd6c6bcd26fcea7b93930106a19f5d7d5cf10a9015 0)
+!(chain #0x4b0eb13f048385909480e765f4eefec94c304edf9e01b2170869c9cdf8eb11 1)
 
 ;; test transition
-!(def state (cons nil #0x5a34ed7712c5fd2f324feb0e1764b27bac9259c4b663e4601e678939a9363d))
+!(def state (cons nil #0x4b0eb13f048385909480e765f4eefec94c304edf9e01b2170869c9cdf8eb11))
 !(transition state1 state 1)
 !(assert-eq (car state1) 1)
 
