@@ -34,13 +34,13 @@ p3-uni-stark = { git = "https://github.com/argumentcomputer/Plonky3.git", branch
 p3-util = { git = "https://github.com/argumentcomputer/Plonky3.git", branch = "sp1" }
 sphinx-core = { git = "https://github.com/argumentcomputer/sphinx.git", branch = "dev"}
 sphinx-derive = { git = "https://github.com/argumentcomputer/sphinx.git", branch = "dev" }
-anyhow = "1.0.72"
+anyhow = "1.0.89"
 ascent = { git = "https://github.com/argumentcomputer/ascent.git" }
 arc-swap = "1.7.1"
 base-x = "0.2.11"
 bincode = "1"
 camino = "1.1"
-clap = "4.5.15"
+clap = "4.5.18"
 criterion = "0.5"
 expect-test = "1.4.1"
 home = "0.5"
@@ -61,7 +61,7 @@ rustyline-derive = "0.10"
 serde = "1.0"
 serde_json = "1.0"
 sha2 = "0.10.8"
-thiserror = "1.0.44"
+thiserror = "1.0.64"
 hybrid-array = "0.2.0-rc"
 lazy_static = "1.4.0"
 hashbrown = "0.14.5"
