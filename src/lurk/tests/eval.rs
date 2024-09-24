@@ -1,94 +1,41 @@
+//! Correctness tests for the Lurk evaluation model
+
 use once_cell::sync::OnceCell;
 use p3_baby_bear::BabyBear as F;
 use p3_field::AbstractField;
-use sphinx_core::{stark::StarkMachine, utils::BabyBearPoseidon2};
+use sphinx_core::utils::BabyBearPoseidon2;
 
 use crate::{
-    air::debug::debug_chip_constraints_and_queries_with_sharding,
-    lair::{
-        execute::{QueryRecord, Shard, ShardingConfig},
-        func_chip::FuncChip,
-        lair_chip::{
-            build_chip_vector_from_lair_chips, build_lair_chip_vector, LairMachineProgram,
-        },
-        toplevel::Toplevel,
+    lair::{chipset::NoChip, toplevel::Toplevel},
+    lurk::{
+        chipset::{lurk_hasher, LurkChip},
+        eval::{build_lurk_toplevel_native, EvalErr},
+        state::{builtin_sym, user_sym},
+        symbol::Symbol,
+        tag::Tag,
+        zstore::{ZPtr, ZStore},
     },
 };
 
-use super::{
-    chipset::{lurk_hasher, LurkChip},
-    eval::{build_lurk_toplevel, EvalErr},
-    state::{builtin_sym, user_sym},
-    symbol::Symbol,
-    tag::Tag,
-    zstore::{ZPtr, ZStore},
-};
+use super::run_tests;
 
 #[allow(clippy::type_complexity)]
 static TEST_SETUP_DATA: OnceCell<(
-    Toplevel<F, LurkChip>,
+    Toplevel<F, LurkChip, NoChip>,
     ZStore<F, LurkChip>,
     BabyBearPoseidon2,
 )> = OnceCell::new();
 
 fn test_setup_data() -> &'static (
-    Toplevel<F, LurkChip>,
+    Toplevel<F, LurkChip, NoChip>,
     ZStore<F, LurkChip>,
     BabyBearPoseidon2,
 ) {
     TEST_SETUP_DATA.get_or_init(|| {
-        let (toplevel, zstore) = build_lurk_toplevel();
+        let (toplevel, zstore, _) = build_lurk_toplevel_native();
         let config = BabyBearPoseidon2::new();
         (toplevel, zstore, config)
     })
-}
-
-fn run_test(
-    zptr: &ZPtr<F>,
-    env: &ZPtr<F>,
-    toplevel: &Toplevel<F, LurkChip>,
-    zstore: &mut ZStore<F, LurkChip>,
-    expected_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>,
-    config: BabyBearPoseidon2,
-) {
-    let mut record = QueryRecord::new(toplevel);
-    let hashes3 = std::mem::take(&mut zstore.hashes3_diff);
-    let hashes4 = std::mem::take(&mut zstore.hashes4_diff);
-    let hashes5 = std::mem::take(&mut zstore.hashes5_diff);
-    record.inject_inv_queries_owned("hash3", toplevel, hashes3);
-    record.inject_inv_queries_owned("hash4", toplevel, hashes4);
-    record.inject_inv_queries_owned("hash5", toplevel, hashes5);
-
-    let mut input = [F::zero(); 24];
-    input[..16].copy_from_slice(&zptr.flatten());
-    input[16..].copy_from_slice(&env.digest);
-
-    let lurk_main = FuncChip::from_name("lurk_main", toplevel);
-    let result = toplevel
-        .execute(lurk_main.func, &input, &mut record, None)
-        .unwrap();
-
-    assert_eq!(result.as_ref(), &expected_cloj(zstore).flatten());
-
-    let lair_chips = build_lair_chip_vector(&lurk_main);
-
-    // debug constraints and verify lookup queries with and without sharding
-    debug_chip_constraints_and_queries_with_sharding(&record, &lair_chips, None);
-    debug_chip_constraints_and_queries_with_sharding(
-        &record,
-        &lair_chips,
-        Some(ShardingConfig { max_shard_size: 4 }),
-    );
-
-    // debug constraints with Sphinx
-    let full_shard = Shard::new(&record);
-    let machine = StarkMachine::new(
-        config,
-        build_chip_vector_from_lair_chips(lair_chips),
-        record.expect_public_values().len(),
-    );
-    let (pk, _) = machine.setup(&LairMachineProgram);
-    machine.debug_constraints(&pk, full_shard);
 }
 
 #[allow(clippy::type_complexity)]
@@ -99,7 +46,7 @@ fn test_case_raw(
     let (toplevel, zstore, config) = test_setup_data();
     let zstore = &mut zstore.clone();
     let zptr = input_cloj(zstore);
-    run_test(
+    run_tests(
         &zptr,
         &ZPtr::null(Tag::Env),
         toplevel,
@@ -112,8 +59,10 @@ fn test_case_raw(
 fn test_case(input_code: &'static str, expected_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>) {
     let (toplevel, zstore, config) = test_setup_data();
     let mut zstore = zstore.clone();
-    let zptr = zstore.read(input_code).expect("Read failure");
-    run_test(
+    let zptr = zstore
+        .read(input_code, &Default::default())
+        .expect("Read failure");
+    run_tests(
         &zptr,
         &ZPtr::null(Tag::Env),
         toplevel,
@@ -130,9 +79,11 @@ fn test_case_env(
 ) {
     let (toplevel, zstore, config) = test_setup_data();
     let mut zstore = zstore.clone();
-    let zptr = zstore.read(input_code).expect("Read failure");
+    let zptr = zstore
+        .read(input_code, &Default::default())
+        .expect("Read failure");
     let env = env_cloj(&mut zstore);
-    run_test(
+    run_tests(
         &zptr,
         &env,
         toplevel,
@@ -170,7 +121,7 @@ macro_rules! test_env {
 }
 
 fn trivial_id_fun(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
-    let x = zstore.intern_symbol(&user_sym("x"));
+    let x = zstore.intern_symbol_no_lang(&user_sym("x"));
     let args = zstore.intern_list([x]);
     let env = zstore.intern_empty_env();
     zstore.intern_fun(args, x, env)
@@ -178,7 +129,7 @@ fn trivial_id_fun(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
 
 fn trivial_a_1_env(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
     let empty_env = zstore.intern_empty_env();
-    let a = zstore.intern_symbol(&user_sym("a"));
+    let a = zstore.intern_symbol_no_lang(&user_sym("a"));
     let one = uint(1);
     zstore.intern_env(a, one, empty_env)
 }
@@ -191,7 +142,8 @@ fn uint(u: u64) -> ZPtr<F> {
 test!(test_num, "1", |_| uint(1));
 test!(test_char, "'a'", |_| ZPtr::char('a'));
 test!(test_str, "\"abc\"", |z| z.intern_string("abc"));
-test!(test_key, ":hi", |z| z.intern_symbol(&Symbol::key(&["hi"])));
+test!(test_key, ":hi", |z| z
+    .intern_symbol_no_lang(&Symbol::key(&["hi"])));
 test!(test_u64, "1u64", |_| ZPtr::u64(1));
 test!(test_field_elem, "1n", |_| ZPtr::num(F::one()));
 test!(test_t, "t", |z| *z.t());
@@ -270,9 +222,9 @@ test!(test_list2, "(list (+ 1 1) \"hi\")", |z| {
     z.intern_list([two, hi])
 });
 test!(test_quote, "'(x 1 :foo)", |z| {
-    let x = z.intern_symbol(&user_sym("x"));
+    let x = z.intern_symbol_no_lang(&user_sym("x"));
     let one = uint(1);
-    let foo = z.intern_symbol(&Symbol::key(&["foo"]));
+    let foo = z.intern_symbol_no_lang(&Symbol::key(&["foo"]));
     z.intern_list([x, one, foo])
 });
 test!(test_eval, "(eval '(+ 1 2) (empty-env))", |_| uint(3));
@@ -318,7 +270,7 @@ test!(
 test_raw!(
     test_eq20,
     |z| {
-        let eq = z.intern_symbol(&builtin_sym("eq"));
+        let eq = z.intern_symbol_no_lang(&builtin_sym("eq"));
         let env = z.intern_empty_env();
         let arg1 = z.intern_thunk(*z.t(), env);
         let arg2 = z.intern_thunk(*z.t(), env);
@@ -329,7 +281,7 @@ test_raw!(
 test_raw!(
     test_eq21,
     |z| {
-        let eq = z.intern_symbol(&builtin_sym("eq"));
+        let eq = z.intern_symbol_no_lang(&builtin_sym("eq"));
         let env = z.intern_empty_env();
         let arg1 = z.intern_thunk(*z.nil(), env);
         let arg2 = z.intern_thunk(*z.t(), env);
@@ -505,8 +457,8 @@ test_raw!(
     |z| {
         // binding the built-in `cons` but evaluating a `Tag::Sym`-tagged `cons`
         // should resuld in an unbound var error
-        let let_ = z.intern_symbol(&builtin_sym("let"));
-        let cons = z.intern_symbol(&builtin_sym("cons"));
+        let let_ = z.intern_symbol_no_lang(&builtin_sym("let"));
+        let cons = z.intern_symbol_no_lang(&builtin_sym("cons"));
         let one = uint(1);
         assert_eq!(cons.tag, Tag::Builtin);
         let mut cons_sym = cons;
@@ -524,10 +476,10 @@ test!(test_div_by_zero, "(/ 1 0)", |_| ZPtr::err(
     EvalErr::DivByZero
 ));
 test!(test_equal_non_num, "(= 'a 'a)", |_| ZPtr::err(
-    EvalErr::ArgNotNumber
+    EvalErr::InvalidArg
 ));
 test!(test_equal_non_num2, "(= (comm #0x0) (comm #0x0))", |_| {
-    ZPtr::err(EvalErr::ArgNotNumber)
+    ZPtr::err(EvalErr::InvalidArg)
 });
 test!(
     test_shadow_err1,

@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use loam::{
     lair::{
-        chipset::Chipset,
+        chipset::{Chipset, NoChip},
         execute::{QueryRecord, Shard},
         func_chip::FuncChip,
         lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
@@ -19,7 +19,7 @@ use loam::{
         List,
     },
     lurk::{
-        eval::build_lurk_toplevel,
+        eval::build_lurk_toplevel_native,
         zstore::{lurk_zstore, ZPtr},
     },
 };
@@ -47,18 +47,18 @@ fn build_lurk_expr(n: usize) -> String {
     )
 }
 
-fn setup<H: Chipset<BabyBear>>(
+fn setup<C: Chipset<BabyBear>>(
     n: usize,
-    toplevel: &Toplevel<BabyBear, H>,
+    toplevel: &Toplevel<BabyBear, C, NoChip>,
 ) -> (
     List<BabyBear>,
-    FuncChip<'_, BabyBear, H>,
+    FuncChip<'_, BabyBear, C, NoChip>,
     QueryRecord<BabyBear>,
 ) {
     let code = build_lurk_expr(n);
 
     let zstore = &mut lurk_zstore();
-    let ZPtr { tag, digest } = zstore.read(&code).unwrap();
+    let ZPtr { tag, digest } = zstore.read(&code, &Default::default()).unwrap();
 
     let mut record = QueryRecord::new(toplevel);
     record.inject_inv_queries("hash4", toplevel, &zstore.hashes4);
@@ -76,7 +76,7 @@ fn setup<H: Chipset<BabyBear>>(
 fn evaluation(c: &mut Criterion) {
     let arg = get_sum_arg();
     c.bench_function(&format!("sum-evaluation-{arg}"), |b| {
-        let (toplevel, _) = build_lurk_toplevel();
+        let (toplevel, ..) = build_lurk_toplevel_native();
         let (args, lurk_main, record) = setup(arg, &toplevel);
         b.iter_batched(
             || (args.clone(), record.clone()),
@@ -93,7 +93,7 @@ fn evaluation(c: &mut Criterion) {
 fn trace_generation(c: &mut Criterion) {
     let arg = get_sum_arg();
     c.bench_function(&format!("sum-trace-generation-{arg}"), |b| {
-        let (toplevel, _) = build_lurk_toplevel();
+        let (toplevel, ..) = build_lurk_toplevel_native();
         let (args, lurk_main, mut record) = setup(arg, &toplevel);
         toplevel
             .execute(lurk_main.func(), &args, &mut record, None)
@@ -111,7 +111,7 @@ fn trace_generation(c: &mut Criterion) {
 fn e2e(c: &mut Criterion) {
     let arg = get_sum_arg();
     c.bench_function(&format!("sum-e2e-{arg}"), |b| {
-        let (toplevel, _) = build_lurk_toplevel();
+        let (toplevel, ..) = build_lurk_toplevel_native();
         let (args, lurk_main, record) = setup(arg, &toplevel);
 
         b.iter_batched(

@@ -1,3 +1,4 @@
+use either::Either;
 use p3_air::AirBuilder;
 use p3_field::PrimeField32;
 
@@ -45,9 +46,85 @@ pub trait Chipset<F>: Sync {
     ) -> Vec<AB::Expr>;
 }
 
-pub struct Nochip;
+impl<F, C1: Chipset<F>, C2: Chipset<F>> Chipset<F> for &Either<C1, C2> {
+    fn input_size(&self) -> usize {
+        match self {
+            Either::Left(c) => c.input_size(),
+            Either::Right(c) => c.input_size(),
+        }
+    }
 
-impl<F> Chipset<F> for Nochip {
+    fn output_size(&self) -> usize {
+        match self {
+            Either::Left(c) => c.output_size(),
+            Either::Right(c) => c.output_size(),
+        }
+    }
+
+    fn execute(
+        &self,
+        input: &[F],
+        nonce: u32,
+        queries: &mut QueryRecord<F>,
+        requires: &mut Vec<Record>,
+    ) -> Vec<F>
+    where
+        F: PrimeField32,
+    {
+        match self {
+            Either::Left(c) => c.execute(input, nonce, queries, requires),
+            Either::Right(c) => c.execute(input, nonce, queries, requires),
+        }
+    }
+
+    fn execute_simple(&self, input: &[F]) -> Vec<F> {
+        match self {
+            Either::Left(c) => c.execute_simple(input),
+            Either::Right(c) => c.execute_simple(input),
+        }
+    }
+
+    fn witness_size(&self) -> usize {
+        match self {
+            Either::Left(c) => c.witness_size(),
+            Either::Right(c) => c.witness_size(),
+        }
+    }
+
+    fn require_size(&self) -> usize {
+        match self {
+            Either::Left(c) => c.require_size(),
+            Either::Right(c) => c.require_size(),
+        }
+    }
+
+    fn populate_witness(&self, input: &[F], witness: &mut [F]) -> Vec<F> {
+        match self {
+            Either::Left(c) => c.populate_witness(input, witness),
+            Either::Right(c) => c.populate_witness(input, witness),
+        }
+    }
+
+    fn eval<AB: AirBuilder<F = F> + LookupBuilder>(
+        &self,
+        builder: &mut AB,
+        is_real: AB::Expr,
+        input: Vec<AB::Expr>,
+        witness: &[AB::Var],
+        nonce: AB::Expr,
+        requires: &[RequireRecord<AB::Var>],
+    ) -> Vec<AB::Expr> {
+        match self {
+            Either::Left(c) => c.eval(builder, is_real, input, witness, nonce, requires),
+            Either::Right(c) => c.eval(builder, is_real, input, witness, nonce, requires),
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct NoChip;
+
+impl<F> Chipset<F> for NoChip {
     fn input_size(&self) -> usize {
         unimplemented!()
     }

@@ -20,10 +20,10 @@ pub(crate) struct CommData<F: std::hash::Hash + Eq> {
 
 impl<F: std::hash::Hash + Eq + Default + Copy> CommData<F> {
     #[inline]
-    pub(crate) fn new<H: Chipset<F>>(
+    pub(crate) fn new<C: Chipset<F>>(
         secret: ZPtr<F>,
         payload: ZPtr<F>,
-        zstore: &ZStore<F, H>,
+        zstore: &ZStore<F, C>,
     ) -> Self {
         assert_eq!(secret.tag, Tag::BigNum);
         let mut zdag = ZDag::default();
@@ -53,7 +53,7 @@ impl<F: std::hash::Hash + Eq + Default + Copy> CommData<F> {
     }
 
     #[inline]
-    pub(crate) fn commit<H: Chipset<F>>(&self, zstore: &mut ZStore<F, H>) -> ZPtr<F>
+    pub(crate) fn commit<C: Chipset<F>>(&self, zstore: &mut ZStore<F, C>) -> ZPtr<F>
     where
         F: Field,
     {
@@ -61,7 +61,7 @@ impl<F: std::hash::Hash + Eq + Default + Copy> CommData<F> {
     }
 
     #[inline]
-    pub(crate) fn populate_zstore<H: Chipset<F>>(self, zstore: &mut ZStore<F, H>)
+    pub(crate) fn populate_zstore<C: Chipset<F>>(self, zstore: &mut ZStore<F, C>)
     where
         F: Field,
     {

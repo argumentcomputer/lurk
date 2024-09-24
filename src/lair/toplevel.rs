@@ -1,12 +1,16 @@
+use either::Either;
 use p3_field::Field;
 use rustc_hash::FxHashMap;
 
-use super::{bytecode::*, chipset::Chipset, expr::*, map::Map, List, Name};
+use super::{bytecode::*, chipset::Chipset, expr::*, map::Map, FxIndexMap, List, Name};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Toplevel<F, H: Chipset<F>> {
-    pub(crate) map: Map<Name, Func<F>>,
-    pub(crate) chip_map: Map<Name, H>,
+pub struct Toplevel<F, C1: Chipset<F>, C2: Chipset<F>> {
+    /// Lair functions reachable by the `Call` operator
+    pub(crate) func_map: FxIndexMap<Name, Func<F>>,
+    /// Extern chips reachable by the `ExternCall` operator. The two different
+    /// chipset types can be used to encode native and custom chips.
+    pub(crate) chip_map: FxIndexMap<Name, Either<C1, C2>>,
 }
 
 pub(crate) struct FuncInfo {
@@ -15,62 +19,52 @@ pub(crate) struct FuncInfo {
     partial: bool,
 }
 
-impl<F: Field + Ord, H: Chipset<F>> Toplevel<F, H> {
-    pub fn new(funcs: &[FuncE<F>], chip_map: Map<Name, H>) -> Self {
-        let ordered_funcs = Map::from_vec(funcs.iter().map(|func| (func.name, func)).collect());
-        let info_vec = ordered_funcs
+impl<F: Field + Ord, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
+    pub fn new(funcs_exprs: &[FuncE<F>], chip_map: FxIndexMap<Name, Either<C1, C2>>) -> Self {
+        let info_map = funcs_exprs
             .iter()
-            .map(|(name, func)| {
+            .map(|func| {
                 let func_info = FuncInfo {
                     input_size: func.input_params.total_size(),
                     output_size: func.output_size,
                     partial: func.partial,
                 };
-                (*name, func_info)
+                (func.name, func_info)
             })
             .collect();
-        let info_map = Map::from_vec_unsafe(info_vec);
-        let map = Map::from_vec_unsafe(
-            ordered_funcs
-                .iter()
-                .enumerate()
-                .map(|(i, (name, func))| (*name, func.check_and_link(i, &info_map, &chip_map)))
-                .collect(),
-        );
-        Toplevel { map, chip_map }
+        let func_map = funcs_exprs
+            .iter()
+            .enumerate()
+            .map(|(i, func)| (func.name, func.check_and_link(i, &info_map, &chip_map)))
+            .collect();
+        Toplevel { func_map, chip_map }
     }
 
-    pub fn new_pure(funcs: &[FuncE<F>]) -> Self {
-        let chip_map = Map::from_vec(vec![]);
-        Toplevel::new(funcs, chip_map)
+    #[inline]
+    pub fn new_pure(funcs_exprs: &[FuncE<F>]) -> Self {
+        Toplevel::new(funcs_exprs, FxIndexMap::default())
     }
 }
 
-impl<F, H: Chipset<F>> Toplevel<F, H> {
+impl<F, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
     #[inline]
-    pub fn get_by_index(&self, i: usize) -> &Func<F> {
-        self.map
-            .get_index(i)
-            .map(|(_, func)| func)
-            .expect("Index out of bounds")
+    pub fn func_by_index(&self, i: usize) -> &Func<F> {
+        self.func_map.get_index(i).expect("Index out of bounds").1
     }
 
     #[inline]
-    pub fn get_by_name(&self, name: &'static str) -> &Func<F> {
-        self.map.get(&Name(name)).expect("Func not found")
+    pub fn func_by_name(&self, name: &'static str) -> &Func<F> {
+        self.func_map.get(&Name(name)).expect("Func not found")
     }
 
     #[inline]
-    pub fn size(&self) -> usize {
-        self.map.size()
+    pub fn num_funcs(&self) -> usize {
+        self.func_map.len()
     }
 
     #[inline]
-    pub fn get_chip_by_index(&self, i: usize) -> &H {
-        self.chip_map
-            .get_index(i)
-            .map(|(_, func)| func)
-            .expect("Index out of bounds")
+    pub fn chip_by_index(&self, i: usize) -> &Either<C1, C2> {
+        self.chip_map.get_index(i).expect("Index out of bounds").1
     }
 }
 
@@ -81,13 +75,13 @@ type BindMap = FxHashMap<Var, (List<usize>, usize)>;
 type UsedMap = FxHashMap<(Var, usize), bool>;
 
 #[inline]
-fn bind_new<H>(var: &Var, ctx: &mut CheckCtx<'_, H>) {
+fn bind_new<C1, C2>(var: &Var, ctx: &mut CheckCtx<'_, C1, C2>) {
     let idxs = (0..var.size).map(|_| ctx.new_var()).collect();
     bind(var, idxs, ctx);
 }
 
 #[inline]
-fn bind<H>(var: &Var, idxs: List<usize>, ctx: &mut CheckCtx<'_, H>) {
+fn bind<C1, C2>(var: &Var, idxs: List<usize>, ctx: &mut CheckCtx<'_, C1, C2>) {
     ctx.bind_map.insert(*var, (idxs, ctx.block_ident));
     if let Some(used) = ctx.used_map.insert((*var, ctx.block_ident), false) {
         let ch = var.name.chars().next().expect("Empty var name");
@@ -99,7 +93,7 @@ fn bind<H>(var: &Var, idxs: List<usize>, ctx: &mut CheckCtx<'_, H>) {
 }
 
 #[inline]
-fn use_var<'a, H>(var: &Var, ctx: &'a mut CheckCtx<'_, H>) -> &'a [usize] {
+fn use_var<'a, C1, C2>(var: &Var, ctx: &'a mut CheckCtx<'_, C1, C2>) -> &'a [usize] {
     let (idxs, block_idx) = ctx
         .bind_map
         .get(var)
@@ -112,7 +106,7 @@ fn use_var<'a, H>(var: &Var, ctx: &'a mut CheckCtx<'_, H>) -> &'a [usize] {
     idxs
 }
 
-struct CheckCtx<'a, H> {
+struct CheckCtx<'a, C1, C2> {
     var_index: usize,
     block_ident: usize,
     return_ident: usize,
@@ -121,11 +115,11 @@ struct CheckCtx<'a, H> {
     partial: bool,
     bind_map: BindMap,
     used_map: UsedMap,
-    info_map: &'a Map<Name, FuncInfo>,
-    chip_map: &'a Map<Name, H>,
+    info_map: &'a FxIndexMap<Name, FuncInfo>,
+    chip_map: &'a FxIndexMap<Name, Either<C1, C2>>,
 }
 
-impl<'a, H> CheckCtx<'a, H> {
+impl<'a, C1, C2> CheckCtx<'a, C1, C2> {
     fn save_bind_state(&mut self) -> (usize, BindMap) {
         (self.var_index, self.bind_map.clone())
     }
@@ -145,11 +139,11 @@ impl<'a, H> CheckCtx<'a, H> {
 impl<F: Field + Ord> FuncE<F> {
     /// Checks if a named `Func` is correct, and produces an index-based `Func`
     /// by replacing names with indices
-    fn check_and_link<H: Chipset<F>>(
+    fn check_and_link<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         func_index: usize,
-        info_map: &Map<Name, FuncInfo>,
-        chip_map: &Map<Name, H>,
+        info_map: &FxIndexMap<Name, FuncInfo>,
+        chip_map: &FxIndexMap<Name, Either<C1, C2>>,
     ) -> Func<F> {
         let ctx = &mut CheckCtx {
             var_index: 0,
@@ -187,10 +181,10 @@ impl<F: Field + Ord> FuncE<F> {
 }
 
 impl<F: Field + Ord> BlockE<F> {
-    fn check_and_link_with_ops<H: Chipset<F>>(
+    fn check_and_link_with_ops<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         mut ops: Vec<Op<F>>,
-        ctx: &mut CheckCtx<'_, H>,
+        ctx: &mut CheckCtx<'_, C1, C2>,
     ) -> Block<F> {
         self.ops
             .iter()
@@ -212,13 +206,19 @@ impl<F: Field + Ord> BlockE<F> {
         }
     }
 
-    fn check_and_link<H: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, H>) -> Block<F> {
+    fn check_and_link<C1: Chipset<F>, C2: Chipset<F>>(
+        &self,
+        ctx: &mut CheckCtx<'_, C1, C2>,
+    ) -> Block<F> {
         self.check_and_link_with_ops(Vec::new(), ctx)
     }
 }
 
 impl<F: Field + Ord> CtrlE<F> {
-    fn check_and_link<H: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, H>) -> Ctrl<F> {
+    fn check_and_link<C1: Chipset<F>, C2: Chipset<F>>(
+        &self,
+        ctx: &mut CheckCtx<'_, C1, C2>,
+    ) -> Ctrl<F> {
         match &self {
             CtrlE::Return(return_vars) => {
                 let total_size = return_vars.total_size();
@@ -348,7 +348,11 @@ impl<F: Field + Ord> CtrlE<F> {
 }
 
 impl<F: Field + Ord> OpE<F> {
-    fn check_and_link<H: Chipset<F>>(&self, ops: &mut Vec<Op<F>>, ctx: &mut CheckCtx<'_, H>) {
+    fn check_and_link<C1: Chipset<F>, C2: Chipset<F>>(
+        &self,
+        ops: &mut Vec<Op<F>>,
+        ctx: &mut CheckCtx<'_, C1, C2>,
+    ) {
         match self {
             OpE::AssertNe(a, b) => {
                 assert_eq!(a.size, b.size);
@@ -457,7 +461,7 @@ impl<F: Field + Ord> OpE<F> {
                     input_size,
                     output_size,
                     partial,
-                } = ctx.info_map.get_index(name_idx).unwrap().1;
+                } = *ctx.info_map.get_index(name_idx).unwrap().1;
                 if partial {
                     assert!(ctx.partial);
                 }
@@ -476,7 +480,7 @@ impl<F: Field + Ord> OpE<F> {
                     input_size,
                     output_size,
                     partial,
-                } = ctx.info_map.get_index(name_idx).unwrap().1;
+                } = *ctx.info_map.get_index(name_idx).unwrap().1;
                 if partial {
                     assert!(ctx.partial);
                 }
@@ -534,10 +538,10 @@ impl<F: Field + Ord> OpE<F> {
     }
 }
 
-fn push_const_array<F: Field + Ord, H>(
+fn push_const_array<F: Field + Ord, C1, C2>(
     fs: &[F],
     ops: &mut Vec<Op<F>>,
-    ctx: &mut CheckCtx<'_, H>,
+    ctx: &mut CheckCtx<'_, C1, C2>,
 ) -> List<usize> {
     fs.iter()
         .map(|f| {

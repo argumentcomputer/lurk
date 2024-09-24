@@ -1040,7 +1040,7 @@ mod test {
     }
 
     fn read_wideptr(zstore: &mut ZStore<BabyBear, LurkChip>, src: &str) -> WidePtr {
-        let ZPtr { tag, digest } = zstore.read(src).unwrap();
+        let ZPtr { tag, digest } = zstore.read(src, &Default::default()).unwrap();
         wide_ptr(tag.elt(), digest)
     }
 

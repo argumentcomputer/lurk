@@ -9,6 +9,12 @@ pub struct Var {
     pub size: usize,
 }
 
+impl Var {
+    pub fn atom(name: &'static str) -> Self {
+        Self { name, size: 1 }
+    }
+}
+
 impl std::fmt::Display for Var {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", &self.name)
@@ -37,6 +43,12 @@ impl VarList {
 
 impl<const N: usize> From<[Var; N]> for VarList {
     fn from(value: [Var; N]) -> Self {
+        Self(value.into())
+    }
+}
+
+impl From<Vec<Var>> for VarList {
+    fn from(value: Vec<Var>) -> Self {
         Self(value.into())
     }
 }
@@ -109,6 +121,16 @@ pub struct BlockE<F> {
     pub ctrl: CtrlE<F>,
 }
 
+impl<F> BlockE<F> {
+    #[inline]
+    pub fn no_op(ctrl: CtrlE<F>) -> Self {
+        Self {
+            ops: [].into(),
+            ctrl,
+        }
+    }
+}
+
 /// Encodes the logical flow of a Lair program
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CtrlE<F> {
@@ -124,13 +146,30 @@ pub enum CtrlE<F> {
     Return(VarList),
 }
 
-/// Represents the cases for `CtrlE::Match`, containing the branches for successfull
+impl<F> CtrlE<F> {
+    #[inline]
+    pub fn return_vars<const N: usize>(vars: [Var; N]) -> Self {
+        Self::Return(vars.into())
+    }
+}
+
+/// Represents the cases for `CtrlE::Match`, containing the branches for successful
 /// matches and an optional default case in case there's no match. Each code path
 /// is encoded as its own block
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CasesE<K, F> {
     pub branches: Vec<(K, BlockE<F>)>,
     pub default: Option<Box<BlockE<F>>>,
+}
+
+impl<K, F> CasesE<K, F> {
+    #[inline]
+    pub fn no_default(branches: Vec<(K, BlockE<F>)>) -> Self {
+        Self {
+            branches,
+            default: None,
+        }
+    }
 }
 
 /// Abstraction for a Lair function, which has a name, the input variables, the

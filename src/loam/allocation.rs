@@ -575,7 +575,7 @@ mod test {
     }
 
     fn read_wideptr(zstore: &mut ZStore<BabyBear, LurkChip>, src: &str) -> WidePtr {
-        let ZPtr { tag, digest } = zstore.read(src).unwrap();
+        let ZPtr { tag, digest } = zstore.read(src, &Default::default()).unwrap();
         wide_ptr(tag.elt(), digest)
     }
 
@@ -636,7 +636,9 @@ mod test {
 
         // Determine whether we want to use the intended in/out, or attack the program with the bad in/out
         if let Some((bad_input, bad_output)) = bad_input_output {
-            let bad_zptr = zstore.read(bad_input).expect("failed to read");
+            let bad_zptr = zstore
+                .read(bad_input, &Default::default())
+                .expect("failed to read");
             let bad_input = store.zptr_ptr(&bad_zptr).unwrap();
             let bad_output = vec![(read_wideptr(&mut zstore, bad_output),)];
 

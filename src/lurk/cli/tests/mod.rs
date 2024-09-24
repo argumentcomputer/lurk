@@ -6,11 +6,11 @@ use crate::lurk::cli::{
 #[test]
 fn test_meta_commands() {
     set_config(Config::default());
-    let mut repl = Repl::new();
+    let mut repl = Repl::new_native();
     assert!(repl
         .load_file("src/lurk/cli/tests/first.lurk".into(), false)
         .is_ok());
-    let mut repl = Repl::new();
+    let mut repl = Repl::new_native();
     assert!(repl
         .load_file("src/lurk/cli/tests/second.lurk".into(), false)
         .is_ok());
@@ -21,11 +21,11 @@ fn test_meta_commands() {
 #[test]
 fn test_meta_commands_with_proofs() {
     set_config(Config::default());
-    let mut repl = Repl::new();
+    let mut repl = Repl::new_native();
     assert!(repl
         .load_file("src/lurk/cli/tests/prove.lurk".into(), false)
         .is_ok());
-    let mut repl = Repl::new();
+    let mut repl = Repl::new_native();
     assert!(repl
         .load_file("src/lurk/cli/tests/verify.lurk".into(), false)
         .is_ok());
@@ -36,6 +36,6 @@ fn test_meta_commands_with_proofs() {
 #[test]
 fn test_lib() {
     set_config(Config::default());
-    let mut repl = Repl::new();
+    let mut repl = Repl::new_native();
     assert!(repl.load_file("lib/tests.lurk".into(), false).is_ok());
 }

@@ -14,10 +14,10 @@ pub(crate) struct ZDag<F: std::hash::Hash + Eq>(FxHashMap<ZPtr<F>, ZPtrType<F>>)
 impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
     /// Traverses a ZStore DAG, starting from a given `ZPtr`, while populating
     /// itself.
-    pub(crate) fn populate_with<'a, H: Chipset<F>>(
+    pub(crate) fn populate_with<'a, C: Chipset<F>>(
         &mut self,
         zptr: &'a ZPtr<F>,
-        zstore: &'a ZStore<F, H>,
+        zstore: &'a ZStore<F, C>,
         cache: &mut FxHashSet<&'a ZPtr<F>>,
     ) {
         if cache.contains(zptr) {
@@ -44,10 +44,10 @@ impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
     }
 
     /// Calls `populate_with` for a sequence of `ZPtr`s
-    pub(crate) fn populate_with_many<'a, H: Chipset<F>>(
+    pub(crate) fn populate_with_many<'a, C: Chipset<F>>(
         &mut self,
         zptrs: impl IntoIterator<Item = &'a ZPtr<F>>,
-        zstore: &ZStore<F, H>,
+        zstore: &ZStore<F, C>,
     ) where
         F: 'a,
     {
@@ -58,7 +58,7 @@ impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
     }
 
     /// Moves its data to a target ZStore
-    pub(crate) fn populate_zstore<H: Chipset<F>>(self, zstore: &mut ZStore<F, H>)
+    pub(crate) fn populate_zstore<C: Chipset<F>>(self, zstore: &mut ZStore<F, C>)
     where
         F: AbstractField + Copy,
     {

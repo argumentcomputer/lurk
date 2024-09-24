@@ -258,11 +258,9 @@ pub fn mem_index_from_len(len: usize) -> usize {
 
 impl<F: PrimeField32> QueryRecord<F> {
     #[inline]
-    pub fn new<H: Chipset<F>>(toplevel: &Toplevel<F, H>) -> Self {
-        let mem_queries = vec![FxIndexMap::default(); NUM_MEM_TABLES];
-        let func_queries = vec![FxIndexMap::default(); toplevel.size()];
+    pub fn new<C1: Chipset<F>, C2: Chipset<F>>(toplevel: &Toplevel<F, C1, C2>) -> Self {
         let inv_func_queries = toplevel
-            .map
+            .func_map
             .iter()
             .map(|(_, func)| {
                 if func.invertible {
@@ -274,9 +272,9 @@ impl<F: PrimeField32> QueryRecord<F> {
             .collect();
         Self {
             public_values: None,
-            func_queries,
+            func_queries: vec![FxIndexMap::default(); toplevel.num_funcs()],
             inv_func_queries,
-            mem_queries,
+            mem_queries: vec![FxIndexMap::default(); NUM_MEM_TABLES],
             bytes: BytesRecord::default(),
             emitted: vec![],
             debug_data: DebugData::default(),
@@ -303,14 +301,15 @@ impl<F: PrimeField32> QueryRecord<F> {
         I: Clone + Into<List<F>> + 'a,
         O: Clone + Into<List<F>> + 'a,
         T: IntoIterator<Item = (&'a I, &'a O)>,
-        H: Chipset<F>,
+        C1: Chipset<F>,
+        C2: Chipset<F>,
     >(
         &mut self,
         name: &'static str,
-        toplevel: &Toplevel<F, H>,
+        toplevel: &Toplevel<F, C1, C2>,
         new_queries_data: T,
     ) {
-        let func = toplevel.get_by_name(name);
+        let func = toplevel.func_by_name(name);
         let inv_func_queries = self.inv_func_queries[func.index]
             .as_mut()
             .expect("Inverse query map not found");
@@ -325,14 +324,15 @@ impl<F: PrimeField32> QueryRecord<F> {
         I: Into<List<F>>,
         O: Into<List<F>>,
         T: IntoIterator<Item = (I, O)>,
-        H: Chipset<F>,
+        C1: Chipset<F>,
+        C2: Chipset<F>,
     >(
         &mut self,
         name: &'static str,
-        toplevel: &Toplevel<F, H>,
+        toplevel: &Toplevel<F, C1, C2>,
         new_queries_data: T,
     ) {
-        let func = toplevel.get_by_name(name);
+        let func = toplevel.func_by_name(name);
         let inv_func_queries = self.inv_func_queries[func.index]
             .as_mut()
             .expect("Inverse query map not found");
@@ -341,12 +341,12 @@ impl<F: PrimeField32> QueryRecord<F> {
         }
     }
 
-    pub fn get_inv_queries<H: Chipset<F>>(
+    pub fn get_inv_queries<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         name: &'static str,
-        toplevel: &Toplevel<F, H>,
+        toplevel: &Toplevel<F, C1, C2>,
     ) -> &InvQueryMap<F> {
-        let func = toplevel.get_by_name(name);
+        let func = toplevel.func_by_name(name);
         self.inv_func_queries[func.index]
             .as_ref()
             .expect("Inverse query map not found")
@@ -372,7 +372,7 @@ impl<F: PrimeField32> QueryRecord<F> {
     }
 }
 
-impl<F: PrimeField32, H: Chipset<F>> Toplevel<F, H> {
+impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
     pub fn execute(
         &self,
         func: &Func<F>,
@@ -399,7 +399,7 @@ impl<F: PrimeField32, H: Chipset<F>> Toplevel<F, H> {
         queries: &mut QueryRecord<F>,
         dbg_func_idx: Option<usize>,
     ) -> Result<List<F>> {
-        let func = self.get_by_name(name);
+        let func = self.func_by_name(name);
         self.execute(func, args, queries, dbg_func_idx)
     }
 
@@ -411,7 +411,7 @@ impl<F: PrimeField32, H: Chipset<F>> Toplevel<F, H> {
         record: &mut QueryRecord<F>,
         dbg_func_idx: Option<usize>,
     ) -> Result<List<F>> {
-        let func = self.get_by_index(func_idx);
+        let func = self.func_by_index(func_idx);
         self.execute(func, args, record, dbg_func_idx)
     }
 }
@@ -433,10 +433,10 @@ struct CallerState<F> {
 }
 
 impl<F: PrimeField32> Func<F> {
-    fn execute<H: Chipset<F>>(
+    fn execute<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         args: &[F],
-        toplevel: &Toplevel<F, H>,
+        toplevel: &Toplevel<F, C1, C2>,
         queries: &mut QueryRecord<F>,
         dbg_func_idx: Option<usize>,
     ) -> Result<(List<F>, u32)> {
@@ -507,7 +507,7 @@ impl<F: PrimeField32> Func<F> {
                         };
                         map.extend(out);
                         result.new_lookup(nonce, &mut requires);
-                        if partial && toplevel.get_by_index(*callee_index).partial {
+                        if partial && toplevel.func_by_index(*callee_index).partial {
                             depths.push(result.depth);
                         }
                         if dbg_func_idx == Some(*callee_index) {
@@ -546,7 +546,7 @@ impl<F: PrimeField32> Func<F> {
                         // prepare outer variables to go into the new func scope
                         func_index = *callee_index;
                         nonce = callee_nonce;
-                        let func = toplevel.get_by_index(func_index);
+                        let func = toplevel.func_by_index(func_index);
                         partial = func.partial;
                         if dbg_func_idx == Some(func_index) {
                             queries.debug_data.entries.push(DebugEntry {
@@ -582,7 +582,7 @@ impl<F: PrimeField32> Func<F> {
                         assert_eq!(out_memoized, &out);
                         map.extend(inp);
                         result.new_lookup(nonce, &mut requires);
-                        if partial && toplevel.get_by_index(*callee_index).partial {
+                        if partial && toplevel.func_by_index(*callee_index).partial {
                             depths.push(result.depth);
                         }
                         if dbg_func_idx == Some(*callee_index) {
@@ -615,7 +615,7 @@ impl<F: PrimeField32> Func<F> {
                         });
                         func_index = *callee_index;
                         nonce = callee_nonce;
-                        let func = toplevel.get_by_index(func_index);
+                        let func = toplevel.func_by_index(func_index);
                         partial = func.partial;
                         if dbg_func_idx == Some(func_index) {
                             queries.debug_data.entries.push(DebugEntry {
@@ -664,7 +664,7 @@ impl<F: PrimeField32> Func<F> {
                 }
                 ExecEntry::Op(Op::ExternCall(chip_idx, input)) => {
                     let input: List<_> = input.iter().map(|a| map[*a]).collect();
-                    let chip = toplevel.get_chip_by_index(*chip_idx);
+                    let chip = toplevel.chip_by_index(*chip_idx);
                     map.extend(chip.execute(&input, nonce as u32, queries, &mut requires));
                 }
                 ExecEntry::Op(Op::Emit(xs)) => {
@@ -788,7 +788,7 @@ mod tests {
     use crate::{
         func,
         lair::{
-            chipset::Nochip,
+            chipset::NoChip,
             demo_toplevel,
             execute::{QueryRecord, Shard},
             field_from_u32,
@@ -805,18 +805,18 @@ mod tests {
     fn lair_execute_test() {
         let toplevel = demo_toplevel::<F>();
 
-        let factorial = toplevel.get_by_name("factorial");
+        let factorial = toplevel.func_by_name("factorial");
         let args = &[F::from_canonical_u32(5)];
         let queries = &mut QueryRecord::new(&toplevel);
         let out = toplevel.execute(factorial, args, queries, None).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(120)]);
 
-        let even = toplevel.get_by_name("even");
+        let even = toplevel.func_by_name("even");
         let args = &[F::from_canonical_u32(7)];
         let out = toplevel.execute(even, args, queries, None).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(0)]);
 
-        let odd = toplevel.get_by_name("odd");
+        let odd = toplevel.func_by_name("odd");
         let args = &[F::from_canonical_u32(4)];
         let out = toplevel.execute(odd, args, queries, None).unwrap();
         assert_eq!(out.as_ref(), [F::from_canonical_u32(0)]);
@@ -826,7 +826,7 @@ mod tests {
     fn lair_execute_iter_test() {
         let toplevel = demo_toplevel::<F>();
 
-        let fib = toplevel.get_by_name("fib");
+        let fib = toplevel.func_by_name("fib");
         let args = &[F::from_canonical_u32(100000)];
         let queries = &mut QueryRecord::new(&toplevel);
         let out = toplevel.execute(fib, args, queries, None).unwrap();
@@ -841,8 +841,8 @@ mod tests {
                 return n
             }
         );
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[test_e]);
-        let test = toplevel.get_by_name("test");
+        let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[test_e]);
+        let test = toplevel.func_by_name("test");
         let args = &[F::from_canonical_u32(20), F::from_canonical_u32(4)];
         let queries = &mut QueryRecord::new(&toplevel);
         let out = toplevel.execute(test, args, queries, None).unwrap();
@@ -859,8 +859,8 @@ mod tests {
                 return x
             }
         );
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[test_e]);
-        let test = toplevel.get_by_name("test");
+        let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[test_e]);
+        let test = toplevel.func_by_name("test");
         let args = &[F::from_canonical_u32(10)];
         let queries = &mut QueryRecord::new(&toplevel);
         let out = toplevel.execute(test, args, queries, None).unwrap();
@@ -889,9 +889,9 @@ mod tests {
                 return (a0, a1, a2, a3, x)
             }
         );
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[polynomial_e, inverse_e]);
-        let polynomial = toplevel.get_by_name("polynomial");
-        let inverse = toplevel.get_by_name("inverse");
+        let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[polynomial_e, inverse_e]);
+        let polynomial = toplevel.func_by_name("polynomial");
+        let inverse = toplevel.func_by_name("inverse");
         let args = [1, 3, 5, 7, 20]
             .into_iter()
             .map(field_from_u32)
@@ -930,15 +930,15 @@ mod tests {
                 return res
             }
         );
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[test1_e, test2_e, test3_e]);
-        let test = toplevel.get_by_name("test1");
+        let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[test1_e, test2_e, test3_e]);
+        let test = toplevel.func_by_name("test1");
         let f = F::from_canonical_u32;
         let args = &[f(1), f(2), f(3), f(4), f(5), f(6), f(7)];
         let queries = &mut QueryRecord::new(&toplevel);
         let out = toplevel.execute(test, args, queries, None).unwrap();
         assert_eq!(out.as_ref(), [f(5), f(7), f(9)]);
 
-        let test = toplevel.get_by_name("test3");
+        let test = toplevel.func_by_name("test3");
         let f = F::from_canonical_u32;
         let args = &[f(4), f(9), f(21), f(10)];
         let queries = &mut QueryRecord::new(&toplevel);
@@ -962,8 +962,8 @@ mod tests {
             }
         );
 
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[half_e, double_e]);
-        let half = toplevel.get_by_name("half");
+        let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[half_e, double_e]);
+        let half = toplevel.func_by_name("half");
         let half_chip = FuncChip::from_name("half", &toplevel);
         let double_chip = FuncChip::from_name("double", &toplevel);
 
@@ -1015,8 +1015,8 @@ mod tests {
                 return b
             }
         );
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[partial_e, nonpartial_e]);
-        let nonpartial = toplevel.get_by_name("bar");
+        let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[partial_e, nonpartial_e]);
+        let nonpartial = toplevel.func_by_name("bar");
         let args = [1].into_iter().map(field_from_u32).collect::<List<_>>();
         let queries = &mut QueryRecord::new(&toplevel);
         let _ = toplevel.execute(nonpartial, &args, queries, None);

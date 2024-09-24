@@ -490,7 +490,7 @@ impl Store {
     pub fn fmt(&self, zstore: &ZStore<LE, LurkChip>, ptr: &PPtr) -> String {
         match ptr.tag() {
             Tag::Num => format!("{}n", ptr.addr()),
-            Tag::Builtin | Tag::BigNum | Tag::Sym | Tag::Key => self
+            Tag::Builtin | Tag::BigNum | Tag::Sym | Tag::Key | Tag::Coroutine => self
                 .pptr_digest
                 .get(ptr)
                 .map(|digest| {
@@ -538,7 +538,7 @@ pub fn initial_builtin_relation() -> Vec<(Wide, Dual<LEWrap>)> {
         .iter()
         .enumerate()
         .map(|(i, name)| {
-            let ZPtr { tag, digest } = zstore.intern_symbol(name);
+            let ZPtr { tag, digest } = zstore.intern_symbol_no_lang(name);
 
             (Wide(digest), Dual(LEWrap(LE::from_canonical_u64(i as u64))))
         })

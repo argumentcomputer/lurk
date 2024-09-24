@@ -16,14 +16,14 @@ pub(crate) struct LurkData<F: std::hash::Hash + Eq> {
 
 impl<F: std::hash::Hash + Eq + Default + Copy> LurkData<F> {
     #[inline]
-    pub(crate) fn new<H: Chipset<F>>(zptr: ZPtr<F>, zstore: &ZStore<F, H>) -> Self {
+    pub(crate) fn new<C: Chipset<F>>(zptr: ZPtr<F>, zstore: &ZStore<F, C>) -> Self {
         let mut zdag = ZDag::default();
         zdag.populate_with(&zptr, zstore, &mut Default::default());
         Self { zptr, zdag }
     }
 
     #[inline]
-    pub(crate) fn populate_zstore<H: Chipset<F>>(self, zstore: &mut ZStore<F, H>) -> ZPtr<F>
+    pub(crate) fn populate_zstore<C: Chipset<F>>(self, zstore: &mut ZStore<F, C>) -> ZPtr<F>
     where
         F: AbstractField,
     {

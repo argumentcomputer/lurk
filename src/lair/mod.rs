@@ -4,7 +4,7 @@ use rustc_hash::FxBuildHasher;
 
 use crate::func;
 
-use self::{chipset::Nochip, toplevel::Toplevel};
+use self::{chipset::NoChip, toplevel::Toplevel};
 
 pub mod air;
 pub mod bytecode;
@@ -21,7 +21,7 @@ pub mod relations;
 pub mod toplevel;
 pub mod trace;
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct Name(pub &'static str);
 
 impl std::fmt::Display for Name {
@@ -50,7 +50,7 @@ pub type List<T> = Box<[T]>;
 pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 
 #[allow(dead_code)]
-pub(crate) fn demo_toplevel<F: Field + Ord>() -> Toplevel<F, Nochip> {
+pub(crate) fn demo_toplevel<F: Field + Ord>() -> Toplevel<F, NoChip, NoChip> {
     let factorial_e = func!(
     fn factorial(n): [1] {
         let one = 1;

@@ -13,7 +13,7 @@ use std::time::Instant;
 
 use loam::{
     lair::{
-        chipset::Chipset,
+        chipset::{Chipset, NoChip},
         execute::{QueryRecord, Shard},
         func_chip::FuncChip,
         lair_chip::{build_chip_vector, LairMachineProgram},
@@ -21,7 +21,7 @@ use loam::{
         List,
     },
     lurk::{
-        eval::build_lurk_toplevel,
+        eval::build_lurk_toplevel_native,
         zstore::{lurk_zstore, ZPtr},
     },
 };
@@ -45,17 +45,17 @@ fn build_lurk_expr(arg: usize) -> String {
     )
 }
 
-fn setup<H: Chipset<BabyBear>>(
+fn setup<C: Chipset<BabyBear>>(
     arg: usize,
-    toplevel: &Toplevel<BabyBear, H>,
+    toplevel: &Toplevel<BabyBear, C, NoChip>,
 ) -> (
     List<BabyBear>,
-    FuncChip<'_, BabyBear, H>,
+    FuncChip<'_, BabyBear, C, NoChip>,
     QueryRecord<BabyBear>,
 ) {
     let code = build_lurk_expr(arg);
     let zstore = &mut lurk_zstore();
-    let ZPtr { tag, digest } = zstore.read(&code).unwrap();
+    let ZPtr { tag, digest } = zstore.read(&code, &Default::default()).unwrap();
 
     let mut record = QueryRecord::new(toplevel);
     record.inject_inv_queries("hash4", toplevel, &zstore.hashes4);
@@ -74,7 +74,7 @@ fn setup<H: Chipset<BabyBear>>(
 #[test]
 fn fib_e2e() {
     let arg = get_fib_arg();
-    let (toplevel, _) = build_lurk_toplevel();
+    let (toplevel, ..) = build_lurk_toplevel_native();
     let (args, lurk_main, mut record) = setup(arg, &toplevel);
     let start_time = Instant::now();
 

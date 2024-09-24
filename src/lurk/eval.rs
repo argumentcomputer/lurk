@@ -1,28 +1,31 @@
-use indexmap::IndexMap;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField32};
-use rustc_hash::FxBuildHasher;
+use rustc_hash::FxHashSet;
 use strum::{EnumCount, EnumIter};
 
 use crate::{
     func,
     lair::{
-        expr::{BlockE, CtrlE, FuncE, OpE, Var},
+        chipset::{Chipset, NoChip},
+        expr::{BlockE, CasesE, CtrlE, FuncE, OpE, Var},
         toplevel::Toplevel,
-        List, Name,
+        FxIndexMap, List, Name,
     },
     lurk::big_num::field_elts_to_biguint,
 };
 
 use super::{
     chipset::{lurk_chip_map, LurkChip},
+    lang::{Coroutine, Lang},
     state::{builtin_sym, lurk_sym, BUILTIN_SYMBOLS, LURK_SYMBOLS},
+    symbol::Symbol,
     tag::Tag,
     zstore::{lurk_zstore, ZStore, DIGEST_SIZE},
 };
 
+/// `usize` wrapper in order to implement `to_field`
 pub struct DigestIndex(usize);
 
 impl DigestIndex {
@@ -31,79 +34,103 @@ impl DigestIndex {
     }
 }
 
+/// Tags that are internal to the VM
 #[repr(usize)]
 #[derive(Clone, Copy, EnumIter)]
-enum ReservedTag {
+pub enum InternalTag {
     Nil = 0,
     T,
 }
 
-impl ReservedTag {
+impl InternalTag {
     /// Starts from where `Tag` ends
-    fn to_field<F: AbstractField>(self) -> F {
+    pub fn to_field<F: AbstractField>(self) -> F {
         F::from_canonical_usize(Tag::COUNT + self as usize)
     }
 }
 
-pub struct Digests<'a, F>(IndexMap<&'a str, List<F>, FxBuildHasher>);
+/// Keeps track of symbols digests to be allocated in memory, following the same
+/// order of insertion (hence an `IndexMap`)
+pub struct SymbolsDigests<F>(FxIndexMap<Symbol, List<F>>);
 
-impl<'a> Digests<'a, BabyBear> {
-    fn new(zstore: &mut ZStore<BabyBear, LurkChip>) -> Self {
-        let mut map = IndexMap::default();
+impl SymbolsDigests<BabyBear> {
+    fn new(lang_symbols: &FxHashSet<Symbol>, zstore: &mut ZStore<BabyBear, LurkChip>) -> Self {
+        let mut map = FxIndexMap::default();
         for name in LURK_SYMBOLS {
-            let zptr = zstore.intern_symbol(&lurk_sym(name));
+            let symbol = lurk_sym(name);
+            let zptr = zstore.intern_symbol(&symbol, lang_symbols);
             assert_eq!(zptr.tag, Tag::Sym);
-            map.insert(name, zptr.digest.into());
+            map.insert(symbol, zptr.digest.into());
         }
         for name in BUILTIN_SYMBOLS {
-            let zptr = zstore.intern_symbol(&builtin_sym(name));
+            let symbol = builtin_sym(name);
+            let zptr = zstore.intern_symbol(&symbol, lang_symbols);
             assert_eq!(zptr.tag, Tag::Builtin);
-            map.insert(name, zptr.digest.into());
+            map.insert(symbol, zptr.digest.into());
+        }
+        for symbol in lang_symbols {
+            let zptr = zstore.intern_symbol(symbol, lang_symbols);
+            assert_eq!(zptr.tag, Tag::Coroutine);
+            assert!(
+                map.insert(symbol.clone(), zptr.digest.into()).is_none(),
+                "{symbol} conflicts with Lurk's native symbols"
+            );
         }
         Self(map)
     }
 }
 
-impl<'a, F> Digests<'a, F> {
-    fn ptr(&self, name: &'a str) -> DigestIndex {
+impl<F> SymbolsDigests<F> {
+    fn symbol_ptr(&self, symbol: &Symbol) -> DigestIndex {
         // + 1 because available memory starts from 1 (0 is reserved)
-        DigestIndex(self.0.get_index_of(name).expect("Unknown symbol name") + 1)
+        DigestIndex(self.0.get_index_of(symbol).expect("Unknown symbol name") + 1)
     }
 
-    fn digest(&self, name: &'a str) -> &List<F> {
-        self.0.get(name).expect("Unknown symbol name")
+    fn lurk_symbol_ptr(&self, name: &str) -> DigestIndex {
+        self.symbol_ptr(&lurk_sym(name))
+    }
+
+    fn builtin_symbol_ptr(&self, name: &str) -> DigestIndex {
+        self.symbol_ptr(&builtin_sym(name))
+    }
+
+    fn symbol_digest(&self, symbol: &Symbol) -> &List<F> {
+        self.0.get(symbol).expect("Unknown symbol name")
+    }
+
+    fn lurk_symbol_digest(&self, name: &str) -> &List<F> {
+        self.symbol_digest(&lurk_sym(name))
     }
 }
 
-/// Creates a `Toplevel` with the functions used for Lurk evaluation, also returning
-/// a `ZStore` with the Lurk symbols already interned.
-#[inline]
-pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, LurkChip>) {
-    let mut zstore = lurk_zstore();
-    let digests = Digests::new(&mut zstore);
-    let funcs = &[
+fn native_lurk_funcs<F: PrimeField32>(
+    digests: &SymbolsDigests<F>,
+    coroutines: &FxIndexMap<Symbol, Coroutine<F>>,
+) -> [FuncE<F>; 34] {
+    [
         lurk_main(),
-        preallocate_symbols(&digests),
+        preallocate_symbols(digests),
         eval(),
-        eval_builtin_expr(&digests),
-        eval_opening_unop(&digests),
+        eval_builtin_expr(digests),
+        eval_coroutine_expr(digests, coroutines),
+        eval_opening_unop(digests),
         eval_hide(),
-        eval_unop(&digests),
-        eval_binop_num(&digests),
-        eval_binop_misc(&digests),
+        eval_unop(digests),
+        eval_binop_num(digests),
+        eval_binop_misc(digests),
         eval_begin(),
         eval_list(),
         coerce_if_sym(),
         open_comm(),
-        equal(&digests),
+        equal(digests),
         equal_inner(),
-        car_cdr(&digests),
+        car_cdr(digests),
         eval_let(),
         eval_letrec(),
         apply(),
         env_lookup(),
-        ingress(&digests),
-        egress(&digests),
+        ingress(digests),
+        egress(digests),
         hash3(),
         hash4(),
         hash5(),
@@ -115,10 +142,50 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, 
         u64_iszero(),
         digest_equal(),
         big_num_lessthan(),
-    ];
-    let lurk_chip_map = lurk_chip_map();
-    let toplevel = Toplevel::new(funcs, lurk_chip_map);
-    (toplevel, zstore)
+    ]
+}
+
+/// Creates a `Toplevel` with the functions used for Lurk evaluation and returns,
+/// along with it:
+/// * A `ZStore` with the Lurk (and `Lang`) symbols already interned
+/// * All the `Lang` symbols in a `FxHashSet`
+pub fn build_lurk_toplevel<C2: Chipset<BabyBear>>(
+    lang: Lang<BabyBear, C2>,
+) -> (
+    Toplevel<BabyBear, LurkChip, C2>,
+    ZStore<BabyBear, LurkChip>,
+    FxHashSet<Symbol>,
+) {
+    let mut zstore = lurk_zstore();
+    let lang_symbols = lang.coroutines().keys().cloned().collect();
+    let digests = SymbolsDigests::new(&lang_symbols, &mut zstore);
+    let (coroutines, gadgets) = lang.into_parts();
+    let mut func_expr_map: FxIndexMap<_, _> = native_lurk_funcs(&digests, &coroutines)
+        .into_iter()
+        .map(|func_expr| (func_expr.name, func_expr))
+        .collect();
+    for coroutine in coroutines.into_values() {
+        let Coroutine { func_expr, .. } = coroutine;
+        let name = func_expr.name;
+        assert!(
+            !func_expr_map.contains_key(&name),
+            "Name conflict with native function {name}"
+        );
+        func_expr_map.insert(name, func_expr);
+    }
+    let funcs_exprs: Vec<_> = func_expr_map.into_values().collect();
+    let lurk_chip_map = lurk_chip_map(gadgets);
+    let toplevel = Toplevel::new(&funcs_exprs, lurk_chip_map);
+    (toplevel, zstore, lang_symbols)
+}
+
+#[inline]
+pub fn build_lurk_toplevel_native() -> (
+    Toplevel<BabyBear, LurkChip, NoChip>,
+    ZStore<BabyBear, LurkChip>,
+    FxHashSet<Symbol>,
+) {
+    build_lurk_toplevel(Lang::empty())
 }
 
 #[derive(Clone, Copy, FromPrimitive, Debug)]
@@ -131,7 +198,7 @@ pub enum EvalErr {
     ParamsNotList,
     ParamNotSymbol,
     ArgsNotList,
-    ArgNotNumber,
+    InvalidArg,
     DivByZero,
     NotEnv,
     NotChar,
@@ -191,29 +258,23 @@ pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
 ///     return
 /// }
 /// ```
-pub fn preallocate_symbols<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn preallocate_symbols<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     let mut ops = Vec::with_capacity(2 * digests.0.len());
     let arr_var = Var {
         name: "arr",
         size: DIGEST_SIZE,
     };
-    let ptr_var = Var {
-        name: "ptr",
-        size: 1,
-    };
-    let addr_var = Var {
-        name: "addr",
-        size: 1,
-    };
-    for (name, digest) in &digests.0 {
-        let addr = digests.ptr(name).to_field();
+    let ptr_var = Var::atom("ptr");
+    let addr_var = Var::atom("addr");
+    for (symbol, digest) in &digests.0 {
+        let addr = digests.symbol_ptr(symbol).to_field();
         ops.push(OpE::Array(arr_var, digest.clone()));
         ops.push(OpE::Store(ptr_var, [arr_var].into()));
         ops.push(OpE::Const(addr_var, addr));
         ops.push(OpE::AssertEq(ptr_var, addr_var, None));
     }
     let ops = ops.into();
-    let ctrl = CtrlE::Return([].into()); // TODO: replace by `Exit`
+    let ctrl = CtrlE::return_vars([]);
     FuncE {
         name: Name("preallocate_symbols"),
         invertible: false,
@@ -224,7 +285,240 @@ pub fn preallocate_symbols<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<
     }
 }
 
-pub fn ingress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
+/// When `lang_funcs` is empty, `eval_coroutine_expr` shouldn't be called.
+/// ```ignore
+/// fn eval_coroutine_expr(_head, _args_tag, _args, _env): [2] {
+///     let zero = 0;
+///     let one = 1;
+///     assert_eq!(zero, one);
+///     return (zero zero)
+/// }
+/// ```
+///
+/// Otherwise we first evaluate the Lurk arguments and then expand them according
+/// to the coroutine's `FuncE` arity
+/// ```ignore
+/// partial fn eval_coroutine_expr(head, args_tag, args, env): [2] {
+///     let (args_tag, args) = call(eval_list, args_tag, args, env);
+///     match args_tag {
+///         Tag::Err => {
+///             return (args_tag, args)
+///         }
+///     };
+///     match head {
+///         ...
+///         digests.ptr(symN) => {
+///             let err_tag = Tag::Err; ─────────────────────────────i==0───┐
+///             let err = EvalErr::InvalidForm;                             │
+///             match args_tag {                                            │
+///                 InternalTag::Nil => {                                   │
+///                     return (err_tag, err)                               │
+///                 }                                                       │
+///             };                                                          │
+///             let (arg_tag1, arg1, args_tag, args) = load(args); ──i==1──┐│
+///             match args_tag {                                           ││
+///                 InternalTag::Nil => {                                  ││
+///                     return (err_tag, err)                              ││
+///                 }                                                      ││
+///             };                                                         ││
+///             let (arg_tag2, arg2, args_tag, args) = load(args); ──i==2─┐││
+///             ...                                                       │││
+///             let (arg_tagM, argM, args_tag, _args) = load(args); ─init┐│││
+///             match args_tag {                                         ││││
+///                 InternalTag::Nil => {                                ││││
+///                     let (res_tag, res) = call(                       ││││
+///                         funcN,                                       ││││
+///                         arg_tag1, arg1,                              ││││
+///                         arg_tag2, arg2,                              ││││
+///                         ...                                          ││││
+///                         arg_tagM, argM,                              ││││
+///                         env, // iff `funcN` arity is odd             ││││
+///                     );                                               ││││
+///                     return (res_tag, res)                            ││││
+///                 }                                                    ││││
+///             };                                                       ││││
+///             return (err_tag, err) ───────────────────────────────────┴┴┴┘
+///         }
+///         ...
+///     }
+/// }
+/// ```
+pub fn eval_coroutine_expr<F: AbstractField>(
+    digests: &SymbolsDigests<F>,
+    coroutines: &FxIndexMap<Symbol, Coroutine<F>>,
+) -> FuncE<F> {
+    let (partial, input_params, body) = if coroutines.is_empty() {
+        let head = Var::atom("_head");
+        let args_tag = Var::atom("_args_tag");
+        let args = Var::atom("_args");
+        let env = Var::atom("_env");
+        let zero = Var::atom("zero");
+        let one = Var::atom("one");
+        let declare_zero = OpE::Const(zero, F::zero());
+        let declare_one = OpE::Const(one, F::one());
+        let assert_eq_zero_one = OpE::AssertEq(zero, one, None);
+        (
+            false,
+            [head, args_tag, args, env].into(),
+            BlockE {
+                ops: [declare_zero, declare_one, assert_eq_zero_one].into(),
+                ctrl: CtrlE::return_vars([zero, zero]),
+            },
+        )
+    } else {
+        let head = Var::atom("head");
+        let args_tag = Var::atom("args_tag");
+        let args = Var::atom("args");
+        let env = Var::atom("env");
+        let res_tag = Var::atom("res_tag");
+        let res = Var::atom("res");
+
+        // we need `Box::leak` in order to create a `&'static str` from a `String`
+        let mk_var = |string: String| Var::atom(Box::leak(string.into_boxed_str()));
+
+        // the default case of the outer match is executed when the evaluation of
+        // the Lurk arguments doesn't find an error
+        let match_head = {
+            let branches = coroutines
+                .iter()
+                .map(|(symbol, coroutine)| {
+                    let Coroutine {
+                        lurk_arity,
+                        uses_env,
+                        func_expr,
+                    } = coroutine;
+                    let func_name = func_expr.name;
+                    assert_eq!(
+                        2, func_expr.output_size,
+                        "Output size of {func_name} is not 2"
+                    );
+                    let input_size = func_expr.input_params.total_size();
+                    assert_eq!(
+                        input_size,
+                        2 * lurk_arity + usize::from(*uses_env),
+                        "Input size mismatch for {func_name}"
+                    );
+                    let mut call_args = Vec::with_capacity(input_size);
+                    for i in 1..=*lurk_arity {
+                        call_args.push(mk_var(format!("arg_tag{i}")));
+                        call_args.push(mk_var(format!("arg{i}")));
+                    }
+                    if *uses_env {
+                        call_args.push(env);
+                    }
+                    let return_res = CtrlE::return_vars([res_tag, res]);
+                    let block = if *lurk_arity == 0 {
+                        // no argument to pop
+                        let call_op = OpE::Call([res_tag, res].into(), func_name, call_args.into());
+                        BlockE {
+                            ops: [call_op].into(),
+                            ctrl: return_res,
+                        }
+                    } else {
+                        // at least one argument to pop
+                        let err_tag = Var::atom("err_tag");
+                        let err = Var::atom("err");
+                        // we start from the block that pops the last Lurk argument
+                        let mut block = {
+                            let coroutine_call =
+                                OpE::Call([res_tag, res].into(), func_name, call_args.into());
+                            // inner block containing the coroutine call
+                            let coroutine_call_block = BlockE {
+                                ops: [coroutine_call].into(),
+                                ctrl: return_res,
+                            };
+
+                            let args_ = Var::atom("_args");
+                            let arg_tag = mk_var(format!("arg_tag{lurk_arity}"));
+                            let arg = mk_var(format!("arg{lurk_arity}"));
+                            let load_op = OpE::Load([arg_tag, arg, args_tag, args_].into(), args);
+
+                            let cases = CasesE {
+                                branches: vec![(
+                                    [InternalTag::Nil.to_field()].into(),
+                                    coroutine_call_block,
+                                )],
+                                default: Some(
+                                    BlockE::no_op(CtrlE::return_vars([err_tag, err])).into(),
+                                ),
+                            };
+                            BlockE {
+                                ops: [load_op].into(),
+                                ctrl: CtrlE::Match(args_tag, cases),
+                            }
+                        };
+
+                        // now iterate over the arity in reverse order, building outer
+                        // blocks on top of the inner ones as represented in the docstring
+                        for i in (0..*lurk_arity).rev() {
+                            let ops = if i == 0 {
+                                let declare_err_tag = OpE::Const(err_tag, Tag::Err.to_field());
+                                let declare_err = OpE::Const(err, EvalErr::InvalidForm.to_field());
+                                [declare_err_tag, declare_err].into()
+                            } else {
+                                let arg_tag = mk_var(format!("arg_tag{i}"));
+                                let arg = mk_var(format!("arg{i}"));
+                                [OpE::Load([arg_tag, arg, args_tag, args].into(), args)].into()
+                            };
+                            block = BlockE {
+                                ops,
+                                ctrl: CtrlE::Match(
+                                    args_tag,
+                                    CasesE {
+                                        branches: vec![(
+                                            [InternalTag::Nil.to_field()].into(),
+                                            BlockE::no_op(CtrlE::return_vars([err_tag, err])),
+                                        )],
+                                        default: Some(block.into()),
+                                    },
+                                ),
+                            };
+                        }
+                        block
+                    };
+                    ([digests.symbol_ptr(symbol).to_field()].into(), block)
+                })
+                .collect();
+            CtrlE::Match(head, CasesE::no_default(branches))
+        };
+        // the outer match to check for an error when evaluating the Lurk arguments
+        let match_args_tag = {
+            let case = (
+                [Tag::Err.to_field()].into(),
+                BlockE::no_op(CtrlE::return_vars([args_tag, args])),
+            );
+            let cases = CasesE {
+                branches: vec![case],
+                default: Some(BlockE::no_op(match_head).into()),
+            };
+            CtrlE::Match(args_tag, cases)
+        };
+        let eval_args = OpE::Call(
+            [args_tag, args].into(),
+            Name("eval_list"),
+            [args_tag, args, env].into(),
+        );
+        (
+            true,
+            [head, args_tag, args, env].into(),
+            BlockE {
+                ops: [eval_args].into(),
+                ctrl: match_args_tag,
+            },
+        )
+    };
+
+    FuncE {
+        name: Name("eval_coroutine_expr"),
+        invertible: false,
+        partial,
+        input_params,
+        output_size: 2,
+        body,
+    }
+}
+
+pub fn ingress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         fn ingress(tag_full: [8], digest: [8]): [2] {
             let zeros = [0; 7];
@@ -250,24 +544,24 @@ pub fn ingress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                     return (tag, ptr)
                 }
                 Tag::Sym => {
-                    let nil_digest = Array(digests.digest("nil").clone());
+                    let nil_digest = Array(digests.lurk_symbol_digest("nil").clone());
                     let not_nil = sub(digest, nil_digest);
                     if !not_nil {
-                        let nil_tag = ReservedTag::Nil;
-                        let ptr = digests.ptr("nil");
+                        let nil_tag = InternalTag::Nil;
+                        let ptr = digests.lurk_symbol_ptr("nil");
                         return (nil_tag, ptr)
                     }
-                    let t_digest = Array(digests.digest("t").clone());
+                    let t_digest = Array(digests.lurk_symbol_digest("t").clone());
                     let not_t = sub(digest, t_digest);
                     if !not_t {
-                        let t_tag = ReservedTag::T;
-                        let ptr = digests.ptr("t");
+                        let t_tag = InternalTag::T;
+                        let ptr = digests.lurk_symbol_ptr("t");
                         return (t_tag, ptr)
                     }
                     let ptr = store(digest);
                     return (tag, ptr)
                 }
-                Tag::Builtin, Tag::Key, Tag::BigNum, Tag::Comm => {
+                Tag::Builtin, Tag::Coroutine, Tag::Key, Tag::BigNum, Tag::Comm => {
                     let ptr = store(digest);
                     return (tag, ptr)
                 }
@@ -329,7 +623,7 @@ pub fn ingress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     )
 }
 
-pub fn egress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn egress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         fn egress(tag, val): [9] {
             match tag {
@@ -343,17 +637,17 @@ pub fn egress<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                     let bytes: [4] = load(val);
                     return (tag, bytes, padding)
                 }
-                ReservedTag::Nil => {
+                InternalTag::Nil => {
                     let sym_tag = Tag::Sym;
-                    let digest = Array(digests.digest("nil").clone());
+                    let digest = Array(digests.lurk_symbol_digest("nil").clone());
                     return (sym_tag, digest)
                 }
-                ReservedTag::T => {
+                InternalTag::T => {
                     let sym_tag = Tag::Sym;
-                    let digest = Array(digests.digest("t").clone());
+                    let digest = Array(digests.lurk_symbol_digest("t").clone());
                     return (sym_tag, digest)
                 }
-                Tag::Sym, Tag::Builtin, Tag::Key, Tag::U64, Tag::BigNum, Tag::Comm => {
+                Tag::Sym, Tag::Builtin, Tag::Coroutine, Tag::Key, Tag::U64, Tag::BigNum, Tag::Comm => {
                     let digest: [8] = load(val);
                     return (tag, digest)
                 }
@@ -557,7 +851,7 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval(expr_tag, expr, env): [2] {
             match expr_tag {
-                Tag::Builtin, Tag::Sym => {
+                Tag::Builtin, Tag::Sym, Tag::Coroutine => {
                     let expr_digest: [8] = load(expr);
                     let (res_tag, res) = call(env_lookup, expr_tag, expr_digest, env);
                     match res_tag {
@@ -581,6 +875,10 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                             let (res_tag, res) = call(eval_builtin_expr, head, rest_tag, rest, env);
                             return (res_tag, res)
                         }
+                        Tag::Coroutine => {
+                            let (res_tag, res) = call(eval_coroutine_expr, head, rest_tag, rest, env);
+                            return (res_tag, res)
+                        }
                     };
                     let (head_tag, head) = call(eval, head_tag, head, env);
                     match head_tag {
@@ -602,14 +900,14 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_builtin_expr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn eval_builtin_expr(head, rest_tag, rest, env): [2] {
-            let nil_tag = ReservedTag::Nil;
+            let nil_tag = InternalTag::Nil;
             let cons_tag = Tag::Cons;
             let err_tag = Tag::Err;
             let invalid_form = EvalErr::InvalidForm;
-            match head [|sym| digests.ptr(sym).to_field()] {
+            match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
                 "let", "letrec", "lambda", "cons", "strcons", "type-eq", "type-eqq" => {
                     let rest_not_cons = sub(rest_tag, cons_tag);
                     if rest_not_cons {
@@ -625,7 +923,7 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F>
                     if rest_not_nil {
                         return (err_tag, invalid_form)
                     }
-                    match head [|sym| digests.ptr(sym).to_field()] {
+                    match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
                         "let" => {
                             // first element: let symbol
                             // second element: binding list
@@ -669,11 +967,11 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F>
                             let snd_tag = call(coerce_if_sym, snd_tag);
                             let type_not_eq = sub(fst_tag, snd_tag);
                             if type_not_eq {
-                                let nil = digests.ptr("nil");
+                                let nil = digests.lurk_symbol_ptr("nil");
                                 return (nil_tag, nil)
                             }
-                            let t_tag = ReservedTag::T;
-                            let t = digests.ptr("t");
+                            let t_tag = InternalTag::T;
+                            let t = digests.lurk_symbol_ptr("t");
                             return (t_tag, t)
                         }
                         "type-eqq" => {
@@ -687,11 +985,11 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F>
                             let snd_tag = call(coerce_if_sym, snd_tag);
                             let type_not_eqq = sub(fst_tag, snd_tag);
                             if type_not_eqq {
-                                let nil = digests.ptr("nil");
+                                let nil = digests.lurk_symbol_ptr("nil");
                                 return (nil_tag, nil)
                             }
-                            let t_tag = ReservedTag::T;
-                            let t = digests.ptr("t");
+                            let t_tag = InternalTag::T;
+                            let t = digests.lurk_symbol_ptr("t");
                             return (t_tag, t)
                         }
                     }
@@ -725,7 +1023,7 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F>
                     }
                     let (expr_tag, expr, rest_tag, rest) = load(rest);
                     match rest_tag {
-                        ReservedTag::Nil => {
+                        InternalTag::Nil => {
                             // Eval must be called twice, first with the original env and then
                             // with an empty env
                             let (res_tag, res) = call(eval, expr_tag, expr, env);
@@ -789,7 +1087,7 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F>
                         return (err_tag, invalid_form)
                     }
                     let env_tag = Tag::Env;
-                    match head [|sym| digests.ptr(sym).to_field()] {
+                    match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
                         "current-env" => {
                             return (env_tag, env)
                         }
@@ -808,8 +1106,8 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F>
                 "breakpoint" => {
                     breakpoint;
                     match rest_tag {
-                        ReservedTag::Nil => {
-                            let nil = digests.ptr("nil");
+                        InternalTag::Nil => {
+                            let nil = digests.lurk_symbol_ptr("nil");
                             return (nil_tag, nil)
                         }
                         Tag::Cons => {
@@ -836,10 +1134,10 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F>
                     }
                     let (t_branch_tag, t_branch, rest_tag, rest) = load(rest);
                     match rest_tag {
-                        ReservedTag::Nil => {
+                        InternalTag::Nil => {
                             let (val_tag, val) = call(eval, expr_tag, expr, env);
                             match val_tag {
-                                ReservedTag::Nil, Tag::Err => {
+                                InternalTag::Nil, Tag::Err => {
                                     return (val_tag, val)
                                 }
                             };
@@ -854,7 +1152,7 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F>
                             }
                             let (val_tag, val) = call(eval, expr_tag, expr, env);
                             match val_tag {
-                                ReservedTag::Nil => {
+                                InternalTag::Nil => {
                                     let (res_tag, res) = call(eval, f_branch_tag, f_branch, env);
                                     return (res_tag, res)
                                 }
@@ -878,7 +1176,7 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F>
                 }
                 "car", "cdr" => {
                     let (car_tag, car, cdr_tag, cdr) = call(car_cdr, rest_tag, rest, env);
-                    match head [|sym| digests.ptr(sym).to_field()] {
+                    match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
                         "car" => {
                             return (car_tag, car)
                         }
@@ -905,7 +1203,7 @@ pub fn coerce_if_sym<F: AbstractField>() -> FuncE<F> {
     func!(
         fn coerce_if_sym(tag): [1] {
             match tag {
-                ReservedTag::Nil, ReservedTag::T => {
+                InternalTag::Nil, InternalTag::T => {
                     let sym_tag = Tag::Sym;
                     return sym_tag
                 }
@@ -930,11 +1228,11 @@ pub fn open_comm<F: PrimeField32>() -> FuncE<F> {
     )
 }
 
-pub fn car_cdr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn car_cdr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn car_cdr(rest_tag, rest, env): [4] {
-            let nil = digests.ptr("nil");
-            let nil_tag = ReservedTag::Nil;
+            let nil = digests.lurk_symbol_ptr("nil");
+            let nil_tag = InternalTag::Nil;
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let invalid_form = EvalErr::InvalidForm;
@@ -956,7 +1254,7 @@ pub fn car_cdr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                     let (car_tag, car, cdr_tag, cdr) = load(val);
                     return (car_tag, car, cdr_tag, cdr)
                 }
-                ReservedTag::Nil => {
+                InternalTag::Nil => {
                     return (nil_tag, nil, nil_tag, nil)
                 }
                 Tag::Str => {
@@ -977,12 +1275,12 @@ pub fn car_cdr<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     )
 }
 
-pub fn equal<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn equal<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn equal(rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
-            let nil_tag = ReservedTag::Nil;
+            let nil_tag = InternalTag::Nil;
             let invalid_form = EvalErr::InvalidForm;
             let rest_not_cons = sub(rest_tag, cons_tag);
             if rest_not_cons {
@@ -1012,8 +1310,8 @@ pub fn equal<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
             };
             let is_equal_inner = call(equal_inner, val1_tag, val1, val2_tag, val2);
             if is_equal_inner {
-                let t_tag = ReservedTag::T;
-                let t = digests.ptr("t");
+                let t_tag = InternalTag::T;
+                let t = digests.lurk_symbol_ptr("t");
                 return (t_tag, t)
             }
             return (nil_tag, is_equal_inner) // `is_equal_inner` is zero
@@ -1036,7 +1334,7 @@ pub fn equal_inner<F: AbstractField>() -> FuncE<F> {
             }
             match a_tag {
                 // The Nil and Err cases are impossible
-                Tag::Builtin, Tag::Num => {
+                Tag::Num => {
                     return zero
                 }
                 Tag::Char => {
@@ -1048,7 +1346,7 @@ pub fn equal_inner<F: AbstractField>() -> FuncE<F> {
                     }
                     return one
                 }
-                Tag::Key, Tag::Sym, Tag::U64, Tag::BigNum, Tag::Comm => {
+                Tag::Key, Tag::Sym, Tag::Builtin, Tag::Coroutine, Tag::U64, Tag::BigNum, Tag::Comm => {
                     let a_digest: [8] = load(a);
                     let b_digest: [8] = load(b);
                     let diff = sub(a_digest, b_digest);
@@ -1120,7 +1418,7 @@ pub fn eval_list<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_list(rest_tag, rest, env): [2] {
             match rest_tag {
-                ReservedTag::Nil => {
+                InternalTag::Nil => {
                     return (rest_tag, rest)
                 }
                 Tag::Cons => {
@@ -1153,7 +1451,7 @@ pub fn eval_begin<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_begin(rest_tag, rest, env): [2] {
             match rest_tag {
-                ReservedTag::Nil => {
+                InternalTag::Nil => {
                     return (rest_tag, rest)
                 }
                 Tag::Cons => {
@@ -1164,7 +1462,7 @@ pub fn eval_begin<F: AbstractField>() -> FuncE<F> {
                             return (head_tag, head)
                         }
                     };
-                    let nil_tag = ReservedTag::Nil;
+                    let nil_tag = InternalTag::Nil;
                     let rest_not_nil = sub(nil_tag, rest_tag);
                     if rest_not_nil {
                         let (res_tag, res) = call(eval_begin, rest_tag, rest, env);
@@ -1180,16 +1478,16 @@ pub fn eval_begin<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_binop_num<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn eval_binop_num<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn eval_binop_num(head, exp1_tag, exp1, exp2_tag, exp2, env): [2] {
             let err_tag = Tag::Err;
             let num_tag = Tag::Num;
             let u64_tag = Tag::U64;
-            let nil_tag = ReservedTag::Nil;
+            let nil_tag = InternalTag::Nil;
             let err_div_zero = EvalErr::DivByZero;
-            let t = digests.ptr("t");
-            let nil = digests.ptr("nil");
+            let t = digests.lurk_symbol_ptr("t");
+            let nil = digests.lurk_symbol_ptr("nil");
             let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
             match val1_tag {
                 Tag::Err => {
@@ -1202,11 +1500,11 @@ pub fn eval_binop_num<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                     return (val2_tag, val2)
                 }
             };
-            let t_tag = ReservedTag::T;
+            let t_tag = InternalTag::T;
             let tags: [2] = (val1_tag, val2_tag);
             match tags {
                 [Tag::U64, Tag::U64] => {
-                    match head [|sym| digests.ptr(sym).to_field()] {
+                    match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
                         "+" => {
                             let res = call(u64_add, val1, val2);
                             return (u64_tag, res)
@@ -1225,7 +1523,7 @@ pub fn eval_binop_num<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                                 return (err_tag, err_div_zero)
                             }
                             let (quot, rem) = call(u64_divrem, val1, val2);
-                            match head [|sym| digests.ptr(sym).to_field()] {
+                            match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
                                 "/" => {
                                     return (u64_tag, quot)
                                 }
@@ -1273,7 +1571,7 @@ pub fn eval_binop_num<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                     }
                 }
                 [Tag::Num, Tag::Num] => {
-                    match head [|sym| digests.ptr(sym).to_field()] {
+                    match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
                         "+" => {
                             let res = add(val1, val2);
                             return (num_tag, res)
@@ -1307,7 +1605,7 @@ pub fn eval_binop_num<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                     }
                 }
                 [Tag::BigNum, Tag::BigNum] => {
-                    match head [|sym| digests.ptr(sym).to_field()] {
+                    match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
                         "<" => {
                             let res = call(big_num_lessthan, val1, val2);
                             if res {
@@ -1345,19 +1643,19 @@ pub fn eval_binop_num<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                             return (nil_tag, nil)
                         }
                         "+", "-", "*", "/", "%" => {
-                            let err = EvalErr::ArgNotNumber;
+                            let err = EvalErr::InvalidArg;
                             return (err_tag, err)
                         }
                     }
                 }
             };
-            let err = EvalErr::ArgNotNumber;
+            let err = EvalErr::InvalidArg;
             return (err_tag, err)
         }
     )
 }
 
-pub fn eval_binop_misc<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn eval_binop_misc<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn eval_binop_misc(head, exp1_tag, exp1, exp2_tag, exp2, env): [2] {
             let err_tag = Tag::Err;
@@ -1374,7 +1672,7 @@ pub fn eval_binop_misc<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                     return (val2_tag, val2)
                 }
             };
-            match head [|sym| digests.ptr(sym).to_field()] {
+            match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
                 "cons" => {
                     let cons = store(val1_tag, val1, val2_tag, val2);
                     return (cons_tag, cons)
@@ -1400,12 +1698,12 @@ pub fn eval_binop_misc<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     )
 }
 
-pub fn eval_unop<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn eval_unop<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn eval_unop(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
-            let nil_tag = ReservedTag::Nil;
+            let nil_tag = InternalTag::Nil;
             let invalid_form = EvalErr::InvalidForm;
             let rest_not_cons = sub(rest_tag, cons_tag);
             if rest_not_cons {
@@ -1423,15 +1721,15 @@ pub fn eval_unop<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
                 }
             };
 
-            match head [|sym| digests.ptr(sym).to_field()] {
+            match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
                 "atom" => {
                     let val_not_cons = sub(val_tag, cons_tag);
                     if val_not_cons {
-                        let t_tag = ReservedTag::T;
-                        let t = digests.ptr("t");
+                        let t_tag = InternalTag::T;
+                        let t = digests.lurk_symbol_ptr("t");
                         return (t_tag, t)
                     }
-                    let nil = digests.ptr("nil");
+                    let nil = digests.lurk_symbol_ptr("nil");
                     return (nil_tag, nil)
                 }
                 "emit" => {
@@ -1500,12 +1798,12 @@ pub fn eval_unop<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<F> {
     )
 }
 
-pub fn eval_opening_unop<F: PrimeField32>(digests: &Digests<'_, F>) -> FuncE<F> {
+pub fn eval_opening_unop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn eval_opening_unop(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
-            let nil_tag = ReservedTag::Nil;
+            let nil_tag = InternalTag::Nil;
             let invalid_form = EvalErr::InvalidForm;
             let rest_not_cons = sub(rest_tag, cons_tag);
             if rest_not_cons {
@@ -1523,7 +1821,7 @@ pub fn eval_opening_unop<F: PrimeField32>(digests: &Digests<'_, F>) -> FuncE<F> 
                 }
             };
 
-            match head [|sym| digests.ptr(sym).to_field()] {
+            match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
                 "commit" => {
                     let (val_tag, val_digest: [8]) = call(egress, val_tag, val);
                     let padding = [0; 7];
@@ -1543,7 +1841,7 @@ pub fn eval_opening_unop<F: PrimeField32>(digests: &Digests<'_, F>) -> FuncE<F> 
                         comm_hash,
                         |fs| format!("Preimage not found for #{:#x}", field_elts_to_biguint(fs))
                     );
-                    match head [|sym| digests.ptr(sym).to_field()] {
+                    match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
                         "open" => {
                             let (tag, ptr) = call(ingress, tag, padding, val_digest);
                             return (tag, ptr)
@@ -1567,7 +1865,7 @@ pub fn eval_hide<F: AbstractField>() -> FuncE<F> {
         partial fn eval_hide(rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
-            let nil_tag = ReservedTag::Nil;
+            let nil_tag = InternalTag::Nil;
             let invalid_form = EvalErr::InvalidForm;
             let rest_not_cons = sub(rest_tag, cons_tag);
             if rest_not_cons {
@@ -1618,13 +1916,13 @@ pub fn eval_let<F: AbstractField>() -> FuncE<F> {
             let err_tag = Tag::Err;
             let invalid_form = EvalErr::InvalidForm;
             match binds_tag {
-                ReservedTag::Nil => {
+                InternalTag::Nil => {
                     let (res_tag, res) = call(eval, body_tag, body, env);
                     return (res_tag, res)
                 }
                 Tag::Cons => {
                     let cons_tag = Tag::Cons;
-                    let nil_tag = ReservedTag::Nil;
+                    let nil_tag = InternalTag::Nil;
                     // `binds` is a list of bindings
                     let (bind_tag, bind, rest_binds_tag, rest_binds) = load(binds);
                     let bind_not_cons = sub(bind_tag, cons_tag);
@@ -1638,7 +1936,7 @@ pub fn eval_let<F: AbstractField>() -> FuncE<F> {
                         return (err_tag, invalid_form)
                     }
                     match param_tag {
-                        Tag::Sym, Tag::Builtin => {
+                        Tag::Sym, Tag::Builtin, Tag::Coroutine => {
                             let (expr_tag, expr, rest_tag, _rest) = load(rest);
                             let rest_not_nil = sub(rest_tag, nil_tag);
                             if rest_not_nil {
@@ -1677,7 +1975,7 @@ pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
             let err_tag = Tag::Err;
             let invalid_form = EvalErr::InvalidForm;
             match binds_tag {
-                ReservedTag::Nil => {
+                InternalTag::Nil => {
                     let (res_tag, res) = call(eval, body_tag, body, env);
                     return (res_tag, res)
                 }
@@ -1696,9 +1994,9 @@ pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
                         return (err_tag, invalid_form)
                     }
                     match param_tag {
-                        Tag::Sym, Tag::Builtin => {
+                        Tag::Sym, Tag::Builtin, Tag::Coroutine => {
                             let (expr_tag, expr, rest_tag, _rest) = load(rest);
-                            let nil_tag = ReservedTag::Nil;
+                            let nil_tag = InternalTag::Nil;
                             let rest_not_nil = sub(rest_tag, nil_tag);
                             if rest_not_nil {
                                 return (err_tag, invalid_form)
@@ -1754,7 +2052,7 @@ pub fn apply<F: AbstractField>() -> FuncE<F> {
             let (params_tag, params, body_tag, body, func_env) = load(head);
 
             match params_tag {
-                ReservedTag::Nil => {
+                InternalTag::Nil => {
                     let (res_tag, res) = call(eval, body_tag, body, func_env);
                     match res_tag {
                         Tag::Err => {
@@ -1762,7 +2060,7 @@ pub fn apply<F: AbstractField>() -> FuncE<F> {
                         }
                     };
                     match args_tag {
-                        ReservedTag::Nil => {
+                        InternalTag::Nil => {
                             return (res_tag, res)
                         }
                         Tag::Cons => {
@@ -1776,7 +2074,7 @@ pub fn apply<F: AbstractField>() -> FuncE<F> {
                 }
                 Tag::Cons => {
                     match args_tag {
-                        ReservedTag::Nil => {
+                        InternalTag::Nil => {
                             // Undersaturated application
                             return (head_tag, head)
                         }
@@ -1784,7 +2082,7 @@ pub fn apply<F: AbstractField>() -> FuncE<F> {
                             let (param_tag, param, rest_params_tag, rest_params) = load(params);
                             let (arg_tag, arg, rest_args_tag, rest_args) = load(args);
                             match param_tag {
-                                Tag::Sym, Tag::Builtin => {
+                                Tag::Sym, Tag::Builtin, Tag::Coroutine => {
                                     // evaluate the argument
                                     let (arg_tag, arg) = call(eval, arg_tag, arg, args_env);
                                     match arg_tag {
@@ -1857,10 +2155,11 @@ mod test {
 
     #[test]
     fn test_widths() {
-        let (toplevel, _) = &build_lurk_toplevel();
+        let (toplevel, ..) = &build_lurk_toplevel_native();
 
         let lurk_main = FuncChip::from_name("lurk_main", toplevel);
         let preallocate_symbols = FuncChip::from_name("preallocate_symbols", toplevel);
+        let eval_coroutine_expr = FuncChip::from_name("eval_coroutine_expr", toplevel);
         let eval = FuncChip::from_name("eval", toplevel);
         let eval_builtin_expr = FuncChip::from_name("eval_builtin_expr", toplevel);
         let eval_opening_unop = FuncChip::from_name("eval_opening_unop", toplevel);
@@ -1898,7 +2197,8 @@ mod test {
         };
         expect_eq(lurk_main.width(), expect!["97"]);
         expect_eq(preallocate_symbols.width(), expect!["168"]);
-        expect_eq(eval.width(), expect!["75"]);
+        expect_eq(eval_coroutine_expr.width(), expect!["10"]);
+        expect_eq(eval.width(), expect!["77"]);
         expect_eq(eval_builtin_expr.width(), expect!["142"]);
         expect_eq(eval_opening_unop.width(), expect!["97"]);
         expect_eq(eval_hide.width(), expect!["115"]);
@@ -1907,14 +2207,14 @@ mod test {
         expect_eq(eval_binop_misc.width(), expect!["70"]);
         expect_eq(eval_begin.width(), expect!["68"]);
         expect_eq(eval_list.width(), expect!["72"]);
-        expect_eq(eval_let.width(), expect!["93"]);
-        expect_eq(eval_letrec.width(), expect!["97"]);
+        expect_eq(eval_let.width(), expect!["94"]);
+        expect_eq(eval_letrec.width(), expect!["98"]);
         expect_eq(coerce_if_sym.width(), expect!["9"]);
         expect_eq(open_comm.width(), expect!["50"]);
         expect_eq(equal.width(), expect!["82"]);
-        expect_eq(equal_inner.width(), expect!["57"]);
+        expect_eq(equal_inner.width(), expect!["59"]);
         expect_eq(car_cdr.width(), expect!["61"]);
-        expect_eq(apply.width(), expect!["100"]);
+        expect_eq(apply.width(), expect!["101"]);
         expect_eq(env_lookup.width(), expect!["52"]);
         expect_eq(ingress.width(), expect!["105"]);
         expect_eq(egress.width(), expect!["82"]);
@@ -1933,17 +2233,19 @@ mod test {
 
     #[test]
     fn test_ingress_egress() {
-        let (toplevel, zstore) = &build_lurk_toplevel();
+        let (toplevel, zstore, lang_symbols) = &build_lurk_toplevel_native();
 
-        let ingress = toplevel.get_by_name("ingress");
-        let egress = toplevel.get_by_name("egress");
+        let ingress = toplevel.func_by_name("ingress");
+        let egress = toplevel.func_by_name("egress");
         let hash4_chip = FuncChip::from_name("hash4", toplevel);
 
         let state = State::init_lurk_state().rccell();
 
         let assert_ingress_egress_correctness = |code| {
             let zstore = &mut zstore.clone();
-            let ZPtr { tag, digest } = zstore.read_with_state(state.clone(), code).unwrap();
+            let ZPtr { tag, digest } = zstore
+                .read_with_state(state.clone(), code, lang_symbols)
+                .unwrap();
             let tag = tag.to_field();
 
             let digest: List<_> = digest.into();
@@ -1991,14 +2293,14 @@ mod test {
 
     #[test]
     fn test_strum() {
-        assert_eq!(2, ReservedTag::iter().count());
+        assert_eq!(2, InternalTag::iter().count());
     }
 
     #[test]
-    fn test_disjoint_reserved_tags() {
+    fn test_disjoint_internal_tags() {
         let tag_fields: FxHashSet<F> = Tag::iter().map(Tag::to_field).collect();
-        for reserved_tag in ReservedTag::iter() {
-            assert!(!tag_fields.contains(&reserved_tag.to_field()));
+        for internal_tag in InternalTag::iter() {
+            assert!(!tag_fields.contains(&internal_tag.to_field()));
         }
     }
 }

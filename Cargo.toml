@@ -42,6 +42,7 @@ bincode = "1"
 camino = "1.1"
 clap = "4.5.15"
 criterion = "0.5"
+either = "1"
 expect-test = "1.4.1"
 home = "0.5"
 indexmap = "2.2.6"
@@ -84,6 +85,7 @@ bincode = { workspace = true }
 camino = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 expect-test = { workspace = true }
+either = { workspace = true }
 home = { workspace = true }
 hybrid-array = { workspace = true }
 indexmap = { workspace = true, features = ["rayon"] }

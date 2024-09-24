@@ -116,9 +116,13 @@ impl<F: PrimeField32> TraceQueries<F> {
 }
 
 /// Helper function to execute and test queries and constraints using `debug_constraints_collecting_queries`
-pub fn debug_chip_constraints_and_queries_with_sharding<F: PrimeField32, C: Chipset<F>>(
+pub fn debug_chip_constraints_and_queries_with_sharding<
+    F: PrimeField32,
+    C1: Chipset<F>,
+    C2: Chipset<F>,
+>(
     record: &QueryRecord<F>,
-    chips: &[LairChip<'_, F, C>],
+    chips: &[LairChip<'_, F, C1, C2>],
     config: Option<ShardingConfig>,
 ) {
     let full_shard = Shard::new(record);

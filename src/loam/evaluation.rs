@@ -199,7 +199,7 @@ impl Tag {
     }
 }
 
-// Because it's hard to share code between ascent programs, this is a copy of `AllocationProgam`, replacing the `map_double` function
+// Because it's hard to share code between ascent programs, this is a copy of `AllocationProgram`, replacing the `map_double` function
 // with evaluation
 #[cfg(feature = "loam")]
 ascent! {
@@ -1232,7 +1232,7 @@ mod test {
     }
 
     fn read_wideptr(zstore: &mut ZStore<BabyBear, LurkChip>, src: &str) -> WidePtr {
-        let ZPtr { tag, digest } = zstore.read(src).unwrap();
+        let ZPtr { tag, digest } = zstore.read(src, &Default::default()).unwrap();
         wide_ptr(tag.elt(), digest)
     }
 
@@ -1391,8 +1391,8 @@ mod test {
     #[test]
     fn test_lambda() {
         let mut zstore = lurk_zstore();
-        let args = zstore.read("(x)").unwrap();
-        let body = zstore.read("(+ x 1)").unwrap();
+        let args = zstore.read("(x)", &Default::default()).unwrap();
+        let body = zstore.read("(+ x 1)", &Default::default()).unwrap();
         let env = *zstore.nil();
 
         let fun = zstore.intern_fun(args, body, env);
