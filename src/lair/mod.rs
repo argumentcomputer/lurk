@@ -1,4 +1,6 @@
+use indexmap::IndexMap;
 use p3_field::Field;
+use rustc_hash::FxBuildHasher;
 
 use crate::func;
 
@@ -44,6 +46,8 @@ pub(crate) fn field_from_u32<F: p3_field::AbstractField>(i: u32) -> F {
 }
 
 pub type List<T> = Box<[T]>;
+
+pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 
 #[allow(dead_code)]
 pub(crate) fn demo_toplevel<F: Field + Ord>() -> Toplevel<F, Nochip> {

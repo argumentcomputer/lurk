@@ -1076,11 +1076,11 @@ mod test {
         let digest = lurk_hasher().hash(&preimg).try_into().unwrap();
         assert_eq!(
             zstore.fmt_with_state(state, &ZPtr::big_num(digest)),
-            "#0x20a6e497cdc1145d6684f0d31474f160ddf2832673d1d57885a5f28a732882"
+            "#0xaa8db8504fa55b480f3da7a75f3480174f28d683f4c3ac451b7cee488d2fe"
         );
         assert_eq!(
             zstore.fmt_with_state(state, &ZPtr::comm(digest)),
-            "#c0x20a6e497cdc1145d6684f0d31474f160ddf2832673d1d57885a5f28a732882"
+            "#c0xaa8db8504fa55b480f3da7a75f3480174f28d683f4c3ac451b7cee488d2fe"
         );
 
         let empty_str = zstore.intern_string("");

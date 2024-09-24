@@ -4,6 +4,7 @@ use num_traits::FromPrimitive;
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::FxBuildHasher;
+use strum::{EnumCount, EnumIter};
 
 use crate::{
     func,
@@ -30,17 +31,17 @@ impl DigestIndex {
     }
 }
 
+#[repr(usize)]
+#[derive(Clone, Copy, EnumIter)]
 enum ReservedTag {
-    Nil,
+    Nil = 0,
     T,
 }
 
 impl ReservedTag {
-    fn to_field<F: AbstractField>(&self) -> F {
-        match self {
-            ReservedTag::Nil => F::zero(),
-            ReservedTag::T => F::one(),
-        }
+    /// Starts from where `Tag` ends
+    fn to_field<F: AbstractField>(self) -> F {
+        F::from_canonical_usize(Tag::COUNT + self as usize)
     }
 }
 
@@ -1839,6 +1840,8 @@ mod test {
     use expect_test::{expect, Expect};
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
+    use rustc_hash::FxHashSet;
+    use strum::IntoEnumIterator;
 
     use crate::{
         air::debug::debug_constraints_collecting_queries,
@@ -1984,5 +1987,18 @@ mod test {
         assert_ingress_egress_correctness(":keyword");
         assert_ingress_egress_correctness("(+ 1 2)");
         assert_ingress_egress_correctness("(a 'b c)");
+    }
+
+    #[test]
+    fn test_strum() {
+        assert_eq!(2, ReservedTag::iter().count());
+    }
+
+    #[test]
+    fn test_disjoint_reserved_tags() {
+        let tag_fields: FxHashSet<F> = Tag::iter().map(Tag::to_field).collect();
+        for reserved_tag in ReservedTag::iter() {
+            assert!(!tag_fields.contains(&reserved_tag.to_field()));
+        }
     }
 }

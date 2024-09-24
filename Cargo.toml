@@ -61,6 +61,7 @@ rustyline-derive = "0.10"
 serde = "1.0"
 serde_json = "1.0"
 sha2 = "0.10.8"
+strum = { version = "0.26", features = ["derive"] }
 thiserror = "1.0.44"
 hybrid-array = "0.2.0-rc"
 lazy_static = "1.4.0"
@@ -106,6 +107,7 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 rayon = { workspace = true }
+strum = { workspace = true }
 itertools = { workspace = true }
 p3-air = { workspace = true }
 p3-baby-bear = { workspace = true }

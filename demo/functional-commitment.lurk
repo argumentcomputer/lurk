@@ -10,7 +10,7 @@
 
 ;; We open the functional commitment on input 5: Evaluate f(5).
 
-!(call #0x584d533ca5f821e177459c56090fba62296b44f1cc289510332996224ac2ce 5)
+!(call #0x1aabc88a967eb6c0ab3e73eb5a9cb55380cdcfc8aaf6a488a4620bf67afb4b 5)
 
 ;; We can prove the functional-commitment opening.
 
@@ -18,8 +18,8 @@
 
 ;; We can inspect the input/output expressions of the proof.
 
-!(inspect "96aed5bd2fcfe3cd8ba52b6d0361b9af6fddc7a24729de7b9a9b1507802298")
+!(inspect "b68e59e1a971a9b02f79cb5073d7ff6b236f685f25ad3cc44890941e521d1")
 
 ;; Finally, and most importantly, we can verify the proof.
 
-!(verify "96aed5bd2fcfe3cd8ba52b6d0361b9af6fddc7a24729de7b9a9b1507802298")
+!(verify "b68e59e1a971a9b02f79cb5073d7ff6b236f685f25ad3cc44890941e521d1")

@@ -415,7 +415,7 @@ test!(test_hide2, "(hide (commit 321) 123)", |_| ZPtr::err(
 test!(test_open_roundtrip, "(open (commit 123))", |_| uint(123));
 test!(
     test_open_raw_roundtrip,
-    "(begin (commit 123n) (open #0x20a6e497cdc1145d6684f0d31474f160ddf2832673d1d57885a5f28a732882))",
+    "(begin (commit 123n) (open #c0xaa8db8504fa55b480f3da7a75f3480174f28d683f4c3ac451b7cee488d2fe))",
     |_| ZPtr::num(F::from_canonical_u32(123))
 );
 test!(test_secret, "(secret (commit 123))", |_| ZPtr::big_num(
@@ -423,12 +423,12 @@ test!(test_secret, "(secret (commit 123))", |_| ZPtr::big_num(
 ));
 test!(
     test_func_big_num_app,
-    "(begin (commit (lambda (x) x)) (#0x83420bafb3cb56870b10b498607c0a6314b0ea331328bbb232c74078abb5dc 42))",
+    "(begin (commit (lambda (x) x)) (#0x361877c9845ddda6aa16dd6c6bcd26fcea7b93930106a19f5d7d5cf10a9015 42))",
     |_| uint(42)
 );
 test!(
     test_func_comm_app,
-    "(begin (commit (lambda (x) x)) ((comm #0x83420bafb3cb56870b10b498607c0a6314b0ea331328bbb232c74078abb5dc) 42))",
+    "(begin (commit (lambda (x) x)) ((comm #0x361877c9845ddda6aa16dd6c6bcd26fcea7b93930106a19f5d7d5cf10a9015) 42))",
     |_| uint(42)
 );
 
@@ -437,7 +437,7 @@ test!(test_raw_big_num, "#0x0", |_| ZPtr::big_num([F::zero(); 8]));
 test!(test_raw_comm, "#c0x0", |_| ZPtr::comm([F::zero(); 8]));
 test!(
     test_raw_big_num2,
-    "#0x20a6e497cdc1145d6684f0d31474f160ddf2832673d1d57885a5f28a732882",
+    "#0xaa8db8504fa55b480f3da7a75f3480174f28d683f4c3ac451b7cee488d2fe",
     |_| {
         let mut preimg = Vec::with_capacity(24);
         preimg.extend([F::zero(); 8]);
@@ -447,7 +447,7 @@ test!(
 );
 test!(
     test_raw_comm2,
-    "#c0x20a6e497cdc1145d6684f0d31474f160ddf2832673d1d57885a5f28a732882",
+    "#c0xaa8db8504fa55b480f3da7a75f3480174f28d683f4c3ac451b7cee488d2fe",
     |_| {
         let mut preimg = Vec::with_capacity(24);
         preimg.extend([F::zero(); 8]);

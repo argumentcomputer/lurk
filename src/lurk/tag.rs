@@ -2,13 +2,26 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use p3_field::{AbstractField, PrimeField32};
 use serde::{Deserialize, Serialize};
+use strum::{EnumCount, EnumIter};
 
 #[repr(u32)]
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, FromPrimitive,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    FromPrimitive,
+    EnumCount,
+    EnumIter,
 )]
 pub enum Tag {
-    U64 = 2, // 0 and 1 are reserved for nil and t inside the vm
+    U64 = 0,
     Num,
     BigNum,
     Comm,
@@ -34,10 +47,6 @@ impl Tag {
     pub fn from_field<F: PrimeField32>(f: &F) -> Tag {
         Tag::from_u32(f.as_canonical_u32()).expect("Field element doesn't map to a Tag")
     }
-
-    pub fn count() -> usize {
-        14
-    }
 }
 
 impl From<Tag> for i32 {
@@ -52,25 +61,17 @@ mod test {
     use num_traits::FromPrimitive;
     use p3_baby_bear::BabyBear;
     use p3_field::PrimeField32;
+    use strum::{EnumCount, IntoEnumIterator};
+
+    #[test]
+    fn test_strum() {
+        assert_eq!(14, Tag::COUNT);
+        assert_eq!(Tag::COUNT, Tag::iter().count());
+    }
 
     #[test]
     fn test_tag_index_roundtrip() {
-        for tag in [
-            Tag::Cons,
-            Tag::Sym,
-            Tag::Fun,
-            Tag::Num,
-            Tag::Str,
-            Tag::Char,
-            Tag::Comm,
-            Tag::U64,
-            Tag::Key,
-            Tag::Env,
-            Tag::Err,
-            Tag::Thunk,
-            Tag::Builtin,
-            Tag::BigNum,
-        ] {
+        for tag in Tag::iter() {
             let f = tag.to_field::<BabyBear>();
             let u = f.as_canonical_u32();
             assert_eq!(Some(tag), Tag::from_u32(u));

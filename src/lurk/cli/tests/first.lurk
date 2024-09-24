@@ -35,17 +35,17 @@
 ;; test calling functional commitments
 !(call (lambda (x) x) 0)
 !(commit (eval '(lambda (x) x)))
-!(call #0x83420bafb3cb56870b10b498607c0a6314b0ea331328bbb232c74078abb5dc 0)
-!(call (comm #0x83420bafb3cb56870b10b498607c0a6314b0ea331328bbb232c74078abb5dc) 0)
+!(call #0x361877c9845ddda6aa16dd6c6bcd26fcea7b93930106a19f5d7d5cf10a9015 0)
+!(call (comm #0x361877c9845ddda6aa16dd6c6bcd26fcea7b93930106a19f5d7d5cf10a9015) 0)
 
 ;; test chain and transition
 !(commit (eval '(letrec ((add (lambda (counter x)
                        (let ((counter (+ counter x)))
                          (cons counter (commit (add counter)))))))
                (add 0))))
-!(chain #0x5a34ed7712c5fd2f324feb0e1764b27bac9259c4b663e4601e678939a9363d 1)
+!(chain #c0x4b0eb13f048385909480e765f4eefec94c304edf9e01b2170869c9cdf8eb11 1)
 
-!(def state0 (cons nil (comm #0x5a34ed7712c5fd2f324feb0e1764b27bac9259c4b663e4601e678939a9363d)))
+!(def state0 (cons nil (comm #0x4b0eb13f048385909480e765f4eefec94c304edf9e01b2170869c9cdf8eb11)))
 !(transition state1 state0 1)
 !(assert-eq (car state1) 1)
 !(fetch (cdr state1))
@@ -59,7 +59,7 @@
                          (cons counter (bignum (commit (add counter))))))))
                (add 0))))
 
-!(def state0 (cons nil #0x3782a9f09a9311ba5f9d41718c470ca6e83a1701cb00a90cd0a590b94f3da3))
+!(def state0 (cons nil #0xc03134a4f3ca679c48553a312d455477dffc16589641d33e0676bf1f86e69))
 !(transition state1 state0 1)
 !(assert-eq (car state1) 1)
 !(fetch (cdr state1))

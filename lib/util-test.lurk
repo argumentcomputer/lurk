@@ -71,8 +71,8 @@
 !(assert-eq '(1 4 9 16) (map (lambda (x) (* x x)) '(1 2 3 4)))
 
 ;; permute
-!(assert-eq '(c b a d e) (permute '(a b c d e) 123))
-!(assert-eq '(b c d a e) (permute '(a b c d e) 987))
+!(assert-eq '(e c a b d) (permute '(a b c d e) 123))
+!(assert-eq '(a d c b e) (permute '(a b c d e) 987))
 
 ;; expt
 !(assert-eq 32 (expt 2 5))

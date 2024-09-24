@@ -328,10 +328,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             "The secret is the reduction of <secret_expr>, which must be a",
             "bignum, and the payload is the reduction of <payload_expr>.",
         ],
-        example: &[
-            "!(hide (bignum (commit 123)) 42)",
-            "!(hide #0x4a902d7be96d1021a473353bd59247ea4c0f0688b5bae0c833a1f624b77ede 42)",
-        ],
+        example: &["!(hide (bignum (commit 123)) 42)", "!(hide #0x123 42)"],
         run: |repl, args, _path| {
             let (&secret_expr, &payload_expr) = repl.peek2(args)?;
             let (secret, _) = repl.reduce_aux(&secret_expr)?;
@@ -388,7 +385,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         info: &[],
         example: &[
             "!(commit 123)",
-            "!(open #0x4a902d7be96d1021a473353bd59247ea4c0f0688b5bae0c833a1f624b77ede)",
+            "!(open #c0x944834111822843979ace19833d05ca9daf2f655230faec517433e72fe777b)",
         ],
         run: |repl, args, _path| {
             let expr = *repl.peek1(args)?;
@@ -407,7 +404,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         info: &[],
         example: &[
             "!(commit 123)",
-            "!(fetch #0x4a902d7be96d1021a473353bd59247ea4c0f0688b5bae0c833a1f624b77ede)",
+            "!(fetch #c0x944834111822843979ace19833d05ca9daf2f655230faec517433e72fe777b)",
         ],
         run: |repl, args, _path| {
             let expr = *repl.peek1(args)?;
@@ -444,7 +441,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         info: &["It's also capable of opening persisted commitments."],
         example: &[
             "(commit (lambda (x) x))",
-            "!(call #0x83420bafb3cb56870b10b498607c0a6314b0ea331328bbb232c74078abb5dc 0)",
+            "!(call #c0x361877c9845ddda6aa16dd6c6bcd26fcea7b93930106a19f5d7d5cf10a9015 0)",
         ],
         run: |repl, args, _path| {
             Self::call(repl, args)?;
@@ -483,7 +480,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
                        (let ((counter (+ counter x)))
                          (cons counter (commit (add counter)))))))
                (add 0)))",
-            "!(chain #0x5a34ed7712c5fd2f324feb0e1764b27bac9259c4b663e4601e678939a9363d 1)",
+            "!(chain #c0x4b0eb13f048385909480e765f4eefec94c304edf9e01b2170869c9cdf8eb11 1)",
         ],
         run: |repl, args, _path| {
             let cons = Self::call(repl, args)?;
@@ -936,7 +933,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
             "(commit '(13 . 17))",
             "!(prove-protocol my-protocol",
             "  \"protocol-proof\"",
-            "  #0x818e61a96cb66761e3a7a338bfd7e374fade81e70455ad6b63e63438823bbc",
+            "  #c0x76c3537770d61633a76264596e9fdefcf3bca72ade7f9553d5b3e6bfacba3b",
             "  '(13 . 17))",
         ],
         run: |repl, args, _path| {
