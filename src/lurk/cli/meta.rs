@@ -1237,7 +1237,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
             let stream = &mut TcpStream::connect(addr_str)?;
             write_data(stream, Request::Get)?;
             let Response::State(chain_result, next_callable) = read_data(stream)? else {
-                unreachable!()
+                bail!("Could not read state from server");
             };
             let state_chain_result = chain_result.populate_zstore(&mut repl.zstore);
             let state_next_callable = next_callable.commit(&mut repl.zstore);
