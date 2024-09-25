@@ -16,7 +16,7 @@ use super::{
     chipset::Chipset,
     func_chip::{ColumnLayout, FuncChip, LayoutSizes},
     provenance::{DepthLessThan, DEPTH_LESS_THAN_SIZE, DEPTH_W},
-    relations::{CallRelation, MemoryRelation},
+    relations::{CallRelation, LoamRelation, MemoryRelation},
     toplevel::Toplevel,
     trace::ColumnIndex,
 };
@@ -85,6 +85,18 @@ impl<'a, T> ColumnSlice<'a, T> {
         let slice = &self.aux[index.aux..index.aux + n];
         index.aux += n;
         slice
+    }
+
+    pub fn next_provide(&self, index: &mut ColumnIndex) -> ProvideRecord<T>
+    where
+        T: Copy,
+    {
+        let last_nonce = self.next_aux(index);
+        let last_count = self.next_aux(index);
+        ProvideRecord {
+            last_nonce,
+            last_count,
+        }
     }
 
     pub fn next_require(&self, index: &mut ColumnIndex) -> RequireRecord<T>
@@ -197,17 +209,12 @@ impl<F: Field> Func<F> {
 
         let toplevel_sel = self.body.return_sel::<AB>(local);
         builder.assert_bool(toplevel_sel.clone());
-        let last_nonce = local.next_aux(index);
-        let last_count = local.next_aux(index);
-        // provenance and range check
-        let record = ProvideRecord {
-            last_nonce,
-            last_count,
-        };
+        let record = local.next_provide(index);
         let mut out = (0..self.output_size)
             .map(|i| local.output[i].into())
             .collect::<Vec<_>>();
         let depth = if self.partial {
+            // provenance and range check
             let depth = (0..DEPTH_W)
                 .map(|_| local.next_aux(index))
                 .collect::<Vec<_>>();
@@ -428,6 +435,27 @@ impl<F: Field> Op<F> {
                     sel.clone(),
                 );
             }
+            Op::Provide(rel_idx, args) => {
+                let args = args.iter().map(|i| map[*i].to_expr());
+                let record = local.next_provide(index);
+
+                builder.provide(
+                    LoamRelation(F::from_canonical_usize(*rel_idx), args),
+                    record,
+                    sel.clone(),
+                );
+            }
+            Op::Require(rel_idx, args) => {
+                let args = args.iter().map(|i| map[*i].to_expr());
+                let record = local.next_require(index);
+
+                builder.require(
+                    LoamRelation(F::from_canonical_usize(*rel_idx), args),
+                    *local.nonce,
+                    record,
+                    sel.clone(),
+                );
+            }
             Op::Store(values) => {
                 let ptr = local.next_aux(index);
                 map.push(Val::Expr(ptr.into()));
@@ -524,6 +552,7 @@ impl<F: Field> Ctrl<F> {
                     process(block)
                 };
             }
+            Ctrl::Exit => todo!(),
             Ctrl::ChooseMany(_, cases) => {
                 let map_len = map.len();
                 let init_state = index.save();
@@ -974,5 +1003,16 @@ mod tests {
             .memoset
             .contains_key(&vec![f(3), f(1), f(100), f(12)]));
         assert!(queries.memoset.contains_key(&vec![f(3), f(1), f(64), f(0)]));
+    }
+
+    #[test]
+    fn lair_provide_test() {
+        let func_provide = func!(
+        loam fn provide_test(x: [3]): [0] {
+            provide!(f, x);
+            return ()
+        });
+        println!("{:#?}", func_provide);
+        let toplevel = Toplevel::<F, Nochip>::new_pure(&[func_provide]);
     }
 }

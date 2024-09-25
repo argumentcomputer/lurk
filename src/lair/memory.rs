@@ -50,7 +50,7 @@ impl<F: PrimeField32> MemChip<F> {
             // .skip(range.start)
             // .take(non_dummy_height)
             .for_each(|(i, (row, (args, mem_result)))| {
-                let provide = mem_result.provide.into_provide();
+                let provide = mem_result.provides[0].into_provide();
 
                 // is_real
                 row[0] = F::one();

@@ -81,6 +81,10 @@ pub enum OpE<F> {
     /// If `fmt` is `Some`, use it to format an error message and bail at runtime
     /// instead of panicking when the preimage is not available
     PreImg(VarList, Name, VarList, Option<fn(&[F]) -> String>),
+    /// TODO: Loam-only, document
+    Provide(Name, VarList),
+    /// TODO: Loam-only, document
+    Require(Name, VarList),
     /// `Store(x, [y, ...])` binds `x` to a pointer to `[y, ...]`
     Store(Var, VarList),
     /// `Load([x, ...], y)` binds `[x, ...]` to the values that is pointed by `y`
@@ -122,6 +126,8 @@ pub enum CtrlE<F> {
     /// Contains the variables whose bindings will construct the output of the
     /// block
     Return(VarList),
+    /// TODO: Loam-only, document
+    Exit,
 }
 
 /// Represents the cases for `CtrlE::Match`, containing the branches for successfull
@@ -140,6 +146,7 @@ pub struct FuncE<F> {
     pub name: Name,
     pub invertible: bool,
     pub partial: bool,
+    pub loam: bool,
     pub input_params: VarList,
     pub output_size: usize,
     pub body: BlockE<F>,

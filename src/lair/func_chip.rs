@@ -141,6 +141,7 @@ impl<F> Ctrl<F> {
                 // exactly one selector per return
                 *sel += 1;
             }
+            Ctrl::Exit => todo!(),
             Ctrl::Choose(_, cases, branches) => {
                 let degrees_len = degrees.len();
                 let mut max_aux = *aux;
@@ -249,6 +250,8 @@ impl<F> Op<F> {
                 }
                 degrees.extend(vec![1; inp_size]);
             }
+            Op::Provide(_rel_idx, _args) => todo!(),
+            Op::Require(_rel_idx, _args) => todo!(),
             Op::Store(..) => {
                 *aux += 4;
                 degrees.push(1);

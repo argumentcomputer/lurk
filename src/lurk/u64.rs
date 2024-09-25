@@ -249,7 +249,7 @@ mod test {
             return c
         });
         let lurk_chip_map = lurk_chip_map();
-        let toplevel = Toplevel::new(&[add_func], lurk_chip_map);
+        let toplevel = Toplevel::new_lurk(&[add_func], lurk_chip_map);
 
         let add_chip = FuncChip::from_name("add", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
@@ -307,7 +307,7 @@ mod test {
             return c
         });
         let lurk_chip_map = lurk_chip_map();
-        let toplevel = Toplevel::new(&[sub_func], lurk_chip_map);
+        let toplevel = Toplevel::new_lurk(&[sub_func], lurk_chip_map);
 
         let sub_chip = FuncChip::from_name("sub", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
@@ -369,7 +369,7 @@ mod test {
             return g
         });
         let lurk_chip_map = lurk_chip_map();
-        let toplevel = Toplevel::new(&[mul_func], lurk_chip_map);
+        let toplevel = Toplevel::new_lurk(&[mul_func], lurk_chip_map);
 
         let mul_chip = FuncChip::from_name("mul", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
@@ -427,7 +427,7 @@ mod test {
             return (div, rem)
         });
         let lurk_chip_map = lurk_chip_map();
-        let toplevel = Toplevel::new(&[divrem_func], lurk_chip_map);
+        let toplevel = Toplevel::new_lurk(&[divrem_func], lurk_chip_map);
 
         let divrem_chip = FuncChip::from_name("divrem", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
@@ -503,7 +503,7 @@ mod test {
             return c
         });
         let lurk_chip_map = lurk_chip_map();
-        let toplevel = Toplevel::new(&[lessthan_func], lurk_chip_map);
+        let toplevel = Toplevel::new_lurk(&[lessthan_func], lurk_chip_map);
 
         let lessthan_chip = FuncChip::from_name("lessthan", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
@@ -558,7 +558,7 @@ mod test {
             return c
         });
         let lurk_chip_map = lurk_chip_map();
-        let toplevel = Toplevel::new(&[iszero_func], lurk_chip_map);
+        let toplevel = Toplevel::new_lurk(&[iszero_func], lurk_chip_map);
 
         let iszero_chip = FuncChip::from_name("iszero", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);

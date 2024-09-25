@@ -9,6 +9,7 @@ const MEMORY_TAG: u32 = 1;
 pub struct CallRelation<Idx, Inp, Out>(pub Idx, pub Inp, pub Out);
 pub struct OuterCallRelation<Idx, PublicValues>(pub Idx, pub PublicValues);
 pub struct MemoryRelation<Ptr, ValuesIter>(pub Ptr, pub ValuesIter);
+pub struct LoamRelation<RelIdx, Args>(pub RelIdx, pub Args);
 
 impl<F: AbstractField, FuncIdx: Into<F>, IntoInputIter, IntoOutputIter, Value: Into<F>> Relation<F>
     for CallRelation<FuncIdx, IntoInputIter, IntoOutputIter>
@@ -54,6 +55,20 @@ where
         chain(
             [T::from_canonical_u32(MEMORY_TAG), ptr.into()],
             values_iter.into_iter().map(Into::into),
+        )
+    }
+}
+
+impl<F: AbstractField, RelIdx: Into<F>, IntoArgs, Value: Into<F>> Relation<F>
+    for LoamRelation<RelIdx, IntoArgs>
+where
+    IntoArgs: IntoIterator<Item = Value>,
+{
+    fn values(self) -> impl IntoIterator<Item = F> {
+        let Self(rel_idx, args) = self;
+        chain(
+            [F::from_canonical_u32(CALL_TAG), rel_idx.into()],
+            args.into_iter().map(Into::into),
         )
     }
 }

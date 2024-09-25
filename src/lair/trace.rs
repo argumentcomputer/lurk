@@ -97,7 +97,7 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
                 let lookup = query_map
                     .get(args)
                     .expect("Cannot find query result")
-                    .provide;
+                    .provides[0];
                 let provide = lookup.into_provide();
                 result
                     .output
@@ -201,6 +201,7 @@ impl<F: PrimeField32> Ctrl<F> {
                 assert!(ctx.depth_requires.next().is_none());
                 slice.sel[*ident] = F::one();
             }
+            Ctrl::Exit => todo!(),
             Ctrl::Choose(var, cases, _) => {
                 let val = map[*var].0;
                 let branch = cases.match_case(&val).expect("No match");
@@ -358,6 +359,8 @@ impl<F: PrimeField32> Op<F> {
                     push_depth(index, slice, ctx, result.depth);
                 };
             }
+            Op::Provide(_rel_idx, _args) => todo!(),
+            Op::Require(_rel_idx, _args) => todo!(),
             Op::Store(args) => {
                 let mem_idx = mem_index_from_len(args.len());
                 let query_map = &ctx.queries.mem_queries[mem_idx];

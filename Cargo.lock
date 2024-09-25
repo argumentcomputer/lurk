@@ -135,7 +135,7 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 [[package]]
 name = "ascent"
 version = "0.6.0"
-source = "git+https://github.com/argumentcomputer/ascent.git#9c245a8ccf0024699312caafa9c5bce69d3f1831"
+source = "git+https://github.com/argumentcomputer/ascent.git#b098230dc7c92e7d7e5e8d64af52755b69e97b39"
 dependencies = [
  "ascent_base",
  "ascent_macro",
@@ -152,7 +152,7 @@ dependencies = [
 [[package]]
 name = "ascent_base"
 version = "0.6.0"
-source = "git+https://github.com/argumentcomputer/ascent.git#9c245a8ccf0024699312caafa9c5bce69d3f1831"
+source = "git+https://github.com/argumentcomputer/ascent.git#b098230dc7c92e7d7e5e8d64af52755b69e97b39"
 dependencies = [
  "paste",
 ]
@@ -160,7 +160,7 @@ dependencies = [
 [[package]]
 name = "ascent_macro"
 version = "0.6.0"
-source = "git+https://github.com/argumentcomputer/ascent.git#9c245a8ccf0024699312caafa9c5bce69d3f1831"
+source = "git+https://github.com/argumentcomputer/ascent.git#b098230dc7c92e7d7e5e8d64af52755b69e97b39"
 dependencies = [
  "ascent_base",
  "derive-syn-parse",
@@ -1245,9 +1245,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
-version = "0.2.158"
+version = "0.2.159"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8adc4bb1803a324070e64a98ae98f38934d91957a99cfb3a43dcbc01bc56439"
+checksum = "561d97a539a36e26a9a5fad1ea11a3039a67714694aaa379433e580854bc3dc5"
 
 [[package]]
 name = "libm"
@@ -2118,9 +2118,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.5.4"
+version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0884ad60e090bf1345b93da0a5de8923c93884cd03f40dfcfddd3b4bee661853"
+checksum = "355ae415ccd3a04315d3f8246e86d67689ea74d88d915576e1589a351062a13b"
 dependencies = [
  "bitflags",
 ]
