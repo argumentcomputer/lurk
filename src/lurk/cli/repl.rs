@@ -485,14 +485,13 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         result_data.map(|data| ZPtr::from_flat_data(&data))
     }
 
-    #[inline]
-    pub(crate) fn reduce(&mut self, expr: &ZPtr<F>) -> Result<ZPtr<F>> {
-        let env = self.env;
-        self.reduce_with_env(expr, &env)
-    }
-
-    pub(crate) fn handle_non_meta(&mut self, expr: &ZPtr<F>) -> Result<ZPtr<F>> {
-        let result = self.reduce(expr)?;
+    pub(crate) fn handle_non_meta(
+        &mut self,
+        expr: &ZPtr<F>,
+        env: Option<ZPtr<F>>,
+    ) -> Result<ZPtr<F>> {
+        let env = env.unwrap_or(self.env);
+        let result = self.reduce_with_env(expr, &env)?;
         self.memoize_dag(result.tag, &result.digest);
         let iterations = self.queries.func_queries[self.eval_idx].len();
         println!(
@@ -550,7 +549,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         if is_meta {
             self.handle_meta(&zptr, file_dir)?;
         } else {
-            let result = self.handle_non_meta(&zptr)?;
+            let result = self.handle_non_meta(&zptr, None)?;
             if result.tag == Tag::Err {
                 // error out when loading a file
                 bail!("Reduction error: {}", self.fmt(&result));
@@ -615,7 +614,7 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
                                     {
                                         eprintln!("!Error: {e}");
                                     }
-                                } else if let Err(e) = self.handle_non_meta(&zptr) {
+                                } else if let Err(e) = self.handle_non_meta(&zptr, None) {
                                     eprintln!("Error: {e}");
                                 }
                                 line = rest.to_string();

@@ -17,7 +17,7 @@ use crate::{
     },
 };
 
-use super::{lurk_data::LurkData, zdag::ZDag};
+use super::{comm_data::CommData, lurk_data::LurkData, zdag::ZDag};
 
 #[derive(Serialize, Deserialize)]
 struct CryptoShardProof {
@@ -35,6 +35,11 @@ pub(crate) struct CryptoProof {
 }
 
 type F = BabyBear;
+
+#[inline]
+pub(crate) fn get_verifier_version() -> &'static str {
+    env!("VERGEN_GIT_SHA")
+}
 
 impl CryptoProof {
     #[inline]
@@ -73,7 +78,7 @@ impl CryptoProof {
 
     #[inline]
     pub(crate) fn has_same_verifier_version(&self) -> bool {
-        self.verifier_version == env!("VERGEN_GIT_SHA")
+        self.verifier_version == get_verifier_version()
     }
 }
 
@@ -189,4 +194,12 @@ impl ProtocolProof {
             args: LurkData::new(args, zstore),
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct ChainProof {
+    pub(crate) crypto_proof: CryptoProof,
+    pub(crate) call_args: ZPtr<F>,
+    pub(crate) chain_result: LurkData<F>,
+    pub(crate) next_callable: CommData<F>,
 }

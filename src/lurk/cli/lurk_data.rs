@@ -10,7 +10,7 @@ use super::zdag::ZDag;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct LurkData<F: std::hash::Hash + Eq> {
-    zptr: ZPtr<F>,
+    pub(crate) zptr: ZPtr<F>,
     zdag: ZDag<F>,
 }
 
@@ -30,5 +30,10 @@ impl<F: std::hash::Hash + Eq + Default + Copy> LurkData<F> {
         let Self { zptr, zdag } = self;
         zdag.populate_zstore(zstore);
         zptr
+    }
+
+    #[inline]
+    pub(crate) fn has_opaque_data(&self) -> bool {
+        self.zdag.has_opaque_data(&self.zptr)
     }
 }

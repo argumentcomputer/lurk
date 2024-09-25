@@ -84,4 +84,18 @@ impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
             zstore.dag.insert(zptr, zptr_type);
         }
     }
+
+    /// Whether there's data missing in the ZDag or not
+    pub(crate) fn has_opaque_data(&self, zptr: &ZPtr<F>) -> bool {
+        match self.0.get(zptr) {
+            None => true,
+            Some(ZPtrType::Atom) => false,
+            Some(ZPtrType::Tuple2(a, b) | ZPtrType::Compact10(a, b)) => {
+                self.has_opaque_data(a) || self.has_opaque_data(b)
+            }
+            Some(ZPtrType::Compact110(a, b, c)) => {
+                self.has_opaque_data(a) || self.has_opaque_data(b) || self.has_opaque_data(c)
+            }
+        }
+    }
 }
