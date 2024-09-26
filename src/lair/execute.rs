@@ -637,8 +637,9 @@ impl<F: PrimeField32> Func<F> {
                         push_block_exec_entries!(&func.body);
                     }
                 }
-                ExecEntry::Op(Op::Provide(_relation_idx, _args)) => todo!(),
-                ExecEntry::Op(Op::Require(_relation_idx, _args)) => todo!(),
+                ExecEntry::Op(Op::Provide(..)) | ExecEntry::Op(Op::Require(..)) => {
+                    panic!("Provide and require cannot yet be run on Lair")
+                }
                 ExecEntry::Op(Op::Const(c)) => map.push(*c),
                 ExecEntry::Op(Op::Add(a, b)) => map.push(map[*a] + map[*b]),
                 ExecEntry::Op(Op::Sub(a, b)) => map.push(map[*a] - map[*b]),

@@ -27,7 +27,15 @@ pub(crate) struct FuncInfo {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RelationInfo;
+pub struct RelationInfo {
+    size: usize,
+}
+
+impl RelationInfo {
+    pub fn new(size: usize) -> Self {
+        RelationInfo { size }
+    }
+}
 
 impl<F: Field + Ord, H: Chipset<F>> Toplevel<F, H> {
     pub fn new(
@@ -539,8 +547,26 @@ impl<F: Field + Ord> OpE<F> {
                 ops.push(Op::PreImg(name_idx, inp, *fmt));
                 out.iter().for_each(|t| bind_new(t, ctx));
             }
-            OpE::Provide(_rel, _args) => todo!(),
-            OpE::Require(_rel, _args) => todo!(),
+            OpE::Provide(rel, args) => {
+                let rel_idx = ctx
+                    .relation_map
+                    .get_index_of(rel)
+                    .unwrap_or_else(|| panic!("Unknown relation {rel}"));
+                let RelationInfo { size } = ctx.relation_map.get_index(rel_idx).unwrap().1;
+                assert_eq!(args.total_size(), size);
+                let args = args.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
+                ops.push(Op::Provide(rel_idx, args));
+            }
+            OpE::Require(rel, args) => {
+                let rel_idx = ctx
+                    .relation_map
+                    .get_index_of(rel)
+                    .unwrap_or_else(|| panic!("Unknown relation {rel}"));
+                let RelationInfo { size } = ctx.relation_map.get_index(rel_idx).unwrap().1;
+                assert_eq!(args.total_size(), size);
+                let args = args.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
+                ops.push(Op::Require(rel_idx, args));
+            }
             OpE::Store(ptr, vals) => {
                 assert_eq!(ptr.size, 1);
                 let vals = vals.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();

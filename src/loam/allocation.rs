@@ -591,14 +591,14 @@ impl AllocationProgram {
             ptr_digest_cons_rule(),
         ];
         let relation_map = Map::from_vec(vec![
-            (Name("output_expr_rule"), RelationInfo), // TODO: there's no info in here yet
-            (Name("output_ptr_rule"), RelationInfo),
-            (Name("cons_rel_rule"), RelationInfo),
-            (Name("cons_digest_mem_rule"), RelationInfo),
-            (Name("map_double_num_rule"), RelationInfo),
-            (Name("map_double_cons_rule"), RelationInfo),
-            (Name("ptr_digest_num_rule"), RelationInfo),
-            (Name("ptr_digest_cons_rule"), RelationInfo),
+            (Name("output_expr_rule"), RelationInfo::new(10)),
+            (Name("output_ptr_rule"), RelationInfo::new(4)),
+            (Name("cons_rel_rule"), RelationInfo::new(5)),
+            (Name("cons_digest_mem_rule"), RelationInfo::new(29)),
+            (Name("map_double_num_rule"), RelationInfo::new(2)),
+            (Name("map_double_cons_rule"), RelationInfo::new(12)),
+            (Name("ptr_digest_num_rule"), RelationInfo::new(9)),
+            (Name("ptr_digest_cons_rule"), RelationInfo::new(9)),
         ]);
         let toplevel = Toplevel::new_loam(&allocation_funcs, relation_map);
         let queries = QueryRecord::new(&toplevel);
