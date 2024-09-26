@@ -7,6 +7,17 @@ use super::{bytecode::*, chipset::Chipset, expr::*, map::Map, List, Name};
 pub struct Toplevel<F, H: Chipset<F>> {
     pub(crate) map: Map<Name, Func<F>>,
     pub(crate) chip_map: Map<Name, H>,
+    pub(crate) relation_map: Map<Name, RelationInfo>,
+}
+
+impl<F, H: Chipset<F>> Default for Toplevel<F, H> {
+    fn default() -> Self {
+        Self {
+            map: Map::from_vec(vec![]),
+            chip_map: Map::from_vec(vec![]),
+            relation_map: Map::from_vec(vec![]),
+        }
+    }
 }
 
 pub(crate) struct FuncInfo {
@@ -15,8 +26,23 @@ pub(crate) struct FuncInfo {
     partial: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RelationInfo {
+    size: usize,
+}
+
+impl RelationInfo {
+    pub fn new(size: usize) -> Self {
+        RelationInfo { size }
+    }
+}
+
 impl<F: Field + Ord, H: Chipset<F>> Toplevel<F, H> {
-    pub fn new(funcs: &[FuncE<F>], chip_map: Map<Name, H>) -> Self {
+    pub fn new(
+        funcs: &[FuncE<F>],
+        chip_map: Map<Name, H>,
+        relation_map: Map<Name, RelationInfo>,
+    ) -> Self {
         let ordered_funcs = Map::from_vec(funcs.iter().map(|func| (func.name, func)).collect());
         let info_vec = ordered_funcs
             .iter()
@@ -34,15 +60,35 @@ impl<F: Field + Ord, H: Chipset<F>> Toplevel<F, H> {
             ordered_funcs
                 .iter()
                 .enumerate()
-                .map(|(i, (name, func))| (*name, func.check_and_link(i, &info_map, &chip_map)))
+                .map(|(i, (name, func))| {
+                    (
+                        *name,
+                        func.check_and_link(i, &info_map, &chip_map, &relation_map),
+                    )
+                })
                 .collect(),
         );
-        Toplevel { map, chip_map }
+        Toplevel {
+            map,
+            chip_map,
+            relation_map,
+        }
     }
 
     pub fn new_pure(funcs: &[FuncE<F>]) -> Self {
         let chip_map = Map::from_vec(vec![]);
-        Toplevel::new(funcs, chip_map)
+        let relation_map = Map::from_vec(vec![]);
+        Toplevel::new(funcs, chip_map, relation_map)
+    }
+
+    pub fn new_lurk(funcs: &[FuncE<F>], chip_map: Map<Name, H>) -> Self {
+        let no_relation_map = Map::from_vec(vec![]);
+        Toplevel::new(funcs, chip_map, no_relation_map)
+    }
+
+    pub fn new_loam(funcs: &[FuncE<F>], relation_map: Map<Name, RelationInfo>) -> Self {
+        let chip_map = Map::from_vec(vec![]);
+        Toplevel::new(funcs, chip_map, relation_map)
     }
 }
 
@@ -70,6 +116,14 @@ impl<F, H: Chipset<F>> Toplevel<F, H> {
         self.chip_map
             .get_index(i)
             .map(|(_, func)| func)
+            .expect("Index out of bounds")
+    }
+
+    #[inline]
+    pub fn get_relation_by_index(&self, i: usize) -> &RelationInfo {
+        self.relation_map
+            .get_index(i)
+            .map(|(_, rel_info)| rel_info)
             .expect("Index out of bounds")
     }
 }
@@ -123,6 +177,8 @@ struct CheckCtx<'a, H> {
     used_map: UsedMap,
     info_map: &'a Map<Name, FuncInfo>,
     chip_map: &'a Map<Name, H>,
+    /// Loam-only
+    relation_map: &'a Map<Name, RelationInfo>,
 }
 
 impl<'a, H> CheckCtx<'a, H> {
@@ -150,6 +206,7 @@ impl<F: Field + Ord> FuncE<F> {
         func_index: usize,
         info_map: &Map<Name, FuncInfo>,
         chip_map: &Map<Name, H>,
+        relation_map: &Map<Name, RelationInfo>,
     ) -> Func<F> {
         let ctx = &mut CheckCtx {
             var_index: 0,
@@ -162,6 +219,7 @@ impl<F: Field + Ord> FuncE<F> {
             used_map: FxHashMap::default(),
             info_map,
             chip_map,
+            relation_map,
         };
         self.input_params.iter().for_each(|var| {
             bind_new(var, ctx);
@@ -178,6 +236,7 @@ impl<F: Field + Ord> FuncE<F> {
             name: self.name,
             invertible: self.invertible,
             partial: self.partial,
+            loam: self.loam,
             index: func_index,
             body,
             input_size: self.input_params.total_size(),
@@ -272,6 +331,8 @@ impl<F: Field + Ord> CtrlE<F> {
                 let cases = Cases { branches, default };
                 Ctrl::Choose(var, cases, unique_branches.into())
             }
+            // TODO: fix-me!!
+            CtrlE::Exit => Ctrl::Exit,
             CtrlE::MatchMany(t, cases) => {
                 let size = t.size;
                 let vars: List<_> = use_var(t, ctx).into();
@@ -485,6 +546,26 @@ impl<F: Field + Ord> OpE<F> {
                 let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
                 ops.push(Op::PreImg(name_idx, inp, *fmt));
                 out.iter().for_each(|t| bind_new(t, ctx));
+            }
+            OpE::Provide(rel, args) => {
+                let rel_idx = ctx
+                    .relation_map
+                    .get_index_of(rel)
+                    .unwrap_or_else(|| panic!("Unknown relation {rel}"));
+                let RelationInfo { size } = ctx.relation_map.get_index(rel_idx).unwrap().1;
+                assert_eq!(args.total_size(), size);
+                let args = args.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
+                ops.push(Op::Provide(rel_idx, args));
+            }
+            OpE::Require(rel, args) => {
+                let rel_idx = ctx
+                    .relation_map
+                    .get_index_of(rel)
+                    .unwrap_or_else(|| panic!("Unknown relation {rel}"));
+                let RelationInfo { size } = ctx.relation_map.get_index(rel_idx).unwrap().1;
+                assert_eq!(args.total_size(), size);
+                let args = args.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
+                ops.push(Op::Require(rel_idx, args));
             }
             OpE::Store(ptr, vals) => {
                 assert_eq!(ptr.size, 1);

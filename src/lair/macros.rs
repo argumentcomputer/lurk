@@ -6,6 +6,19 @@ macro_rules! func {
             name: $crate::lair::Name(stringify!($name)),
             invertible: false,
             partial: false,
+            loam: false,
+            input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
+            output_size: $size,
+            body: $crate::block_init!($lair),
+        }
+    }};
+    (loam fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
+        $(let $in = $crate::var!($in $(, $in_size)?);)*
+        $crate::lair::expr::FuncE {
+            name: $crate::lair::Name(stringify!($name)),
+            invertible: false,
+            partial: false,
+            loam: true,
             input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
             output_size: $size,
             body: $crate::block_init!($lair),
@@ -17,6 +30,7 @@ macro_rules! func {
             name: $crate::lair::Name(stringify!($name)),
             invertible: false,
             partial: true,
+            loam: false,
             input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
             output_size: $size,
             body: $crate::block_init!($lair),
@@ -28,6 +42,7 @@ macro_rules! func {
             name: $crate::lair::Name(stringify!($name)),
             invertible: true,
             partial: false,
+            loam: false,
             input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
             output_size: $size,
             body: $crate::block_init!($lair),
@@ -39,6 +54,7 @@ macro_rules! func {
             name: $crate::lair::Name(stringify!($name)),
             invertible: true,
             partial: true,
+            loam: false,
             input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
             output_size: $size,
             body: $crate::block_init!($lair),
@@ -74,6 +90,18 @@ macro_rules! block_init {
 #[macro_export]
 macro_rules! block {
     // Operations
+    ({ provide!($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+        let rel = $crate::lair::Name(stringify!($func));
+        let args = [$($arg),*].into();
+        $ops.push($crate::lair::expr::OpE::Provide(rel, args));
+        $crate::block!({ $($tail)* }, $ops)
+    }};
+    ({ require!($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+        let rel = $crate::lair::Name(stringify!($func));
+        let args = [$($arg),*].into();
+        $ops.push($crate::lair::expr::OpE::Require(rel, args));
+        $crate::block!({ $($tail)* }, $ops)
+    }};
     ({ range_u8!($($a:ident),*); $($tail:tt)+ }, $ops:expr) => {{
         $ops.push($crate::lair::expr::OpE::RangeU8([$($a),*].into()));
         $crate::block!({ $($tail)* }, $ops)

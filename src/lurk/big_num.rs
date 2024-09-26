@@ -120,6 +120,7 @@ mod test {
             execute::{QueryRecord, Shard},
             func_chip::FuncChip,
             lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
+            map::Map,
             toplevel::Toplevel,
         },
         lurk::chipset::lurk_chip_map,
@@ -135,7 +136,7 @@ mod test {
             return c
         });
         let lurk_chip_map = lurk_chip_map();
-        let toplevel = Toplevel::new(&[lessthan_func], lurk_chip_map);
+        let toplevel = Toplevel::new_lurk(&[lessthan_func], lurk_chip_map);
 
         let lessthan_chip = FuncChip::from_name("lessthan", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);

@@ -26,7 +26,7 @@ pub(crate) type MemMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct QueryResult<F> {
     pub(crate) output: Option<List<F>>,
-    pub(crate) provide: Record,
+    pub(crate) provides: Vec<Record>,
     pub(crate) requires: Vec<Record>,
     pub(crate) depth: u32,
     pub(crate) depth_requires: Vec<Record>,
@@ -39,7 +39,7 @@ impl<F: PrimeField32> QueryResult<F> {
     }
 
     pub(crate) fn new_lookup(&mut self, nonce: usize, caller_requires: &mut Vec<Record>) {
-        caller_requires.push(self.provide.new_lookup(nonce as u32));
+        caller_requires.push(self.provides[0].new_lookup(nonce as u32));
     }
 }
 
@@ -63,7 +63,7 @@ pub struct DebugData {
     pub(crate) breakpoints: Vec<usize>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct QueryRecord<F: PrimeField32> {
     pub(crate) public_values: Option<Vec<F>>,
     pub(crate) func_queries: Vec<QueryMap<F>>,
@@ -155,7 +155,11 @@ impl<'a, F: PrimeField32> MachineRecord for Shard<'a, F> {
             queries
                 .func_queries
                 .iter()
-                .map(|im| im.values().map(|r| r.provide.count as usize).sum::<usize>())
+                .map(|im| {
+                    im.values()
+                        .map(|r| r.provides[0].count as usize)
+                        .sum::<usize>()
+                })
                 .sum(),
         );
 
@@ -169,7 +173,11 @@ impl<'a, F: PrimeField32> MachineRecord for Shard<'a, F> {
             queries
                 .mem_queries
                 .iter()
-                .map(|im| im.values().map(|r| r.provide.count as usize).sum::<usize>())
+                .map(|im| {
+                    im.values()
+                        .map(|r| r.provides[0].count as usize)
+                        .sum::<usize>()
+                })
                 .sum(),
         );
         map.insert(
@@ -442,7 +450,8 @@ impl<F: PrimeField32> Func<F> {
     ) -> Result<(List<F>, u32)> {
         let mut func_index = self.index;
         let mut query_result = QueryResult::default();
-        query_result.provide.count = 1;
+        query_result.provides.push(Record::default());
+        query_result.provides[0].count = 1;
         let (mut nonce, _) =
             queries.func_queries[func_index].insert_full(args.into(), query_result);
         let mut map = args.to_vec();
@@ -628,6 +637,9 @@ impl<F: PrimeField32> Func<F> {
                         push_block_exec_entries!(&func.body);
                     }
                 }
+                ExecEntry::Op(Op::Provide(..)) | ExecEntry::Op(Op::Require(..)) => {
+                    panic!("Provide and require cannot yet be run on Lair")
+                }
                 ExecEntry::Op(Op::Const(c)) => map.push(*c),
                 ExecEntry::Op(Op::Add(a, b)) => map.push(map[*a] + map[*b]),
                 ExecEntry::Op(Op::Sub(a, b)) => map.push(map[*a] - map[*b]),
@@ -766,6 +778,7 @@ impl<F: PrimeField32> Func<F> {
                         break;
                     }
                 }
+                ExecEntry::Ctrl(Ctrl::Exit) => todo!(),
                 ExecEntry::Ctrl(Ctrl::Choose(v, cases, _)) => {
                     let v = map[*v];
                     let block = cases.match_case(&v).expect("No match");

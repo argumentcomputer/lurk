@@ -166,6 +166,15 @@ impl Ptr {
     }
 }
 
+impl IntoIterator for Ptr {
+    type Item = LE;
+    type IntoIter = std::array::IntoIter<LE, 2>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        [self.0, self.1].into_iter()
+    }
+}
+
 /// Possible ways two pointer can be "equal" to each other
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub enum PtrEq {
@@ -221,6 +230,15 @@ impl From<&Num> for Wide {
 impl From<Num> for Wide {
     fn from(f: Num) -> Self {
         (&f).into()
+    }
+}
+
+impl IntoIterator for Wide {
+    type Item = LE;
+    type IntoIter = std::array::IntoIter<LE, 8>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 

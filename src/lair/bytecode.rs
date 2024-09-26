@@ -40,6 +40,10 @@ pub enum Op<F> {
     /// use it to format an error message and bail at runtime instead of panicking
     /// when the preimage is not available
     PreImg(usize, List<usize>, Option<fn(&[F]) -> String>),
+    /// TODO: Loam-only, document
+    Provide(usize, List<usize>),
+    /// TODO: Loam-only, document
+    Require(usize, List<usize>),
     /// `Store([y, ...])` pushes the pointer to `[y, ...]` to the stack
     Store(List<usize>),
     /// `Load(len, y)` extends the stack with the `len` values that is pointed by `y`
@@ -79,6 +83,8 @@ pub enum Ctrl<F> {
     /// block. The first `usize` is an unique identifier, representing the
     /// selector used for arithmetization
     Return(usize, List<usize>),
+    /// TODO: Loam-only, document
+    Exit,
 }
 
 /// Represents the cases for `Ctrl::Match`, containing the branches for successfull
@@ -139,6 +145,7 @@ pub struct Func<F> {
     pub(crate) name: Name,
     pub(crate) invertible: bool,
     pub(crate) partial: bool,
+    pub(crate) loam: bool,
     pub(crate) index: usize,
     pub(crate) input_size: usize,
     pub(crate) output_size: usize,

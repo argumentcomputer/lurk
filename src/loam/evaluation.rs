@@ -10,14 +10,13 @@ use strum::EnumCount;
 use crate::loam::allocation::Allocator;
 use crate::loam::lurk_sym_index;
 use crate::loam::memory::{
-    generate_lisp_program, initial_builtin_addr, initial_builtin_relation, initial_symbol_addr,
-    initial_symbol_relation, initial_tag_relation, Memory, VPtr, VirtualMemory,
+    generate_lisp_program, initial_builtin_addr, initial_builtin_relation, initial_tag_relation,
+    Memory, VPtr, VirtualMemory,
 };
 use crate::loam::{LEWrap, LoamProgram, Num, Ptr, PtrEq, Wide, WidePtr, LE};
 use crate::lurk::chipset::LurkChip;
-use crate::lurk::state::BUILTIN_SYMBOLS;
 use crate::lurk::tag::Tag;
-use crate::lurk::zstore::{builtin_set, lurk_zstore, ZPtr, ZStore};
+use crate::lurk::zstore::{lurk_zstore, ZPtr, ZStore};
 
 use p3_field::{AbstractField, Field, PrimeField32};
 
@@ -170,14 +169,14 @@ impl Ptr {
         }
     }
 
-    pub fn built_in_name(&self) -> &str {
-        assert!(self.is_built_in(), "not built_in");
-        let mut idx = self.1.as_canonical_u32() as usize;
-        if idx >= 18 {
-            idx += 1;
-        }
-        BUILTIN_SYMBOLS[idx]
-    }
+    // pub fn built_in_name(&self) -> &str {
+    //     assert!(self.is_built_in(), "not built_in");
+    //     let mut idx = self.1.as_canonical_u32() as usize;
+    //     if idx >= 18 {
+    //         idx += 1;
+    //     }
+    //     BUILTIN_SYMBOLS[idx]
+    // }
 }
 
 impl Tag {
@@ -473,8 +472,25 @@ ascent! {
     // Fun
     egress(args), egress(body), egress(closed_env) <-- egress(fun), fun_rel(args, body, closed_env, fun);
 
-    // Num
-    ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_num();
+    func!(
+    fn egress_num(ptr: [2]) -> [0] {
+        require!(egress(ptr)); // somehow this happens
+        let (tag, value) = ptr;
+        assert_eq!(tag, Tag::Num);
+        let zeros = [0; 7];
+        let wide_value = (value, zeros);
+        provide!(ptr, wide_value); // somehow this happens
+    })
+
+// Num
+ptr_value(ptr, wide_value) <--
+    egress(ptr),
+    {
+        let (tag, value) = ptr;
+        assert_eq!(tag, Tag::Num);
+        let zeros = [0; 7];
+        let wide_value = (value, zeros);
+    };
 
     // Err
     ptr_value(ptr, Wide::widen(ptr.1)) <-- egress(ptr), if ptr.is_err();

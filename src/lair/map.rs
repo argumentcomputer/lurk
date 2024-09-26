@@ -69,7 +69,7 @@ impl<K, V> Map<K, V> {
         self.0
     }
 
-    /// Retrieves the key/value pair by intex
+    /// Retrieves the key/value pair by index
     #[inline]
     pub fn get_index(&self, i: usize) -> Option<&(K, V)> {
         self.0.get(i)

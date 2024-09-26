@@ -117,7 +117,7 @@ pub fn build_lurk_toplevel() -> (Toplevel<BabyBear, LurkChip>, ZStore<BabyBear, 
         big_num_lessthan(),
     ];
     let lurk_chip_map = lurk_chip_map();
-    let toplevel = Toplevel::new(funcs, lurk_chip_map);
+    let toplevel = Toplevel::new_lurk(funcs, lurk_chip_map);
     (toplevel, zstore)
 }
 
@@ -218,6 +218,7 @@ pub fn preallocate_symbols<F: AbstractField>(digests: &Digests<'_, F>) -> FuncE<
         name: Name("preallocate_symbols"),
         invertible: false,
         partial: false,
+        loam: false,
         input_params: [].into(),
         output_size: 0,
         body: BlockE { ops, ctrl },
