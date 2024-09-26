@@ -309,7 +309,7 @@ ascent! {
 
     // Register cons value.
     #[call({
-        if let Some((toplevel, queries)) = &mut _self.toplevel_and_queries { 
+        if let Some((toplevel, queries)) = &mut _self.toplevel_and_queries {
             let mut args = vec![];
             args.extend(*value);
             args.extend([addr.0.0]);

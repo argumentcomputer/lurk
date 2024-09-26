@@ -35,7 +35,7 @@ pub enum Op<F> {
     /// `[a, b, ...]` in the stack
     Call(usize, List<usize>),
     /// `PreImg(i, [a, b, ...], fmt)` extends the stack with the latest preimage
-    /// (beware of non-injectivity) of the function of index `i` when called with    
+    /// (beware of non-injectivity) of the function of index `i` when called with
     /// arguments at positions `[a, b, ...]` in the stack. If `fmt` is `Some`,
     /// use it to format an error message and bail at runtime instead of panicking
     /// when the preimage is not available

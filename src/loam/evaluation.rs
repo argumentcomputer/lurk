@@ -10,8 +10,8 @@ use strum::EnumCount;
 use crate::loam::allocation::Allocator;
 use crate::loam::lurk_sym_index;
 use crate::loam::memory::{
-    generate_lisp_program, initial_builtin_addr, initial_builtin_relation,
-    initial_tag_relation, Memory, VPtr, VirtualMemory,
+    generate_lisp_program, initial_builtin_addr, initial_builtin_relation, initial_tag_relation,
+    Memory, VPtr, VirtualMemory,
 };
 use crate::loam::{LEWrap, LoamProgram, Num, Ptr, PtrEq, Wide, WidePtr, LE};
 use crate::lurk::chipset::LurkChip;

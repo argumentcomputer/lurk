@@ -155,7 +155,11 @@ impl<'a, F: PrimeField32> MachineRecord for Shard<'a, F> {
             queries
                 .func_queries
                 .iter()
-                .map(|im| im.values().map(|r| r.provides[0].count as usize).sum::<usize>())
+                .map(|im| {
+                    im.values()
+                        .map(|r| r.provides[0].count as usize)
+                        .sum::<usize>()
+                })
                 .sum(),
         );
 
@@ -169,7 +173,11 @@ impl<'a, F: PrimeField32> MachineRecord for Shard<'a, F> {
             queries
                 .mem_queries
                 .iter()
-                .map(|im| im.values().map(|r| r.provides[0].count as usize).sum::<usize>())
+                .map(|im| {
+                    im.values()
+                        .map(|r| r.provides[0].count as usize)
+                        .sum::<usize>()
+                })
                 .sum(),
         );
         map.insert(

@@ -117,7 +117,11 @@ mod test {
         air::debug::debug_chip_constraints_and_queries_with_sharding,
         func,
         lair::{
-            execute::{QueryRecord, Shard}, func_chip::FuncChip, lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram}, map::Map, toplevel::Toplevel
+            execute::{QueryRecord, Shard},
+            func_chip::FuncChip,
+            lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
+            map::Map,
+            toplevel::Toplevel,
         },
         lurk::chipset::lurk_chip_map,
     };
