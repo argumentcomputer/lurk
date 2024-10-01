@@ -494,6 +494,12 @@ test!(
     "((lambda (&rest &rest) (car &rest)) 1 2 5)",
     |_| uint(1)
 );
+test!(test_shadow7, "(let ((&rest 1)) &rest)", |_| uint(1));
+test!(
+    test_shadow8,
+    "(let ((&rest (lambda (x) x))) (&rest 1))",
+    |_| uint(1)
+);
 
 // errors
 test!(test_unbound_var, "a", |_| ZPtr::err(EvalErr::UnboundVar));
