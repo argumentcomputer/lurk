@@ -106,12 +106,13 @@ impl<F> SymbolsDigests<F> {
 fn native_lurk_funcs<F: PrimeField32>(
     digests: &SymbolsDigests<F>,
     coroutines: &FxIndexMap<Symbol, Coroutine<F>>,
-) -> [FuncE<F>; 34] {
+) -> [FuncE<F>; 35] {
     [
         lurk_main(),
         preallocate_symbols(digests),
         eval(),
         eval_builtin_expr(digests),
+        eval_apply_builtin(),
         eval_coroutine_expr(digests, coroutines),
         eval_opening_unop(digests),
         eval_hide(),
@@ -994,19 +995,7 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
                             return (t_tag, t)
                         }
                         "apply" => {
-                            let (fst_tag, fst) = call(eval, fst_tag, fst, env);
-                            match fst_tag {
-                                Tag::Err => {
-                                    return (fst_tag, fst)
-                                }
-                            };
-                            let (snd_tag, snd) = call(eval, snd_tag, snd, env);
-                            match snd_tag {
-                                Tag::Err => {
-                                    return (snd_tag, snd)
-                                }
-                            };
-                            let (res_tag, res) = call(apply, fst_tag, fst, snd_tag, snd, env);
+                            let (res_tag, res) = call(eval_apply_builtin, fst_tag, fst, snd_tag, snd, env);
                             return (res_tag, res)
                         }
                     }
@@ -1212,6 +1201,27 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
                 }
                 // TODO: other built-ins
             }
+        }
+    )
+}
+
+pub fn eval_apply_builtin<F: AbstractField>() -> FuncE<F> {
+    func!(
+        partial fn eval_apply_builtin(fst_tag, fst, snd_tag, snd, env): [2] {
+            let (fst_tag, fst) = call(eval, fst_tag, fst, env);
+            match fst_tag {
+                Tag::Err => {
+                    return (fst_tag, fst)
+                }
+            };
+            let (snd_tag, snd) = call(eval, snd_tag, snd, env);
+            match snd_tag {
+                Tag::Err => {
+                    return (snd_tag, snd)
+                }
+            };
+            let (res_tag, res) = call(apply, fst_tag, fst, snd_tag, snd, env);
+            return (res_tag, res)
         }
     )
 }
@@ -2259,6 +2269,7 @@ mod test {
         let eval_coroutine_expr = FuncChip::from_name("eval_coroutine_expr", toplevel);
         let eval = FuncChip::from_name("eval", toplevel);
         let eval_builtin_expr = FuncChip::from_name("eval_builtin_expr", toplevel);
+        let eval_apply_builtin = FuncChip::from_name("eval_apply_builtin", toplevel);
         let eval_opening_unop = FuncChip::from_name("eval_opening_unop", toplevel);
         let eval_hide = FuncChip::from_name("eval_hide", toplevel);
         let eval_unop = FuncChip::from_name("eval_unop", toplevel);
@@ -2296,7 +2307,8 @@ mod test {
         expect_eq(preallocate_symbols.width(), expect!["176"]);
         expect_eq(eval_coroutine_expr.width(), expect!["10"]);
         expect_eq(eval.width(), expect!["77"]);
-        expect_eq(eval_builtin_expr.width(), expect!["153"]);
+        expect_eq(eval_builtin_expr.width(), expect!["143"]);
+        expect_eq(eval_apply_builtin.width(), expect!["79"]);
         expect_eq(eval_opening_unop.width(), expect!["97"]);
         expect_eq(eval_hide.width(), expect!["115"]);
         expect_eq(eval_unop.width(), expect!["78"]);
