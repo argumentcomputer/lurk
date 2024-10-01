@@ -319,6 +319,9 @@ test_raw!(
 test!(test_eq22, "(eq 1n 0n)", |z| *z.nil());
 test!(test_eq23, "(eq 1n 1n)", |z| *z.t());
 
+test!(test_eqq, "(eqq (1 . 2) (cons 1 2))", |z| *z.t());
+test!(test_eqq2, "(eqq (cons 1 2) (cons 1 2))", |z| *z.nil());
+
 test!(
     test_misc1,
     "(letrec ((ones (cons 1 (lambda () ones))))

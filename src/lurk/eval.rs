@@ -1173,7 +1173,13 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
                     return (err_tag, invalid_form)
                 }
                 "eq" => {
-                    let res: [2] = call(equal, rest_tag, rest, env);
+                    let one = 1;
+                    let res: [2] = call(equal, rest_tag, rest, env, one);
+                    return res
+                }
+                "eqq" => {
+                    let zero = 0;
+                    let res: [2] = call(equal, rest_tag, rest, env, zero);
                     return res
                 }
                 "hide" => {
@@ -1304,7 +1310,7 @@ pub fn car_cdr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
 
 pub fn equal<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
-        partial fn equal(rest_tag, rest, env): [2] {
+        partial fn equal(rest_tag, rest, env, eval_first): [2] {
             let err_tag = Tag::Err;
             let cons_tag = Tag::Cons;
             let nil_tag = InternalTag::Nil;
@@ -1323,19 +1329,28 @@ pub fn equal<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
             if rest_not_nil {
                 return (err_tag, invalid_form)
             }
-            let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
-            match val1_tag {
-                Tag::Err => {
-                    return (val1_tag, val1)
-                }
-            };
             let (val2_tag, val2) = call(eval, exp2_tag, exp2, env);
             match val2_tag {
                 Tag::Err => {
                     return (val2_tag, val2)
                 }
             };
-            let is_equal_inner = call(equal_inner, val1_tag, val1, val2_tag, val2);
+            if eval_first {
+                let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
+                match val1_tag {
+                    Tag::Err => {
+                        return (val1_tag, val1)
+                    }
+                };
+                let is_equal_inner = call(equal_inner, val1_tag, val1, val2_tag, val2);
+                if is_equal_inner {
+                    let t_tag = InternalTag::T;
+                    let t = digests.lurk_symbol_ptr("t");
+                    return (t_tag, t)
+                }
+                return (nil_tag, is_equal_inner) // `is_equal_inner` is zero
+            }
+            let is_equal_inner = call(equal_inner, exp1_tag, exp1, val2_tag, val2);
             if is_equal_inner {
                 let t_tag = InternalTag::T;
                 let t = digests.lurk_symbol_ptr("t");
@@ -2309,10 +2324,10 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["97"]);
-        expect_eq(preallocate_symbols.width(), expect!["176"]);
+        expect_eq(preallocate_symbols.width(), expect!["180"]);
         expect_eq(eval_coroutine_expr.width(), expect!["10"]);
         expect_eq(eval.width(), expect!["77"]);
-        expect_eq(eval_builtin_expr.width(), expect!["143"]);
+        expect_eq(eval_builtin_expr.width(), expect!["144"]);
         expect_eq(eval_apply_builtin.width(), expect!["79"]);
         expect_eq(eval_opening_unop.width(), expect!["97"]);
         expect_eq(eval_hide.width(), expect!["115"]);
@@ -2325,7 +2340,7 @@ mod test {
         expect_eq(eval_letrec.width(), expect!["98"]);
         expect_eq(coerce_if_sym.width(), expect!["9"]);
         expect_eq(open_comm.width(), expect!["50"]);
-        expect_eq(equal.width(), expect!["82"]);
+        expect_eq(equal.width(), expect!["86"]);
         expect_eq(equal_inner.width(), expect!["59"]);
         expect_eq(car_cdr.width(), expect!["61"]);
         expect_eq(apply.width(), expect!["115"]);
