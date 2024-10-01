@@ -127,7 +127,7 @@ fn native_lurk_funcs<F: PrimeField32>(
         car_cdr(digests),
         eval_let(),
         eval_letrec(),
-        apply(&digests),
+        apply(digests),
         env_lookup(),
         ingress(digests),
         egress(digests),
@@ -2107,7 +2107,7 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     // check if the only params left are "&rest <var>"
                     let (param_tag, param, rest_params_tag, rest_params) = load(params);
                     match param_tag {
-                        Tag::Sym, Tag::Builtin => {
+                        Tag::Sym, Tag::Builtin, Tag::Coroutine => {
                             let rest_sym = digests.lurk_symbol_ptr("&rest");
                             let is_not_rest_sym = sub(param, rest_sym);
                             if !is_not_rest_sym {
@@ -2120,7 +2120,7 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                     Tag::Cons => {
                                         let (param_tag, param, rest_params_tag, rest_params) = load(rest_params);
                                         match param_tag {
-                                            Tag::Sym, Tag::Builtin => {
+                                            Tag::Sym, Tag::Builtin, Tag::Coroutine => {
                                                 match rest_params_tag {
                                                     InternalTag::Nil => {
                                                         // evaluate all the remaining arguments and collect into a list
@@ -2161,7 +2161,7 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                 Tag::Cons => {
                                     let (arg_tag, arg, rest_args_tag, rest_args) = load(args);
                                     match param_tag {
-                                        Tag::Sym, Tag::Builtin => {
+                                        Tag::Sym, Tag::Builtin, Tag::Coroutine => {
                                             // evaluate the argument
                                             let (arg_tag, arg) = call(eval, arg_tag, arg, args_env);
                                             match arg_tag {
@@ -2325,7 +2325,7 @@ mod test {
         expect_eq(equal.width(), expect!["82"]);
         expect_eq(equal_inner.width(), expect!["59"]);
         expect_eq(car_cdr.width(), expect!["61"]);
-        expect_eq(apply.width(), expect!["114"]);
+        expect_eq(apply.width(), expect!["115"]);
         expect_eq(env_lookup.width(), expect!["52"]);
         expect_eq(ingress.width(), expect!["105"]);
         expect_eq(egress.width(), expect!["82"]);
