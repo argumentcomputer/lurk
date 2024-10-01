@@ -266,6 +266,26 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         },
     };
 
+    const UPDATE: Self = Self {
+        name: "update",
+        summary: "Updates an env variable by applying it to a function.",
+        format: "!(update <symbol> <function_expr>)",
+        info: &[],
+        example: &["!(def a 1)", "!(update a (lambda (x) (+ x 1)))"],
+        run: |repl, args, _path| {
+            let (&sym, &fun) = repl.peek2(args)?;
+            Self::validate_binding_var(repl, &sym)?;
+            let expr = repl.zstore.intern_list([fun, sym]);
+            let (res, _) = repl.reduce_aux(&expr)?;
+            if res.tag == Tag::Err {
+                bail!("Reduction error: {}", repl.fmt(&res));
+            }
+            println!("{}", repl.fmt(&sym));
+            repl.env = repl.zstore.intern_env(sym, res, repl.env);
+            Ok(())
+        },
+    };
+
     const CLEAR: Self = Self {
         name: "clear",
         summary: "Resets the current environment to be empty.",
@@ -517,7 +537,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
 
     fn validate_binding_var(repl: &Repl<F, C1, C2>, zptr: &ZPtr<F>) -> Result<()> {
         match zptr.tag {
-            Tag::Builtin => Ok(()),
+            Tag::Builtin | Tag::Coroutine => Ok(()),
             Tag::Sym => {
                 let zstore = &repl.zstore;
                 if zptr.digest != zstore.nil().digest && zptr.digest != zstore.t().digest {
@@ -1386,6 +1406,7 @@ pub(crate) fn meta_cmds<C1: Chipset<F>, C2: Chipset<F>>() -> MetaCmdsMap<F, C1, 
         MetaCmd::LOAD,
         MetaCmd::DEF,
         MetaCmd::DEFREC,
+        MetaCmd::UPDATE,
         MetaCmd::CLEAR,
         MetaCmd::SET_ENV,
         MetaCmd::ERASE_FROM_ENV,
