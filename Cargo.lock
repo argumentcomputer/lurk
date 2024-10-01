@@ -2509,7 +2509,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 [[package]]
 name = "sphinx-core"
 version = "1.0.0"
-source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#f51436fe14e6d029313546e8284cf6762f81f776"
+source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#75d6e85d47e00fd921fefc94ce6c3725b15bd2c2"
 dependencies = [
  "anyhow",
  "arrayref",
@@ -2571,7 +2571,7 @@ dependencies = [
 [[package]]
 name = "sphinx-derive"
 version = "1.0.0"
-source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#f51436fe14e6d029313546e8284cf6762f81f776"
+source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#75d6e85d47e00fd921fefc94ce6c3725b15bd2c2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2581,7 +2581,7 @@ dependencies = [
 [[package]]
 name = "sphinx-precompiles"
 version = "1.0.0"
-source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#f51436fe14e6d029313546e8284cf6762f81f776"
+source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#75d6e85d47e00fd921fefc94ce6c3725b15bd2c2"
 dependencies = [
  "anyhow",
  "bincode",
@@ -2595,7 +2595,7 @@ dependencies = [
 [[package]]
 name = "sphinx-primitives"
 version = "1.0.0"
-source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#f51436fe14e6d029313546e8284cf6762f81f776"
+source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#75d6e85d47e00fd921fefc94ce6c3725b15bd2c2"
 dependencies = [
  "itertools 0.12.1",
  "lazy_static",
