@@ -160,9 +160,36 @@ test!(test_app2, "((lambda (x y z) y) 1 2 3)", |_| uint(2));
 test!(test_app3, "((lambda (x) (lambda (y) x)) 1 2)", |_| {
     uint(1)
 });
+test!(test_app4, "(apply (lambda (x) x) '(1))", |_| uint(1));
+test!(test_app5, "(apply (lambda (x y z) y) (list 1 2 3))", |_| {
+    uint(2)
+});
+test!(
+    test_app6,
+    "(apply (lambda (x) (lambda (y) x)) '(1 2))",
+    |_| { uint(1) }
+);
+test!(test_app7, "((lambda (x &rest y) (car (cdr y))) 1)", |z| *z
+    .nil());
+test!(test_app8, "((lambda (x &rest y) (car (cdr y))) 1 2)", |z| {
+    *z.nil()
+});
+test!(
+    test_app9,
+    "((lambda (x &rest y) (car (cdr y))) 1 2 3)",
+    |_| uint(3)
+);
+test!(
+    test_app10,
+    "((lambda (x &rest y) (car (cdr y))) 1 2 3 4)",
+    |_| uint(3)
+);
 test!(test_app_err, "(a)", |_| ZPtr::err(EvalErr::UnboundVar));
 test!(test_app_err2, "((lambda () a) 2)", |_| ZPtr::err(
     EvalErr::UnboundVar
+));
+test!(test_app_err3, "(apply (lambda (x) x) 1)", |_| ZPtr::err(
+    EvalErr::ArgsNotList
 ));
 
 // builtins
@@ -340,7 +367,15 @@ test!(
             (if (= n 0) 0
               (if (= n 1) 1
                 (+ (fib (- n 1)) (fib (- n 2))))))))
-        (fib 10))",
+       (fib 10))",
+    |_| uint(55)
+);
+test!(
+    test_sum,
+    "(letrec ((sum
+          (lambda (x &rest y)
+            (if y (+ x (apply sum y)) x))))
+       (sum 1 2 3 4 5 6 7 8 9 10))",
     |_| uint(55)
 );
 
@@ -449,6 +484,22 @@ test!(test_shadow3, "((lambda (cons) (+ cons 1)) 1)", |_| uint(2));
 test!(test_shadow4, "(let ((cons 1)) (cons cons cons))", |z| {
     z.intern_cons(uint(1), uint(1))
 });
+test!(
+    test_shadow5,
+    "((lambda (cons &rest car) (+ cons (car car))) 1 2 5)",
+    |_| uint(3)
+);
+test!(
+    test_shadow6,
+    "((lambda (&rest &rest) (car &rest)) 1 2 5)",
+    |_| uint(1)
+);
+test!(test_shadow7, "(let ((&rest 1)) &rest)", |_| uint(1));
+test!(
+    test_shadow8,
+    "(let ((&rest (lambda (x) x))) (&rest 1))",
+    |_| uint(1)
+);
 
 // errors
 test!(test_unbound_var, "a", |_| ZPtr::err(EvalErr::UnboundVar));
@@ -501,3 +552,23 @@ test!(test_shadow_err5, "(letrec ((t 1)) (+ t 1))", |_| ZPtr::err(
 test!(test_shadow_err6, "((lambda (t) (+ t 1)) 1)", |_| ZPtr::err(
     EvalErr::IllegalBindingVar
 ));
+test!(test_shadow_err7, "((lambda (x &rest t) (+ x 1)) 1)", |_| {
+    ZPtr::err(EvalErr::IllegalBindingVar)
+});
+test!(
+    test_shadow_err8,
+    "((lambda (x &rest nil) (+ x 1)) 1)",
+    |_| ZPtr::err(EvalErr::IllegalBindingVar)
+);
+test!(test_rest_err1, "((lambda (x &rest) x) 1)", |_| ZPtr::err(
+    EvalErr::ParamInvalidRest
+));
+test!(test_rest_err2, "((lambda (x &rest y z) x) 1)", |_| {
+    ZPtr::err(EvalErr::ParamInvalidRest)
+});
+test!(test_rest_err3, "((lambda (&rest y z) z) 1)", |_| ZPtr::err(
+    EvalErr::ParamInvalidRest
+));
+test!(test_rest_err4, "((lambda (&rest) &rest) 1)", |_| {
+    ZPtr::err(EvalErr::ParamInvalidRest)
+});

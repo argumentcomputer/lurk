@@ -106,12 +106,13 @@ impl<F> SymbolsDigests<F> {
 fn native_lurk_funcs<F: PrimeField32>(
     digests: &SymbolsDigests<F>,
     coroutines: &FxIndexMap<Symbol, Coroutine<F>>,
-) -> [FuncE<F>; 34] {
+) -> [FuncE<F>; 35] {
     [
         lurk_main(),
         preallocate_symbols(digests),
         eval(),
         eval_builtin_expr(digests),
+        eval_apply_builtin(),
         eval_coroutine_expr(digests, coroutines),
         eval_opening_unop(digests),
         eval_hide(),
@@ -127,7 +128,7 @@ fn native_lurk_funcs<F: PrimeField32>(
         car_cdr(digests),
         eval_let(),
         eval_letrec(),
-        apply(),
+        apply(digests),
         env_lookup(),
         ingress(digests),
         egress(digests),
@@ -197,6 +198,7 @@ pub enum EvalErr {
     ApplyNonFunc,
     ParamsNotList,
     ParamNotSymbol,
+    ParamInvalidRest,
     ArgsNotList,
     InvalidArg,
     DivByZero,
@@ -908,7 +910,7 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
             let err_tag = Tag::Err;
             let invalid_form = EvalErr::InvalidForm;
             match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
-                "let", "letrec", "lambda", "cons", "strcons", "type-eq", "type-eqq" => {
+                "let", "letrec", "lambda", "cons", "strcons", "type-eq", "type-eqq", "apply" => {
                     let rest_not_cons = sub(rest_tag, cons_tag);
                     if rest_not_cons {
                         return (err_tag, invalid_form)
@@ -991,6 +993,10 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
                             let t_tag = InternalTag::T;
                             let t = digests.lurk_symbol_ptr("t");
                             return (t_tag, t)
+                        }
+                        "apply" => {
+                            let (res_tag, res) = call(eval_apply_builtin, fst_tag, fst, snd_tag, snd, env);
+                            return (res_tag, res)
                         }
                     }
                 }
@@ -1195,6 +1201,27 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
                 }
                 // TODO: other built-ins
             }
+        }
+    )
+}
+
+pub fn eval_apply_builtin<F: AbstractField>() -> FuncE<F> {
+    func!(
+        partial fn eval_apply_builtin(fst_tag, fst, snd_tag, snd, env): [2] {
+            let (fst_tag, fst) = call(eval, fst_tag, fst, env);
+            match fst_tag {
+                Tag::Err => {
+                    return (fst_tag, fst)
+                }
+            };
+            let (snd_tag, snd) = call(eval, snd_tag, snd, env);
+            match snd_tag {
+                Tag::Err => {
+                    return (snd_tag, snd)
+                }
+            };
+            let (res_tag, res) = call(apply, fst_tag, fst, snd_tag, snd, env);
+            return (res_tag, res)
         }
     )
 }
@@ -2032,7 +2059,7 @@ pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn apply<F: AbstractField>() -> FuncE<F> {
+pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn apply(head_tag, head, args_tag, args, args_env): [2] {
             // Constants, tags, etc
@@ -2073,13 +2100,97 @@ pub fn apply<F: AbstractField>() -> FuncE<F> {
                     return (err_tag, err)
                 }
                 Tag::Cons => {
+                    // check if the only params left are "&rest <var>"
+                    let (param_tag, param, rest_params_tag, rest_params) = load(params);
+                    match param_tag {
+                        Tag::Sym, Tag::Builtin, Tag::Coroutine => {
+                            let rest_sym = digests.lurk_symbol_ptr("&rest");
+                            let is_not_rest_sym = sub(param, rest_sym);
+                            if !is_not_rest_sym {
+                                // check whether the next param in the list is a variable
+                                match rest_params_tag {
+                                    InternalTag::Nil => {
+                                        let err = EvalErr::ParamInvalidRest;
+                                        return (err_tag, err)
+                                    }
+                                    Tag::Cons => {
+                                        let (param_tag, param, rest_params_tag, rest_params) = load(rest_params);
+                                        match param_tag {
+                                            Tag::Sym, Tag::Builtin, Tag::Coroutine => {
+                                                // check that there are no remaining arguments after the variable
+                                                match rest_params_tag {
+                                                    InternalTag::Nil => {
+                                                        // evaluate all the remaining arguments and collect into a list
+                                                        let (arg_tag, arg) = call(eval_list, args_tag, args, args_env);
+                                                        match arg_tag {
+                                                            Tag::Err => {
+                                                                return (arg_tag, arg)
+                                                            }
+                                                        };
+
+                                                        // and store it in the environment
+                                                        let ext_env = store(param_tag, param, arg_tag, arg, func_env);
+                                                        let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
+                                                        let nil_tag = InternalTag::Nil;
+                                                        let nil = digests.lurk_symbol_ptr("nil");
+                                                        let (res_tag, res) = call(apply, fun_tag, ext_fun, nil_tag, nil, args_env);
+
+                                                        return (res_tag, res)
+                                                    }
+                                                };
+                                                let err = EvalErr::ParamInvalidRest;
+                                                return (err_tag, err)
+                                            }
+                                        };
+                                        let err = EvalErr::IllegalBindingVar;
+                                        return (err_tag, err)
+                                    }
+                                };
+                                let err = EvalErr::ParamsNotList;
+                                return (err_tag, err)
+                            }
+                            // NOTE: the two block of codes below delimited by the comments are the *exact* same and *must* be kept in sync
+                            // --- DUPLICATED APPLY BLOCK START ---
+                            match args_tag {
+                                InternalTag::Nil => {
+                                    // Undersaturated application
+                                    return (head_tag, head)
+                                }
+                                Tag::Cons => {
+                                    let (arg_tag, arg, rest_args_tag, rest_args) = load(args);
+                                    match param_tag {
+                                        Tag::Sym, Tag::Builtin, Tag::Coroutine => {
+                                            // evaluate the argument
+                                            let (arg_tag, arg) = call(eval, arg_tag, arg, args_env);
+                                            match arg_tag {
+                                                Tag::Err => {
+                                                    return (arg_tag, arg)
+                                                }
+                                            };
+                                            // and store it in the environment
+                                            let ext_env = store(param_tag, param, arg_tag, arg, func_env);
+                                            let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
+                                            let (res_tag, res) = call(apply, fun_tag, ext_fun, rest_args_tag, rest_args, args_env);
+
+                                            return (res_tag, res)
+                                        }
+                                    };
+                                    let err = EvalErr::IllegalBindingVar;
+                                    return (err_tag, err)
+                                }
+                            };
+                            let err = EvalErr::ArgsNotList;
+                            return (err_tag, err)
+                            // --- DUPLICATED APPLY BLOCK END ---
+                        }
+                    };
+                    // --- DUPLICATED APPLY BLOCK START ---
                     match args_tag {
                         InternalTag::Nil => {
                             // Undersaturated application
                             return (head_tag, head)
                         }
                         Tag::Cons => {
-                            let (param_tag, param, rest_params_tag, rest_params) = load(params);
                             let (arg_tag, arg, rest_args_tag, rest_args) = load(args);
                             match param_tag {
                                 Tag::Sym, Tag::Builtin, Tag::Coroutine => {
@@ -2104,6 +2215,7 @@ pub fn apply<F: AbstractField>() -> FuncE<F> {
                     };
                     let err = EvalErr::ArgsNotList;
                     return (err_tag, err)
+                    // --- DUPLICATED APPLY BLOCK END ---
                 }
             };
             let err = EvalErr::ParamsNotList;
@@ -2162,6 +2274,7 @@ mod test {
         let eval_coroutine_expr = FuncChip::from_name("eval_coroutine_expr", toplevel);
         let eval = FuncChip::from_name("eval", toplevel);
         let eval_builtin_expr = FuncChip::from_name("eval_builtin_expr", toplevel);
+        let eval_apply_builtin = FuncChip::from_name("eval_apply_builtin", toplevel);
         let eval_opening_unop = FuncChip::from_name("eval_opening_unop", toplevel);
         let eval_hide = FuncChip::from_name("eval_hide", toplevel);
         let eval_unop = FuncChip::from_name("eval_unop", toplevel);
@@ -2196,10 +2309,11 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["97"]);
-        expect_eq(preallocate_symbols.width(), expect!["168"]);
+        expect_eq(preallocate_symbols.width(), expect!["176"]);
         expect_eq(eval_coroutine_expr.width(), expect!["10"]);
         expect_eq(eval.width(), expect!["77"]);
-        expect_eq(eval_builtin_expr.width(), expect!["142"]);
+        expect_eq(eval_builtin_expr.width(), expect!["143"]);
+        expect_eq(eval_apply_builtin.width(), expect!["79"]);
         expect_eq(eval_opening_unop.width(), expect!["97"]);
         expect_eq(eval_hide.width(), expect!["115"]);
         expect_eq(eval_unop.width(), expect!["78"]);
@@ -2214,7 +2328,7 @@ mod test {
         expect_eq(equal.width(), expect!["82"]);
         expect_eq(equal_inner.width(), expect!["59"]);
         expect_eq(car_cdr.width(), expect!["61"]);
-        expect_eq(apply.width(), expect!["101"]);
+        expect_eq(apply.width(), expect!["115"]);
         expect_eq(env_lookup.width(), expect!["52"]);
         expect_eq(ingress.width(), expect!["105"]);
         expect_eq(egress.width(), expect!["82"]);

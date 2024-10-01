@@ -73,13 +73,6 @@
                          (revappend (cdr x) (cons (car x) y))
                          y)))
 
-!(defrec apply (lambda (f args)
-                 (if args
-                     (if (cdr args)
-                         (apply (f (car args)) (cdr args))
-                         (f (car args)))
-                     (f))))
-
 !(def getf (lambda (plist indicator)
              (letrec ((aux (lambda (plist)
                              (if plist
