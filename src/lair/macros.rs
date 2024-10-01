@@ -177,32 +177,32 @@ macro_rules! block {
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let ($($tgt:ident $(: [$size:expr])?),*) = call($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
-        let func = $crate::lair::Name(stringify!($func));
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = call($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+        let func = $crate::lair::Name(stringify!($name));
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::Call(out, func, inp));
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let $tgt:ident $(: [$size:expr])? = call($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
-        let func = $crate::lair::Name(stringify!($func));
+    ({ let $tgt:ident $(: [$size:expr])? = call($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+        let func = $crate::lair::Name(stringify!($name));
         let out = [$crate::var!($tgt $(, $size)?)].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::Call(out, func, inp));
         let $tgt = $crate::var!($tgt $(, $size)?);
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let ($($tgt:ident $(: [$size:expr])?),*) = extern_call($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
-        let func = $crate::lair::Name(stringify!($func));
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = extern_call($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+        let func = $crate::lair::Name(stringify!($name));
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::ExternCall(out, func, inp));
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let $tgt:ident $(: [$size:expr])? = extern_call($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
-        let func = $crate::lair::Name(stringify!($func));
+    ({ let $tgt:ident $(: [$size:expr])? = extern_call($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+        let func = $crate::lair::Name(stringify!($name));
         let out = [$crate::var!($tgt $(, $size)?)].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::ExternCall(out, func, inp));
@@ -214,24 +214,24 @@ macro_rules! block {
         $ops.push($crate::lair::expr::OpE::Emit(inp));
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let ($($tgt:ident $(: [$size:expr])?),*) = preimg($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
-        let func = $crate::lair::Name(stringify!($func));
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = preimg($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+        let func = $crate::lair::Name(stringify!($name));
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::PreImg(out, func, inp, None));
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let ($($tgt:ident $(: [$size:expr])?),*) = preimg($func:ident, $($arg:ident),*, $fmt:expr); $($tail:tt)+ }, $ops:expr) => {{
-        let func = $crate::lair::Name(stringify!($func));
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = preimg($name:ident, $($arg:ident),*, $fmt:expr); $($tail:tt)+ }, $ops:expr) => {{
+        let func = $crate::lair::Name(stringify!($name));
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::PreImg(out, func, inp, Some($fmt)));
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
         $crate::block!({ $($tail)* }, $ops)
     }};
-    ({ let $tgt:ident $(: [$size:expr])? = preimg($func:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
-        let func = $crate::lair::Name(stringify!($func));
+    ({ let $tgt:ident $(: [$size:expr])? = preimg($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+        let func = $crate::lair::Name(stringify!($name));
         let out = [$crate::var!($tgt $(, $size)?)].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::PreImg(out, func, inp, None));

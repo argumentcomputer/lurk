@@ -236,7 +236,7 @@ mod test {
             lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
             toplevel::Toplevel,
         },
-        lurk::chipset::lurk_chip_map,
+        lurk::chipset::lurk_chip_map_native,
     };
 
     #[test]
@@ -248,7 +248,7 @@ mod test {
             let c: [8] = extern_call(u64_add, a, b);
             return c
         });
-        let lurk_chip_map = lurk_chip_map();
+        let lurk_chip_map = lurk_chip_map_native();
         let toplevel = Toplevel::new(&[add_func], lurk_chip_map);
 
         let add_chip = FuncChip::from_name("add", &toplevel);
@@ -306,7 +306,7 @@ mod test {
             let c: [8] = extern_call(u64_sub, a, b);
             return c
         });
-        let lurk_chip_map = lurk_chip_map();
+        let lurk_chip_map = lurk_chip_map_native();
         let toplevel = Toplevel::new(&[sub_func], lurk_chip_map);
 
         let sub_chip = FuncChip::from_name("sub", &toplevel);
@@ -368,7 +368,7 @@ mod test {
             let g: [8] = extern_call(u64_mul, f, f);
             return g
         });
-        let lurk_chip_map = lurk_chip_map();
+        let lurk_chip_map = lurk_chip_map_native();
         let toplevel = Toplevel::new(&[mul_func], lurk_chip_map);
 
         let mul_chip = FuncChip::from_name("mul", &toplevel);
@@ -426,7 +426,7 @@ mod test {
             let (div: [8], rem: [8]) = extern_call(u64_divrem, a, b);
             return (div, rem)
         });
-        let lurk_chip_map = lurk_chip_map();
+        let lurk_chip_map = lurk_chip_map_native();
         let toplevel = Toplevel::new(&[divrem_func], lurk_chip_map);
 
         let divrem_chip = FuncChip::from_name("divrem", &toplevel);
@@ -502,7 +502,7 @@ mod test {
             let c = extern_call(u64_lessthan, a, b);
             return c
         });
-        let lurk_chip_map = lurk_chip_map();
+        let lurk_chip_map = lurk_chip_map_native();
         let toplevel = Toplevel::new(&[lessthan_func], lurk_chip_map);
 
         let lessthan_chip = FuncChip::from_name("lessthan", &toplevel);
@@ -557,7 +557,7 @@ mod test {
             let c = extern_call(u64_iszero, a);
             return c
         });
-        let lurk_chip_map = lurk_chip_map();
+        let lurk_chip_map = lurk_chip_map_native();
         let toplevel = Toplevel::new(&[iszero_func], lurk_chip_map);
 
         let iszero_chip = FuncChip::from_name("iszero", &toplevel);

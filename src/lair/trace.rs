@@ -69,7 +69,7 @@ impl<'a, T> ColumnMutSlice<'a, T> {
     }
 }
 
-impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
+impl<'a, F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
     /// Per-row parallel trace generation
     pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
         let func_queries = &shard.queries().func_queries()[self.func.index];
@@ -134,9 +134,9 @@ impl<'a, F: PrimeField32, H: Chipset<F>> FuncChip<'a, F, H> {
     }
 }
 
-struct TraceCtx<'a, F: PrimeField32, H: Chipset<F>> {
+struct TraceCtx<'a, F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> {
     queries: &'a QueryRecord<F>,
-    toplevel: &'a Toplevel<F, H>,
+    toplevel: &'a Toplevel<F, C1, C2>,
     requires: Iter<'a, Record>,
     depth: u32,
     depth_requires: Iter<'a, Record>,
@@ -144,14 +144,14 @@ struct TraceCtx<'a, F: PrimeField32, H: Chipset<F>> {
 
 impl<F: PrimeField32> Func<F> {
     #[allow(clippy::too_many_arguments)]
-    fn populate_row<H: Chipset<F>>(
+    fn populate_row<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         args: &[F],
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
         queries: &QueryRecord<F>,
         requires: Iter<'_, Record>,
-        toplevel: &Toplevel<F, H>,
+        toplevel: &Toplevel<F, C1, C2>,
         depth: u32,
         depth_requires: Iter<'_, Record>,
     ) {
@@ -173,9 +173,9 @@ impl<F: PrimeField32> Func<F> {
 }
 
 impl<F: PrimeField32> Block<F> {
-    fn populate_row<H: Chipset<F>>(
+    fn populate_row<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
-        ctx: &mut TraceCtx<'_, F, H>,
+        ctx: &mut TraceCtx<'_, F, C1, C2>,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
@@ -188,9 +188,9 @@ impl<F: PrimeField32> Block<F> {
 }
 
 impl<F: PrimeField32> Ctrl<F> {
-    fn populate_row<H: Chipset<F>>(
+    fn populate_row<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
-        ctx: &mut TraceCtx<'_, F, H>,
+        ctx: &mut TraceCtx<'_, F, C1, C2>,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
@@ -232,10 +232,10 @@ fn push_inequality_witness<F: PrimeField, I: Iterator<Item = F>>(
     assert!(found);
 }
 
-fn push_depth<F: PrimeField32, H: Chipset<F>>(
+fn push_depth<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>>(
     index: &mut ColumnIndex,
     slice: &mut ColumnMutSlice<'_, F>,
-    ctx: &mut TraceCtx<'_, F, H>,
+    ctx: &mut TraceCtx<'_, F, C1, C2>,
     depth: u32,
 ) {
     let depth_bytes: [u8; DEPTH_W] = depth.to_le_bytes();
@@ -254,9 +254,9 @@ fn push_depth<F: PrimeField32, H: Chipset<F>>(
 }
 
 impl<F: PrimeField32> Op<F> {
-    fn populate_row<H: Chipset<F>>(
+    fn populate_row<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
-        ctx: &mut TraceCtx<'_, F, H>,
+        ctx: &mut TraceCtx<'_, F, C1, C2>,
         map: &mut Vec<(F, Degree)>,
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_, F>,
@@ -323,7 +323,7 @@ impl<F: PrimeField32> Op<F> {
                 }
             }
             Op::Call(idx, inp) => {
-                let func = ctx.toplevel.get_by_index(*idx);
+                let func = ctx.toplevel.func_by_index(*idx);
                 let args = inp.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let query_map = &ctx.queries.func_queries()[*idx];
                 let result = query_map.get(&args).expect("Cannot find query result");
@@ -333,19 +333,19 @@ impl<F: PrimeField32> Op<F> {
                 }
                 let lookup = ctx.requires.next().expect("Not enough require hints");
                 slice.push_require(index, lookup.into_require());
-                // dependency provenance and constrants
+                // dependency provenance and constraints
                 if func.partial {
                     push_depth(index, slice, ctx, result.depth);
                 }
             }
             Op::PreImg(idx, out, _) => {
-                let func = ctx.toplevel.get_by_index(*idx);
+                let func = ctx.toplevel.func_by_index(*idx);
                 let out = out.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let inv_map = ctx.queries.inv_func_queries[*idx]
                     .as_ref()
                     .expect("Function not invertible");
                 let inp = inv_map.get(&out).expect("Cannot find preimage");
-                // dependency provenance and constrants
+                // dependency provenance and constraints
                 for f in inp.iter() {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
@@ -386,7 +386,7 @@ impl<F: PrimeField32> Op<F> {
                 slice.push_require(index, lookup.into_require());
             }
             Op::ExternCall(chip_idx, input) => {
-                let chip = ctx.toplevel.get_chip_by_index(*chip_idx);
+                let chip = ctx.toplevel.chip_by_index(*chip_idx);
 
                 let input = input.iter().map(|a| map[*a].0).collect::<List<_>>();
                 let mut witness = vec![F::zero(); chip.witness_size()];
@@ -423,7 +423,7 @@ mod tests {
         air::debug::debug_chip_constraints_and_queries_with_sharding,
         func,
         lair::{
-            chipset::Nochip,
+            chipset::NoChip,
             demo_toplevel,
             execute::{QueryRecord, Shard, ShardingConfig},
             field_from_u32,
@@ -446,7 +446,7 @@ mod tests {
     fn lair_layout_sizes_test() {
         let toplevel = demo_toplevel::<F>();
 
-        let factorial = toplevel.get_by_name("factorial");
+        let factorial = toplevel.func_by_name("factorial");
         let out = factorial.compute_layout_sizes(&toplevel);
         let expected_layout_sizes = LayoutSizes {
             nonce: 1,
@@ -539,7 +539,7 @@ mod tests {
             let res = call(test, pred, m);
             return res
         });
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[func_e]);
+        let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {
@@ -606,7 +606,7 @@ mod tests {
                 }
             }
         });
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[func_e]);
+        let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {
@@ -623,7 +623,7 @@ mod tests {
         let two = &[F::from_canonical_u32(1), F::from_canonical_u32(0)];
         let three = &[F::from_canonical_u32(1), F::from_canonical_u32(1)];
         let mut queries = QueryRecord::new(&toplevel);
-        let test_func = toplevel.get_by_name("test");
+        let test_func = toplevel.func_by_name("test");
         toplevel
             .execute(test_func, zero, &mut queries, None)
             .unwrap();
@@ -655,7 +655,7 @@ mod tests {
     #[test]
     fn lair_shard_test() {
         sphinx_core::utils::setup_logger();
-        type H = Nochip;
+        type C = NoChip;
         let func_ack = func!(
         fn ackermann(m, n): [1] {
             let one = 1;
@@ -677,7 +677,7 @@ mod tests {
             let ret = call(ackermann, m_minus_one, inner);
             return ret
         });
-        let toplevel = Toplevel::<F, H>::new_pure(&[func_ack]);
+        let toplevel = Toplevel::<F, C, C>::new_pure(&[func_ack]);
         let ack_chip = FuncChip::from_name("ackermann", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
 

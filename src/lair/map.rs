@@ -46,17 +46,6 @@ impl<K: Ord, V> Map<K, V> {
 }
 
 impl<K, V> Map<K, V> {
-    /// Creates a `Map` from a vector without sorting
-    ///
-    /// # Warning
-    /// It will create an inconsistent map if the pairs aren't already sorted
-    #[inline]
-    pub(crate) fn from_vec_unsafe(pairs: Vec<(K, V)>) -> Self {
-        Self(pairs.into())
-    }
-}
-
-impl<K, V> Map<K, V> {
     /// Returns the slice of pairs
     #[inline]
     pub fn get_pairs(&self) -> &[(K, V)] {

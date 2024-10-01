@@ -36,18 +36,19 @@ use super::{
 
 #[allow(dead_code)]
 #[allow(clippy::type_complexity)]
-pub(crate) struct MetaCmd<F: PrimeField32, H: Chipset<F>> {
+pub(crate) struct MetaCmd<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> {
     name: &'static str,
     summary: &'static str,
     format: &'static str,
     info: &'static [&'static str],
     example: &'static [&'static str],
-    pub(crate) run: fn(repl: &mut Repl<F, H>, args: &ZPtr<F>, file_path: &Utf8Path) -> Result<()>,
+    pub(crate) run:
+        fn(repl: &mut Repl<F, C1, C2>, args: &ZPtr<F>, file_path: &Utf8Path) -> Result<()>,
 }
 
-pub(crate) type MetaCmdsMap<F, H> = FxHashMap<&'static str, MetaCmd<F, H>>;
+pub(crate) type MetaCmdsMap<F, C1, C2> = FxHashMap<&'static str, MetaCmd<F, C1, C2>>;
 
-impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
+impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const ASSERT: Self = Self {
         name: "assert",
         summary: "Asserts that an expression doesn't reduce to nil.",
@@ -211,9 +212,13 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         example: &["!(def foo (lambda () 123))"],
         run: |repl, args, _path| {
             let (&sym, _) = repl.peek2(args)?;
-            let let_ = repl.zstore.intern_symbol(&builtin_sym("let"));
+            let let_ = repl
+                .zstore
+                .intern_symbol(&builtin_sym("let"), &repl.lang_symbols);
             let bindings = repl.zstore.intern_list([*args]);
-            let current_env = repl.zstore.intern_symbol(&builtin_sym("current-env"));
+            let current_env = repl
+                .zstore
+                .intern_symbol(&builtin_sym("current-env"), &repl.lang_symbols);
             let current_env_call = repl.zstore.intern_list([current_env]);
             let expr = repl.zstore.intern_list([let_, bindings, current_env_call]);
             let (output, _) = repl.reduce_aux(&expr)?;
@@ -240,9 +245,13 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         ],
         run: |repl, args, _path| {
             let (&sym, _) = repl.peek2(args)?;
-            let letrec = repl.zstore.intern_symbol(&builtin_sym("letrec"));
+            let letrec = repl
+                .zstore
+                .intern_symbol(&builtin_sym("letrec"), &repl.lang_symbols);
             let bindings = repl.zstore.intern_list([*args]);
-            let current_env = repl.zstore.intern_symbol(&builtin_sym("current-env"));
+            let current_env = repl
+                .zstore
+                .intern_symbol(&builtin_sym("current-env"), &repl.lang_symbols);
             let current_env_call = repl.zstore.intern_list([current_env]);
             let expr = repl
                 .zstore
@@ -311,7 +320,11 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         },
     };
 
-    fn persist_comm_data(secret: ZPtr<F>, payload: ZPtr<F>, repl: &mut Repl<F, H>) -> Result<()> {
+    fn persist_comm_data(
+        secret: ZPtr<F>,
+        payload: ZPtr<F>,
+        repl: &mut Repl<F, C1, C2>,
+    ) -> Result<()> {
         repl.memoize_dag(secret.tag, &secret.digest);
         repl.memoize_dag(payload.tag, &payload.digest);
         let comm_data = CommData::new(secret, payload, &repl.zstore);
@@ -322,7 +335,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         Ok(())
     }
 
-    fn hide(secret: ZPtr<F>, payload_expr: &ZPtr<F>, repl: &mut Repl<F, H>) -> Result<()> {
+    fn hide(secret: ZPtr<F>, payload_expr: &ZPtr<F>, repl: &mut Repl<F, C1, C2>) -> Result<()> {
         let (payload, _) = repl.reduce_aux(payload_expr)?;
         if payload.tag == Tag::Err {
             bail!("Payload reduction error: {}", repl.fmt(&payload));
@@ -367,7 +380,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
     };
 
     fn fetch_comm_data(
-        repl: &mut Repl<F, H>,
+        repl: &mut Repl<F, C1, C2>,
         digest: &[F],
         print_payload: Option<bool>,
     ) -> Result<()> {
@@ -426,7 +439,11 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         },
     };
 
-    fn call(repl: &mut Repl<F, H>, call_expr: &ZPtr<F>, env: Option<ZPtr<F>>) -> Result<ZPtr<F>> {
+    fn call(
+        repl: &mut Repl<F, C1, C2>,
+        call_expr: &ZPtr<F>,
+        env: Option<ZPtr<F>>,
+    ) -> Result<ZPtr<F>> {
         if call_expr == repl.zstore.nil() {
             bail!("Missing callable object");
         }
@@ -459,7 +476,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         },
     };
 
-    fn persist_chain_comm(repl: &mut Repl<F, H>, cons: &ZPtr<F>) -> Result<()> {
+    fn persist_chain_comm(repl: &mut Repl<F, C1, C2>, cons: &ZPtr<F>) -> Result<()> {
         if cons.tag != Tag::Cons {
             bail!("Chain result must be a pair");
         }
@@ -498,7 +515,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
         },
     };
 
-    fn validate_binding_var(repl: &Repl<F, H>, zptr: &ZPtr<F>) -> Result<()> {
+    fn validate_binding_var(repl: &Repl<F, C1, C2>, zptr: &ZPtr<F>) -> Result<()> {
         match zptr.tag {
             Tag::Builtin => Ok(()),
             Tag::Sym => {
@@ -514,7 +531,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
     }
 
     fn transition_call(
-        repl: &mut Repl<F, H>,
+        repl: &mut Repl<F, C1, C2>,
         current_state_expr: &ZPtr<F>,
         call_args: ZPtr<F>,
         env: Option<ZPtr<F>>,
@@ -524,7 +541,9 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
             bail!("Current state must reduce to a pair");
         }
         // reduce `call_args` elements
-        let list_sym = repl.zstore.intern_symbol(&builtin_sym("list"));
+        let list_sym = repl
+            .zstore
+            .intern_symbol(&builtin_sym("list"), &repl.lang_symbols);
         let list_expr = repl.zstore.intern_cons(list_sym, call_args);
         let (call_args, _) = repl.reduce_aux(&list_expr)?;
         repl.memoize_dag(current_state.tag, &current_state.digest);
@@ -801,7 +820,7 @@ impl<F: PrimeField32, H: Chipset<F>> MetaCmd<F, H> {
 
 type F = BabyBear;
 
-impl<H: Chipset<F>> MetaCmd<F, H> {
+impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const PROVE: Self = Self {
         name: "prove",
         summary: "Proves a Lurk reduction",
@@ -828,7 +847,10 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         Ok(io_proof)
     }
 
-    fn load_io_proof_with_repl(repl: &Repl<F, H>, args: &ZPtr<F>) -> Result<(String, IOProof)> {
+    fn load_io_proof_with_repl(
+        repl: &Repl<F, C1, C2>,
+        args: &ZPtr<F>,
+    ) -> Result<(String, IOProof)> {
         let proof_key_zptr = repl.peek1(args)?;
         if proof_key_zptr.tag != Tag::Str {
             bail!("Proof key must be a string");
@@ -890,7 +912,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
     };
 
     fn get_vars_vec_and_body<'a>(
-        repl: &'a mut Repl<F, H>,
+        repl: &'a mut Repl<F, C1, C2>,
         protocol: &'a ZPtr<F>,
     ) -> Result<(Vec<&'a ZPtr<F>>, &'a ZPtr<F>)> {
         let (protocol_elts, None) = repl.zstore.fetch_list(protocol) else {
@@ -906,7 +928,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
     }
 
     fn get_claim_and_post_verify_predicade<'a>(
-        repl: &'a mut Repl<F, H>,
+        repl: &'a mut Repl<F, C1, C2>,
         vars_vec: Vec<ZPtr<F>>,
         args_vec_reduced: Vec<ZPtr<F>>,
         body: &ZPtr<F>,
@@ -930,7 +952,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         Ok((claim, post_verify_predicate))
     }
 
-    fn post_verify_check(repl: &mut Repl<F, H>, post_verify_predicate: ZPtr<F>) -> Result<()> {
+    fn post_verify_check(repl: &mut Repl<F, C1, C2>, post_verify_predicate: ZPtr<F>) -> Result<()> {
         if &post_verify_predicate != repl.zstore.nil() {
             let post_verify_call = repl.zstore.intern_list([post_verify_predicate]);
             let empty_env = repl.zstore.intern_empty_env();
@@ -1100,7 +1122,7 @@ impl<H: Chipset<F>> MetaCmd<F, H> {
         },
     };
 
-    fn build_comm_data(repl: &mut Repl<F, H>, digest: &[F]) -> CommData<F> {
+    fn build_comm_data(repl: &mut Repl<F, C1, C2>, digest: &[F]) -> CommData<F> {
         let inv_hashes3 = repl.queries.get_inv_queries("hash3", &repl.toplevel);
         let callable_preimg = inv_hashes3
             .get(digest)
@@ -1354,7 +1376,7 @@ fn copy_inner<'a, T: Copy + 'a, I: IntoIterator<Item = &'a T>>(xs: I) -> Vec<T> 
 }
 
 #[inline]
-pub(crate) fn meta_cmds<H: Chipset<F>>() -> MetaCmdsMap<F, H> {
+pub(crate) fn meta_cmds<C1: Chipset<F>, C2: Chipset<F>>() -> MetaCmdsMap<F, C1, C2> {
     [
         MetaCmd::ASSERT,
         MetaCmd::ASSERT_EQ,

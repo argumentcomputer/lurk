@@ -121,7 +121,7 @@ mod tests {
     use crate::lair::execute::QueryRecord;
     use crate::{
         func,
-        lair::{chipset::Nochip, func_chip::FuncChip, toplevel::Toplevel},
+        lair::{chipset::NoChip, func_chip::FuncChip, toplevel::Toplevel},
     };
     use p3_baby_bear::BabyBear as F;
     use p3_field::AbstractField;
@@ -139,7 +139,7 @@ mod tests {
             let (_x, y, _z) = load(ptr1);
             return (ptr2, y)
         });
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[func_e]);
+        let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[func_e]);
         let test_chip = FuncChip::from_name("test", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         toplevel

@@ -81,7 +81,7 @@ pub enum Ctrl<F> {
     Return(usize, List<usize>),
 }
 
-/// Represents the cases for `Ctrl::Match`, containing the branches for successfull
+/// Represents the cases for `Ctrl::Match`, containing the branches for successful
 /// matches and an optional default case in case there's no match. Each code path
 /// is encoded as its own block
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -148,8 +148,8 @@ pub struct Func<F> {
 impl<F> Func<F> {
     /// Getter for the name
     #[inline]
-    pub fn name(&self) -> Name {
-        self.name
+    pub fn name(&self) -> &Name {
+        &self.name
     }
 
     /// Getter for the body block

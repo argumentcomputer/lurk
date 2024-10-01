@@ -130,7 +130,7 @@ fn eval_depth<F: Field, AB>(
     out.extend(dep_depth.iter().cloned());
 }
 
-impl<'a, AB, H: Chipset<AB::F>> Air<AB> for FuncChip<'a, AB::F, H>
+impl<'a, AB, C1: Chipset<AB::F>, C2: Chipset<AB::F>> Air<AB> for FuncChip<'a, AB::F, C1, C2>
 where
     AB: AirBuilder + LookupBuilder,
     <AB as AirBuilder>::Var: Debug,
@@ -156,10 +156,10 @@ impl<AB: AirBuilder> Val<AB> {
 }
 
 impl<F: Field> Func<F> {
-    fn eval<AB, H: Chipset<F>>(
+    fn eval<AB, C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         builder: &mut AB,
-        toplevel: &Toplevel<F, H>,
+        toplevel: &Toplevel<F, C1, C2>,
         layout_sizes: LayoutSizes,
     ) where
         AB: AirBuilder<F = F> + LookupBuilder,
@@ -190,7 +190,7 @@ impl<F: Field> Func<F> {
 
         let func_idx = F::from_canonical_usize(
             toplevel
-                .map
+                .func_map
                 .get_index_of(&self.name)
                 .expect("Func not found on toplevel"),
         );
@@ -247,14 +247,14 @@ impl<F: Field> Block<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn eval<AB, H: Chipset<F>>(
+    fn eval<AB, C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
         sel: &AB::Expr,
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
-        toplevel: &Toplevel<F, H>,
+        toplevel: &Toplevel<F, C1, C2>,
         depth: &[AB::Expr],
     ) where
         AB: AirBuilder<F = F> + LookupBuilder,
@@ -269,14 +269,14 @@ impl<F: Field> Block<F> {
 
 impl<F: Field> Op<F> {
     #[allow(clippy::too_many_arguments)]
-    fn eval<AB, H: Chipset<F>>(
+    fn eval<AB, C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
         sel: &AB::Expr,
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
-        toplevel: &Toplevel<F, H>,
+        toplevel: &Toplevel<F, C1, C2>,
         depth: &[AB::Expr],
     ) where
         AB: AirBuilder<F = F> + LookupBuilder,
@@ -387,7 +387,7 @@ impl<F: Field> Op<F> {
                 map.push(x);
             }
             Op::Call(idx, inp) => {
-                let func = toplevel.get_by_index(*idx);
+                let func = toplevel.func_by_index(*idx);
                 let mut out = Vec::with_capacity(func.output_size);
                 for _ in 0..func.output_size {
                     let o = local.next_aux(index);
@@ -408,7 +408,7 @@ impl<F: Field> Op<F> {
                 );
             }
             Op::PreImg(idx, out, _) => {
-                let func = toplevel.get_by_index(*idx);
+                let func = toplevel.func_by_index(*idx);
                 let mut inp = Vec::with_capacity(func.input_size);
                 for _ in 0..func.input_size {
                     let i = local.next_aux(index);
@@ -460,7 +460,7 @@ impl<F: Field> Op<F> {
             }
             Op::ExternCall(chip_idx, input) => {
                 let input: Vec<_> = input.iter().map(|a| map[*a].to_expr()).collect();
-                let chip = toplevel.get_chip_by_index(*chip_idx);
+                let chip = toplevel.chip_by_index(*chip_idx);
 
                 // order: witness, requires
                 let witness = local.next_n_aux(index, chip.witness_size());
@@ -496,13 +496,13 @@ impl<F: Field> Op<F> {
 }
 
 impl<F: Field> Ctrl<F> {
-    fn eval<AB, H: Chipset<F>>(
+    fn eval<AB, C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         builder: &mut AB,
         local: ColumnSlice<'_, AB::Var>,
         index: &mut ColumnIndex,
         map: &mut Vec<Val<AB>>,
-        toplevel: &Toplevel<F, H>,
+        toplevel: &Toplevel<F, C1, C2>,
         depth: &[AB::Expr],
     ) where
         AB: AirBuilder<F = F> + LookupBuilder,
@@ -570,7 +570,7 @@ mod tests {
     use crate::{
         air::debug::debug_constraints_collecting_queries,
         func,
-        lair::{chipset::Nochip, execute::Shard},
+        lair::{chipset::NoChip, execute::Shard},
     };
     use p3_baby_bear::BabyBear;
     use p3_field::AbstractField;
@@ -634,7 +634,7 @@ mod tests {
             let x = eq(a, b);
             return x
         });
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[eq_func, not_func]);
+        let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[eq_func, not_func]);
         let eq_chip = FuncChip::from_name("eq", &toplevel);
         let not_chip = FuncChip::from_name("not", &toplevel);
 
@@ -723,7 +723,7 @@ mod tests {
             let zero = 0;
             return zero
         });
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[if_many_func]);
+        let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[if_many_func]);
         let if_many_chip = FuncChip::from_name("if_many", &toplevel);
 
         let mut queries = QueryRecord::new(&toplevel);
@@ -792,7 +792,7 @@ mod tests {
             let fail = [0, 0];
             return fail
         });
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[match_many_func]);
+        let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[match_many_func]);
         let match_many_chip = FuncChip::from_name("match_many", &toplevel);
 
         let mut queries = QueryRecord::new(&toplevel);
@@ -859,7 +859,7 @@ mod tests {
             assert_eq!(a, arr2);
             return a
         });
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[assert_func]);
+        let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[assert_func]);
         let mut queries = QueryRecord::new(&toplevel);
         let f = field_from_u32;
         let args = &[f(2), f(4), f(6), f(8)];
@@ -896,7 +896,7 @@ mod tests {
             };
             return a
         });
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[func]);
+        let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[func]);
         let mut queries = QueryRecord::new(&toplevel);
         let f = field_from_u32;
         let args = &[f(1)];
@@ -946,7 +946,7 @@ mod tests {
             range_u8!(x);
             return ()
         });
-        let toplevel = Toplevel::<F, Nochip>::new_pure(&[func_range]);
+        let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[func_range]);
         let range_chip = FuncChip::from_name("range_test", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
 

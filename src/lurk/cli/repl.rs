@@ -4,7 +4,7 @@ use nom::sequence::delimited;
 use nom::Parser;
 use p3_baby_bear::BabyBear;
 use p3_field::{Field, PrimeField32};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use rustyline::{
     error::ReadlineError,
     history::DefaultHistory,
@@ -20,7 +20,7 @@ use std::{fmt::Debug, marker::PhantomData};
 
 use crate::{
     lair::{
-        chipset::Chipset,
+        chipset::{Chipset, NoChip},
         execute::{DebugEntry, DebugEntryKind, QueryRecord, QueryResult, Shard},
         func_chip::FuncChip,
         lair_chip::{build_chip_vector, LairChip, LairMachineProgram},
@@ -34,6 +34,7 @@ use crate::{
             paths::{current_dir, repl_history},
         },
         eval::build_lurk_toplevel,
+        lang::Lang,
         parser::{
             syntax::{parse_maybe_meta, parse_space},
             Error, Span,
@@ -111,30 +112,30 @@ struct ProcessedDebugEntry<F> {
     kind: ProcessedDebugEntryKind<F>,
 }
 
-pub(crate) struct Repl<F: PrimeField32, H: Chipset<F>> {
-    pub(crate) zstore: ZStore<F, H>,
+pub(crate) struct Repl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> {
+    pub(crate) zstore: ZStore<F, C1>,
     pub(crate) queries: QueryRecord<F>,
-    pub(crate) toplevel: Toplevel<F, H>,
+    pub(crate) toplevel: Toplevel<F, C1, C2>,
     pub(crate) lurk_main_idx: usize,
     eval_idx: usize,
     egress_idx: usize,
     pub(crate) env: ZPtr<F>,
     pub(crate) state: StateRcCell,
     pwd_path: Utf8PathBuf,
-    pub(crate) meta_cmds: MetaCmdsMap<F, H>,
+    pub(crate) meta_cmds: MetaCmdsMap<F, C1, C2>,
+    pub(crate) lang_symbols: FxHashSet<Symbol>,
 }
 
-impl Repl<BabyBear, LurkChip> {
-    pub(crate) fn new() -> Self {
-        let (toplevel, mut zstore) = build_lurk_toplevel();
-        let queries = QueryRecord::new(&toplevel);
-        let lurk_main_idx = toplevel.get_by_name("lurk_main").index;
-        let eval_idx = toplevel.get_by_name("eval").index;
-        let egress_idx = toplevel.get_by_name("egress").index;
+impl<C2: Chipset<BabyBear>> Repl<BabyBear, LurkChip, C2> {
+    pub(crate) fn new(lang: Lang<BabyBear, C2>) -> Self {
+        let (toplevel, mut zstore, lang_symbols) = build_lurk_toplevel(lang);
+        let lurk_main_idx = toplevel.func_by_name("lurk_main").index;
+        let eval_idx = toplevel.func_by_name("eval").index;
+        let egress_idx = toplevel.func_by_name("egress").index;
         let env = zstore.intern_empty_env();
         Self {
             zstore,
-            queries,
+            queries: QueryRecord::new(&toplevel),
             toplevel,
             lurk_main_idx,
             eval_idx,
@@ -143,14 +144,22 @@ impl Repl<BabyBear, LurkChip> {
             state: State::init_lurk_state().rccell(),
             pwd_path: current_dir().expect("Couldn't get current directory"),
             meta_cmds: meta_cmds(),
+            lang_symbols,
         }
     }
 }
 
-impl<H: Chipset<BabyBear>> Repl<BabyBear, H> {
+impl Repl<BabyBear, LurkChip, NoChip> {
+    #[inline]
+    pub(crate) fn new_native() -> Self {
+        Self::new(Lang::empty())
+    }
+}
+
+impl<C1: Chipset<BabyBear>, C2: Chipset<BabyBear>> Repl<BabyBear, C1, C2> {
     pub(crate) fn stark_machine(
         &self,
-    ) -> StarkMachine<BabyBearPoseidon2, LairChip<'_, BabyBear, H>> {
+    ) -> StarkMachine<BabyBearPoseidon2, LairChip<'_, BabyBear, C1, C2>> {
         let lurk_main_chip = FuncChip::from_index(self.lurk_main_idx, &self.toplevel);
         StarkMachine::new(
             BabyBearPoseidon2::new(),
@@ -216,7 +225,7 @@ fn pretty_iterations_display(iterations: usize) -> String {
     }
 }
 
-impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
+impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
     pub(crate) fn peek1(&self, args: &ZPtr<F>) -> Result<&ZPtr<F>> {
         if args.tag != Tag::Cons {
             bail!("Missing first argument")
@@ -525,9 +534,11 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
         file_dir: &Utf8Path,
         demo: bool,
     ) -> Result<Span<'a>> {
-        let (syntax_start, mut new_input, is_meta, zptr) = self
-            .zstore
-            .read_maybe_meta_with_state(self.state.clone(), &input)?;
+        let (syntax_start, mut new_input, is_meta, zptr) = self.zstore.read_maybe_meta_with_state(
+            self.state.clone(),
+            &input,
+            &self.lang_symbols,
+        )?;
         if demo {
             // adjustment to print the exclamation mark in the right place
             let syntax_start = syntax_start - usize::from(is_meta);
@@ -604,10 +615,11 @@ impl<F: PrimeField32, H: Chipset<F>> Repl<F, H> {
                     editor.add_history_entry(&line)?;
 
                     while !line.trim_end().is_empty() {
-                        match self
-                            .zstore
-                            .read_maybe_meta_with_state(self.state.clone(), &line)
-                        {
+                        match self.zstore.read_maybe_meta_with_state(
+                            self.state.clone(),
+                            &line,
+                            &self.lang_symbols,
+                        ) {
                             Ok((.., rest, is_meta, zptr)) => {
                                 if is_meta {
                                     if let Err(e) = self.handle_meta(&zptr, &self.pwd_path.clone())

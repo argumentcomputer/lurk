@@ -1,12 +1,12 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::time::Duration;
 
-use loam::lurk::eval::build_lurk_toplevel;
+use loam::lurk::eval::build_lurk_toplevel_native;
 
 fn toplevel(c: &mut Criterion) {
     c.bench_function("toplevel", |b| {
         b.iter(|| {
-            build_lurk_toplevel();
+            build_lurk_toplevel_native();
         })
     });
 }

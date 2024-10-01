@@ -111,7 +111,7 @@ impl Cli {
 
 impl ReplCli {
     fn run(&self) -> Result<()> {
-        let mut repl = Repl::new();
+        let mut repl = Repl::new_native();
         if let Some(lurk_file) = &self.preload {
             repl.load_file(lurk_file, false)?;
         }
@@ -121,7 +121,7 @@ impl ReplCli {
 
 impl LoadCli {
     fn run(&self) -> Result<()> {
-        let mut repl = Repl::new();
+        let mut repl = Repl::new_native();
         repl.load_file(&self.lurk_file, self.demo)?;
         if self.prove {
             repl.prove_last_reduction()?;

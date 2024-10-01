@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use loam::{
     lair::{
-        chipset::Chipset,
+        chipset::{Chipset, NoChip},
         execute::{QueryRecord, Shard},
         func_chip::FuncChip,
         lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
@@ -19,7 +19,7 @@ use loam::{
         List,
     },
     lurk::{
-        eval::build_lurk_toplevel,
+        eval::build_lurk_toplevel_native,
         zstore::{lurk_zstore, ZPtr},
     },
 };
@@ -46,18 +46,18 @@ fn build_lurk_expr(a: &str, b: &str) -> String {
     )
 }
 
-fn setup<'a, H: Chipset<BabyBear>>(
+fn setup<'a, C: Chipset<BabyBear>>(
     a: &'a str,
     b: &'a str,
-    toplevel: &'a Toplevel<BabyBear, H>,
+    toplevel: &'a Toplevel<BabyBear, C, NoChip>,
 ) -> (
     List<BabyBear>,
-    FuncChip<'a, BabyBear, H>,
+    FuncChip<'a, BabyBear, C, NoChip>,
     QueryRecord<BabyBear>,
 ) {
     let code = build_lurk_expr(a, b);
     let zstore = &mut lurk_zstore();
-    let ZPtr { tag, digest } = zstore.read(&code).unwrap();
+    let ZPtr { tag, digest } = zstore.read(&code, &Default::default()).unwrap();
 
     let mut record = QueryRecord::new(toplevel);
     record.inject_inv_queries("hash4", toplevel, &zstore.hashes4);
@@ -75,7 +75,7 @@ fn setup<'a, H: Chipset<BabyBear>>(
 fn evaluation(c: &mut Criterion) {
     let args = get_lcs_args();
     c.bench_function("lcs-evaluation", |b| {
-        let (toplevel, _) = build_lurk_toplevel();
+        let (toplevel, ..) = build_lurk_toplevel_native();
         let (args, lurk_main, record) = setup(args.0, args.1, &toplevel);
         b.iter_batched(
             || (args.clone(), record.clone()),
@@ -92,7 +92,7 @@ fn evaluation(c: &mut Criterion) {
 fn trace_generation(c: &mut Criterion) {
     let args = get_lcs_args();
     c.bench_function("lcs-trace-generation", |b| {
-        let (toplevel, _) = build_lurk_toplevel();
+        let (toplevel, ..) = build_lurk_toplevel_native();
         let (args, lurk_main, mut record) = setup(args.0, args.1, &toplevel);
         toplevel
             .execute(lurk_main.func(), &args, &mut record, None)
@@ -110,7 +110,7 @@ fn trace_generation(c: &mut Criterion) {
 fn e2e(c: &mut Criterion) {
     let args = get_lcs_args();
     c.bench_function("lcs-e2e", |b| {
-        let (toplevel, _) = build_lurk_toplevel();
+        let (toplevel, ..) = build_lurk_toplevel_native();
         let (args, lurk_main, record) = setup(args.0, args.1, &toplevel);
 
         b.iter_batched(

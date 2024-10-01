@@ -5,7 +5,7 @@
 ;; Tries to remove the first instance of elt from list and returns (removed? . remaining).
 ;; removed? is true if elt was removed.
 ;; remaining is a list of the remaining elements (in reverse order) whether or not elt was removed.
-;; If elt occurs one than once in list, only the first occurence is removed.
+;; If elt occurs one than once in list, only the first occurrence is removed.
 !(def maybe-remove (lambda (elt list)
                      (letrec ((aux (lambda (removed? acc elt list)
                                      (if list

@@ -1,13 +1,17 @@
+use either::Either;
 use p3_air::AirBuilder;
 use p3_baby_bear::BabyBear;
 
 use crate::{
     air::builder::{LookupBuilder, Record, RequireRecord},
-    lair::{chipset::Chipset, execute::QueryRecord},
+    lair::{
+        chipset::{Chipset, NoChip},
+        execute::QueryRecord,
+        FxIndexMap, Name,
+    },
     poseidon::config::{BabyBearConfig24, BabyBearConfig32, BabyBearConfig40},
 };
 
-use crate::lair::{map::Map, Name};
 use crate::lurk::poseidon::PoseidonChipset;
 
 use super::{big_num::BigNum, u64::U64, zstore::Hasher};
@@ -21,7 +25,9 @@ pub enum LurkChip {
     BigNum(BigNum),
 }
 
-pub fn lurk_chip_map() -> Map<Name, LurkChip> {
+pub fn lurk_chip_map<C2: Chipset<BabyBear>>(
+    lang_chips: FxIndexMap<Name, C2>,
+) -> FxIndexMap<Name, Either<LurkChip, C2>> {
     let hasher3 = LurkChip::Hasher3(PoseidonChipset::default());
     let hasher4 = LurkChip::Hasher4(PoseidonChipset::default());
     let hasher5 = LurkChip::Hasher5(PoseidonChipset::default());
@@ -32,19 +38,33 @@ pub fn lurk_chip_map() -> Map<Name, LurkChip> {
     let u64_lessthan = LurkChip::U64(U64::LessThan);
     let u64_iszero = LurkChip::U64(U64::IsZero);
     let big_num_lessthan = LurkChip::BigNum(BigNum::LessThan);
-    let vec = vec![
-        (Name("hasher3"), hasher3),
-        (Name("hasher4"), hasher4),
-        (Name("hasher5"), hasher5),
-        (Name("u64_add"), u64_add),
-        (Name("u64_sub"), u64_sub),
-        (Name("u64_mul"), u64_mul),
-        (Name("u64_divrem"), u64_divrem),
-        (Name("u64_lessthan"), u64_lessthan),
-        (Name("u64_iszero"), u64_iszero),
-        (Name("big_num_lessthan"), big_num_lessthan),
-    ];
-    Map::from_vec(vec)
+    let mut chips: FxIndexMap<_, _> = [
+        (Name("hasher3"), Either::Left(hasher3)),
+        (Name("hasher4"), Either::Left(hasher4)),
+        (Name("hasher5"), Either::Left(hasher5)),
+        (Name("u64_add"), Either::Left(u64_add)),
+        (Name("u64_sub"), Either::Left(u64_sub)),
+        (Name("u64_mul"), Either::Left(u64_mul)),
+        (Name("u64_divrem"), Either::Left(u64_divrem)),
+        (Name("u64_lessthan"), Either::Left(u64_lessthan)),
+        (Name("u64_iszero"), Either::Left(u64_iszero)),
+        (Name("big_num_lessthan"), Either::Left(big_num_lessthan)),
+    ]
+    .into_iter()
+    .collect();
+    for (name, chip) in lang_chips {
+        assert!(
+            !chips.contains_key(&name),
+            "Name conflict with native chip {name}"
+        );
+        chips.insert(name, Either::Right(chip));
+    }
+    chips
+}
+
+#[inline]
+pub fn lurk_chip_map_native() -> FxIndexMap<Name, Either<LurkChip, NoChip>> {
+    lurk_chip_map(FxIndexMap::default())
 }
 
 impl Chipset<BabyBear> for LurkChip {

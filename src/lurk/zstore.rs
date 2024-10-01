@@ -6,7 +6,7 @@ use nom::{sequence::preceded, Parser};
 use once_cell::sync::OnceCell;
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, Field, PrimeField32};
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
@@ -234,16 +234,16 @@ pub enum ZPtrType<F> {
 
 /// This struct selects what the hash functions are in a given chipset
 #[derive(Clone)]
-pub struct Hasher<F, H: Chipset<F>> {
-    hash3: H,
-    hash4: H,
-    hash5: H,
+pub struct Hasher<F, C: Chipset<F>> {
+    hash3: C,
+    hash4: C,
+    hash5: C,
     _p: PhantomData<F>,
 }
 
-impl<F, H: Chipset<F>> Hasher<F, H> {
+impl<F, C: Chipset<F>> Hasher<F, C> {
     #[inline]
-    pub fn new(hash3: H, hash4: H, hash5: H) -> Self {
+    pub fn new(hash3: C, hash4: C, hash5: C) -> Self {
         Self {
             hash3,
             hash4,
@@ -264,8 +264,8 @@ impl<F, H: Chipset<F>> Hasher<F, H> {
 }
 
 #[derive(Clone)]
-pub struct ZStore<F, H: Chipset<F>> {
-    hasher: Hasher<F, H>,
+pub struct ZStore<F, C: Chipset<F>> {
+    hasher: Hasher<F, C>,
     pub(crate) dag: FxHashMap<ZPtr<F>, ZPtrType<F>>,
     pub hashes3: FxHashMap<[F; HASH3_SIZE], [F; DIGEST_SIZE]>,
     pub hashes4: FxHashMap<[F; HASH4_SIZE], [F; DIGEST_SIZE]>,
@@ -297,8 +297,8 @@ impl Default for ZStore<BabyBear, LurkChip> {
             nil: ZPtr::null(Tag::Sym),
             t: ZPtr::null(Tag::Sym),
         };
-        zstore.nil = zstore.intern_symbol(&lurk_sym("nil"));
-        zstore.t = zstore.intern_symbol(&lurk_sym("t"));
+        zstore.nil = zstore.intern_symbol_no_lang(&lurk_sym("nil"));
+        zstore.t = zstore.intern_symbol_no_lang(&lurk_sym("t"));
         zstore
     }
 }
@@ -313,9 +313,9 @@ pub(crate) fn builtin_set() -> &'static IndexSet<Symbol, FxBuildHasher> {
     BUILTIN_SET.get_or_init(|| BUILTIN_SYMBOLS.into_iter().map(builtin_sym).collect())
 }
 
-impl<F: Field, H: Chipset<F>> ZStore<F, H> {
+impl<F: Field, C: Chipset<F>> ZStore<F, C> {
     #[inline]
-    pub fn hasher(&self) -> &Hasher<F, H> {
+    pub fn hasher(&self) -> &Hasher<F, C> {
         &self.hasher
     }
 
@@ -431,7 +431,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         zptr
     }
 
-    pub fn intern_symbol(&mut self, sym: &Symbol) -> ZPtr<F> {
+    pub fn intern_symbol(&mut self, sym: &Symbol, lang_symbols: &FxHashSet<Symbol>) -> ZPtr<F> {
         if let Some(zptr) = self.sym_cache.get(sym).copied() {
             return zptr;
         }
@@ -441,15 +441,16 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                 let tag = if is_keyword { Tag::Key } else { Tag::Sym };
                 self.intern_null(tag)
             } else {
-                let is_builtin = builtin_set().contains(sym);
                 let mut zptr = self.intern_null(Tag::Sym);
                 let mut iter = sym.path().iter().peekable();
                 while let Some(s) = iter.next() {
                     let is_last = iter.peek().is_none();
                     let str_zptr = self.intern_string(s);
                     let tag = if is_last {
-                        if is_builtin {
+                        if builtin_set().contains(sym) {
                             Tag::Builtin
+                        } else if lang_symbols.contains(sym) {
+                            Tag::Coroutine
                         } else if is_keyword {
                             Tag::Key
                         } else {
@@ -465,6 +466,11 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         };
         self.sym_cache.insert(sym.clone(), zptr);
         zptr
+    }
+
+    #[inline]
+    pub fn intern_symbol_no_lang(&mut self, sym: &Symbol) -> ZPtr<F> {
+        self.intern_symbol(sym, &Default::default())
     }
 
     #[inline]
@@ -519,7 +525,11 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         self.intern_compact110(Tag::Env, sym, val, env)
     }
 
-    fn intern_syntax(&mut self, syn: &Syntax<F>) -> Result<ZPtr<F>> {
+    fn intern_syntax(
+        &mut self,
+        syn: &Syntax<F>,
+        lang_symbols: &FxHashSet<Symbol>,
+    ) -> Result<ZPtr<F>> {
         if let Some(zptr) = self.syn_cache.get(syn).copied() {
             return Ok(zptr);
         }
@@ -531,25 +541,25 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
             Syntax::BigNum(_, c) => self.intern_big_num(*c),
             Syntax::Comm(_, c) => self.intern_comm(*c),
             Syntax::String(_, s) => self.intern_string(s),
-            Syntax::Symbol(_, s) => self.intern_symbol(s),
+            Syntax::Symbol(_, s) => self.intern_symbol(s, lang_symbols),
             Syntax::List(_, xs) => {
                 let xs = xs
                     .iter()
-                    .map(|x| self.intern_syntax(x))
+                    .map(|x| self.intern_syntax(x, lang_symbols))
                     .collect::<Result<Vec<_>>>()?;
                 self.intern_list(xs)
             }
             Syntax::Improper(_, xs, y) => {
                 let xs = xs
                     .iter()
-                    .map(|x| self.intern_syntax(x))
+                    .map(|x| self.intern_syntax(x, lang_symbols))
                     .collect::<Result<Vec<_>>>()?;
-                let y = self.intern_syntax(y)?;
+                let y = self.intern_syntax(y, lang_symbols)?;
                 self.intern_list_full(xs, y)
             }
             Syntax::Quote(_, x) => {
-                let quote = self.intern_symbol(quote());
-                let x = self.intern_syntax(x)?;
+                let quote = self.intern_symbol(quote(), lang_symbols);
+                let x = self.intern_syntax(x, lang_symbols)?;
                 self.intern_list([quote, x])
             }
         };
@@ -562,6 +572,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
         &mut self,
         state: StateRcCell,
         input: &'a str,
+        lang_symbols: &FxHashSet<Symbol>,
     ) -> Result<(usize, Span<'a>, bool, ZPtr<F>), Error> {
         match preceded(parse_space, parse_maybe_meta(state, false)).parse(Span::new(input)) {
             Ok((_, None)) => Err(Error::NoInput),
@@ -572,7 +583,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                     .get_from_offset()
                     .expect("Parsed syntax should have its Pos set");
                 let syn = self
-                    .intern_syntax(&syn)
+                    .intern_syntax(&syn, lang_symbols)
                     .map_err(|e| Error::Syntax(format!("{e}")))?;
                 Ok((offset, rest, is_meta, syn))
             }
@@ -583,20 +594,26 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
     pub fn read_maybe_meta<'a>(
         &mut self,
         input: &'a str,
+        lang_symbols: &FxHashSet<Symbol>,
     ) -> Result<(usize, Span<'a>, bool, ZPtr<F>), Error> {
-        self.read_maybe_meta_with_state(State::init_lurk_state().rccell(), input)
+        self.read_maybe_meta_with_state(State::init_lurk_state().rccell(), input, lang_symbols)
     }
 
     #[inline]
-    pub fn read_with_state(&mut self, state: StateRcCell, input: &str) -> Result<ZPtr<F>> {
-        let (.., is_meta, zptr) = self.read_maybe_meta_with_state(state, input)?;
+    pub fn read_with_state(
+        &mut self,
+        state: StateRcCell,
+        input: &str,
+        lang_symbols: &FxHashSet<Symbol>,
+    ) -> Result<ZPtr<F>> {
+        let (.., is_meta, zptr) = self.read_maybe_meta_with_state(state, input, lang_symbols)?;
         assert!(!is_meta);
         Ok(zptr)
     }
 
     #[inline]
-    pub fn read(&mut self, input: &str) -> Result<ZPtr<F>> {
-        self.read_with_state(State::init_lurk_state().rccell(), input)
+    pub fn read(&mut self, input: &str, lang_symbols: &FxHashSet<Symbol>) -> Result<ZPtr<F>> {
+        self.read_with_state(State::init_lurk_state().rccell(), input, lang_symbols)
     }
 
     /// Memoizes the Lurk data dependencies of a tag/digest pair
@@ -750,7 +767,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
                     env_digest
                 );
             }
-            Tag::Sym | Tag::Key | Tag::Builtin => (), // these should be already memoized
+            Tag::Sym | Tag::Key | Tag::Builtin | Tag::Coroutine => (), // these should be already memoized
             Tag::Num | Tag::U64 | Tag::Char | Tag::Err | Tag::BigNum | Tag::Comm => {
                 self.memoize_atom_dag(ZPtr {
                     tag,
@@ -900,7 +917,7 @@ impl<F: Field, H: Chipset<F>> ZStore<F, H> {
             Tag::BigNum => format!("#{:#x}", field_elts_to_biguint(&zptr.digest)),
             Tag::Comm => format!("#c{:#x}", field_elts_to_biguint(&zptr.digest)),
             Tag::Str => format!("\"{}\"", self.fetch_string(zptr)),
-            Tag::Builtin | Tag::Sym | Tag::Key => {
+            Tag::Builtin | Tag::Sym | Tag::Key | Tag::Coroutine => {
                 state.borrow().fmt_to_string(&self.fetch_symbol(zptr))
             }
             Tag::Cons => {
@@ -970,7 +987,7 @@ mod test {
         lair::execute::QueryRecord,
         lurk::{
             chipset::lurk_hasher,
-            eval::build_lurk_toplevel,
+            eval::build_lurk_toplevel_native,
             state::{builtin_sym, user_sym, State},
             symbol::Symbol,
             tag::Tag,
@@ -984,11 +1001,11 @@ mod test {
     fn test_sym_key_hash_equivalence() {
         let mut zstore = lurk_zstore();
         let mut symbol = Symbol::sym(&["foo", "bar", "baz"]);
-        let sym = zstore.intern_symbol(&symbol);
+        let sym = zstore.intern_symbol_no_lang(&symbol);
         assert_eq!(sym.tag, Tag::Sym);
 
         symbol.set_as_keyword();
-        let key = zstore.intern_symbol(&symbol);
+        let key = zstore.intern_symbol_no_lang(&symbol);
         assert_eq!(key.tag, Tag::Key);
 
         assert_eq!(sym.digest, key.digest);
@@ -996,12 +1013,14 @@ mod test {
 
     #[test]
     fn test_dag_memoization() {
-        let (toplevel, mut zstore) = build_lurk_toplevel();
+        let (toplevel, mut zstore, lang_symbols) = build_lurk_toplevel_native();
 
         let ZPtr {
             tag: expr_tag,
             digest: expr_digest,
-        } = zstore.read("(cons \"hi\" (lambda (x) x))").unwrap();
+        } = zstore
+            .read("(cons \"hi\" (lambda (x) x))", &lang_symbols)
+            .unwrap();
 
         let record = &mut QueryRecord::new(&toplevel);
         record.inject_inv_queries("hash4", &toplevel, &zstore.hashes4);
@@ -1031,7 +1050,7 @@ mod test {
         };
 
         let hi = zstore.intern_string("hi");
-        let x = zstore.intern_symbol(&user_sym("x"));
+        let x = zstore.intern_symbol(&user_sym("x"), &lang_symbols);
         let expected_args = zstore.intern_list([x]);
         let expected_env = zstore.intern_empty_env();
 
@@ -1089,13 +1108,13 @@ mod test {
         let abc_str = zstore.intern_string("abc");
         assert_eq!(zstore.fmt_with_state(state, &abc_str), "\"abc\"");
 
-        let x = zstore.intern_symbol(&state.borrow_mut().intern("x"));
+        let x = zstore.intern_symbol_no_lang(&state.borrow_mut().intern("x"));
         assert_eq!(zstore.fmt_with_state(state, &x), "x");
 
-        let lambda = zstore.intern_symbol(&builtin_sym("lambda"));
+        let lambda = zstore.intern_symbol_no_lang(&builtin_sym("lambda"));
         assert_eq!(zstore.fmt_with_state(state, &lambda), "lambda");
 
-        let hi = zstore.intern_symbol(&Symbol::key(&["hi"]));
+        let hi = zstore.intern_symbol_no_lang(&Symbol::key(&["hi"]));
         assert_eq!(zstore.fmt_with_state(state, &hi), ":hi");
 
         let pair = zstore.intern_cons(x, hi);

@@ -25,27 +25,27 @@ impl LayoutSizes {
     }
 }
 
-pub struct FuncChip<'a, F, H: Chipset<F>> {
+pub struct FuncChip<'a, F, C1: Chipset<F>, C2: Chipset<F>> {
     pub(crate) func: &'a Func<F>,
-    pub(crate) toplevel: &'a Toplevel<F, H>,
+    pub(crate) toplevel: &'a Toplevel<F, C1, C2>,
     pub(crate) layout_sizes: LayoutSizes,
 }
 
-impl<'a, F, H: Chipset<F>> FuncChip<'a, F, H> {
+impl<'a, F, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
     #[inline]
-    pub fn from_name(name: &'static str, toplevel: &'a Toplevel<F, H>) -> Self {
-        let func = toplevel.get_by_name(name);
+    pub fn from_name(name: &'static str, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
+        let func = toplevel.func_by_name(name);
         Self::from_func(func, toplevel)
     }
 
     #[inline]
-    pub fn from_index(idx: usize, toplevel: &'a Toplevel<F, H>) -> Self {
-        let func = toplevel.get_by_index(idx);
+    pub fn from_index(idx: usize, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
+        let func = toplevel.func_by_index(idx);
         Self::from_func(func, toplevel)
     }
 
     #[inline]
-    pub fn from_func(func: &'a Func<F>, toplevel: &'a Toplevel<F, H>) -> Self {
+    pub fn from_func(func: &'a Func<F>, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
         let layout_sizes = func.compute_layout_sizes(toplevel);
         Self {
             func,
@@ -55,12 +55,11 @@ impl<'a, F, H: Chipset<F>> FuncChip<'a, F, H> {
     }
 
     #[inline]
-    pub fn from_toplevel(toplevel: &'a Toplevel<F, H>) -> Vec<Self> {
+    pub fn from_toplevel(toplevel: &'a Toplevel<F, C1, C2>) -> Vec<Self> {
         toplevel
-            .map
-            .get_pairs()
-            .iter()
-            .map(|(_, func)| FuncChip::from_func(func, toplevel))
+            .func_map
+            .values()
+            .map(|func| FuncChip::from_func(func, toplevel))
             .collect()
     }
 
@@ -75,12 +74,12 @@ impl<'a, F, H: Chipset<F>> FuncChip<'a, F, H> {
     }
 
     #[inline]
-    pub fn toplevel(&self) -> &Toplevel<F, H> {
+    pub fn toplevel(&self) -> &Toplevel<F, C1, C2> {
         self.toplevel
     }
 }
 
-impl<'a, F: Sync, H: Chipset<F>> BaseAir<F> for FuncChip<'a, F, H> {
+impl<'a, F: Sync, C1: Chipset<F>, C2: Chipset<F>> BaseAir<F> for FuncChip<'a, F, C1, C2> {
     fn width(&self) -> usize {
         self.width()
     }
@@ -89,7 +88,10 @@ impl<'a, F: Sync, H: Chipset<F>> BaseAir<F> for FuncChip<'a, F, H> {
 pub type Degree = u8;
 
 impl<F> Func<F> {
-    pub fn compute_layout_sizes<H: Chipset<F>>(&self, toplevel: &Toplevel<F, H>) -> LayoutSizes {
+    pub fn compute_layout_sizes<C1: Chipset<F>, C2: Chipset<F>>(
+        &self,
+        toplevel: &Toplevel<F, C1, C2>,
+    ) -> LayoutSizes {
         let input = self.input_size;
         // last nonce, last count
         let mut aux = 2;
@@ -114,10 +116,10 @@ impl<F> Func<F> {
 }
 
 impl<F> Block<F> {
-    fn compute_layout_sizes<H: Chipset<F>>(
+    fn compute_layout_sizes<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         degrees: &mut Vec<Degree>,
-        toplevel: &Toplevel<F, H>,
+        toplevel: &Toplevel<F, C1, C2>,
         aux: &mut usize,
         sel: &mut usize,
     ) {
@@ -129,10 +131,10 @@ impl<F> Block<F> {
 }
 
 impl<F> Ctrl<F> {
-    fn compute_layout_sizes<H: Chipset<F>>(
+    fn compute_layout_sizes<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         degrees: &mut Vec<Degree>,
-        toplevel: &Toplevel<F, H>,
+        toplevel: &Toplevel<F, C1, C2>,
         aux: &mut usize,
         sel: &mut usize,
     ) {
@@ -176,10 +178,10 @@ impl<F> Ctrl<F> {
 }
 
 impl<F> Op<F> {
-    fn compute_layout_sizes<H: Chipset<F>>(
+    fn compute_layout_sizes<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         degrees: &mut Vec<Degree>,
-        toplevel: &Toplevel<F, H>,
+        toplevel: &Toplevel<F, C1, C2>,
         aux: &mut usize,
     ) {
         match self {
@@ -226,7 +228,7 @@ impl<F> Op<F> {
                 }
             }
             Op::Call(f_idx, ..) => {
-                let func = toplevel.get_by_index(*f_idx);
+                let func = toplevel.func_by_index(*f_idx);
                 let out_size = func.output_size;
                 // output of function, prev_nonce, prev_count, count_inv
                 *aux += out_size + 3;
@@ -238,7 +240,7 @@ impl<F> Op<F> {
                 degrees.extend(vec![1; out_size]);
             }
             Op::PreImg(f_idx, ..) => {
-                let func = toplevel.get_by_index(*f_idx);
+                let func = toplevel.func_by_index(*f_idx);
                 let inp_size = func.input_size;
                 // input of function, prev_nonce, prev_count, count_inv
                 *aux += inp_size + 3;
@@ -258,7 +260,7 @@ impl<F> Op<F> {
                 degrees.extend(vec![1; *ptr_size]);
             }
             Op::ExternCall(chip_idx, _) => {
-                let chip = toplevel.get_chip_by_index(*chip_idx);
+                let chip = toplevel.chip_by_index(*chip_idx);
                 let require_size = chip.require_size();
                 let witness_size = chip.witness_size();
                 let aux_size = witness_size + require_size * 3;

@@ -35,6 +35,7 @@ pub enum Tag {
     Env,
     Thunk,
     Err,
+    Coroutine,
 }
 
 impl Tag {
@@ -65,7 +66,7 @@ mod test {
 
     #[test]
     fn test_strum() {
-        assert_eq!(14, Tag::COUNT);
+        assert_eq!(15, Tag::COUNT);
         assert_eq!(Tag::COUNT, Tag::iter().count());
     }
 

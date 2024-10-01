@@ -141,10 +141,10 @@ pub(crate) struct IOProof {
 }
 
 impl IOProof {
-    pub(crate) fn new<H: Chipset<F>>(
+    pub(crate) fn new<C: Chipset<F>>(
         crypto_proof: CryptoProof,
         public_values: &[F],
-        zstore: &ZStore<F, H>,
+        zstore: &ZStore<F, C>,
     ) -> Self {
         let mut zdag = ZDag::default();
         let (expr_data, rest) = public_values.split_at(ZPTR_SIZE);
@@ -184,10 +184,10 @@ pub(crate) struct ProtocolProof {
 
 impl ProtocolProof {
     #[inline]
-    pub(crate) fn new<H: Chipset<F>>(
+    pub(crate) fn new<C: Chipset<F>>(
         crypto_proof: CryptoProof,
         args: ZPtr<F>,
-        zstore: &ZStore<F, H>,
+        zstore: &ZStore<F, C>,
     ) -> Self {
         Self {
             crypto_proof,
