@@ -2107,7 +2107,7 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                             let rest_sym = digests.lurk_symbol_ptr("&rest");
                             let is_not_rest_sym = sub(param, rest_sym);
                             if !is_not_rest_sym {
-                                // check the next param in the list
+                                // check whether the next param in the list is a variable
                                 match rest_params_tag {
                                     InternalTag::Nil => {
                                         let err = EvalErr::ParamInvalidRest;
@@ -2117,6 +2117,7 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                         let (param_tag, param, rest_params_tag, rest_params) = load(rest_params);
                                         match param_tag {
                                             Tag::Sym, Tag::Builtin, Tag::Coroutine => {
+                                                // check that there are no remaining arguments after the variable
                                                 match rest_params_tag {
                                                     InternalTag::Nil => {
                                                         // evaluate all the remaining arguments and collect into a list
@@ -2148,7 +2149,8 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                 let err = EvalErr::ParamsNotList;
                                 return (err_tag, err)
                             }
-                            // FIXME: this is the same as the code below
+                            // NOTE: the two block of codes below delimited by the comments are the *exact* same and *must* be kept in sync
+                            // --- DUPLICATED BLOCK ---
                             match args_tag {
                                 InternalTag::Nil => {
                                     // Undersaturated application
@@ -2179,8 +2181,10 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                             };
                             let err = EvalErr::ArgsNotList;
                             return (err_tag, err)
+                            // --- DUPLICATED BLOCK ---
                         }
                     };
+                    // --- DUPLICATED BLOCK ---
                     match args_tag {
                         InternalTag::Nil => {
                             // Undersaturated application
@@ -2211,6 +2215,7 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     };
                     let err = EvalErr::ArgsNotList;
                     return (err_tag, err)
+                    // --- DUPLICATED BLOCK ---
                 }
             };
             let err = EvalErr::ParamsNotList;
