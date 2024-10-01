@@ -306,9 +306,10 @@ pub(crate) const BUILTIN_SYMBOLS: [&str; 40] = [
     "fail",
 ];
 
-const META_SYMBOLS: [&str; 33] = [
+const META_SYMBOLS: [&str; 34] = [
     "def",
     "defrec",
+    "update",
     "load",
     "assert",
     "assert-eq",
