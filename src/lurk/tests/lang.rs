@@ -236,3 +236,14 @@ test!(
     "((lambda (extern-square) (+ extern-square 1n)) 2n)",
     |_| num(3)
 );
+
+test!(
+    test_mul_shadow4,
+    "((lambda (&rest mul-square) (+ (car mul-square) 1n)) 2n)",
+    |_| num(3)
+);
+test!(
+    test_extern_shadow4,
+    "((lambda (&rest extern-square) (+ (car extern-square) 1n)) 2n)",
+    |_| num(3)
+);
