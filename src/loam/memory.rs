@@ -510,13 +510,19 @@ impl Store {
                     format!("({elts_str})")
                 }
             }
-            Tag::Fun => {
+            Tag::Fun | Tag::Macro => {
+                let name = if ptr.tag() == Tag::Fun {
+                    "Fun"
+                } else {
+                    "Macro"
+                };
                 let (args, body, _) = self.fetch_tuple3(ptr);
                 if args == &PPtr::nil() {
-                    format!("<Fun () {}>", self.fmt(zstore, body))
+                    format!("<{} () {}>", name, self.fmt(zstore, body))
                 } else {
                     format!(
-                        "<Fun {} {}>",
+                        "<{} {} {}>",
+                        name,
                         self.fmt(zstore, args),
                         self.fmt(zstore, body)
                     )
