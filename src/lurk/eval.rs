@@ -859,7 +859,7 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                     match res_tag {
                         Tag::Thunk => {
                             // In the case the result is a thunk we extend
-                            // its environment with itself and reduce its
+                            // its environment with it and reduce its
                             // body in the extended environment
                             let (body_tag, body, body_env) = load(res);
                             // `expr` is the symbol
@@ -910,7 +910,41 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
             let err_tag = Tag::Err;
             let invalid_form = EvalErr::InvalidForm;
             match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
-                "let", "letrec", "lambda", "cons", "strcons", "type-eq", "type-eqq", "apply" => {
+                "let", "letrec", "lambda" => {
+                    let rest_not_cons = sub(rest_tag, cons_tag);
+                    if rest_not_cons {
+                        return (err_tag, invalid_form)
+                    }
+                    let (fst_tag, fst, rest_tag, rest) = load(rest);
+                    let rest_not_cons = sub(rest_tag, cons_tag);
+                    if rest_not_cons {
+                        return (err_tag, invalid_form)
+                    }
+                    match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
+                        "let" => {
+                            // fst: bindings list
+                            // rest: list-like body
+                            let (res_tag, res) = call(eval_let, fst_tag, fst, rest_tag, rest, env);
+                            return (res_tag, res)
+                        }
+                        "letrec" => {
+                            // analogous to `let`
+                            let (res_tag, res) = call(eval_letrec, fst_tag, fst, rest_tag, rest, env);
+                            return (res_tag, res)
+                        }
+                        "lambda" => {
+                            // fst: parameters list
+                            // rest: list-like body
+
+                            // A function (more precisely, a closure) is an object with a
+                            // parameter list, a body and an environment
+                            let res_tag = Tag::Fun;
+                            let res = store(fst_tag, fst, rest_tag, rest, env);
+                            return (res_tag, res)
+                        }
+                    }
+                }
+                "cons", "strcons", "type-eq", "type-eqq", "apply" => {
                     let rest_not_cons = sub(rest_tag, cons_tag);
                     if rest_not_cons {
                         return (err_tag, invalid_form)
@@ -926,28 +960,6 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
                         return (err_tag, invalid_form)
                     }
                     match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
-                        "let" => {
-                            // first element: let symbol
-                            // second element: binding list
-                            // third element: body
-                            let (res_tag, res) = call(eval_let, fst_tag, fst, snd_tag, snd, env);
-                            return (res_tag, res)
-                        }
-                        "letrec" => {
-                            // analogous to `let`
-                            let (res_tag, res) = call(eval_letrec, fst_tag, fst, snd_tag, snd, env);
-                            return (res_tag, res)
-                        }
-                        "lambda" => {
-                            // first element: parameter list
-                            // second element: body
-                            // third element: env
-                            // A function (more precisely, a closure) is an object with a
-                            // parameter list, a body and an environment
-                            let res_tag = Tag::Fun;
-                            let res = store(fst_tag, fst, snd_tag, snd, env);
-                            return (res_tag, res)
-                        }
                         "cons", "strcons" => {
                             let (res_tag, res) = call(eval_binop_misc, head, fst_tag, fst, snd_tag, snd, env);
                             return (res_tag, res)
@@ -1959,7 +1971,7 @@ pub fn eval_let<F: AbstractField>() -> FuncE<F> {
             let invalid_form = EvalErr::InvalidForm;
             match binds_tag {
                 InternalTag::Nil => {
-                    let (res_tag, res) = call(eval, body_tag, body, env);
+                    let (res_tag, res) = call(eval_begin, body_tag, body, env);
                     return (res_tag, res)
                 }
                 Tag::Cons => {
@@ -1997,7 +2009,7 @@ pub fn eval_let<F: AbstractField>() -> FuncE<F> {
                                 let (res_tag, res) = call(eval_let, rest_binds_tag, rest_binds, body_tag, body, ext_env);
                                 return (res_tag, res)
                             }
-                            let (res_tag, res) = call(eval, body_tag, body, ext_env);
+                            let (res_tag, res) = call(eval_begin, body_tag, body, ext_env);
                             return (res_tag, res)
                         }
                     };
@@ -2018,7 +2030,7 @@ pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
             let invalid_form = EvalErr::InvalidForm;
             match binds_tag {
                 InternalTag::Nil => {
-                    let (res_tag, res) = call(eval, body_tag, body, env);
+                    let (res_tag, res) = call(eval_begin, body_tag, body, env);
                     return (res_tag, res)
                 }
                 Tag::Cons => {
@@ -2061,7 +2073,7 @@ pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
                                 let (res_tag, res) = call(eval_letrec, rest_binds_tag, rest_binds, body_tag, body, ext_env);
                                 return (res_tag, res)
                             }
-                            let (res_tag, res) = call(eval, body_tag, body, ext_env);
+                            let (res_tag, res) = call(eval_begin, body_tag, body, ext_env);
                             return (res_tag, res)
                         }
                     };
@@ -2095,7 +2107,7 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
 
             match params_tag {
                 InternalTag::Nil => {
-                    let (res_tag, res) = call(eval, body_tag, body, func_env);
+                    let (res_tag, res) = call(eval_begin, body_tag, body, func_env);
                     match res_tag {
                         Tag::Err => {
                             return (res_tag, res)
@@ -2327,7 +2339,7 @@ mod test {
         expect_eq(preallocate_symbols.width(), expect!["180"]);
         expect_eq(eval_coroutine_expr.width(), expect!["10"]);
         expect_eq(eval.width(), expect!["77"]);
-        expect_eq(eval_builtin_expr.width(), expect!["144"]);
+        expect_eq(eval_builtin_expr.width(), expect!["146"]);
         expect_eq(eval_apply_builtin.width(), expect!["79"]);
         expect_eq(eval_opening_unop.width(), expect!["97"]);
         expect_eq(eval_hide.width(), expect!["115"]);

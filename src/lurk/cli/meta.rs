@@ -488,7 +488,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         info: &["It's also capable of opening persisted commitments."],
         example: &[
             "(commit (lambda (x) x))",
-            "!(call #c0x361877c9845ddda6aa16dd6c6bcd26fcea7b93930106a19f5d7d5cf10a9015 0)",
+            "!(call #c0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 0)",
         ],
         run: |repl, args, _path| {
             Self::call(repl, args, None)?;
@@ -527,7 +527,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                        (let ((counter (+ counter x)))
                          (cons counter (commit (add counter)))))))
                (add 0)))",
-            "!(chain #c0x4b0eb13f048385909480e765f4eefec94c304edf9e01b2170869c9cdf8eb11 1)",
+            "!(chain #c0x8b0d8bd2feef87f7347a8d2dbe7cc74ba045ec0f14c1417266e3f46d0a0ac5 1)",
         ],
         run: |repl, args, _path| {
             let cons = Self::call(repl, args, None)?;
@@ -999,7 +999,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             "(commit '(13 . 17))",
             "!(prove-protocol my-protocol",
             "  \"protocol-proof\"",
-            "  #c0x76c3537770d61633a76264596e9fdefcf3bca72ade7f9553d5b3e6bfacba3b",
+            "  #c0x955f855f302a30ed988cc48685c442ebd98c8711e989fc64df8f27f52e1350",
             "  '(13 . 17))",
         ],
         run: |repl, args, _path| {

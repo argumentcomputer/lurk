@@ -26,9 +26,6 @@
               ;; this will error
               (break))))
 
-;; Unprovable -- guarantees a code path will not lead to a proof.
-!(def fail (lambda () (open #0x0)))
-
 ;; This should be a macro, so we can include the unevaluated form in the error.
 !(def assert (lambda (x) (if x x (error :assertion-failure nil))))
 

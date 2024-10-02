@@ -10,13 +10,13 @@
   :description "hash opens to a pair (a, b) s.t. a+b=30 and a>10")
 
 ;; This is the prover's pair, whose hash is
-;; #c0x76c3537770d61633a76264596e9fdefcf3bca72ade7f9553d5b3e6bfacba3b
+;; #c0x955f855f302a30ed988cc48685c442ebd98c8711e989fc64df8f27f52e1350
 (commit '(13 . 17))
 
 ;; Let's prove it and write the proof to the file protocol-proof
 !(prove-protocol my-protocol
   "protocol-proof"
-  #c0x76c3537770d61633a76264596e9fdefcf3bca72ade7f9553d5b3e6bfacba3b
+  #c0x955f855f302a30ed988cc48685c442ebd98c8711e989fc64df8f27f52e1350
   '(13 . 17))
 
 ;; Now it can be verified

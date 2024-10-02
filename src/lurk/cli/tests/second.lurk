@@ -7,11 +7,11 @@
 !(assert-eq (open #0x91542a0e943be900a067ecd113d8b3340e0aed1c3c00eb06768a318c17a885) 42)
 
 ;; test call/chain
-!(call #0x361877c9845ddda6aa16dd6c6bcd26fcea7b93930106a19f5d7d5cf10a9015 0)
-!(chain #0x4b0eb13f048385909480e765f4eefec94c304edf9e01b2170869c9cdf8eb11 1)
+!(call #0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 0)
+!(chain #0x8b0d8bd2feef87f7347a8d2dbe7cc74ba045ec0f14c1417266e3f46d0a0ac5 1)
 
 ;; test transition
-!(def state (cons nil #0x4b0eb13f048385909480e765f4eefec94c304edf9e01b2170869c9cdf8eb11))
+!(def state (cons nil #0x8b0d8bd2feef87f7347a8d2dbe7cc74ba045ec0f14c1417266e3f46d0a0ac5))
 !(transition state1 state 1)
 !(assert-eq (car state1) 1)
 

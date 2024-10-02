@@ -1,5 +1,5 @@
-!(inspect "1fe27d9ba542dbf6a82300a7ff3eb19c95c56eec112e095c16cec73d85c576")
-!(verify "1fe27d9ba542dbf6a82300a7ff3eb19c95c56eec112e095c16cec73d85c576")
+!(inspect "3d8fad22afdde5643d55e9eaae4537bfc6d610c6b1bdf4c913560576cbe327")
+!(verify "3d8fad22afdde5643d55e9eaae4537bfc6d610c6b1bdf4c913560576cbe327")
 
 !(load-expr my-protocol "repl-test-protocol")
 !(verify-protocol my-protocol "repl-test-protocol-proof")
