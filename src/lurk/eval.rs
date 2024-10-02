@@ -595,7 +595,7 @@ pub fn ingress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     let ptr = store(fst_tag, fst_ptr, snd_ptr);
                     return (tag, ptr)
                 }
-                Tag::Fun => {
+                Tag::Fun, Tag::Macro => {
                     let (args_tag_full: [8], args_digest: [8],
                          body_tag_full: [8], body_digest: [8],
                                              env_digest: [8]) = preimg(hash5, digest);
@@ -690,7 +690,7 @@ pub fn egress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     let digest: [8] = call(hash3, fst_tag_full, fst_digest, snd_digest);
                     return (tag, digest)
                 }
-                Tag::Fun => {
+                Tag::Fun, Tag::Macro => {
                     let (args_tag, args_ptr, body_tag, body_ptr, env_ptr) = load(val);
                     let (args_tag, args_digest: [8]) = call(egress, args_tag, args_ptr);
                     let (body_tag, body_digest: [8]) = call(egress, body_tag, body_ptr);
@@ -910,7 +910,7 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
             let err_tag = Tag::Err;
             let invalid_form = EvalErr::InvalidForm;
             match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
-                "let", "letrec", "lambda", "cons", "strcons", "type-eq", "type-eqq", "apply" => {
+                "let", "letrec", "lambda", "mlambda", "cons", "strcons", "type-eq", "type-eqq", "apply" => {
                     let rest_not_cons = sub(rest_tag, cons_tag);
                     if rest_not_cons {
                         return (err_tag, invalid_form)
@@ -945,6 +945,16 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
                             // A function (more precisely, a closure) is an object with a
                             // parameter list, a body and an environment
                             let res_tag = Tag::Fun;
+                            let res = store(fst_tag, fst, snd_tag, snd, env);
+                            return (res_tag, res)
+                        }
+                        "mlambda" => {
+                            // first element: parameter list
+                            // second element: body
+                            // third element: env
+                            // A macro function (more precisely, a closure) is an object with a
+                            // parameter list, a body and an environment
+                            let res_tag = Tag::Macro;
                             let res = store(fst_tag, fst, snd_tag, snd, env);
                             return (res_tag, res)
                         }
@@ -1426,7 +1436,7 @@ pub fn equal_inner<F: AbstractField>() -> FuncE<F> {
                     let eq = mul(fst_eq, snd_eq);
                     return eq
                 }
-                Tag::Fun => {
+                Tag::Fun, Tag::Macro => {
                     let trd_tag = Tag::Env;
                     let (a_fst: [2], a_snd: [2], a_trd) = load(a);
                     let (b_fst: [2], b_snd: [2], b_trd) = load(b);
@@ -2079,92 +2089,181 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
         partial fn apply(head_tag, head, args_tag, args, args_env): [2] {
             // Constants, tags, etc
             let err_tag = Tag::Err;
-            let fun_tag = Tag::Fun;
-            // Expression must be a function
-            let head_not_fun = sub(head_tag, fun_tag);
-            if head_not_fun {
-                let head_not_err = sub(head_tag, fun_tag);
-                if head_not_err {
-                    let err = EvalErr::ApplyNonFunc;
-                    return (err_tag, err)
-                }
-                return (err_tag, head)
-            }
+            // Expression must be a function or macro
+            match head_tag {
+                Tag::Fun, Tag::Macro => {
+                    let (params_tag, params, body_tag, body, func_env) = load(head);
 
-            let (params_tag, params, body_tag, body, func_env) = load(head);
-
-            match params_tag {
-                InternalTag::Nil => {
-                    let (res_tag, res) = call(eval, body_tag, body, func_env);
-                    match res_tag {
-                        Tag::Err => {
-                            return (res_tag, res)
-                        }
-                    };
-                    match args_tag {
+                    match params_tag {
                         InternalTag::Nil => {
-                            return (res_tag, res)
+                            match head_tag {
+                                Tag::Fun => {
+                                    let (res_tag, res) = call(eval, body_tag, body, func_env);
+                                    match res_tag {
+                                        Tag::Err => {
+                                            return (res_tag, res)
+                                        }
+                                    };
+                                    match args_tag {
+                                        InternalTag::Nil => {
+                                            return (res_tag, res)
+                                        }
+                                        Tag::Cons => {
+                                            // Oversaturated application
+                                            let (app_res_tag, app_res) = call(apply, res_tag, res, args_tag, args, args_env);
+                                            return (app_res_tag, app_res)
+                                        }
+                                    };
+                                    let err = EvalErr::ArgsNotList;
+                                    return (err_tag, err)
+                                }
+                                Tag::Macro => {
+                                    let (res_tag, res) = call(eval, body_tag, body, func_env);
+                                    match res_tag {
+                                        Tag::Err => {
+                                            return (res_tag, res)
+                                        }
+                                    };
+                                    // eval the resulting AST from the macro evaluation, in the outer environment
+                                    let (res_tag, res) = call(eval, res_tag, res, args_env);
+                                    match res_tag {
+                                        Tag::Err => {
+                                            return (res_tag, res)
+                                        }
+                                    };
+                                    match args_tag {
+                                        InternalTag::Nil => {
+                                            return (res_tag, res)
+                                        }
+                                        Tag::Cons => {
+                                            // Oversaturated application
+                                            let (app_res_tag, app_res) = call(apply, res_tag, res, args_tag, args, args_env);
+                                            return (app_res_tag, app_res)
+                                        }
+                                    };
+                                    let err = EvalErr::ArgsNotList;
+                                    return (err_tag, err)
+
+                                }
+                            };
+                            let err = EvalErr::ApplyNonFunc;
+                            return (err_tag, err)
                         }
                         Tag::Cons => {
-                            // Oversaturated application
-                            let (app_res_tag, app_res) = call(apply, res_tag, res, args_tag, args, args_env);
-                            return (app_res_tag, app_res)
-                        }
-                    };
-                    let err = EvalErr::ArgsNotList;
-                    return (err_tag, err)
-                }
-                Tag::Cons => {
-                    // check if the only params left are "&rest <var>"
-                    let (param_tag, param, rest_params_tag, rest_params) = load(params);
-                    match param_tag {
-                        Tag::Sym, Tag::Builtin, Tag::Coroutine => {
-                            let rest_sym = digests.lurk_symbol_ptr("&rest");
-                            let is_not_rest_sym = sub(param, rest_sym);
-                            if !is_not_rest_sym {
-                                // check whether the next param in the list is a variable
-                                match rest_params_tag {
-                                    InternalTag::Nil => {
-                                        let err = EvalErr::ParamInvalidRest;
-                                        return (err_tag, err)
-                                    }
-                                    Tag::Cons => {
-                                        let (param_tag, param, rest_params_tag, rest_params) = load(rest_params);
-                                        match param_tag {
-                                            Tag::Sym, Tag::Builtin, Tag::Coroutine => {
-                                                // check that there are no remaining arguments after the variable
-                                                match rest_params_tag {
-                                                    InternalTag::Nil => {
-                                                        // evaluate all the remaining arguments and collect into a list
-                                                        let (arg_tag, arg) = call(eval_list, args_tag, args, args_env);
-                                                        match arg_tag {
-                                                            Tag::Err => {
-                                                                return (arg_tag, arg)
-                                                            }
-                                                        };
-
-                                                        // and store it in the environment
-                                                        let ext_env = store(param_tag, param, arg_tag, arg, func_env);
-                                                        let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
-                                                        let nil_tag = InternalTag::Nil;
-                                                        let nil = digests.lurk_symbol_ptr("nil");
-                                                        let (res_tag, res) = call(apply, fun_tag, ext_fun, nil_tag, nil, args_env);
-
-                                                        return (res_tag, res)
-                                                    }
-                                                };
+                            // check if the only params left are "&rest <var>"
+                            let (param_tag, param, rest_params_tag, rest_params) = load(params);
+                            match param_tag {
+                                Tag::Sym, Tag::Builtin, Tag::Coroutine => {
+                                    let rest_sym = digests.lurk_symbol_ptr("&rest");
+                                    let is_not_rest_sym = sub(param, rest_sym);
+                                    if !is_not_rest_sym {
+                                        // check whether the next param in the list is a variable
+                                        match rest_params_tag {
+                                            InternalTag::Nil => {
                                                 let err = EvalErr::ParamInvalidRest;
                                                 return (err_tag, err)
                                             }
+                                            Tag::Cons => {
+                                                let (param_tag, param, rest_params_tag, rest_params) = load(rest_params);
+                                                match param_tag {
+                                                    Tag::Sym, Tag::Builtin, Tag::Coroutine => {
+                                                        // check that there are no remaining arguments after the variable
+                                                        match rest_params_tag {
+                                                            InternalTag::Nil => {
+                                                                match head_tag {
+                                                                    Tag::Fun => {
+                                                                        // evaluate all the remaining arguments and collect into a list
+                                                                        let (arg_tag, arg) = call(eval_list, args_tag, args, args_env);
+                                                                        match arg_tag {
+                                                                            Tag::Err => {
+                                                                                return (arg_tag, arg)
+                                                                            }
+                                                                        };
+
+                                                                        // and store it in the environment
+                                                                        let ext_env = store(param_tag, param, arg_tag, arg, func_env);
+                                                                        let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
+                                                                        let nil_tag = InternalTag::Nil;
+                                                                        let nil = digests.lurk_symbol_ptr("nil");
+                                                                        let (res_tag, res) = call(apply, head_tag, ext_fun, nil_tag, nil, args_env);
+
+                                                                        return (res_tag, res)
+                                                                    }
+                                                                    Tag::Macro => {
+                                                                        // store the remaining unevaluated arguments in the environment
+                                                                        let ext_env = store(param_tag, param, args_tag, args, func_env);
+                                                                        let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
+                                                                        let nil_tag = InternalTag::Nil;
+                                                                        let nil = digests.lurk_symbol_ptr("nil");
+                                                                        let (res_tag, res) = call(apply, head_tag, ext_fun, nil_tag, nil, args_env);
+
+                                                                        return (res_tag, res)
+                                                                    }
+                                                                };
+                                                                let err = EvalErr::ApplyNonFunc;
+                                                                return (err_tag, err)
+                                                            }
+                                                        };
+                                                        let err = EvalErr::ParamInvalidRest;
+                                                        return (err_tag, err)
+                                                    }
+                                                };
+                                                let err = EvalErr::IllegalBindingVar;
+                                                return (err_tag, err)
+                                            }
                                         };
-                                        let err = EvalErr::IllegalBindingVar;
+                                        let err = EvalErr::ParamsNotList;
                                         return (err_tag, err)
                                     }
-                                };
-                                let err = EvalErr::ParamsNotList;
-                                return (err_tag, err)
-                            }
-                            // NOTE: the two block of codes below delimited by the comments are the *exact* same and *must* be kept in sync
+                                    // NOTE: the two block of codes below delimited by the comments are the *exact* same and *must* be kept in sync
+                                    // --- DUPLICATED APPLY BLOCK START ---
+                                    match args_tag {
+                                        InternalTag::Nil => {
+                                            // Undersaturated application
+                                            return (head_tag, head)
+                                        }
+                                        Tag::Cons => {
+                                            let (arg_tag, arg, rest_args_tag, rest_args) = load(args);
+                                            match param_tag {
+                                                Tag::Sym, Tag::Builtin, Tag::Coroutine => {
+                                                    match head_tag {
+                                                        Tag::Fun => {
+                                                            // evaluate the argument
+                                                            let (arg_tag, arg) = call(eval, arg_tag, arg, args_env);
+                                                            match arg_tag {
+                                                                Tag::Err => {
+                                                                    return (arg_tag, arg)
+                                                                }
+                                                            };
+                                                            // and store it in the environment
+                                                            let ext_env = store(param_tag, param, arg_tag, arg, func_env);
+                                                            let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
+                                                            let (res_tag, res) = call(apply, head_tag, ext_fun, rest_args_tag, rest_args, args_env);
+
+                                                            return (res_tag, res)
+                                                        }
+                                                        Tag::Macro => {
+                                                            // store the unevaluated argument in the environment
+                                                            let ext_env = store(param_tag, param, arg_tag, arg, func_env);
+                                                            let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
+                                                            let (res_tag, res) = call(apply, head_tag, ext_fun, rest_args_tag, rest_args, args_env);
+
+                                                            return (res_tag, res)
+                                                        }
+                                                    };
+                                                    let err = EvalErr::ApplyNonFunc;
+                                                    return (err_tag, err)
+                                                }
+                                            };
+                                            let err = EvalErr::IllegalBindingVar;
+                                            return (err_tag, err)
+                                        }
+                                    };
+                                    let err = EvalErr::ArgsNotList;
+                                    return (err_tag, err)
+                                    // --- DUPLICATED APPLY BLOCK END ---
+                                }
+                            };
                             // --- DUPLICATED APPLY BLOCK START ---
                             match args_tag {
                                 InternalTag::Nil => {
@@ -2175,19 +2274,33 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                     let (arg_tag, arg, rest_args_tag, rest_args) = load(args);
                                     match param_tag {
                                         Tag::Sym, Tag::Builtin, Tag::Coroutine => {
-                                            // evaluate the argument
-                                            let (arg_tag, arg) = call(eval, arg_tag, arg, args_env);
-                                            match arg_tag {
-                                                Tag::Err => {
-                                                    return (arg_tag, arg)
+                                            match head_tag {
+                                                Tag::Fun => {
+                                                    // evaluate the argument
+                                                    let (arg_tag, arg) = call(eval, arg_tag, arg, args_env);
+                                                    match arg_tag {
+                                                        Tag::Err => {
+                                                            return (arg_tag, arg)
+                                                        }
+                                                    };
+                                                    // and store it in the environment
+                                                    let ext_env = store(param_tag, param, arg_tag, arg, func_env);
+                                                    let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
+                                                    let (res_tag, res) = call(apply, head_tag, ext_fun, rest_args_tag, rest_args, args_env);
+
+                                                    return (res_tag, res)
+                                                }
+                                                Tag::Macro => {
+                                                    // store the unevaluated argument in the environment
+                                                    let ext_env = store(param_tag, param, arg_tag, arg, func_env);
+                                                    let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
+                                                    let (res_tag, res) = call(apply, head_tag, ext_fun, rest_args_tag, rest_args, args_env);
+
+                                                    return (res_tag, res)
                                                 }
                                             };
-                                            // and store it in the environment
-                                            let ext_env = store(param_tag, param, arg_tag, arg, func_env);
-                                            let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
-                                            let (res_tag, res) = call(apply, fun_tag, ext_fun, rest_args_tag, rest_args, args_env);
-
-                                            return (res_tag, res)
+                                            let err = EvalErr::ApplyNonFunc;
+                                            return (err_tag, err)
                                         }
                                     };
                                     let err = EvalErr::IllegalBindingVar;
@@ -2199,41 +2312,11 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                             // --- DUPLICATED APPLY BLOCK END ---
                         }
                     };
-                    // --- DUPLICATED APPLY BLOCK START ---
-                    match args_tag {
-                        InternalTag::Nil => {
-                            // Undersaturated application
-                            return (head_tag, head)
-                        }
-                        Tag::Cons => {
-                            let (arg_tag, arg, rest_args_tag, rest_args) = load(args);
-                            match param_tag {
-                                Tag::Sym, Tag::Builtin, Tag::Coroutine => {
-                                    // evaluate the argument
-                                    let (arg_tag, arg) = call(eval, arg_tag, arg, args_env);
-                                    match arg_tag {
-                                        Tag::Err => {
-                                            return (arg_tag, arg)
-                                        }
-                                    };
-                                    // and store it in the environment
-                                    let ext_env = store(param_tag, param, arg_tag, arg, func_env);
-                                    let ext_fun = store(rest_params_tag, rest_params, body_tag, body, ext_env);
-                                    let (res_tag, res) = call(apply, fun_tag, ext_fun, rest_args_tag, rest_args, args_env);
-
-                                    return (res_tag, res)
-                                }
-                            };
-                            let err = EvalErr::IllegalBindingVar;
-                            return (err_tag, err)
-                        }
-                    };
-                    let err = EvalErr::ArgsNotList;
+                    let err = EvalErr::ParamsNotList;
                     return (err_tag, err)
-                    // --- DUPLICATED APPLY BLOCK END ---
                 }
             };
-            let err = EvalErr::ParamsNotList;
+            let err = EvalErr::ApplyNonFunc;
             return (err_tag, err)
         }
     )
@@ -2324,10 +2407,10 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["97"]);
-        expect_eq(preallocate_symbols.width(), expect!["180"]);
+        expect_eq(preallocate_symbols.width(), expect!["184"]);
         expect_eq(eval_coroutine_expr.width(), expect!["10"]);
         expect_eq(eval.width(), expect!["77"]);
-        expect_eq(eval_builtin_expr.width(), expect!["144"]);
+        expect_eq(eval_builtin_expr.width(), expect!["145"]);
         expect_eq(eval_apply_builtin.width(), expect!["79"]);
         expect_eq(eval_opening_unop.width(), expect!["97"]);
         expect_eq(eval_hide.width(), expect!["115"]);
@@ -2343,7 +2426,7 @@ mod test {
         expect_eq(equal.width(), expect!["86"]);
         expect_eq(equal_inner.width(), expect!["59"]);
         expect_eq(car_cdr.width(), expect!["61"]);
-        expect_eq(apply.width(), expect!["115"]);
+        expect_eq(apply.width(), expect!["126"]);
         expect_eq(env_lookup.width(), expect!["52"]);
         expect_eq(ingress.width(), expect!["105"]);
         expect_eq(egress.width(), expect!["82"]);

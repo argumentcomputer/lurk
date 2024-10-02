@@ -504,6 +504,13 @@ test!(
     |_| uint(1)
 );
 
+// macros
+test!(
+    test_macros1,
+    "(let ((y (cons 1 2))) ((mlambda (a b) (list 'eq (list 'quote a) b)) (1 . 2) y))",
+    |z| *z.t()
+);
+
 // errors
 test!(test_unbound_var, "a", |_| ZPtr::err(EvalErr::UnboundVar));
 test_raw!(

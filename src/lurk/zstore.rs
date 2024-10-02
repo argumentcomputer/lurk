@@ -746,7 +746,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                     digest: into_sized(env_digest),
                 };
             },
-            Tag::Fun => {
+            Tag::Fun | Tag::Macro => {
                 let preimg = hashes5_inv.get(digest).expect("Hash40 preimg not found");
                 let (args, rest) = preimg.split_at(ZPTR_SIZE);
                 let (body, env_digest) = rest.split_at(ZPTR_SIZE);
@@ -929,13 +929,15 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                     format!("({elts_str})")
                 }
             }
-            Tag::Fun => {
+            Tag::Fun | Tag::Macro => {
+                let name = if zptr.tag == Tag::Fun { "Fun" } else { "Macro" };
                 let (args, body, _) = self.fetch_compact110(zptr);
                 if args == &self.nil {
-                    format!("<Fun () {}>", self.fmt_with_state(state, body))
+                    format!("<{} () {}>", name, self.fmt_with_state(state, body))
                 } else {
                     format!(
-                        "<Fun {} {}>",
+                        "<{} {} {}>",
+                        name,
                         self.fmt_with_state(state, args),
                         self.fmt_with_state(state, body)
                     )
@@ -1113,6 +1115,9 @@ mod test {
 
         let lambda = zstore.intern_symbol_no_lang(&builtin_sym("lambda"));
         assert_eq!(zstore.fmt_with_state(state, &lambda), "lambda");
+
+        let mlambda = zstore.intern_symbol_no_lang(&builtin_sym("mlambda"));
+        assert_eq!(zstore.fmt_with_state(state, &mlambda), "mlambda");
 
         let hi = zstore.intern_symbol_no_lang(&Symbol::key(&["hi"]));
         assert_eq!(zstore.fmt_with_state(state, &hi), ":hi");
