@@ -197,9 +197,15 @@ impl ProtocolProof {
 }
 
 #[derive(Serialize, Deserialize)]
+pub(crate) enum CallableData {
+    Comm(CommData<F>),
+    Fun(LurkData<F>),
+}
+
+#[derive(Serialize, Deserialize)]
 pub(crate) struct ChainProof {
     pub(crate) crypto_proof: CryptoProof,
     pub(crate) call_args: ZPtr<F>,
     pub(crate) chain_result: LurkData<F>,
-    pub(crate) next_callable: CommData<F>,
+    pub(crate) next_callable: CallableData,
 }
