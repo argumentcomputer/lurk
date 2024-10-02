@@ -122,9 +122,9 @@ macro_rules! test_env {
 
 fn trivial_id_fun(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
     let x = zstore.intern_symbol_no_lang(&user_sym("x"));
-    let args = zstore.intern_list([x]);
+    let list_x = zstore.intern_list([x]);
     let env = zstore.intern_empty_env();
-    zstore.intern_fun(args, x, env)
+    zstore.intern_fun(list_x, list_x, env)
 }
 
 fn trivial_a_1_env(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
@@ -413,12 +413,28 @@ test!(test_secret, "(secret (commit 123))", |_| ZPtr::big_num(
 ));
 test!(
     test_func_big_num_app,
-    "(begin (commit (lambda (x) x)) (#0x361877c9845ddda6aa16dd6c6bcd26fcea7b93930106a19f5d7d5cf10a9015 42))",
+    "(begin (commit (lambda (x) x)) (#0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 42))",
     |_| uint(42)
 );
 test!(
     test_func_comm_app,
-    "(begin (commit (lambda (x) x)) ((comm #0x361877c9845ddda6aa16dd6c6bcd26fcea7b93930106a19f5d7d5cf10a9015) 42))",
+    "(begin (commit (lambda (x) x)) ((comm #0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808) 42))",
+    |_| uint(42)
+);
+
+test!(
+    test_implicit_begin_let,
+    "(let () (commit (lambda (x) x)) (#0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 42))",
+    |_| uint(42)
+);
+test!(
+    test_implicit_begin_letrec,
+    "(letrec () (commit (lambda (x) x)) (#0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 42))",
+    |_| uint(42)
+);
+test!(
+    test_implicit_begin_lambda,
+    "((lambda () (commit (lambda (x) x)) (#0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 42)))",
     |_| uint(42)
 );
 
@@ -523,6 +539,17 @@ test_raw!(
     },
     |_| ZPtr::err(EvalErr::UnboundVar)
 );
+
+test!(invalid_form_let, "(let ((a 1)))", |_| ZPtr::err(
+    EvalErr::InvalidForm
+));
+test!(invalid_form_letrec, "(letrec ((a 1)))", |_| ZPtr::err(
+    EvalErr::InvalidForm
+));
+test!(invalid_form_lambda, "(lambda (x))", |_| ZPtr::err(
+    EvalErr::InvalidForm
+));
+
 test!(test_div_by_zero_fel, "(/ 1n 0n)", |_| ZPtr::err(
     EvalErr::DivByZero
 ));

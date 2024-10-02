@@ -530,8 +530,8 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         syn: &Syntax<F>,
         lang_symbols: &FxHashSet<Symbol>,
     ) -> Result<ZPtr<F>> {
-        if let Some(zptr) = self.syn_cache.get(syn).copied() {
-            return Ok(zptr);
+        if let Some(zptr) = self.syn_cache.get(syn) {
+            return Ok(*zptr);
         }
         let zptr = match syn {
             Syntax::Num(_, f) => self.intern_num(*f),
@@ -1051,15 +1051,15 @@ mod test {
 
         let hi = zstore.intern_string("hi");
         let x = zstore.intern_symbol(&user_sym("x"), &lang_symbols);
-        let expected_args = zstore.intern_list([x]);
+        let list_x = zstore.intern_list([x]);
         let expected_env = zstore.intern_empty_env();
 
         let (car, cdr) = zstore.fetch_tuple2(&zptr);
         let (args, body, env) = zstore.fetch_compact110(cdr);
 
         assert_eq!(car, &hi);
-        assert_eq!(args, &expected_args);
-        assert_eq!(body, &x);
+        assert_eq!(args, &list_x);
+        assert_eq!(body, &list_x);
         assert_eq!(env, &expected_env);
     }
 
@@ -1123,10 +1123,10 @@ mod test {
         let list = zstore.intern_list([x, hi]);
         assert_eq!(zstore.fmt_with_state(state, &list), "(x :hi)");
 
-        let args = zstore.intern_list([x]);
+        let list_x = zstore.intern_list([x]);
         let empty_env = zstore.intern_empty_env();
-        let fun = zstore.intern_fun(args, x, empty_env);
-        assert_eq!(zstore.fmt_with_state(state, &fun), "<Fun (x) x>");
+        let fun = zstore.intern_fun(list_x, list_x, empty_env);
+        assert_eq!(zstore.fmt_with_state(state, &fun), "<Fun (x) (x)>");
 
         assert_eq!(zstore.fmt_with_state(state, &empty_env), "<Env ()>");
         let env = zstore.intern_env(x, one, empty_env);

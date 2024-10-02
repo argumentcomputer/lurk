@@ -30,12 +30,12 @@ pub enum Tag {
     Key,
     Fun,
     Builtin,
+    Coroutine,
     Sym,
     Cons,
     Env,
     Thunk,
     Err,
-    Coroutine,
 }
 
 impl Tag {
