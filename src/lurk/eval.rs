@@ -2124,8 +2124,8 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                             return (res_tag, res)
                                         }
                                     };
-                                    // eval the resulting AST from the macro evaluation
-                                    let (res_tag, res) = call(eval, res_tag, res, func_env);
+                                    // eval the resulting AST from the macro evaluation, in the outer environment
+                                    let (res_tag, res) = call(eval, res_tag, res, args_env);
                                     match res_tag {
                                         Tag::Err => {
                                             return (res_tag, res)
