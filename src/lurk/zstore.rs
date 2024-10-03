@@ -314,11 +314,6 @@ pub(crate) fn builtin_set() -> &'static IndexSet<Symbol, FxBuildHasher> {
 }
 
 impl<F: Field, C: Chipset<F>> ZStore<F, C> {
-    #[inline]
-    pub fn hasher(&self) -> &Hasher<F, C> {
-        &self.hasher
-    }
-
     pub(crate) fn hash3(&mut self, preimg: [F; HASH3_SIZE]) -> [F; DIGEST_SIZE] {
         if let Some(img) = self.hashes3.get(&preimg) {
             return *img;
@@ -690,7 +685,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                     self.memoize_atom_dag(ZPtr { tag, digest: zeros });
                     break;
                 }
-                let preimg = hashes4_inv.get(digest).expect("Hash32 preimg not found");
+                let preimg = hashes4_inv.get(digest).expect("Hash4 preimg not found");
                 let (head, tail) = preimg.split_at(ZPTR_SIZE);
                 let head_digest = &head[DIGEST_SIZE..];
                 let tail_digest = &tail[DIGEST_SIZE..];
@@ -699,7 +694,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 zptr = ZPtr::from_flat_data(tail);
             },
             Tag::Cons => loop {
-                let preimg = hashes4_inv.get(digest).expect("Hash32 preimg not found");
+                let preimg = hashes4_inv.get(digest).expect("Hash4 preimg not found");
                 let (car, cdr) = preimg.split_at(ZPTR_SIZE);
                 let (car_tag, car_digest) = car.split_at(DIGEST_SIZE);
                 let (cdr_tag, cdr_digest) = cdr.split_at(DIGEST_SIZE);
@@ -715,7 +710,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 zptr = ZPtr::from_flat_data(cdr);
             },
             Tag::Thunk => {
-                let preimg = hashes3_inv.get(digest).expect("Hash24 preimg not found");
+                let preimg = hashes3_inv.get(digest).expect("Hash3 preimg not found");
                 let (fst, snd_digest) = preimg.split_at(ZPTR_SIZE);
                 let (fst_tag, fst_digest) = fst.split_at(DIGEST_SIZE);
                 let fst_tag = Tag::from_field(&fst_tag[0]);
@@ -729,7 +724,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                     self.memoize_atom_dag(ZPtr { tag, digest: zeros });
                     break;
                 }
-                let preimg = hashes5_inv.get(digest).expect("Hash40 preimg not found");
+                let preimg = hashes5_inv.get(digest).expect("Hash5 preimg not found");
                 let (var, rst) = preimg.split_at(ZPTR_SIZE);
                 let (val, env_digest) = rst.split_at(ZPTR_SIZE);
                 let (var_tag, var_digest) = var.split_at(DIGEST_SIZE);
@@ -742,12 +737,12 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 memoize_compact110!(var_tag, var_digest, val_tag, val_digest, env_tag, env_digest);
                 digest = env_digest;
                 zptr = ZPtr {
-                    tag: Tag::Env,
+                    tag: env_tag,
                     digest: into_sized(env_digest),
                 };
             },
             Tag::Fun => {
-                let preimg = hashes5_inv.get(digest).expect("Hash40 preimg not found");
+                let preimg = hashes5_inv.get(digest).expect("Hash5 preimg not found");
                 let (args, rest) = preimg.split_at(ZPTR_SIZE);
                 let (body, env_digest) = rest.split_at(ZPTR_SIZE);
                 let (args_tag, args_digest) = args.split_at(DIGEST_SIZE);

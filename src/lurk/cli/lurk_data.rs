@@ -8,7 +8,7 @@ use crate::{
 
 use super::zdag::ZDag;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub(crate) struct LurkData<F: std::hash::Hash + Eq> {
     pub(crate) zptr: ZPtr<F>,
     zdag: ZDag<F>,

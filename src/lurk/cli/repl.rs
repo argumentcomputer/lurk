@@ -12,18 +12,16 @@ use rustyline::{
     Completer, Editor, Helper, Highlighter, Hinter,
 };
 use sphinx_core::{
-    stark::{LocalProver, StarkGenericConfig, StarkMachine},
-    utils::{BabyBearPoseidon2, SphinxCoreOpts},
+    stark::{LocalProver, StarkGenericConfig},
+    utils::SphinxCoreOpts,
 };
-use std::io::Write;
-use std::{fmt::Debug, marker::PhantomData};
+use std::{fmt::Debug, io::Write, marker::PhantomData};
 
 use crate::{
     lair::{
         chipset::{Chipset, NoChip},
         execute::{DebugEntry, DebugEntryKind, QueryRecord, QueryResult, Shard},
-        func_chip::FuncChip,
-        lair_chip::{build_chip_vector, LairChip, LairMachineProgram},
+        lair_chip::LairMachineProgram,
         toplevel::Toplevel,
     },
     lurk::{
@@ -39,6 +37,7 @@ use crate::{
             syntax::{parse_maybe_meta, parse_space},
             Error, Span,
         },
+        stark_machine::{new_machine, INPUT_SIZE},
         state::{State, StateRcCell},
         symbol::Symbol,
         tag::Tag,
@@ -49,12 +48,8 @@ use crate::{
 use super::{
     debug::{FormattedDebugData, FormattedDebugEntry},
     paths::proofs_dir,
-    proofs::{CryptoProof, IOProof},
+    proofs::{CachedProof, CryptoProof},
 };
-
-const INPUT_SIZE: usize = 24;
-const OUTPUT_SIZE: usize = 16;
-const NUM_PUBLIC_VALUES: usize = INPUT_SIZE + OUTPUT_SIZE;
 
 #[derive(Helper, Highlighter, Hinter, Completer)]
 struct InputValidator<F: Field + Debug> {
@@ -150,6 +145,7 @@ impl<C2: Chipset<BabyBear>> Repl<BabyBear, LurkChip, C2> {
 }
 
 impl Repl<BabyBear, LurkChip, NoChip> {
+    /// Creates a REPL instance for the empty Lang with `C2 = NoChip`
     #[inline]
     pub(crate) fn new_native() -> Self {
         Self::new(Lang::empty())
@@ -157,17 +153,8 @@ impl Repl<BabyBear, LurkChip, NoChip> {
 }
 
 impl<C1: Chipset<BabyBear>, C2: Chipset<BabyBear>> Repl<BabyBear, C1, C2> {
-    pub(crate) fn stark_machine(
-        &self,
-    ) -> StarkMachine<BabyBearPoseidon2, LairChip<'_, BabyBear, C1, C2>> {
-        let lurk_main_chip = FuncChip::from_index(self.lurk_main_idx, &self.toplevel);
-        StarkMachine::new(
-            BabyBearPoseidon2::new(),
-            build_chip_vector(&lurk_main_chip),
-            NUM_PUBLIC_VALUES,
-        )
-    }
-
+    /// Generates a STARK proof for the latest Lurk reduction, persists it and
+    /// returns the corresponding proof key
     pub(crate) fn prove_last_reduction(&mut self) -> Result<String> {
         // make env DAG available so `IOProof` can carry it
         self.memoize_env_dag();
@@ -176,21 +163,18 @@ impl<C1: Chipset<BabyBear>, C2: Chipset<BabyBear>> Repl<BabyBear, C1, C2> {
         };
         let proof_key_img: &[BabyBear; DIGEST_SIZE] = &self
             .zstore
-            .hasher()
-            .hash(&public_values[..INPUT_SIZE])
-            .try_into()
-            .unwrap();
+            .hash3(public_values[..INPUT_SIZE].try_into().unwrap());
         let proof_key = format!("{:x}", field_elts_to_biguint(proof_key_img));
         let proof_path = proofs_dir()?.join(&proof_key);
-        let machine = self.stark_machine();
+        let machine = new_machine(&self.toplevel);
         let (pk, vk) = machine.setup(&LairMachineProgram);
         let challenger_p = &mut machine.config().challenger();
         let must_prove = if !proof_path.exists() {
             true
         } else {
-            let io_proof_bytes = std::fs::read(&proof_path)?;
-            if let Ok(io_proof) = bincode::deserialize::<IOProof>(&io_proof_bytes) {
-                let machine_proof = io_proof.into_machine_proof();
+            let cached_proof_bytes = std::fs::read(&proof_path)?;
+            if let Ok(cached_proof) = bincode::deserialize::<CachedProof>(&cached_proof_bytes) {
+                let machine_proof = cached_proof.into_machine_proof();
                 let challenger_v = &mut challenger_p.clone();
                 // force an overwrite if verification goes wrong
                 machine.verify(&vk, &machine_proof, challenger_v).is_err()
@@ -208,9 +192,9 @@ impl<C1: Chipset<BabyBear>, C2: Chipset<BabyBear>> Repl<BabyBear, C1, C2> {
                 .verify(&vk, &machine_proof, challenger_v)
                 .expect("Proof verification failed");
             let crypto_proof: CryptoProof = machine_proof.into();
-            let io_proof = IOProof::new(crypto_proof, public_values, &self.zstore);
-            let io_proof_bytes = bincode::serialize(&io_proof)?;
-            std::fs::write(proof_path, io_proof_bytes)?;
+            let cached_proof = CachedProof::new(crypto_proof, public_values, &self.zstore);
+            let cached_proof_bytes = bincode::serialize(&cached_proof)?;
+            std::fs::write(proof_path, cached_proof_bytes)?;
         }
         println!("Proof key: \"{proof_key}\"");
         Ok(proof_key)
@@ -226,30 +210,25 @@ fn pretty_iterations_display(iterations: usize) -> String {
 }
 
 impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
-    pub(crate) fn peek1(&self, args: &ZPtr<F>) -> Result<&ZPtr<F>> {
-        if args.tag != Tag::Cons {
-            bail!("Missing first argument")
+    /// Deconstructs the arguments of a cons list expected to have a known number
+    /// of elements. Errors if the list has a different length.
+    pub(crate) fn take<'a, const N: usize>(
+        &'a self,
+        mut args: &'a ZPtr<F>,
+    ) -> Result<[&'a ZPtr<F>; N]> {
+        let mut res = Vec::with_capacity(N);
+        for i in 0..N {
+            if args.tag != Tag::Cons {
+                bail!("Missing argument {}", i + 1);
+            }
+            let (arg, rst) = self.zstore.fetch_tuple2(args);
+            res.push(arg);
+            args = rst;
         }
-        let (arg, rst) = self.zstore.fetch_tuple2(args);
-        if rst != self.zstore.nil() {
-            bail!("Only one argument is supported")
+        if args != self.zstore.nil() {
+            bail!("Only {N} arguments are supported");
         }
-        Ok(arg)
-    }
-
-    pub(crate) fn peek2(&self, args: &ZPtr<F>) -> Result<(&ZPtr<F>, &ZPtr<F>)> {
-        if args.tag != Tag::Cons {
-            bail!("Missing first argument")
-        }
-        let (arg1, rst) = self.zstore.fetch_tuple2(args);
-        if rst.tag != Tag::Cons {
-            bail!("Missing second argument")
-        }
-        let (arg2, rst) = self.zstore.fetch_tuple2(rst);
-        if rst != self.zstore.nil() {
-            bail!("Only two arguments are supported")
-        }
-        Ok((arg1, arg2))
+        Ok(res.try_into().unwrap())
     }
 
     pub(crate) fn car_cdr(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>) {
@@ -310,6 +289,12 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
     #[inline]
     pub(crate) fn memoize_env_dag(&mut self) {
         self.memoize_dag(Tag::Env, &self.env.digest.clone())
+    }
+
+    #[inline]
+    pub(crate) fn bind(&mut self, var: ZPtr<F>, val: ZPtr<F>) {
+        self.memoize_env_dag();
+        self.env = self.zstore.intern_env(var, val, self.env);
     }
 
     /// Produces a minimal `QueryRecord` with just enough data to manually execute

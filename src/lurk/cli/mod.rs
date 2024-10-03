@@ -3,6 +3,7 @@ mod config;
 mod debug;
 mod lurk_data;
 mod meta;
+mod microchain;
 mod paths;
 mod proofs;
 pub mod repl;
@@ -14,6 +15,7 @@ use anyhow::{bail, Result};
 use camino::Utf8PathBuf;
 use clap::{Args, Parser, Subcommand};
 use config::{set_config, Config};
+use microchain::MicrochainArgs;
 use repl::Repl;
 
 #[derive(Parser, Debug)]
@@ -29,6 +31,8 @@ enum Command {
     Repl(ReplArgs),
     /// Loads a file, processing forms sequentially ("load" can be elided)
     Load(LoadArgs),
+    /// Starts the microchain server
+    Microchain(MicrochainArgs),
 }
 
 #[derive(Args, Debug)]
@@ -72,8 +76,8 @@ struct LoadCli {
 }
 
 fn parse_filename(file: &str) -> Result<Utf8PathBuf> {
-    if file == "help" {
-        bail!("\"help\" is not a valid filename. Printing help console instead");
+    if ["help", "microchain"].contains(&file) {
+        bail!("Invalid file name");
     }
     Ok(file.into())
 }
@@ -105,6 +109,7 @@ impl Cli {
         match self.command {
             Command::Repl(repl_args) => repl_args.into_cli().run(),
             Command::Load(load_args) => load_args.into_cli().run(),
+            Command::Microchain(microchain_args) => microchain_args.run(),
         }
     }
 }
