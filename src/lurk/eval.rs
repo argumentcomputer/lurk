@@ -2095,12 +2095,8 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
             // Expression must be a function
             let head_not_fun = sub(head_tag, fun_tag);
             if head_not_fun {
-                let head_not_err = sub(head_tag, fun_tag);
-                if head_not_err {
-                    let err = EvalErr::ApplyNonFunc;
-                    return (err_tag, err)
-                }
-                return (err_tag, head)
+                let err = EvalErr::ApplyNonFunc;
+                return (err_tag, err)
             }
 
             let (params_tag, params, body_tag, body, func_env) = load(head);
@@ -2355,7 +2351,7 @@ mod test {
         expect_eq(equal.width(), expect!["86"]);
         expect_eq(equal_inner.width(), expect!["59"]);
         expect_eq(car_cdr.width(), expect!["61"]);
-        expect_eq(apply.width(), expect!["115"]);
+        expect_eq(apply.width(), expect!["114"]);
         expect_eq(env_lookup.width(), expect!["52"]);
         expect_eq(ingress.width(), expect!["105"]);
         expect_eq(egress.width(), expect!["82"]);

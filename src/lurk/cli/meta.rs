@@ -560,12 +560,6 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         if current_state.tag != Tag::Cons {
             bail!("Current state must reduce to a pair");
         }
-        // reduce `call_args` elements
-        let list_sym = repl
-            .zstore
-            .intern_symbol(&builtin_sym("list"), &repl.lang_symbols);
-        let list_expr = repl.zstore.intern_cons(list_sym, call_args);
-        let (call_args, _) = repl.reduce_aux(&list_expr)?;
         repl.memoize_dag(current_state.tag, &current_state.digest);
         let (_, &callable) = repl.zstore.fetch_tuple2(&current_state);
         let call_expr = repl.zstore.intern_cons(callable, call_args);
