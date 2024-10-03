@@ -31,7 +31,7 @@ use super::{
     comm_data::CommData,
     debug::debug_mode,
     lurk_data::LurkData,
-    proofs::{ChainProof, ProtocolProof},
+    proofs::{CallableData, ChainProof, ProtocolProof},
 };
 
 #[allow(dead_code)]
@@ -1180,10 +1180,6 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let (&(mut state_chain_result), &(mut state_callable)) =
                 repl.zstore.fetch_tuple2(&state);
 
-            if state_callable.tag != Tag::Comm {
-                bail!("The next callable must be a commitment");
-            }
-
             let listener = TcpListener::bind(&addr_str)?;
             println!("Listening at {addr_str}");
             let empty_env = repl.zstore.intern_empty_env();
@@ -1195,10 +1191,18 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                             repl.memoize_dag(state_chain_result.tag, &state_chain_result.digest);
                             let chain_result = LurkData::new(state_chain_result, &repl.zstore);
 
-                            let comm_data =
-                                Self::build_comm_data(repl, state_callable.digest.as_slice());
+                            let state_callable_data = if state_callable.tag == Tag::Comm {
+                                let comm_data =
+                                    Self::build_comm_data(repl, state_callable.digest.as_slice());
+                                CallableData::Comm(comm_data)
+                            } else {
+                                CallableData::Fun(LurkData::new(state_callable, &repl.zstore))
+                            };
 
-                            write_data(&mut stream, Response::State(chain_result, comm_data))?;
+                            write_data(
+                                &mut stream,
+                                Response::State(chain_result, state_callable_data),
+                            )?;
                         }
                         Request::Transition(chain_proof) => {
                             let ChainProof {
@@ -1211,18 +1215,40 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                                 write_data(&mut stream, Response::ChainResultIsOpaque)?;
                                 continue;
                             }
-                            if next_callable.secret.tag != Tag::BigNum {
-                                write_data(&mut stream, Response::NextCallableSecretNotBigNum)?;
-                                continue;
-                            }
-                            if next_callable.payload_has_opaque_data() {
-                                write_data(&mut stream, Response::NextCallablePayloadIsOpaque)?;
-                                continue;
-                            }
+
+                            let next_callable_zptr = match &next_callable {
+                                CallableData::Comm(comm_data) => {
+                                    if comm_data.secret.tag != Tag::BigNum {
+                                        write_data(
+                                            &mut stream,
+                                            Response::NextCallableSecretNotBigNum,
+                                        )?;
+                                        continue;
+                                    }
+                                    if comm_data.payload_has_opaque_data() {
+                                        write_data(
+                                            &mut stream,
+                                            Response::NextCallablePayloadIsOpaque,
+                                        )?;
+                                        continue;
+                                    }
+                                    comm_data.commit(&mut repl.zstore)
+                                }
+                                CallableData::Fun(lurk_data) => {
+                                    if lurk_data.has_opaque_data() {
+                                        write_data(
+                                            &mut stream,
+                                            Response::NextCallablePayloadIsOpaque,
+                                        )?;
+                                        continue;
+                                    }
+                                    lurk_data.zptr
+                                }
+                            };
+
                             // the expression is a call whose callable is part of the server state
                             // and the arguments are provided by the client
                             let expr = repl.zstore.intern_cons(state_callable, call_args);
-                            let next_callable_zptr = next_callable.commit(&mut repl.zstore);
 
                             // the result is a pair composed by the chain result and next callable
                             // provided by the client
@@ -1250,7 +1276,14 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                             // everything went okay... transition to the next state
                             write_data(&mut stream, Response::ProofAccepted)?;
                             state_chain_result = chain_result.populate_zstore(&mut repl.zstore);
-                            next_callable.populate_zstore(&mut repl.zstore);
+                            match next_callable {
+                                CallableData::Comm(comm_data) => {
+                                    comm_data.populate_zstore(&mut repl.zstore)
+                                }
+                                CallableData::Fun(lurk_data) => {
+                                    lurk_data.populate_zstore(&mut repl.zstore);
+                                }
+                            }
                             state_callable = next_callable_zptr;
                         }
                     },
@@ -1278,12 +1311,18 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let addr_str = repl.zstore.fetch_string(addr);
             let stream = &mut TcpStream::connect(addr_str)?;
             write_data(stream, Request::Get)?;
-            let Response::State(chain_result, next_callable) = read_data(stream)? else {
+            let Response::State(chain_result, next_callable_data) = read_data(stream)? else {
                 bail!("Could not read state from server");
             };
             let state_chain_result = chain_result.populate_zstore(&mut repl.zstore);
-            let state_next_callable = next_callable.commit(&mut repl.zstore);
-            next_callable.populate_zstore(&mut repl.zstore);
+            let state_next_callable = match next_callable_data {
+                CallableData::Comm(comm_data) => {
+                    let zptr = comm_data.commit(&mut repl.zstore);
+                    comm_data.populate_zstore(&mut repl.zstore);
+                    zptr
+                }
+                CallableData::Fun(lurk_data) => lurk_data.populate_zstore(&mut repl.zstore),
+            };
             let state = repl
                 .zstore
                 .intern_cons(state_chain_result, state_next_callable);
@@ -1315,16 +1354,18 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 bail!("New state is not a pair");
             }
             let (&state_chain_result, &state_callable) = repl.zstore.fetch_tuple2(&state);
-            if state_callable.tag != Tag::Comm {
-                bail!("Next callable is not a commitment");
-            }
 
             let proof_key = repl.prove_last_reduction()?;
             let io_proof = Self::load_io_proof(&proof_key)?;
             let crypto_proof = io_proof.crypto_proof;
 
             let chain_result = LurkData::new(state_chain_result, &repl.zstore);
-            let next_callable = Self::build_comm_data(repl, state_callable.digest.as_slice());
+            let next_callable = if state_callable.tag == Tag::Comm {
+                let comm_data = Self::build_comm_data(repl, state_callable.digest.as_slice());
+                CallableData::Comm(comm_data)
+            } else {
+                CallableData::Fun(LurkData::new(state_callable, &repl.zstore))
+            };
 
             let chain_proof = ChainProof {
                 crypto_proof,
@@ -1350,7 +1391,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                     }
                     bail!(msg);
                 }
-                _ => unreachable!(),
+                _ => bail!("Bad server response"),
             }
             Ok(())
         },
@@ -1365,7 +1406,7 @@ enum Request {
 
 #[derive(Serialize, Deserialize)]
 enum Response {
-    State(LurkData<F>, CommData<F>),
+    State(LurkData<F>, CallableData),
     ProofAccepted,
     ChainResultIsOpaque,
     NextCallableSecretNotBigNum,
