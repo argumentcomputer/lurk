@@ -339,7 +339,7 @@ const META_SYMBOLS: [&str; 34] = [
     "defprotocol",
     "prove-protocol",
     "verify-protocol",
-    "micro-chain-serve",
-    "micro-chain-get",
-    "micro-chain-transition",
+    "microchain-serve",
+    "microchain-get",
+    "microchain-transition",
 ];

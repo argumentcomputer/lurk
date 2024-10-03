@@ -1148,22 +1148,20 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         CommData::new(secret, payload, &repl.zstore)
     }
 
-    const MICRO_CHAIN_SERVE: Self = Self {
-        name: "micro-chain-serve",
+    const MICROCHAIN_SERVE: Self = Self {
+        name: "microchain-serve",
         summary:
             "Starts a server to manage state transitions by receiving proofs of chained callables.",
-        format: "!(micro-chain-serve <addr_str> <state_expr>)",
-        info: &[
-            "The initial state must follow the format of a chain output whose next",
-            "callable is a commitment.",
-        ],
-        example: &["!(micro-chain-serve \"127.0.0.1:1234\" (some-callable init-arg0 init-arg1))"],
+        format: "!(microchain-serve <addr_expr> <state_expr>)",
+        info: &["The initial state must follow the format of a chain output."],
+        example: &["!(microchain-serve \"127.0.0.1:1234\" (some-callable init-arg0 init-arg1))"],
         run: |repl, args, _path| {
-            let (addr, &state_expr) = repl.peek2(args)?;
+            let (&addr_expr, &state_expr) = repl.peek2(args)?;
+            let (addr, _) = repl.reduce_aux(&addr_expr)?;
             if addr.tag != Tag::Str {
                 bail!("Address must be a string");
             }
-            let addr_str = repl.zstore.fetch_string(addr);
+            let addr_str = repl.zstore.fetch_string(&addr);
             let (state, _) = repl.reduce_aux(&state_expr)?;
             if state.tag != Tag::Cons {
                 bail!("Initial state must be a pair");
@@ -1290,19 +1288,20 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         },
     };
 
-    const MICRO_CHAIN_GET: Self = Self {
-        name: "micro-chain-get",
-        summary: "Binds the current state from a micro-chain server to a symbol",
-        format: "!(micro-chain-get <addr_str> <symbol>)",
+    const MICROCHAIN_GET: Self = Self {
+        name: "microchain-get",
+        summary: "Binds the current state from a microchain server to a symbol",
+        format: "!(microchain-get <addr_expr> <symbol>)",
         info: &[],
-        example: &["!(micro-chain-get \"127.0.0.1:1234\" state0)"],
+        example: &["!(microchain-get \"127.0.0.1:1234\" state0)"],
         run: |repl, args, _path| {
-            let (addr, &state_sym) = repl.peek2(args)?;
+            let (&addr_expr, &state_sym) = repl.peek2(args)?;
+            let (addr, _) = repl.reduce_aux(&addr_expr)?;
             if addr.tag != Tag::Str {
                 bail!("Address must be a string");
             }
             Self::validate_binding_var(repl, &state_sym)?;
-            let addr_str = repl.zstore.fetch_string(addr);
+            let addr_str = repl.zstore.fetch_string(&addr);
             let stream = &mut TcpStream::connect(addr_str)?;
             write_data(stream, Request::Get)?;
             let Response::State(chain_result, next_callable_data) = read_data(stream)? else {
@@ -1326,19 +1325,20 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         },
     };
 
-    const MICRO_CHAIN_TRANSITION: Self = Self {
-        name: "micro-chain-transition",
+    const MICROCHAIN_TRANSITION: Self = Self {
+        name: "microchain-transition",
         summary:
-            "Proves a state transition via chaining and sends the proof to a micro-chain server",
-        format: "!(micro-chain-transition <addr_str> <symbol> <state_expr> <call_args>)",
+            "Proves a state transition via chaining and sends the proof to a microchain server",
+        format: "!(microchain-transition <addr_expr> <symbol> <state_expr> <call_args>)",
         info: &["The transition is successful iff the proof is accepted by the server"],
-        example: &["!(micro-chain-transition \"127.0.0.1:1234\" state1 state0 arg0 arg1)"],
+        example: &["!(microchain-transition \"127.0.0.1:1234\" state1 state0 arg0 arg1)"],
         run: |repl, args, _path| {
-            let (&addr, rest) = repl.car_cdr(args);
+            let (&addr_expr, &rest) = repl.car_cdr(args);
+            let (addr, _) = repl.reduce_aux(&addr_expr)?;
             if addr.tag != Tag::Str {
                 bail!("Address must be a string");
             }
-            let (&next_state_sym, rest) = repl.car_cdr(rest);
+            let (&next_state_sym, rest) = repl.car_cdr(&rest);
             Self::validate_binding_var(repl, &next_state_sym)?;
             let (&current_state_expr, &call_args) = repl.car_cdr(rest);
             let empty_env = repl.zstore.intern_empty_env();
@@ -1463,9 +1463,9 @@ pub(crate) fn meta_cmds<C1: Chipset<F>, C2: Chipset<F>>() -> MetaCmdsMap<F, C1, 
         MetaCmd::DEFPROTOCOL,
         MetaCmd::PROVE_PROTOCOL,
         MetaCmd::VERIFY_PROTOCOL,
-        MetaCmd::MICRO_CHAIN_SERVE,
-        MetaCmd::MICRO_CHAIN_GET,
-        MetaCmd::MICRO_CHAIN_TRANSITION,
+        MetaCmd::MICROCHAIN_SERVE,
+        MetaCmd::MICROCHAIN_GET,
+        MetaCmd::MICROCHAIN_TRANSITION,
         MetaCmd::HELP,
     ]
     .map(|mc| (mc.name, mc))
