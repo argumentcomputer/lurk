@@ -39,3 +39,22 @@ fn test_lib() {
     let mut repl = Repl::new_native();
     assert!(repl.load_file("lib/tests.lurk".into(), false).is_ok());
 }
+
+#[ignore]
+#[test]
+fn test_demo_files() {
+    set_config(Config::default());
+    let demo_files = [
+        "demo/simple.lurk",
+        "demo/functional-commitment.lurk",
+        "demo/chained-functional-commitment.lurk",
+        "demo/protocol.lurk",
+        "demo/bank.lurk",
+        "demo/mastermind.lurk",
+    ];
+    for file in demo_files {
+        let mut repl = Repl::new_native();
+        assert!(repl.load_file(file.into(), false).is_ok());
+    }
+    std::fs::remove_file("protocol-proof").unwrap();
+}
