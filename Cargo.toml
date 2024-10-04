@@ -166,3 +166,8 @@ codegen-units = 16
 [features]
 default=[]
 loam=[]
+
+
+# Ascent will be compiled with -Copt-level=3 . This includes build dependencies.
+[profile.dev.package."ascent"]
+opt-level = 3
