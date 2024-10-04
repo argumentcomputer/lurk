@@ -110,7 +110,7 @@
                                         (lambda ()
                                           (let ((score (g1 guess1))) ;; Player 2's guess scored on g1, player 1's game. Hence guess1.
                                             (cons (if (eq score :correct) :draw :winner-1) nil))))
-                                  (cons score
+                                  (cons (cons :player-1-to-guess score)
                                         (lambda (guess2)
                                           (ensure-valid-code guess2)
                                           (let ((score (g1 guess1))) ;; Player 2's guess scored on g1, player 1's game. Hence guess1.
@@ -125,7 +125,7 @@
                                                     (cons :winner-2 nil)
                                                     ;; On subsequent iterations, we have only player 1's guess (guess2).
                                                     ;; The partial application yields a continuation function that will receive player 2's guess (guess1).
-                                                    (cons score (play-one-round (+ 1 round) guess2))))))))))))
+                                                    (cons (cons :player-2-to-guess score) (play-one-round (+ 1 round) guess2))))))))))))
                   ;; On first iteration, we have already received both guesses.
                   (play-one-round 1 guess2 guess1))))
 
@@ -133,7 +133,7 @@
      ;; Game is initialized with commitments to codes from both players.
      (lambda (code-comm1 code-comm2 expected-code-length num-choices max-rounds)
        (let ((ensure-valid-code (make-code-validator expected-code-length num-choices)))
-         (cons :player-1-guess ; prompt
+         (cons :player-1-to-guess ; prompt
                ;; Somewhat confusingly, guess2 is player 1's first guess. See comment in play.
                (lambda (guess2)
                  (begin
@@ -150,7 +150,7 @@
                                     (cons :draw nil)
                                     (cons :winner-2 nil))))
                         ;; Player 2 provides guess1 (named that because it is input to game1).
-                        (cons :player-2-guess ; prompt
+                        (cons :player-2-to-guess ; prompt
                               (lambda (guess1)
                                 ;; game-2 is played by player 2.
                                 ;; Only player 2 will be able to prove this, due to make-scoring-fn's interface.
@@ -163,24 +163,22 @@
 
 ;; Note commitment created with hide to avoid brute-force attack.
 !(def regression (init-game (hide #0x99887766 '(4 2 2 3)) (hide #0x1234 '(3 1 4 1)) 4 6 20))
-!(assert-eq :player-1-guess (car regression))
+!(assert-eq :player-1-to-guess (car regression))
 
 !(transition regression1 regression '(1 1 1 1))
-!(assert-eq :player-2-guess (car regression1))
+!(assert-eq :player-2-to-guess (car regression1))
 
 !(transition regression2 regression1 '(1 1 1 1))
-!(assert-eq '(2 . 0) (car regression2))
+!(assert-eq '(:player-1-to-guess 2 . 0) (car regression2))
 
 !(transition regression3 regression2 '(1 1 2 2))
-!(assert-eq '(0 . 0) (car regression3))
+!(assert-eq '(:player-2-to-guess 0 . 0) (car regression3))
 
 !(transition regression4 regression3 '(2 1 1 1))
-!(assert-eq '(1 . 1) (car regression4))
+!(assert-eq '(:player-1-to-guess 1 . 1) (car regression4))
 
 !(transition regression5 regression4 '(1 1 3 3))
-!(assert-eq '(0 . 1) (car regression5))
-
-;!(debug ((cdr regression5) '(1 2 3 4)))
+!(assert-eq '(:player-2-to-guess 0 . 1) (car regression5))
 
 !(transition regression6 regression5 '(1 2 3 4))
 
@@ -210,13 +208,13 @@
 
 !(def m0 (init-game player-1-code player-2-code 4 6 3))
 ;(emit (cons :m0 (car m0)))
-!(assert-eq :player-1-guess (car m0))
+!(assert-eq :player-1-to-guess (car m0))
 
 ;; ;; Player 1 has the advantage and has already guessed correctly, so no next guess is needed.
 ;; ;; This transition is just to determine whether Player 2 already (previously) guessed correctly.
 !(transition mA m0 '(6 6 6 5))
 ;(emit (cons :mA (car mA)))
-!(assert-eq :player-2-guess (car mA))
+!(assert-eq :player-2-to-guess (car mA))
 
 !(transition mB mA '(1 1 1 1))
 ;(emit (cons :mB (car mB)))
@@ -246,19 +244,19 @@
 !(transition m1 m0 '(5 5 5 5)) ; player 1 guess, round 1
 
 ;(emit (cons :m1 (car m1)))
-!(assert-eq :player-2-guess (car m1))
+!(assert-eq :player-2-to-guess (car m1))
 
 !(transition m2 m1 '(1 2 4 3)) ; player 2 guess, round 1
 ;(emit (cons :m2 (car m2)))
-!(assert-eq '(1 . 0) (car m2)) ; guess (5 5 5 5), code (6 6 6 5)
+!(assert-eq '(:player-1-to-guess 1 . 0) (car m2)) ; guess (5 5 5 5), code (6 6 6 5)
 
 !(transition m3 m2 '(5 5 5 5)) ; player 1 guess, round 2
 ;(emit (cons :m3 (car m3)))
-!(assert-eq '(2 . 2) (car m3)) ; guess (1 2 4 3), code (1 2 3 4)
+!(assert-eq '(:player-2-to-guess 2 . 2) (car m3)) ; guess (1 2 4 3), code (1 2 3 4)
 
 !(transition m4 m3 '(1 2 3 4)) ; player 2 guess, round 2
 ;(emit (cons :m4 (car m4)))
-!(assert-eq '(1 . 0) (car m4)) ; guess (1 2 3 4), code (1 2 3 4)
+!(assert-eq '(:player-1-to-guess 1 . 0) (car m4)) ; guess (1 2 3 4), code (1 2 3 4)
 
 !(transition m5 m4 '(6 6 6 5)) ; player 1 guess, round 3
 ;(emit (cons :m5 (car m5)))
