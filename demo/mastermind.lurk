@@ -2,18 +2,29 @@
 ;;; Each player simultaneously takes on the role of codemaker and codebreaker.
 ;;; 
 
+!(defrec length (lambda (l) (if l (+ 1 (length (cdr l))) 0)))
+
 ;; Tries to remove the first instance of elt from list and returns (removed? . remaining).
 ;; removed? is true if elt was removed.
 ;; remaining is a list of the remaining elements (in reverse order) whether or not elt was removed.
 ;; If elt occurs one than once in list, only the first occurrence is removed.
 !(def maybe-remove (lambda (elt list)
-                     (letrec ((aux (lambda (removed? acc elt list)
-                                     (if list
+                     (letrec ((aux (lambda (removed? acc elt list remaining)
+                                     (if (> remaining 0)
                                          (if (eq elt (car list))
-                                             (aux t acc elt (if removed? list (cdr list)))
-                                             (aux removed? (cons (car list) acc) elt (cdr list)))
+                                             (aux t
+                                                  (if removed? (cons (car list) acc) acc)
+                                                  elt
+                                                  (if removed? list (cdr list))
+                                                  (- remaining 1))
+                                             (aux removed? (cons (car list) acc) elt (cdr list) (- remaining 1)))
                                          (cons removed? acc)))))
-                       (aux nil () elt list))))
+                       (aux nil () elt list (length list)))))
+
+!(assert-eq '(t 3 2) (maybe-remove 1 '(1 2 3)))
+!(assert-eq '(t 3 2) (maybe-remove 1 '(2 1 3)))
+!(assert-eq '(nil 3 2 1) (maybe-remove 4 '(1 2 3)))
+!(assert-eq '(t 3) (maybe-remove 3 '(3 3)))
 
 ;; Returns (hits . partial-hits).
 ;; hits is the number of positions at which code and guess match.
@@ -38,6 +49,8 @@
 !(assert (eq '(1 . 2) (score '(1 2 3 4) '(1 3 4 5))))
 
 !(assert (eq '(2 . 0) (score '(1 2 3 4) '(5 2 3 5))))
+
+(score '(3 1 4 1) '(1 1 3 3))
 
 !(defrec length (lambda (list)
                   (if list
@@ -91,30 +104,28 @@
                 (letrec ((play-one-round
                           (lambda (round guess2 guess1)
                             (let ((score (g2 guess2))) ; Player 1's guess scored on g2, player 2's game. Hence guess2.
-                              (begin
-                               (ensure-valid-code guess1)
-                               (if (eq score :correct)
-                                   (cons :advantage-1
-                                         (lambda ()
-                                           (let ((score (g1 guess1))) ;; Player 2's guess scored on g1, player 1's game. Hence guess1.
-                                             (cons (if (eq score :correct) :draw :winner-1) nil))))
-                                   (cons score
-                                         (lambda (guess2)
-                                           (begin
-                                            (ensure-valid-code guess2)
-                                            (let ((score (g1 guess1))) ;; Player 2's guess scored on g1, player 1's game. Hence guess1.
-                                              (if (= round max-rounds)
-                                                  (cons (if (eq score :correct)
-                                                            :winner-2
-                                                            ;; This could just be :draw, if the enclosing protocol won't distinguish types of draw.
-                                                            ;; Doing so initially is useful for testing.
-                                                            :draw-max)
-                                                        nil)
-                                                  (if (eq score :correct)
-                                                      (cons :winner-2 nil)
-                                                      ;; On subsequent iterations, we have only player 1's guess (guess2).
-                                                      ;; The partial application yields a continuation function that will receive player 2's guess (guess1).
-                                                      (cons score (play-one-round (+ 1 round) guess2))))))))))))))
+                              (ensure-valid-code guess1)
+                              (if (eq score :correct)
+                                  (cons :advantage-1
+                                        (lambda ()
+                                          (let ((score (g1 guess1))) ;; Player 2's guess scored on g1, player 1's game. Hence guess1.
+                                            (cons (if (eq score :correct) :draw :winner-1) nil))))
+                                  (cons score
+                                        (lambda (guess2)
+                                          (ensure-valid-code guess2)
+                                          (let ((score (g1 guess1))) ;; Player 2's guess scored on g1, player 1's game. Hence guess1.
+                                            (if (= round max-rounds)
+                                                (cons (if (eq score :correct)
+                                                          :winner-2
+                                                          ;; This could just be :draw, if the enclosing protocol won't distinguish types of draw.
+                                                          ;; Doing so initially is useful for testing.
+                                                          :draw-max)
+                                                      nil)
+                                                (if (eq score :correct)
+                                                    (cons :winner-2 nil)
+                                                    ;; On subsequent iterations, we have only player 1's guess (guess2).
+                                                    ;; The partial application yields a continuation function that will receive player 2's guess (guess1).
+                                                    (cons score (play-one-round (+ 1 round) guess2))))))))))))
                   ;; On first iteration, we have already received both guesses.
                   (play-one-round 1 guess2 guess1))))
 
@@ -147,6 +158,31 @@
                                   (if (eq game2 :bad-code)
                                       (cons :winner-1 nil)
                                       (play ensure-valid-code game1 game2 guess2 guess1 max-rounds)))))))))))))
+
+;; Debugging game with Arthur
+
+;; Note commitment created with hide to avoid brute-force attack.
+!(def regression (init-game (hide #0x99887766 '(4 2 2 3)) (hide #0x1234 '(3 1 4 1)) 4 6 20))
+!(assert-eq :player-1-guess (car regression))
+
+!(transition regression1 regression '(1 1 1 1))
+!(assert-eq :player-2-guess (car regression1))
+
+!(transition regression2 regression1 '(1 1 1 1))
+!(assert-eq '(2 . 0) (car regression2))
+
+!(transition regression3 regression2 '(1 1 2 2))
+!(assert-eq '(0 . 0) (car regression3))
+
+!(transition regression4 regression3 '(2 1 1 1))
+!(assert-eq '(1 . 1) (car regression4))
+
+!(transition regression5 regression4 '(1 1 3 3))
+!(assert-eq '(0 . 1) (car regression5))
+
+;!(debug ((cdr regression5) '(1 2 3 4)))
+
+!(transition regression6 regression5 '(1 2 3 4))
 
 ;; Player 1 supplies a bad code. Player 2 supplies a good code.
 !(def bad1 (init-game (commit '(1)) (commit '(6 6 6 5)) 4 6 7))
@@ -208,6 +244,7 @@
 
 ;; Rewind and try a different ending.
 !(transition m1 m0 '(5 5 5 5)) ; player 1 guess, round 1
+
 ;(emit (cons :m1 (car m1)))
 !(assert-eq :player-2-guess (car m1))
 
@@ -245,3 +282,6 @@
 !(assert-eq nil (cdr m7x))
 
 :fin
+
+;!(micro-chain-serve "127.0.0.1:1234" m0)
+;!(micro-chain-serve "100.121.171.70:1234" m0)
