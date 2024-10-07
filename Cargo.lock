@@ -271,14 +271,14 @@ dependencies = [
 [[package]]
 name = "bls12_381"
 version = "0.8.0"
-source = "git+https://github.com/argumentcomputer/bls12_381.git?branch=zkvm#2a96eccde19bf861b0d1707b61b2ab15e294b154"
+source = "git+https://github.com/argumentcomputer/bls12_381.git?branch=zkvm#1017c4d8b23cd8790ec5f9c7ea472ae3331b9d88"
 dependencies = [
  "cfg-if",
  "ff",
  "group",
  "pairing",
  "rand_core",
- "sphinx-precompiles",
+ "sphinx-zkvm",
  "subtle",
 ]
 
@@ -804,7 +804,6 @@ dependencies = [
  "rand_core",
  "sec1",
  "subtle",
- "tap",
  "zeroize",
 ]
 
@@ -2518,7 +2517,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 [[package]]
 name = "sphinx-core"
 version = "1.0.0"
-source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#75d6e85d47e00fd921fefc94ce6c3725b15bd2c2"
+source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#68a48fb36cf521097e18220afb78de24ce67187a"
 dependencies = [
  "anyhow",
  "arrayref",
@@ -2580,7 +2579,7 @@ dependencies = [
 [[package]]
 name = "sphinx-derive"
 version = "1.0.0"
-source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#75d6e85d47e00fd921fefc94ce6c3725b15bd2c2"
+source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#68a48fb36cf521097e18220afb78de24ce67187a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2588,23 +2587,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "sphinx-precompiles"
+name = "sphinx-lib"
 version = "1.0.0"
-source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#75d6e85d47e00fd921fefc94ce6c3725b15bd2c2"
+source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#68a48fb36cf521097e18220afb78de24ce67187a"
 dependencies = [
  "anyhow",
  "bincode",
  "cfg-if",
  "getrandom",
  "hybrid-array",
- "k256",
  "serde",
 ]
 
 [[package]]
 name = "sphinx-primitives"
 version = "1.0.0"
-source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#75d6e85d47e00fd921fefc94ce6c3725b15bd2c2"
+source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#68a48fb36cf521097e18220afb78de24ce67187a"
 dependencies = [
  "itertools 0.12.1",
  "lazy_static",
@@ -2612,6 +2610,23 @@ dependencies = [
  "p3-field",
  "p3-poseidon2",
  "p3-symmetric",
+]
+
+[[package]]
+name = "sphinx-zkvm"
+version = "1.0.0"
+source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#68a48fb36cf521097e18220afb78de24ce67187a"
+dependencies = [
+ "bincode",
+ "cfg-if",
+ "getrandom",
+ "lazy_static",
+ "libm",
+ "once_cell",
+ "rand",
+ "serde",
+ "sha2",
+ "sphinx-lib",
 ]
 
 [[package]]
