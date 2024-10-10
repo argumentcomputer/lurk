@@ -8,6 +8,7 @@ pub mod lang;
 pub mod package;
 pub mod parser;
 pub mod poseidon;
+pub mod stark_machine;
 pub mod state;
 pub mod symbol;
 pub mod syntax;

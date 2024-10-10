@@ -4,23 +4,15 @@ use itertools::Itertools;
 use p3_baby_bear::BabyBear;
 use p3_field::PrimeField32;
 use rustc_hash::FxHashMap;
-use serde::{Deserialize, Serialize};
 use sphinx_core::stark::StarkGenericConfig;
-use std::{
-    io::{Read, Write},
-    net::{TcpListener, TcpStream},
-};
+use std::net::TcpStream;
 
 use crate::{
     lair::{chipset::Chipset, lair_chip::LairMachineProgram},
     lurk::{
         big_num::field_elts_to_biguint,
-        cli::{
-            paths::{commits_dir, proofs_dir},
-            proofs::{get_verifier_version, IOProof},
-            repl::Repl,
-        },
         package::{Package, SymbolRef},
+        stark_machine::new_machine,
         state::builtin_sym,
         tag::Tag,
         zstore::{ZPtr, DIGEST_SIZE},
@@ -31,7 +23,10 @@ use super::{
     comm_data::CommData,
     debug::debug_mode,
     lurk_data::LurkData,
-    proofs::{CallableData, ChainProof, ProtocolProof},
+    microchain::{read_data, write_data, CallableData, ChainState, Request, Response},
+    paths::{commits_dir, proofs_dir},
+    proofs::{get_verifier_version, CachedProof, ChainProof, OpaqueChainProof, ProtocolProof},
+    repl::Repl,
 };
 
 #[allow(dead_code)]
@@ -56,7 +51,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         info: &[],
         example: &["!(assert t)", "!(assert (eq 3 (+ 1 2)))"],
         run: |repl, args, _path| {
-            let expr = *repl.peek1(args)?;
+            let [&expr] = repl.take(args)?;
             let (result, _) = repl.reduce_aux(&expr)?;
             if result.tag == Tag::Err {
                 bail!("Reduction error: {}", repl.fmt(&result));
@@ -76,7 +71,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         info: &[],
         example: &["!(assert-eq 3 (+ 1 2))"],
         run: |repl, args, _path| {
-            let (&expr1, &expr2) = repl.peek2(args)?;
+            let [&expr1, &expr2] = repl.take(args)?;
             let (result1, _) = repl.reduce_aux(&expr1)?;
             if result1.tag == Tag::Err {
                 bail!("LHS reduction error: {}", repl.fmt(&result1));
@@ -106,7 +101,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         info: &[],
         example: &["!(assert-error (1 1))"],
         run: |repl, args, _path| {
-            let expr = *repl.peek1(args)?;
+            let [&expr] = repl.take(args)?;
             let (result, _) = repl.reduce_aux(&expr)?;
             if result.tag != Tag::Err {
                 eprintln!(
@@ -129,7 +124,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         ],
         example: &["!(assert-emitted '(1 2) (begin (emit 1) (emit 2)))"],
         run: |repl, args, _path| {
-            let (&expected_expr, &expr) = repl.peek2(args)?;
+            let [&expected_expr, &expr] = repl.take(args)?;
             let (expected, _) = repl.reduce_aux(&expected_expr)?;
             let (result, emitted) = repl.reduce_aux(&expr)?;
             if result.tag == Tag::Err {
@@ -175,7 +170,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         example: &["(+ 1 1)", "!(debug)", "!(debug (+ 1 1))"],
         run: |repl, args, _path| {
             if args != repl.zstore.nil() {
-                let expr = *repl.peek1(args)?;
+                let [&expr] = repl.take(args)?;
                 let result = repl.handle_non_meta(&expr, None);
                 debug_mode(&repl.format_debug_data())?;
                 result.map(|_| ())
@@ -192,7 +187,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         info: &[],
         example: &["!(load \"my_file.lurk\")"],
         run: |repl, args, path| {
-            let file_name_zptr = repl.peek1(args)?;
+            let [file_name_zptr] = repl.take(args)?;
             if file_name_zptr.tag != Tag::Str {
                 bail!("Path must be a string");
             }
@@ -204,14 +199,14 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const DEF: Self = Self {
         name: "def",
         summary: "Extends env with a non-recursive binding.",
-        format: "!(def <symbol> <value>)",
+        format: "!(def <symbol> <expr>)",
         info: &[
             "Gets macroexpanded to (let ((<symbol> <value>)) (current-env)).",
             "The REPL's env is set to the result.",
         ],
         example: &["!(def foo (lambda () 123))"],
         run: |repl, args, _path| {
-            let (&sym, _) = repl.peek2(args)?;
+            let [&sym, _] = repl.take(args)?;
             let let_ = repl
                 .zstore
                 .intern_symbol(&builtin_sym("let"), &repl.lang_symbols);
@@ -244,7 +239,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             "(sum '(1 2 3))",
         ],
         run: |repl, args, _path| {
-            let (&sym, _) = repl.peek2(args)?;
+            let [&sym, _] = repl.take(args)?;
             let letrec = repl
                 .zstore
                 .intern_symbol(&builtin_sym("letrec"), &repl.lang_symbols);
@@ -273,7 +268,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         info: &[],
         example: &["!(def a 1)", "!(update a (lambda (x) (+ x 1)))"],
         run: |repl, args, _path| {
-            let (&sym, &fun) = repl.peek2(args)?;
+            let [&sym, &fun] = repl.take(args)?;
             Self::validate_binding_var(repl, &sym)?;
             let expr = repl.zstore.intern_list([fun, sym]);
             let (res, _) = repl.reduce_aux(&expr)?;
@@ -281,7 +276,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 bail!("Reduction error: {}", repl.fmt(&res));
             }
             println!("{}", repl.fmt(&sym));
-            repl.env = repl.zstore.intern_env(sym, res, repl.env);
+            repl.bind(sym, res);
             Ok(())
         },
     };
@@ -305,7 +300,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         info: &[],
         example: &["!(set-env (eval '(let ((a 1)) (current-env))))", "a"],
         run: |repl, args, _path| {
-            let env_expr = *repl.peek1(args)?;
+            let [&env_expr] = repl.take(args)?;
             let (env, _) = repl.reduce_aux(&env_expr)?;
             if env.tag != Tag::Env {
                 bail!("Value must be an environment");
@@ -331,11 +326,10 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 .filter(|(var, _)| !args_vec.contains(var))
                 .map(|(var, val)| (*var, *val))
                 .collect::<Vec<_>>();
-            let mut env = repl.zstore.intern_empty_env();
+            repl.env = repl.zstore.intern_empty_env();
             for (var, val) in new_env_vec.into_iter().rev() {
-                env = repl.zstore.intern_env(var, val, env);
+                repl.bind(var, val);
             }
-            repl.env = env;
             Ok(())
         },
     };
@@ -373,7 +367,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         ],
         example: &["!(hide (bignum (commit 123)) 42)", "!(hide #0x123 42)"],
         run: |repl, args, _path| {
-            let (&secret_expr, &payload_expr) = repl.peek2(args)?;
+            let [&secret_expr, &payload_expr] = repl.take(args)?;
             let (secret, _) = repl.reduce_aux(&secret_expr)?;
             if secret.tag != Tag::BigNum {
                 bail!("Secret must reduce to a bignum");
@@ -393,7 +387,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         ],
         example: &["!(commit 42)"],
         run: |repl, args, _path| {
-            let payload_expr = *repl.peek1(args)?;
+            let [&payload_expr] = repl.take(args)?;
             let secret = ZPtr::null(Tag::BigNum);
             Self::hide(secret, &payload_expr, repl)
         },
@@ -431,7 +425,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             "!(open #c0x944834111822843979ace19833d05ca9daf2f655230faec517433e72fe777b)",
         ],
         run: |repl, args, _path| {
-            let expr = *repl.peek1(args)?;
+            let [&expr] = repl.take(args)?;
             let (result, _) = repl.reduce_aux(&expr)?;
             match result.tag {
                 Tag::BigNum | Tag::Comm => Self::fetch_comm_data(repl, &result.digest, Some(true)),
@@ -450,7 +444,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             "!(fetch #c0x944834111822843979ace19833d05ca9daf2f655230faec517433e72fe777b)",
         ],
         run: |repl, args, _path| {
-            let expr = *repl.peek1(args)?;
+            let [&expr] = repl.take(args)?;
             let (result, _) = repl.reduce_aux(&expr)?;
             match result.tag {
                 Tag::BigNum | Tag::Comm => Self::fetch_comm_data(repl, &result.digest, Some(false)),
@@ -543,10 +537,10 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 if zptr.digest != zstore.nil().digest && zptr.digest != zstore.t().digest {
                     Ok(())
                 } else {
-                    bail!("Illegal binding");
+                    bail!("Illegal binding: {}", repl.fmt(zptr));
                 }
             }
-            _ => bail!("Illegal binding"),
+            _ => bail!("Illegal binding: {}", repl.fmt(zptr)),
         }
     }
 
@@ -579,7 +573,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let cons = Self::transition_call(repl, &current_state_expr, call_args, None)?;
             Self::persist_chain_comm(repl, &cons)?;
             println!("{}", repl.fmt(&next_state_sym));
-            repl.env = repl.zstore.intern_env(next_state_sym, cons, repl.env);
+            repl.bind(next_state_sym, cons);
             Ok(())
         },
     };
@@ -652,7 +646,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             ".lurk-user.abc.two",
         ],
         run: |repl, args, _path| {
-            let arg = repl.peek1(args)?;
+            let [arg] = repl.take(args)?;
             match arg.tag {
                 Tag::Str => {
                     let name = repl.zstore.fetch_string(arg);
@@ -677,7 +671,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         info: &["Commitments are persisted opaquely."],
         example: &["!(dump-expr (+ 1 1) \"my_file\")"],
         run: |repl, args, _path| {
-            let (&expr, &path) = repl.peek2(args)?;
+            let [&expr, &path] = repl.take(args)?;
             if path.tag != Tag::Str {
                 bail!("Path must be a string");
             }
@@ -705,7 +699,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             "!(load-expr x \"my_file\")",
         ],
         run: |repl, args, _path| {
-            let (&sym, &path) = repl.peek2(args)?;
+            let [&sym, &path] = repl.take(args)?;
             Self::validate_binding_var(repl, &sym)?;
             if path.tag != Tag::Str {
                 bail!("Path must be a string");
@@ -715,7 +709,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let lurk_data: LurkData<F> = bincode::deserialize(&lurk_data_bytes)?;
             let payload = lurk_data.populate_zstore(&mut repl.zstore);
             println!("{}", repl.fmt(&sym));
-            repl.env = repl.zstore.intern_env(sym, payload, repl.env);
+            repl.bind(sym, payload);
             Ok(())
         },
     };
@@ -780,7 +774,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
 
             let protocol = repl.zstore.intern_list([vars, body, lang, description]);
             println!("{}", repl.fmt(&name));
-            repl.env = repl.zstore.intern_env(name, protocol, repl.env);
+            repl.bind(name, protocol);
             Ok(())
         },
     };
@@ -796,7 +790,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         example: &["!(help)", "!(help prove)"],
         run: |repl, args, _path| {
             if args != repl.zstore.nil() {
-                let arg = repl.peek1(args)?;
+                let [arg] = repl.take(args)?;
                 if !matches!(arg.tag, Tag::Sym | Tag::Builtin) {
                     bail!("Argument must be a symbol");
                 }
@@ -843,7 +837,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         example: &["'(1 2 3)", "!(prove)", "!(prove '(1 2 3))"],
         run: |repl, args, _path| {
             if args != repl.zstore.nil() {
-                let expr = *repl.peek1(args)?;
+                let [&expr] = repl.take(args)?;
                 repl.handle_non_meta(&expr, None)?;
             }
             repl.prove_last_reduction()?;
@@ -851,27 +845,27 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         },
     };
 
-    fn load_io_proof(proof_key: &str) -> Result<IOProof> {
+    fn load_cached_proof(proof_key: &str) -> Result<CachedProof> {
         let proof_path = proofs_dir()?.join(proof_key);
         if !proof_path.exists() {
             bail!("Proof not found");
         }
-        let io_proof_bytes = std::fs::read(proof_path)?;
-        let io_proof = bincode::deserialize(&io_proof_bytes)?;
-        Ok(io_proof)
+        let cached_proof_bytes = std::fs::read(proof_path)?;
+        let cached_proof = bincode::deserialize(&cached_proof_bytes)?;
+        Ok(cached_proof)
     }
 
-    fn load_io_proof_with_repl(
+    fn load_cached_proof_with_repl(
         repl: &Repl<F, C1, C2>,
         args: &ZPtr<F>,
-    ) -> Result<(String, IOProof)> {
-        let proof_key_zptr = repl.peek1(args)?;
+    ) -> Result<(String, CachedProof)> {
+        let [proof_key_zptr] = repl.take(args)?;
         if proof_key_zptr.tag != Tag::Str {
             bail!("Proof key must be a string");
         }
         let proof_key = repl.zstore.fetch_string(proof_key_zptr);
-        let io_proof = Self::load_io_proof(&proof_key)?;
-        Ok((proof_key, io_proof))
+        let cached_proof = Self::load_cached_proof(&proof_key)?;
+        Ok((proof_key, cached_proof))
     }
 
     const VERIFY: Self = Self {
@@ -881,10 +875,10 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         info: &["Verifies a Lurk reduction proof by its key"],
         example: &["!(verify \"2ae20412c6f4740f409196522c15b0e42aae2338c2b5b9c524f675cba0a93e\")"],
         run: |repl, args, _path| {
-            let (proof_key, io_proof) = Self::load_io_proof_with_repl(repl, args)?;
-            let has_same_verifier_version = io_proof.crypto_proof.has_same_verifier_version();
-            let machine = repl.stark_machine();
-            let machine_proof = io_proof.into_machine_proof();
+            let (proof_key, cached_proof) = Self::load_cached_proof_with_repl(repl, args)?;
+            let has_same_verifier_version = cached_proof.crypto_proof.has_same_verifier_version();
+            let machine = new_machine(&repl.toplevel);
+            let machine_proof = cached_proof.into_machine_proof();
             let (_, vk) = machine.setup(&LairMachineProgram);
             let challenger = &mut machine.config().challenger();
             if machine.verify(&vk, &machine_proof, challenger).is_ok() {
@@ -907,13 +901,13 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         info: &[],
         example: &["!(inspect \"2ae20412c6f4740f409196522c15b0e42aae2338c2b5b9c524f675cba0a93e\")"],
         run: |repl, args, _path| {
-            let IOProof {
+            let CachedProof {
                 expr,
                 env,
                 result,
                 zdag,
                 ..
-            } = Self::load_io_proof_with_repl(repl, args)?.1;
+            } = Self::load_cached_proof_with_repl(repl, args)?.1;
             zdag.populate_zstore(&mut repl.zstore);
             println!(
                 "Expr: {}\nEnv: {}\nResult: {}",
@@ -1052,8 +1046,8 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             }
 
             let proof_key = repl.prove_last_reduction()?;
-            let io_proof = Self::load_io_proof(&proof_key)?;
-            let crypto_proof = io_proof.crypto_proof;
+            let cached_proof = Self::load_cached_proof(&proof_key)?;
+            let crypto_proof = cached_proof.crypto_proof;
             let args_reduced = repl.zstore.intern_list(args_vec_reduced);
             repl.memoize_dag(args_reduced.tag, &args_reduced.digest);
             let protocol_proof = ProtocolProof::new(crypto_proof, args_reduced, &repl.zstore);
@@ -1077,7 +1071,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         ],
         example: &["!(verify-protocol my-protocol \"protocol-proof\")"],
         run: |repl, args, _path| {
-            let (&protocol_expr, path) = repl.peek2(args)?;
+            let [&protocol_expr, path] = repl.take(args)?;
             if path.tag != Tag::Str {
                 bail!("Path must be a string");
             }
@@ -1118,7 +1112,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let (expr, env) = repl.zstore.fetch_tuple2(expr_env);
             let has_same_verifier_version = crypto_proof.has_same_verifier_version();
             let machine_proof = crypto_proof.into_machine_proof(expr, env, result);
-            let machine = repl.stark_machine();
+            let machine = new_machine(&repl.toplevel);
             let (_, vk) = machine.setup(&LairMachineProgram);
             let challenger = &mut machine.config().challenger();
             if machine.verify(&vk, &machine_proof, challenger).is_err() {
@@ -1148,199 +1142,152 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         CommData::new(secret, payload, &repl.zstore)
     }
 
-    const MICRO_CHAIN_SERVE: Self = Self {
-        name: "micro-chain-serve",
-        summary:
-            "Starts a server to manage state transitions by receiving proofs of chained callables.",
-        format: "!(micro-chain-serve <addr_str> <state_expr>)",
+    const MICROCHAIN_START: Self = Self {
+        name: "microchain-start",
+        summary: "Starts a new microchain and binds the resulting ID to a symbol",
+        format: "!(microchain-start <addr_expr> <state_expr> <id_sym>)",
         info: &[
-            "The initial state must follow the format of a chain output whose next",
-            "callable is a commitment.",
+            "A microchain ID is a hiding commitment to the genesis state, using",
+            "a timestamp-based secret generated in the server.",
+            "Upon success, it becomes possible to open the ID and retrieve genesis",
+            "state associated with the microchain.",
         ],
-        example: &["!(micro-chain-serve \"127.0.0.1:1234\" (some-callable init-arg0 init-arg1))"],
+        example: &[
+            "!(microchain-start \"127.0.0.1:1234\" state0 id)",
+            "!(assert-eq state0 (open id))",
+        ],
         run: |repl, args, _path| {
-            let (addr, &state_expr) = repl.peek2(args)?;
+            let [&addr_expr, &state_expr, &id_sym] = repl.take(args)?;
+            let (addr, _) = repl.reduce_aux(&addr_expr)?;
             if addr.tag != Tag::Str {
                 bail!("Address must be a string");
             }
-            let addr_str = repl.zstore.fetch_string(addr);
             let (state, _) = repl.reduce_aux(&state_expr)?;
             if state.tag != Tag::Cons {
-                bail!("Initial state must be a pair");
+                bail!("State must be a pair");
             }
-            repl.memoize_dag(Tag::Cons, &state.digest);
+            Self::validate_binding_var(repl, &id_sym)?;
 
-            // chain result and callable from the server's state
-            let (&(mut state_chain_result), &(mut state_callable)) =
-                repl.zstore.fetch_tuple2(&state);
+            repl.memoize_dag(state.tag, &state.digest);
 
-            let listener = TcpListener::bind(&addr_str)?;
-            println!("Listening at {addr_str}");
-            let empty_env = repl.zstore.intern_empty_env();
-            for stream in listener.incoming() {
-                match stream {
-                    Ok(mut stream) => match read_data::<Request>(&mut stream)? {
-                        Request::Get => {
-                            // provide the data that fully specifies the current state
-                            repl.memoize_dag(state_chain_result.tag, &state_chain_result.digest);
-                            let chain_result = LurkData::new(state_chain_result, &repl.zstore);
+            let (&chain_result, &next_callable) = repl.zstore.fetch_tuple2(&state);
+            let chain_result = LurkData::new(chain_result, &repl.zstore);
+            let callable_data = if next_callable.tag == Tag::Comm {
+                let comm_data = Self::build_comm_data(repl, next_callable.digest.as_slice());
+                CallableData::Comm(comm_data)
+            } else {
+                CallableData::Fun(LurkData::new(next_callable, &repl.zstore))
+            };
 
-                            let state_callable_data = if state_callable.tag == Tag::Comm {
-                                let comm_data =
-                                    Self::build_comm_data(repl, state_callable.digest.as_slice());
-                                CallableData::Comm(comm_data)
-                            } else {
-                                CallableData::Fun(LurkData::new(state_callable, &repl.zstore))
-                            };
+            let genesis = ChainState {
+                chain_result,
+                callable_data,
+            };
 
-                            write_data(
-                                &mut stream,
-                                Response::State(chain_result, state_callable_data),
-                            )?;
-                        }
-                        Request::Transition(chain_proof) => {
-                            let ChainProof {
-                                crypto_proof,
-                                call_args,
-                                chain_result,
-                                next_callable,
-                            } = *chain_proof;
-                            if chain_result.has_opaque_data() {
-                                write_data(&mut stream, Response::ChainResultIsOpaque)?;
-                                continue;
-                            }
+            let addr_str = repl.zstore.fetch_string(&addr);
+            let stream = &mut TcpStream::connect(addr_str)?;
+            write_data(stream, Request::Start(genesis))?;
+            let Response::IdSecret(id_secret) = read_data(stream)? else {
+                bail!("Could not read ID secret from server");
+            };
 
-                            let next_callable_zptr = match &next_callable {
-                                CallableData::Comm(comm_data) => {
-                                    if comm_data.secret.tag != Tag::BigNum {
-                                        write_data(
-                                            &mut stream,
-                                            Response::NextCallableSecretNotBigNum,
-                                        )?;
-                                        continue;
-                                    }
-                                    if comm_data.payload_has_opaque_data() {
-                                        write_data(
-                                            &mut stream,
-                                            Response::NextCallablePayloadIsOpaque,
-                                        )?;
-                                        continue;
-                                    }
-                                    comm_data.commit(&mut repl.zstore)
-                                }
-                                CallableData::Fun(lurk_data) => {
-                                    if lurk_data.has_opaque_data() {
-                                        write_data(
-                                            &mut stream,
-                                            Response::NextCallablePayloadIsOpaque,
-                                        )?;
-                                        continue;
-                                    }
-                                    lurk_data.zptr
-                                }
-                            };
+            let id_digest = CommData::hash(&id_secret, &state, &mut repl.zstore);
 
-                            // the expression is a call whose callable is part of the server state
-                            // and the arguments are provided by the client
-                            let expr = repl.zstore.intern_cons(state_callable, call_args);
-
-                            // the result is a pair composed by the chain result and next callable
-                            // provided by the client
-                            let result = repl
-                                .zstore
-                                .intern_cons(chain_result.zptr, next_callable_zptr);
-
-                            // and now the proof must verify, meaning that the user must have
-                            // used the correct callable from the server state
-                            let machine_proof =
-                                crypto_proof.into_machine_proof(&expr, &empty_env, &result);
-                            let machine = repl.stark_machine();
-                            let (_, vk) = machine.setup(&LairMachineProgram);
-                            let challenger = &mut machine.config().challenger();
-                            if machine.verify(&vk, &machine_proof, challenger).is_err() {
-                                write_data(
-                                    &mut stream,
-                                    Response::ProofVerificationFailed(
-                                        get_verifier_version().to_string(),
-                                    ),
-                                )?;
-                                continue;
-                            }
-
-                            // everything went okay... transition to the next state
-                            write_data(&mut stream, Response::ProofAccepted)?;
-                            state_chain_result = chain_result.populate_zstore(&mut repl.zstore);
-                            match next_callable {
-                                CallableData::Comm(comm_data) => {
-                                    comm_data.populate_zstore(&mut repl.zstore)
-                                }
-                                CallableData::Fun(lurk_data) => {
-                                    lurk_data.populate_zstore(&mut repl.zstore);
-                                }
-                            }
-                            state_callable = next_callable_zptr;
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("Connection failed: {e}");
-                    }
-                }
-            }
+            let id = repl.zstore.intern_comm(id_digest);
+            println!("{}", repl.fmt(&id_sym));
+            repl.bind(id_sym, id);
             Ok(())
         },
     };
 
-    const MICRO_CHAIN_GET: Self = Self {
-        name: "micro-chain-get",
-        summary: "Binds the current state from a micro-chain server to a symbol",
-        format: "!(micro-chain-get <addr_str> <symbol>)",
-        info: &[],
-        example: &["!(micro-chain-get \"127.0.0.1:1234\" state0)"],
+    fn send_get_state_request(
+        repl: &mut Repl<F, C1, C2>,
+        args: &ZPtr<F>,
+        mk_request: fn([F; DIGEST_SIZE]) -> Request,
+    ) -> Result<(ZPtr<F>, TcpStream)> {
+        let [&addr_expr, &id_expr, &state_sym] = repl.take(args)?;
+        let (addr, _) = repl.reduce_aux(&addr_expr)?;
+        if addr.tag != Tag::Str {
+            bail!("Address must be a string");
+        }
+        let (id, _) = repl.reduce_aux(&id_expr)?;
+        Self::validate_binding_var(repl, &state_sym)?;
+        let addr_str = repl.zstore.fetch_string(&addr);
+        let mut stream = TcpStream::connect(addr_str)?;
+        write_data(&mut stream, mk_request(id.digest))?;
+        Ok((state_sym, stream))
+    }
+
+    const MICROCHAIN_GET_GENESIS: Self = Self {
+        name: "microchain-get-genesis",
+        summary: "Binds the genesis state of a microchain to a symbol",
+        format: "!(microchain-get-genesis <addr_expr> <id_expr> <symbol>)",
+        info: &[
+            "Similarly to `microchain-start`, the preimage of the ID becomes",
+            "available so opening the ID returns the genesis state.",
+        ],
+        example: &[
+            "!(microchain-get-genesis \"127.0.0.1:1234\" #c0x123 state0)",
+            "!(assert-eq state0 (open id))",
+        ],
         run: |repl, args, _path| {
-            let (addr, &state_sym) = repl.peek2(args)?;
-            if addr.tag != Tag::Str {
-                bail!("Address must be a string");
-            }
-            Self::validate_binding_var(repl, &state_sym)?;
-            let addr_str = repl.zstore.fetch_string(addr);
-            let stream = &mut TcpStream::connect(addr_str)?;
-            write_data(stream, Request::Get)?;
-            let Response::State(chain_result, next_callable_data) = read_data(stream)? else {
+            let (state_sym, mut stream) =
+                Self::send_get_state_request(repl, args, Request::GetGenesis)?;
+            let Response::Genesis(id_secret, chain_state) = read_data(&mut stream)? else {
                 bail!("Could not read state from server");
             };
-            let state_chain_result = chain_result.populate_zstore(&mut repl.zstore);
-            let state_next_callable = match next_callable_data {
-                CallableData::Comm(comm_data) => {
-                    let zptr = comm_data.commit(&mut repl.zstore);
-                    comm_data.populate_zstore(&mut repl.zstore);
-                    zptr
-                }
-                CallableData::Fun(lurk_data) => lurk_data.populate_zstore(&mut repl.zstore),
-            };
-            let state = repl
-                .zstore
-                .intern_cons(state_chain_result, state_next_callable);
+            let state = chain_state.into_zptr(&mut repl.zstore);
+
+            // memoize preimg so it's possible to open the ID
+            CommData::hash(&id_secret, &state, &mut repl.zstore);
+
             println!("{}", repl.fmt(&state_sym));
-            repl.env = repl.zstore.intern_env(state_sym, state, repl.env);
+            repl.bind(state_sym, state);
             Ok(())
         },
     };
 
-    const MICRO_CHAIN_TRANSITION: Self = Self {
-        name: "micro-chain-transition",
-        summary:
-            "Proves a state transition via chaining and sends the proof to a micro-chain server",
-        format: "!(micro-chain-transition <addr_str> <symbol> <state_expr> <call_args>)",
-        info: &["The transition is successful iff the proof is accepted by the server"],
-        example: &["!(micro-chain-transition \"127.0.0.1:1234\" state1 state0 arg0 arg1)"],
+    const MICROCHAIN_GET_STATE: Self = Self {
+        name: "microchain-get-state",
+        summary: "Binds the current state of a microchain to a symbol",
+        format: "!(microchain-get-state <addr_expr> <id_expr> <symbol>)",
+        info: &[],
+        example: &["!(microchain-get-state \"127.0.0.1:1234\" #c0x123 state)"],
         run: |repl, args, _path| {
-            let (&addr, rest) = repl.car_cdr(args);
+            let (state_sym, mut stream) =
+                Self::send_get_state_request(repl, args, Request::GetState)?;
+            let Response::State(chain_state) = read_data(&mut stream)? else {
+                bail!("Could not read state from server");
+            };
+            let state = chain_state.into_zptr(&mut repl.zstore);
+            println!("{}", repl.fmt(&state_sym));
+            repl.bind(state_sym, state);
+            Ok(())
+        },
+    };
+
+    const MICROCHAIN_TRANSITION: Self = Self {
+        name: "microchain-transition",
+        summary:
+            "Proves a state transition via chaining and sends the proof to a microchain server",
+        format: "!(microchain-transition <addr_expr> <id_expr> <symbol> <state_expr> <call_args>)",
+        info: &[
+            "The transition is successful iff the proof is accepted by the server.",
+            "Unlike in the `transition` meta command, the call arguments will be",
+            "evaluated w.r.t. the empty environment.",
+        ],
+        example: &["!(microchain-transition \"127.0.0.1:1234\" #c0x123 state2 state1 arg0 arg1)"],
+        run: |repl, args, _path| {
+            let (&addr_expr, rest) = repl.car_cdr(args);
+            let (&id_expr, rest) = repl.car_cdr(rest);
+            let (&next_state_sym, &rest) = repl.car_cdr(rest);
+            let (addr, _) = repl.reduce_aux(&addr_expr)?;
             if addr.tag != Tag::Str {
                 bail!("Address must be a string");
             }
-            let (&next_state_sym, rest) = repl.car_cdr(rest);
+            let (id, _) = repl.reduce_aux(&id_expr)?;
             Self::validate_binding_var(repl, &next_state_sym)?;
-            let (&current_state_expr, &call_args) = repl.car_cdr(rest);
+            let (&current_state_expr, &call_args) = repl.car_cdr(&rest);
             let empty_env = repl.zstore.intern_empty_env();
             let state =
                 Self::transition_call(repl, &current_state_expr, call_args, Some(empty_env))?;
@@ -1350,10 +1297,10 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let (&state_chain_result, &state_callable) = repl.zstore.fetch_tuple2(&state);
 
             let proof_key = repl.prove_last_reduction()?;
-            let io_proof = Self::load_io_proof(&proof_key)?;
-            let crypto_proof = io_proof.crypto_proof;
+            let cached_proof = Self::load_cached_proof(&proof_key)?;
+            let crypto_proof = cached_proof.crypto_proof;
 
-            let chain_result = LurkData::new(state_chain_result, &repl.zstore);
+            let next_chain_result = LurkData::new(state_chain_result, &repl.zstore);
             let next_callable = if state_callable.tag == Tag::Comm {
                 let comm_data = Self::build_comm_data(repl, state_callable.digest.as_slice());
                 CallableData::Comm(comm_data)
@@ -1364,17 +1311,17 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let chain_proof = ChainProof {
                 crypto_proof,
                 call_args,
-                chain_result,
+                next_chain_result,
                 next_callable,
             };
             let addr_str = repl.zstore.fetch_string(&addr);
             let stream = &mut TcpStream::connect(addr_str)?;
-            write_data(stream, Request::Transition(chain_proof.into()))?;
+            write_data(stream, Request::Transition(id.digest, chain_proof))?;
             match read_data::<Response>(stream)? {
                 Response::ProofAccepted => {
                     println!("Proof accepted by the server");
                     println!("{}", repl.fmt(&next_state_sym));
-                    repl.env = repl.zstore.intern_env(next_state_sym, state, repl.env);
+                    repl.bind(next_state_sym, state);
                 }
                 Response::ProofVerificationFailed(verifier_version) => {
                     let mut msg = "Proof verification failed".to_string();
@@ -1390,40 +1337,62 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             Ok(())
         },
     };
-}
 
-#[derive(Serialize, Deserialize)]
-enum Request {
-    Get,
-    Transition(Box<ChainProof>),
-}
-
-#[derive(Serialize, Deserialize)]
-enum Response {
-    State(LurkData<F>, CallableData),
-    ProofAccepted,
-    ChainResultIsOpaque,
-    NextCallableSecretNotBigNum,
-    NextCallablePayloadIsOpaque,
-    ProofVerificationFailed(String),
-}
-
-fn read_data<T: for<'a> Deserialize<'a>>(stream: &mut TcpStream) -> Result<T> {
-    let mut size_bytes = [0; 8];
-    stream.read_exact(&mut size_bytes)?;
-    let size = usize::from_le_bytes(size_bytes);
-    let mut data_buffer = vec![0; size];
-    stream.read_exact(&mut data_buffer)?;
-    let data = bincode::deserialize(&data_buffer)?;
-    Ok(data)
-}
-
-fn write_data<T: Serialize>(stream: &mut TcpStream, data: T) -> Result<()> {
-    let data_bytes = bincode::serialize(&data)?;
-    stream.write_all(&data_bytes.len().to_le_bytes())?;
-    stream.write_all(&data_bytes)?;
-    stream.flush()?;
-    Ok(())
+    const MICROCHAIN_VERIFY: Self = Self {
+        name: "microchain-verify",
+        summary: "Checks if a series of microchain transition proofs takes state A to B",
+        format: "!(microchain-verify <addr_expr> <id_expr> <state_a_expr> <state_b_expr>)",
+        info: &["The state arguments are meant to be the genesis and the current state."],
+        example: &["!(microchain-verify \"127.0.0.1:1234\" #c0x123 genesis current)"],
+        run: |repl, args, _path| {
+            let [&addr_expr, &id_expr, &genesis_state_expr, &current_state_expr] =
+                repl.take(args)?;
+            let (addr, _) = repl.reduce_aux(&addr_expr)?;
+            if addr.tag != Tag::Str {
+                bail!("Address must be a string");
+            }
+            let (id, _) = repl.reduce_aux(&id_expr)?;
+            let (genesis_state, _) = repl.reduce_aux(&genesis_state_expr)?;
+            if genesis_state.tag != Tag::Cons {
+                bail!("Initial state must be a pair");
+            }
+            let addr_str = repl.zstore.fetch_string(&addr);
+            let stream = &mut TcpStream::connect(addr_str)?;
+            write_data(stream, Request::GetProofs(id.digest))?;
+            let Response::Proofs(proofs) = read_data(stream)? else {
+                bail!("Could not read proofs from server");
+            };
+            repl.memoize_dag(genesis_state.tag, &genesis_state.digest);
+            let (_, &(mut callable)) = repl.zstore.fetch_tuple2(&genesis_state);
+            let mut state = genesis_state;
+            let empty_env = repl.zstore.intern_empty_env();
+            for (i, proof) in proofs.into_iter().enumerate() {
+                let OpaqueChainProof {
+                    crypto_proof,
+                    call_args,
+                    next_chain_result,
+                    next_callable,
+                } = proof;
+                let expr = repl.zstore.intern_cons(callable, call_args);
+                let result = repl.zstore.intern_cons(next_chain_result, next_callable);
+                let machine_proof = crypto_proof.into_machine_proof(&expr, &empty_env, &result);
+                let machine = new_machine(&repl.toplevel);
+                let (_, vk) = machine.setup(&LairMachineProgram);
+                let challenger = &mut machine.config().challenger();
+                if machine.verify(&vk, &machine_proof, challenger).is_err() {
+                    bail!("{}-th transition proof doesn't verify", i + 1);
+                }
+                callable = next_callable;
+                state = result;
+            }
+            let (current_state, _) = repl.reduce_aux(&current_state_expr)?;
+            if state != current_state {
+                bail!("Chain final state doesn't match target final state");
+            }
+            println!("Microchain verification succeeded");
+            Ok(())
+        },
+    };
 }
 
 fn copy_inner<'a, T: Copy + 'a, I: IntoIterator<Item = &'a T>>(xs: I) -> Vec<T> {
@@ -1463,9 +1432,11 @@ pub(crate) fn meta_cmds<C1: Chipset<F>, C2: Chipset<F>>() -> MetaCmdsMap<F, C1, 
         MetaCmd::DEFPROTOCOL,
         MetaCmd::PROVE_PROTOCOL,
         MetaCmd::VERIFY_PROTOCOL,
-        MetaCmd::MICRO_CHAIN_SERVE,
-        MetaCmd::MICRO_CHAIN_GET,
-        MetaCmd::MICRO_CHAIN_TRANSITION,
+        MetaCmd::MICROCHAIN_START,
+        MetaCmd::MICROCHAIN_GET_GENESIS,
+        MetaCmd::MICROCHAIN_GET_STATE,
+        MetaCmd::MICROCHAIN_TRANSITION,
+        MetaCmd::MICROCHAIN_VERIFY,
         MetaCmd::HELP,
     ]
     .map(|mc| (mc.name, mc))

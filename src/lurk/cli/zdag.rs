@@ -8,7 +8,7 @@ use crate::{
 };
 
 /// Holds Lurk data meant to be persisted and/or shared
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize, Clone)]
 pub(crate) struct ZDag<F: std::hash::Hash + Eq>(FxHashMap<ZPtr<F>, ZPtrType<F>>);
 
 impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {

@@ -1,5 +1,6 @@
-use p3_field::{AbstractField, Field};
+use p3_field::Field;
 use serde::{Deserialize, Serialize};
+use std::hash::Hash;
 
 use crate::{
     lair::chipset::Chipset,
@@ -11,14 +12,27 @@ use crate::{
 
 use super::zdag::ZDag;
 
-#[derive(Serialize, Deserialize)]
-pub(crate) struct CommData<F: std::hash::Hash + Eq> {
-    pub(crate) secret: ZPtr<F>,
+#[derive(Serialize, Deserialize, Clone)]
+pub(crate) struct CommData<F: Hash + Eq> {
+    pub(crate) secret: [F; DIGEST_SIZE],
     pub(crate) payload: ZPtr<F>,
     pub(crate) zdag: ZDag<F>,
 }
 
-impl<F: std::hash::Hash + Eq + Default + Copy> CommData<F> {
+impl<F: Field> CommData<F> {
+    pub(crate) fn hash<C: Chipset<F>>(
+        secret: &[F; DIGEST_SIZE],
+        payload: &ZPtr<F>,
+        zstore: &mut ZStore<F, C>,
+    ) -> [F; DIGEST_SIZE] {
+        let mut preimg = [F::default(); HASH3_SIZE];
+        preimg[..DIGEST_SIZE].copy_from_slice(secret);
+        preimg[DIGEST_SIZE..].copy_from_slice(&payload.flatten());
+        zstore.hash3(preimg)
+    }
+}
+
+impl<F: Hash + Eq + Default + Copy> CommData<F> {
     #[inline]
     pub(crate) fn new<C: Chipset<F>>(
         secret: ZPtr<F>,
@@ -29,27 +43,17 @@ impl<F: std::hash::Hash + Eq + Default + Copy> CommData<F> {
         let mut zdag = ZDag::default();
         zdag.populate_with_many([&secret, &payload], zstore);
         Self {
-            secret,
+            secret: secret.digest,
             payload,
             zdag,
         }
     }
 
-    fn build_preimg(&self) -> [F; HASH3_SIZE]
-    where
-        F: AbstractField,
-    {
-        let mut preimg = [F::zero(); HASH3_SIZE];
-        preimg[..DIGEST_SIZE].copy_from_slice(&self.secret.digest);
-        preimg[DIGEST_SIZE..].copy_from_slice(&self.payload.flatten());
-        preimg
-    }
-
-    fn compute_hash<H: Chipset<F>>(&self, zstore: &mut ZStore<F, H>) -> [F; DIGEST_SIZE]
+    fn compute_digest<H: Chipset<F>>(&self, zstore: &mut ZStore<F, H>) -> [F; DIGEST_SIZE]
     where
         F: Field,
     {
-        zstore.hash3(self.build_preimg())
+        Self::hash(&self.secret, &self.payload, zstore)
     }
 
     #[inline]
@@ -57,7 +61,7 @@ impl<F: std::hash::Hash + Eq + Default + Copy> CommData<F> {
     where
         F: Field,
     {
-        ZPtr::comm(self.compute_hash(zstore))
+        ZPtr::comm(self.compute_digest(zstore))
     }
 
     #[inline]
@@ -65,7 +69,7 @@ impl<F: std::hash::Hash + Eq + Default + Copy> CommData<F> {
     where
         F: Field,
     {
-        let digest = self.compute_hash(zstore);
+        let digest = self.compute_digest(zstore);
         zstore.intern_comm(digest);
         self.zdag.populate_zstore(zstore);
     }

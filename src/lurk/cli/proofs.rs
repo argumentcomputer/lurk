@@ -17,9 +17,9 @@ use crate::{
     },
 };
 
-use super::{comm_data::CommData, lurk_data::LurkData, zdag::ZDag};
+use super::{lurk_data::LurkData, microchain::CallableData, zdag::ZDag};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct CryptoShardProof {
     commitment: ShardCommitment<Com<BabyBearPoseidon2>>,
     opened_values: ShardOpenedValues<Challenge<BabyBearPoseidon2>>,
@@ -27,7 +27,7 @@ struct CryptoShardProof {
     chip_ordering: HashMap<String, usize>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub(crate) struct CryptoProof {
     shard_proofs: Vec<CryptoShardProof>,
     verifier_version: String,
@@ -130,9 +130,11 @@ impl From<MachineProof<BabyBearPoseidon2>> for CryptoProof {
     }
 }
 
-/// Carries a cryptographic proof and the Lurk data for its public values
-#[derive(Serialize, Deserialize)]
-pub(crate) struct IOProof {
+/// Carries a cryptographic proof and the Lurk data for its public values. This
+/// proof format is meant for local caching through filesystem persistence. The
+/// Lurk data for its public values is fully specified to support inspection.
+#[derive(Serialize, Deserialize, Clone)]
+pub(crate) struct CachedProof {
     pub(crate) crypto_proof: CryptoProof,
     pub(crate) expr: ZPtr<F>,
     pub(crate) env: ZPtr<F>,
@@ -140,7 +142,7 @@ pub(crate) struct IOProof {
     pub(crate) zdag: ZDag<F>,
 }
 
-impl IOProof {
+impl CachedProof {
     pub(crate) fn new<C: Chipset<F>>(
         crypto_proof: CryptoProof,
         public_values: &[F],
@@ -196,16 +198,22 @@ impl ProtocolProof {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub(crate) enum CallableData {
-    Comm(CommData<F>),
-    Fun(LurkData<F>),
-}
-
+/// A proof of state transition, with the Lurk data for the new state fully
+/// specified and ready to be shared with parties wanting to continue the chain.
 #[derive(Serialize, Deserialize)]
 pub(crate) struct ChainProof {
     pub(crate) crypto_proof: CryptoProof,
     pub(crate) call_args: ZPtr<F>,
-    pub(crate) chain_result: LurkData<F>,
+    pub(crate) next_chain_result: LurkData<F>,
     pub(crate) next_callable: CallableData,
+}
+
+/// A slightly smaller version of `ChainProof` meant to be kept as transition
+/// record and shared for verification purposes.
+#[derive(Serialize, Deserialize, Clone)]
+pub(crate) struct OpaqueChainProof {
+    pub(crate) crypto_proof: CryptoProof,
+    pub(crate) call_args: ZPtr<F>,
+    pub(crate) next_chain_result: ZPtr<F>,
+    pub(crate) next_callable: ZPtr<F>,
 }
