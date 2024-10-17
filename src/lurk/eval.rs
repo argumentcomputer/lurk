@@ -106,7 +106,7 @@ impl<F> SymbolsDigests<F> {
 fn native_lurk_funcs<F: PrimeField32>(
     digests: &SymbolsDigests<F>,
     coroutines: &FxIndexMap<Symbol, Coroutine<F>>,
-) -> [FuncE<F>; 35] {
+) -> [FuncE<F>; 36] {
     [
         lurk_main(),
         preallocate_symbols(digests),
@@ -128,6 +128,7 @@ fn native_lurk_funcs<F: PrimeField32>(
         car_cdr(digests),
         eval_let(),
         eval_letrec(),
+        build_letrec(digests),
         apply(digests),
         env_lookup(),
         ingress(digests),
@@ -2023,6 +2024,27 @@ pub fn eval_let<F: AbstractField>() -> FuncE<F> {
     )
 }
 
+pub fn build_letrec<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
+    func!(
+        fn build_letrec(binds_tag, binds, expr_tag, expr): [2] {
+            match binds_tag {
+                InternalTag::Nil => {
+                    return (expr_tag, expr)
+                }
+            };
+            let nil_tag = InternalTag::Nil;
+            let nil = digests.lurk_symbol_ptr("nil");
+            let cons_tag = Tag::Cons;
+            let builtin_tag = Tag::Builtin;
+            let letrec = digests.builtin_symbol_ptr("letrec");
+            let cons = store(expr_tag, expr, nil_tag, nil);
+            let cons = store(binds_tag, binds, cons_tag, cons);
+            let cons = store(builtin_tag, letrec, cons_tag, cons);
+            return (cons_tag, cons)
+        }
+    )
+}
+
 pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_letrec(binds_tag, binds, body_tag, body, env): [2] {
@@ -2057,12 +2079,13 @@ pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
                             }
 
                             let thunk_tag = Tag::Thunk;
-                            let thunk = store(expr_tag, expr, env);
+                            let (letrec_tag, letrec) = call(build_letrec, rest_binds_tag, rest_binds, expr_tag, expr);
+                            let thunk = store(letrec_tag, letrec, env);
                             let ext_env = store(param_tag, param, thunk_tag, thunk, env);
                             // this will preemptively evaluate the thunk, so that we do not skip evaluation in case
                             // the variable is not used inside the letrec body, and furthermore it follows a strict
                             // evaluation order
-                            let (val_tag, val) = call(eval, expr_tag, expr, ext_env);
+                            let (val_tag, val) = call(eval, thunk_tag, thunk, ext_env);
                             match val_tag {
                                 Tag::Err => {
                                     return (val_tag, val)
@@ -2307,6 +2330,7 @@ mod test {
         let eval_list = FuncChip::from_name("eval_list", toplevel);
         let eval_let = FuncChip::from_name("eval_let", toplevel);
         let eval_letrec = FuncChip::from_name("eval_letrec", toplevel);
+        let build_letrec = FuncChip::from_name("build_letrec", toplevel);
         let coerce_if_sym = FuncChip::from_name("coerce_if_sym", toplevel);
         let open_comm = FuncChip::from_name("open_comm", toplevel);
         let equal = FuncChip::from_name("equal", toplevel);
@@ -2345,7 +2369,8 @@ mod test {
         expect_eq(eval_begin.width(), expect!["68"]);
         expect_eq(eval_list.width(), expect!["72"]);
         expect_eq(eval_let.width(), expect!["94"]);
-        expect_eq(eval_letrec.width(), expect!["98"]);
+        expect_eq(eval_letrec.width(), expect!["103"]);
+        expect_eq(build_letrec.width(), expect!["24"]);
         expect_eq(coerce_if_sym.width(), expect!["9"]);
         expect_eq(open_comm.width(), expect!["50"]);
         expect_eq(equal.width(), expect!["86"]);
