@@ -526,6 +526,10 @@ impl Store {
                 let (body, _) = self.fetch_tuple2(ptr);
                 format!("<Thunk {}>", self.fmt(zstore, body))
             }
+            Tag::MutualThunk => {
+                let (body, ..) = self.fetch_tuple3(ptr);
+                format!("<MutualThunk {}>", self.fmt(zstore, body))
+            }
             Tag::Err => format!("<Err {:?}>", EvalErr::from_field(&ptr.addr())),
             Tag::U64 | Tag::Char | Tag::Comm | Tag::Str | Tag::Env => unimplemented!(),
         }
