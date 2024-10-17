@@ -127,7 +127,7 @@ fn native_lurk_funcs<F: PrimeField32>(
         equal_inner(),
         car_cdr(digests),
         eval_let(),
-        eval_letrec(),
+        eval_letrec(digests),
         apply(digests),
         env_lookup(),
         ingress(digests),
@@ -2023,7 +2023,7 @@ pub fn eval_let<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
+pub fn eval_letrec<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn eval_letrec(binds_tag, binds, body_tag, body, env): [2] {
             let err_tag = Tag::Err;
@@ -2056,23 +2056,40 @@ pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
                                 return (err_tag, invalid_form)
                             }
 
+                            let rest_binds_not_nil = sub(nil_tag, rest_binds_tag);
+                            if rest_binds_not_nil {
+                                // build letrec expression
+                                let nil = digests.lurk_symbol_ptr("nil");
+                                let builtin_tag = Tag::Builtin;
+                                let letrec = digests.builtin_symbol_ptr("letrec");
+                                let cons = store(expr_tag, expr, nil_tag, nil);
+                                let cons = store(rest_binds_tag, rest_binds, cons_tag, cons);
+                                let letrec = store(builtin_tag, letrec, cons_tag, cons);
+                                // build thunk and extend environment
+                                let thunk_tag = Tag::Thunk;
+                                let thunk = store(cons_tag, letrec, env);
+                                let ext_env = store(param_tag, param, thunk_tag, thunk, env);
+                                // this will preemptively evaluate the thunk, so that we do not skip evaluation in case
+                                // the variable is not used inside the letrec body, and furthermore it follows a strict
+                                // evaluation order
+                                let (val_tag, val) = call(eval, cons_tag, letrec, ext_env);
+                                match val_tag {
+                                    Tag::Err => {
+                                        return (val_tag, val)
+                                    }
+                                };
+                                let (res_tag, res) = call(eval_letrec, rest_binds_tag, rest_binds, body_tag, body, ext_env);
+                                return (res_tag, res)
+                            }
                             let thunk_tag = Tag::Thunk;
                             let thunk = store(expr_tag, expr, env);
                             let ext_env = store(param_tag, param, thunk_tag, thunk, env);
-                            // this will preemptively evaluate the thunk, so that we do not skip evaluation in case
-                            // the variable is not used inside the letrec body, and furthermore it follows a strict
-                            // evaluation order
                             let (val_tag, val) = call(eval, expr_tag, expr, ext_env);
                             match val_tag {
                                 Tag::Err => {
                                     return (val_tag, val)
                                 }
                             };
-                            let rest_binds_not_nil = sub(nil_tag, rest_binds_tag);
-                            if rest_binds_not_nil {
-                                let (res_tag, res) = call(eval_letrec, rest_binds_tag, rest_binds, body_tag, body, ext_env);
-                                return (res_tag, res)
-                            }
                             let (res_tag, res) = call(eval_begin, body_tag, body, ext_env);
                             return (res_tag, res)
                         }
@@ -2345,7 +2362,7 @@ mod test {
         expect_eq(eval_begin.width(), expect!["68"]);
         expect_eq(eval_list.width(), expect!["72"]);
         expect_eq(eval_let.width(), expect!["94"]);
-        expect_eq(eval_letrec.width(), expect!["98"]);
+        expect_eq(eval_letrec.width(), expect!["111"]);
         expect_eq(coerce_if_sym.width(), expect!["9"]);
         expect_eq(open_comm.width(), expect!["50"]);
         expect_eq(equal.width(), expect!["86"]);
