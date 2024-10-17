@@ -23,6 +23,7 @@ use crate::{
 
 use super::run_tests;
 
+#[derive(Clone)]
 struct SquareGadget;
 
 impl<F: AbstractField> Chipset<F> for SquareGadget {
