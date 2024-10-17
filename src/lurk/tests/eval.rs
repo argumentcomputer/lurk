@@ -364,6 +364,38 @@ test!(
     |_| uint(120)
 );
 test!(
+    test_mutrec,
+    "(letrec ((odd? (lambda (n) (if (= n 0) nil (even? (- n 1)))))
+              (x (even? 3))
+              (even? (lambda (n) (if (= n 0) t (odd? (- n 1))))))
+       (cons x (odd? 5)))",
+    |z| z.intern_cons(*z.nil(), *z.t())
+);
+test!(
+    test_mutrec2,
+    "(letrec ((odd? (lambda (n) (if (= n 0) nil (even? (- n 1)))))
+              (even? (lambda (n) (if (= n 0) t (odd? (- n 1))))))
+        (let ((even? (lambda (n) 1000)))
+          (odd? 5)))",
+    |z| *z.t()
+);
+test!(
+    test_mutrec3,
+    "(let ((true t))
+       (letrec ((odd? (lambda (n) (if (= n 0) nil (even? (- n 1)))))
+                (even? (lambda (n) (if (= n 0) true (odd? (- n 1))))))
+         (let ((true nil)) (odd? 5))))",
+    |z| *z.t()
+);
+test!(
+    test_mutrec_error,
+    "(letrec ((odd? (lambda (n) (if (= n 0) nil (even? (- n 1)))))
+              (x a)
+              (even? (lambda (n) (if (= n 0) true (odd? (- n 1))))))
+       (odd? 1))",
+    |_| ZPtr::err(EvalErr::UnboundVar)
+);
+test!(
     test_fib,
     "(letrec ((fib
           (lambda (n)
