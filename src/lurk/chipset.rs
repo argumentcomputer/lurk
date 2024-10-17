@@ -9,7 +9,7 @@ use crate::{
         execute::QueryRecord,
         FxIndexMap, Name,
     },
-    poseidon::config::{BabyBearConfig24, BabyBearConfig32, BabyBearConfig40},
+    poseidon::config::{BabyBearConfig16, BabyBearConfig24, BabyBearConfig32, BabyBearConfig40},
 };
 
 use crate::lurk::poseidon::PoseidonChipset;
@@ -18,6 +18,7 @@ use super::{big_num::BigNum, u64::U64, zstore::Hasher};
 
 #[derive(Clone)]
 pub enum LurkChip {
+    Hasher2(PoseidonChipset<BabyBearConfig16, 16>),
     Hasher3(PoseidonChipset<BabyBearConfig24, 24>),
     Hasher4(PoseidonChipset<BabyBearConfig32, 32>),
     Hasher5(PoseidonChipset<BabyBearConfig40, 40>),
@@ -28,6 +29,7 @@ pub enum LurkChip {
 pub fn lurk_chip_map<C2: Chipset<BabyBear>>(
     lang_chips: FxIndexMap<Name, C2>,
 ) -> FxIndexMap<Name, Either<LurkChip, C2>> {
+    let hasher2 = LurkChip::Hasher2(PoseidonChipset::default());
     let hasher3 = LurkChip::Hasher3(PoseidonChipset::default());
     let hasher4 = LurkChip::Hasher4(PoseidonChipset::default());
     let hasher5 = LurkChip::Hasher5(PoseidonChipset::default());
@@ -39,6 +41,7 @@ pub fn lurk_chip_map<C2: Chipset<BabyBear>>(
     let u64_iszero = LurkChip::U64(U64::IsZero);
     let big_num_lessthan = LurkChip::BigNum(BigNum::LessThan);
     let mut chips: FxIndexMap<_, _> = [
+        (Name("hasher2"), Either::Left(hasher2)),
         (Name("hasher3"), Either::Left(hasher3)),
         (Name("hasher4"), Either::Left(hasher4)),
         (Name("hasher5"), Either::Left(hasher5)),
@@ -71,6 +74,7 @@ impl Chipset<BabyBear> for LurkChip {
     #[inline]
     fn input_size(&self) -> usize {
         match self {
+            LurkChip::Hasher2(op) => op.input_size(),
             LurkChip::Hasher3(op) => op.input_size(),
             LurkChip::Hasher4(op) => op.input_size(),
             LurkChip::Hasher5(op) => op.input_size(),
@@ -82,6 +86,7 @@ impl Chipset<BabyBear> for LurkChip {
     #[inline]
     fn output_size(&self) -> usize {
         match self {
+            LurkChip::Hasher2(op) => op.output_size(),
             LurkChip::Hasher3(op) => op.output_size(),
             LurkChip::Hasher4(op) => op.output_size(),
             LurkChip::Hasher5(op) => op.output_size(),
@@ -92,6 +97,7 @@ impl Chipset<BabyBear> for LurkChip {
 
     fn witness_size(&self) -> usize {
         match self {
+            LurkChip::Hasher2(op) => op.witness_size(),
             LurkChip::Hasher3(op) => op.witness_size(),
             LurkChip::Hasher4(op) => op.witness_size(),
             LurkChip::Hasher5(op) => op.witness_size(),
@@ -102,6 +108,7 @@ impl Chipset<BabyBear> for LurkChip {
 
     fn require_size(&self) -> usize {
         match self {
+            LurkChip::Hasher2(op) => op.require_size(),
             LurkChip::Hasher3(op) => op.require_size(),
             LurkChip::Hasher4(op) => op.require_size(),
             LurkChip::Hasher5(op) => op.require_size(),
@@ -112,6 +119,7 @@ impl Chipset<BabyBear> for LurkChip {
 
     fn execute_simple(&self, input: &[BabyBear]) -> Vec<BabyBear> {
         match self {
+            LurkChip::Hasher2(hasher) => hasher.execute_simple(input),
             LurkChip::Hasher3(hasher) => hasher.execute_simple(input),
             LurkChip::Hasher4(hasher) => hasher.execute_simple(input),
             LurkChip::Hasher5(hasher) => hasher.execute_simple(input),
@@ -127,6 +135,7 @@ impl Chipset<BabyBear> for LurkChip {
         requires: &mut Vec<Record>,
     ) -> Vec<BabyBear> {
         match self {
+            LurkChip::Hasher2(hasher) => hasher.execute(input, nonce, queries, requires),
             LurkChip::Hasher3(hasher) => hasher.execute(input, nonce, queries, requires),
             LurkChip::Hasher4(hasher) => hasher.execute(input, nonce, queries, requires),
             LurkChip::Hasher5(hasher) => hasher.execute(input, nonce, queries, requires),
@@ -137,6 +146,7 @@ impl Chipset<BabyBear> for LurkChip {
 
     fn populate_witness(&self, input: &[BabyBear], witness: &mut [BabyBear]) -> Vec<BabyBear> {
         match self {
+            LurkChip::Hasher2(hasher) => hasher.populate_witness(input, witness),
             LurkChip::Hasher3(hasher) => hasher.populate_witness(input, witness),
             LurkChip::Hasher4(hasher) => hasher.populate_witness(input, witness),
             LurkChip::Hasher5(hasher) => hasher.populate_witness(input, witness),
@@ -155,6 +165,9 @@ impl Chipset<BabyBear> for LurkChip {
         requires: &[RequireRecord<AB::Var>],
     ) -> Vec<AB::Expr> {
         match self {
+            LurkChip::Hasher2(hasher) => {
+                hasher.eval(builder, is_real, preimg, witness, nonce, requires)
+            }
             LurkChip::Hasher3(hasher) => {
                 hasher.eval(builder, is_real, preimg, witness, nonce, requires)
             }
@@ -175,6 +188,7 @@ pub type LurkHasher = Hasher<BabyBear, LurkChip>;
 #[inline]
 pub fn lurk_hasher() -> LurkHasher {
     Hasher::new(
+        LurkChip::Hasher2(PoseidonChipset::default()),
         LurkChip::Hasher3(PoseidonChipset::default()),
         LurkChip::Hasher4(PoseidonChipset::default()),
         LurkChip::Hasher5(PoseidonChipset::default()),
