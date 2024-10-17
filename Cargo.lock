@@ -2515,7 +2515,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 [[package]]
 name = "sphinx-core"
 version = "1.0.0"
-source = "git+https://github.com/argumentcomputer/sphinx.git?branch=forward_ports_44#0174a5ffc19d8265abbb534eaef48164fe867065"
+source = "git+https://github.com/argumentcomputer/sphinx.git?branch=forward_ports_48#fa45568e990aeba06da94e291badc60d6cff91fa"
 dependencies = [
  "anyhow",
  "arrayref",
@@ -2578,7 +2578,7 @@ dependencies = [
 [[package]]
 name = "sphinx-derive"
 version = "1.0.0"
-source = "git+https://github.com/argumentcomputer/sphinx.git?branch=forward_ports_44#0174a5ffc19d8265abbb534eaef48164fe867065"
+source = "git+https://github.com/argumentcomputer/sphinx.git?branch=forward_ports_48#fa45568e990aeba06da94e291badc60d6cff91fa"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2602,7 +2602,7 @@ dependencies = [
 [[package]]
 name = "sphinx-primitives"
 version = "1.0.0"
-source = "git+https://github.com/argumentcomputer/sphinx.git?branch=forward_ports_44#0174a5ffc19d8265abbb534eaef48164fe867065"
+source = "git+https://github.com/argumentcomputer/sphinx.git?branch=forward_ports_48#fa45568e990aeba06da94e291badc60d6cff91fa"
 dependencies = [
  "itertools 0.12.1",
  "lazy_static",
