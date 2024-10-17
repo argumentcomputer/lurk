@@ -1,11 +1,11 @@
 use crate::lurk::cli::{
-    config::{set_config, Config},
+    config::{set_config_if_unset, Config},
     repl::Repl,
 };
 
 #[test]
 fn test_meta_commands() {
-    set_config(Config::default());
+    set_config_if_unset(Config::default());
     let mut repl = Repl::new_native();
     assert!(repl
         .load_file("src/lurk/cli/tests/first.lurk".into(), false)
@@ -20,7 +20,7 @@ fn test_meta_commands() {
 #[ignore]
 #[test]
 fn test_meta_commands_with_proofs() {
-    set_config(Config::default());
+    set_config_if_unset(Config::default());
     let mut repl = Repl::new_native();
     assert!(repl
         .load_file("src/lurk/cli/tests/prove.lurk".into(), false)
@@ -35,7 +35,7 @@ fn test_meta_commands_with_proofs() {
 
 #[test]
 fn test_lib() {
-    set_config(Config::default());
+    set_config_if_unset(Config::default());
     let mut repl = Repl::new_native();
     assert!(repl.load_file("lib/tests.lurk".into(), false).is_ok());
 }
@@ -43,7 +43,7 @@ fn test_lib() {
 #[ignore]
 #[test]
 fn test_demo_files() {
-    set_config(Config::default());
+    set_config_if_unset(Config::default());
     let demo_files = [
         "demo/simple.lurk",
         "demo/functional-commitment.lurk",

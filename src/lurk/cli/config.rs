@@ -23,6 +23,11 @@ pub(crate) fn set_config(config: Config) {
     CONFIG.set(config).expect("Config already set")
 }
 
+#[cfg(test)]
+pub(crate) fn set_config_if_unset(config: Config) {
+    let _ = CONFIG.set(config);
+}
+
 pub(crate) fn get_config() -> &'static Config {
     CONFIG.get().expect("Config hasn't been set")
 }
