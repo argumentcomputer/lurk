@@ -364,6 +364,13 @@ test!(
     |_| uint(120)
 );
 test!(
+    test_mutrec,
+    "(mutrec ((odd? (lambda (n) (if (= n 0) nil (even? (- n 1)))))
+              (even? (lambda (n) (if (= n 0) t (odd? (- n 1))))))
+       (odd? 5))",
+    |z| *z.t()
+);
+test!(
     test_fib,
     "(letrec ((fib
           (lambda (n)

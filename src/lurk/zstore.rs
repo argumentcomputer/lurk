@@ -709,7 +709,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 digest = cdr_digest;
                 zptr = ZPtr::from_flat_data(cdr);
             },
-            Tag::Thunk => {
+            Tag::Thunk | Tag::MutualThunk => {
                 let preimg = hashes3_inv.get(digest).expect("Hash3 preimg not found");
                 let (fst, snd_digest) = preimg.split_at(ZPTR_SIZE);
                 let (fst_tag, fst_digest) = fst.split_at(DIGEST_SIZE);
@@ -953,6 +953,10 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
             Tag::Thunk => {
                 let (body, _) = self.fetch_compact10(zptr);
                 format!("<Thunk {}>", self.fmt_with_state(state, body))
+            }
+            Tag::MutualThunk => {
+                let (body, _) = self.fetch_compact10(zptr);
+                format!("<MutualThunk {}>", self.fmt_with_state(state, body))
             }
             Tag::Err => format!("<Err {:?}>", EvalErr::from_field(&zptr.digest[0])),
         }
