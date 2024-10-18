@@ -34,6 +34,7 @@ use super::{
 pub(crate) const DIGEST_SIZE: usize = 8;
 
 pub(crate) const ZPTR_SIZE: usize = 2 * DIGEST_SIZE;
+pub(crate) const HASH2_SIZE: usize = 2 * DIGEST_SIZE;
 pub(crate) const HASH3_SIZE: usize = 3 * DIGEST_SIZE;
 pub(crate) const HASH4_SIZE: usize = 4 * DIGEST_SIZE;
 pub(crate) const HASH5_SIZE: usize = 5 * DIGEST_SIZE;
@@ -223,7 +224,9 @@ impl<F: AbstractField + Copy> ZPtr<F> {
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum ZPtrType<F> {
     /// A leaf datum without children
-    Atom,
+    Leaf,
+    /// A variant that's mostly for wrapping purposes
+    Wrap(ZPtr<F>),
     /// Consumes the tag and digest of two children `ZPtr`s
     Tuple2(ZPtr<F>, ZPtr<F>),
     /// Ignores the tag of the second `ZPtr`
@@ -235,6 +238,7 @@ pub enum ZPtrType<F> {
 /// This struct selects what the hash functions are in a given chipset
 #[derive(Clone)]
 pub struct Hasher<F, C: Chipset<F>> {
+    hash2: C,
     hash3: C,
     hash4: C,
     hash5: C,
@@ -243,8 +247,9 @@ pub struct Hasher<F, C: Chipset<F>> {
 
 impl<F, C: Chipset<F>> Hasher<F, C> {
     #[inline]
-    pub fn new(hash3: C, hash4: C, hash5: C) -> Self {
+    pub fn new(hash2: C, hash3: C, hash4: C, hash5: C) -> Self {
         Self {
+            hash2,
             hash3,
             hash4,
             hash5,
@@ -255,6 +260,7 @@ impl<F, C: Chipset<F>> Hasher<F, C> {
     #[inline]
     pub fn hash(&self, preimg: &[F]) -> Vec<F> {
         match preimg.len() {
+            HASH2_SIZE => self.hash2.execute_simple(preimg),
             HASH3_SIZE => self.hash3.execute_simple(preimg),
             HASH4_SIZE => self.hash4.execute_simple(preimg),
             HASH5_SIZE => self.hash5.execute_simple(preimg),
@@ -267,9 +273,11 @@ impl<F, C: Chipset<F>> Hasher<F, C> {
 pub struct ZStore<F, C: Chipset<F>> {
     hasher: Hasher<F, C>,
     pub(crate) dag: FxHashMap<ZPtr<F>, ZPtrType<F>>,
+    pub hashes2: FxHashMap<[F; HASH2_SIZE], [F; DIGEST_SIZE]>,
     pub hashes3: FxHashMap<[F; HASH3_SIZE], [F; DIGEST_SIZE]>,
     pub hashes4: FxHashMap<[F; HASH4_SIZE], [F; DIGEST_SIZE]>,
     pub hashes5: FxHashMap<[F; HASH5_SIZE], [F; DIGEST_SIZE]>,
+    pub hashes2_diff: FxHashMap<[F; HASH2_SIZE], [F; DIGEST_SIZE]>,
     pub hashes3_diff: FxHashMap<[F; HASH3_SIZE], [F; DIGEST_SIZE]>,
     pub hashes4_diff: FxHashMap<[F; HASH4_SIZE], [F; DIGEST_SIZE]>,
     pub hashes5_diff: FxHashMap<[F; HASH5_SIZE], [F; DIGEST_SIZE]>,
@@ -285,9 +293,11 @@ impl Default for ZStore<BabyBear, LurkChip> {
         let mut zstore = Self {
             hasher: lurk_hasher(),
             dag: Default::default(),
+            hashes2: Default::default(),
             hashes3: Default::default(),
             hashes4: Default::default(),
             hashes5: Default::default(),
+            hashes2_diff: Default::default(),
             hashes3_diff: Default::default(),
             hashes4_diff: Default::default(),
             hashes5_diff: Default::default(),
@@ -314,6 +324,16 @@ pub(crate) fn builtin_set() -> &'static IndexSet<Symbol, FxBuildHasher> {
 }
 
 impl<F: Field, C: Chipset<F>> ZStore<F, C> {
+    pub(crate) fn hash2(&mut self, preimg: [F; HASH2_SIZE]) -> [F; DIGEST_SIZE] {
+        if let Some(img) = self.hashes2.get(&preimg) {
+            return *img;
+        }
+        let digest = into_sized(&self.hasher.hash2.execute_simple(&preimg));
+        self.hashes2.insert(preimg, digest);
+        self.hashes2_diff.insert(preimg, digest);
+        digest
+    }
+
     pub(crate) fn hash3(&mut self, preimg: [F; HASH3_SIZE]) -> [F; DIGEST_SIZE] {
         if let Some(img) = self.hashes3.get(&preimg) {
             return *img;
@@ -344,6 +364,14 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         digest
     }
 
+    pub fn intern_wrap(&mut self, tag: Tag, a: ZPtr<F>) -> ZPtr<F> {
+        let preimg = a.flatten();
+        let digest = self.hash2(preimg);
+        let zptr = ZPtr { tag, digest };
+        self.dag.insert(zptr, ZPtrType::Wrap(a));
+        zptr
+    }
+
     pub fn intern_tuple2(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>) -> ZPtr<F> {
         let preimg = ZPtr::flatten2(&a, &b);
         let digest = self.hash4(preimg);
@@ -369,14 +397,14 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
     }
 
     #[inline]
-    fn memoize_atom_dag(&mut self, zptr: ZPtr<F>) -> ZPtr<F> {
-        self.dag.insert(zptr, ZPtrType::Atom);
+    fn memoize_leaf_dag(&mut self, zptr: ZPtr<F>) -> ZPtr<F> {
+        self.dag.insert(zptr, ZPtrType::Leaf);
         zptr
     }
 
     #[inline]
     pub fn intern_null(&mut self, tag: Tag) -> ZPtr<F> {
-        self.memoize_atom_dag(ZPtr::null(tag))
+        self.memoize_leaf_dag(ZPtr::null(tag))
     }
 
     #[inline]
@@ -386,32 +414,32 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
 
     #[inline]
     pub fn intern_num(&mut self, f: F) -> ZPtr<F> {
-        self.memoize_atom_dag(ZPtr::num(f))
+        self.memoize_leaf_dag(ZPtr::num(f))
     }
 
     #[inline]
     pub fn intern_char(&mut self, c: char) -> ZPtr<F> {
-        self.memoize_atom_dag(ZPtr::char(c))
+        self.memoize_leaf_dag(ZPtr::char(c))
     }
 
     #[inline]
     pub fn intern_u64(&mut self, u: u64) -> ZPtr<F> {
-        self.memoize_atom_dag(ZPtr::u64(u))
+        self.memoize_leaf_dag(ZPtr::u64(u))
     }
 
     #[inline]
     pub fn intern_big_num(&mut self, c: [F; DIGEST_SIZE]) -> ZPtr<F> {
-        self.memoize_atom_dag(ZPtr::big_num(c))
+        self.memoize_leaf_dag(ZPtr::big_num(c))
     }
 
     #[inline]
     pub fn intern_comm(&mut self, c: [F; DIGEST_SIZE]) -> ZPtr<F> {
-        self.memoize_atom_dag(ZPtr::comm(c))
+        self.memoize_leaf_dag(ZPtr::comm(c))
     }
 
     #[inline]
     pub fn intern_error(&mut self, err: EvalErr) -> ZPtr<F> {
-        self.memoize_atom_dag(ZPtr::err(err))
+        self.memoize_leaf_dag(ZPtr::err(err))
     }
 
     pub fn intern_string(&mut self, s: &str) -> ZPtr<F> {
@@ -508,6 +536,11 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
     #[inline]
     pub fn intern_thunk(&mut self, body: ZPtr<F>, env: ZPtr<F>) -> ZPtr<F> {
         self.intern_compact10(Tag::Thunk, body, env)
+    }
+
+    #[inline]
+    pub fn intern_mutual_thunk(&mut self, zptr: ZPtr<F>) -> ZPtr<F> {
+        self.intern_wrap(Tag::MutualThunk, zptr)
     }
 
     #[inline]
@@ -616,6 +649,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         &mut self,
         tag: Tag,
         mut digest: &'a [F],
+        hashes2_inv: &'a FxHashMap<List<F>, List<F>>,
         hashes3_inv: &'a FxHashMap<List<F>, List<F>>,
         hashes4_inv: &'a FxHashMap<List<F>, List<F>>,
         hashes5_inv: &'a FxHashMap<List<F>, List<F>>,
@@ -632,7 +666,23 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         let zeros = [F::zero(); DIGEST_SIZE];
         macro_rules! recurse {
             ($tag:expr, $digest:expr) => {
-                self.memoize_dag($tag, $digest, hashes3_inv, hashes4_inv, hashes5_inv);
+                self.memoize_dag(
+                    $tag,
+                    $digest,
+                    hashes2_inv,
+                    hashes3_inv,
+                    hashes4_inv,
+                    hashes5_inv,
+                );
+            };
+        }
+        macro_rules! memoize_single {
+            ($tag:expr, $digest:expr) => {
+                let wrapped = ZPtr {
+                    tag: $tag,
+                    digest: into_sized($digest),
+                };
+                self.dag.insert(zptr, ZPtrType::Wrap(wrapped));
             };
         }
         macro_rules! memoize_tuple2_or_compact {
@@ -682,7 +732,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         match tag {
             Tag::Str => loop {
                 if digest == zeros {
-                    self.memoize_atom_dag(ZPtr { tag, digest: zeros });
+                    self.memoize_leaf_dag(ZPtr { tag, digest: zeros });
                     break;
                 }
                 let preimg = hashes4_inv.get(digest).expect("Hash4 preimg not found");
@@ -719,9 +769,16 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 recurse!(snd_tag, snd_digest);
                 memoize_compact10!(fst_tag, fst_digest, snd_tag, snd_digest);
             }
+            Tag::MutualThunk => {
+                let preimg = hashes2_inv.get(digest).expect("Hash2 preimg not found");
+                let (tag, digest) = preimg.split_at(DIGEST_SIZE);
+                let tag = Tag::from_field(&tag[0]);
+                recurse!(tag, digest);
+                memoize_single!(tag, digest);
+            }
             Tag::Env => loop {
                 if digest == zeros {
-                    self.memoize_atom_dag(ZPtr { tag, digest: zeros });
+                    self.memoize_leaf_dag(ZPtr { tag, digest: zeros });
                     break;
                 }
                 let preimg = hashes5_inv.get(digest).expect("Hash5 preimg not found");
@@ -764,12 +821,20 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
             }
             Tag::Sym | Tag::Key | Tag::Builtin | Tag::Coroutine => (), // these should be already memoized
             Tag::Num | Tag::U64 | Tag::Char | Tag::Err | Tag::BigNum | Tag::Comm => {
-                self.memoize_atom_dag(ZPtr {
+                self.memoize_leaf_dag(ZPtr {
                     tag,
                     digest: into_sized(digest),
                 });
             }
         }
+    }
+
+    #[inline]
+    pub fn fetch_wrap(&self, zptr: &ZPtr<F>) -> &ZPtr<F> {
+        let Some(ZPtrType::Wrap(a)) = self.dag.get(zptr) else {
+            panic!("Wrap data not found on DAG: {:?}", zptr)
+        };
+        a
     }
 
     #[inline]
@@ -954,6 +1019,10 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 let (body, _) = self.fetch_compact10(zptr);
                 format!("<Thunk {}>", self.fmt_with_state(state, body))
             }
+            Tag::MutualThunk => {
+                let zptr = self.fetch_wrap(zptr);
+                format!("<MutualThunk {}>", self.fmt_with_state(state, zptr))
+            }
             Tag::Err => format!("<Err {:?}>", EvalErr::from_field(&zptr.digest[0])),
         }
     }
@@ -1034,6 +1103,7 @@ mod test {
         zstore.memoize_dag(
             output_tag,
             output_digest,
+            record.get_inv_queries("hash2", &toplevel),
             record.get_inv_queries("hash3", &toplevel),
             record.get_inv_queries("hash4", &toplevel),
             record.get_inv_queries("hash5", &toplevel),

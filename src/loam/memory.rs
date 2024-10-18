@@ -114,6 +114,7 @@ impl PPtr {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PPtrKind {
+    Wrap(PPtr),
     Tuple2(PPtr, PPtr),
     Tuple3(PPtr, PPtr, PPtr),
 }
@@ -122,14 +123,14 @@ impl PPtrKind {
     fn get2(self) -> (PPtr, PPtr) {
         match self {
             PPtrKind::Tuple2(x, y) => (x, y),
-            PPtrKind::Tuple3(_, _, _) => panic!(),
+            _ => panic!(),
         }
     }
 
     fn get3(self) -> (PPtr, PPtr, PPtr) {
         match self {
-            PPtrKind::Tuple2(_, _) => panic!(),
             PPtrKind::Tuple3(x, y, z) => (x, y, z),
+            _ => panic!(),
         }
     }
 }
@@ -452,6 +453,14 @@ impl Store {
     }
 
     #[inline]
+    pub fn fetch_wrap(&self, ptr: &PPtr) -> &PPtr {
+        let Some((PPtrKind::Wrap(a), _)) = self.dag.get(ptr) else {
+            panic!("Wrap data not found on DAG: {:?}", ptr)
+        };
+        a
+    }
+
+    #[inline]
     pub fn fetch_tuple2(&self, ptr: &PPtr) -> (&PPtr, &PPtr) {
         let Some((PPtrKind::Tuple2(a, b), _)) = self.dag.get(ptr) else {
             panic!("Tuple2 data not found on DAG: {:?}", ptr)
@@ -525,6 +534,10 @@ impl Store {
             Tag::Thunk => {
                 let (body, _) = self.fetch_tuple2(ptr);
                 format!("<Thunk {}>", self.fmt(zstore, body))
+            }
+            Tag::MutualThunk => {
+                let ptr = self.fetch_wrap(ptr);
+                format!("<MutualThunk {}>", self.fmt(zstore, ptr))
             }
             Tag::Err => format!("<Err {:?}>", EvalErr::from_field(&ptr.addr())),
             Tag::U64 | Tag::Char | Tag::Comm | Tag::Str | Tag::Env => unimplemented!(),

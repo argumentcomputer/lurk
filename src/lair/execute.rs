@@ -240,8 +240,8 @@ impl Default for ShardingConfig {
     }
 }
 
-const NUM_MEM_TABLES: usize = 5;
-pub(crate) const MEM_TABLE_SIZES: [usize; NUM_MEM_TABLES] = [3, 4, 5, 6, 8];
+const NUM_MEM_TABLES: usize = 6;
+pub(crate) const MEM_TABLE_SIZES: [usize; NUM_MEM_TABLES] = [2, 3, 4, 5, 6, 8];
 
 #[inline]
 pub fn mem_index_to_len(idx: usize) -> usize {

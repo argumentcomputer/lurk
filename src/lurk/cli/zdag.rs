@@ -28,7 +28,8 @@ impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
             .get(zptr)
             .expect("Data missing from ZStore's DAG");
         match zptr_type {
-            ZPtrType::Atom => (),
+            ZPtrType::Leaf => (),
+            ZPtrType::Wrap(a) => self.populate_with(a, zstore, cache),
             ZPtrType::Tuple2(a, b) | ZPtrType::Compact10(a, b) => {
                 self.populate_with(a, zstore, cache);
                 self.populate_with(b, zstore, cache);
@@ -64,7 +65,12 @@ impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
     {
         for (zptr, zptr_type) in self.0 {
             match &zptr_type {
-                ZPtrType::Atom => (),
+                ZPtrType::Leaf => (),
+                ZPtrType::Wrap(a) => {
+                    let preimg = a.flatten();
+                    zstore.hashes2.insert(preimg, zptr.digest);
+                    zstore.hashes2_diff.insert(preimg, zptr.digest);
+                }
                 ZPtrType::Tuple2(a, b) => {
                     let preimg = ZPtr::flatten2(a, b);
                     zstore.hashes4.insert(preimg, zptr.digest);
@@ -89,7 +95,8 @@ impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
     pub(crate) fn has_opaque_data(&self, zptr: &ZPtr<F>) -> bool {
         match self.0.get(zptr) {
             None => true,
-            Some(ZPtrType::Atom) => false,
+            Some(ZPtrType::Leaf) => false,
+            Some(ZPtrType::Wrap(a)) => self.has_opaque_data(a),
             Some(ZPtrType::Tuple2(a, b) | ZPtrType::Compact10(a, b)) => {
                 self.has_opaque_data(a) || self.has_opaque_data(b)
             }

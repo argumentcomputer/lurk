@@ -257,9 +257,12 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
 
     fn prepare_queries(&mut self) {
         self.queries.clean();
+        let hashes2 = std::mem::take(&mut self.zstore.hashes2_diff);
         let hashes3 = std::mem::take(&mut self.zstore.hashes3_diff);
         let hashes4 = std::mem::take(&mut self.zstore.hashes4_diff);
         let hashes5 = std::mem::take(&mut self.zstore.hashes5_diff);
+        self.queries
+            .inject_inv_queries_owned("hash2", &self.toplevel, hashes2);
         self.queries
             .inject_inv_queries_owned("hash3", &self.toplevel, hashes3);
         self.queries
@@ -280,6 +283,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         self.zstore.memoize_dag(
             tag,
             digest,
+            self.queries.get_inv_queries("hash2", &self.toplevel),
             self.queries.get_inv_queries("hash3", &self.toplevel),
             self.queries.get_inv_queries("hash4", &self.toplevel),
             self.queries.get_inv_queries("hash5", &self.toplevel),
