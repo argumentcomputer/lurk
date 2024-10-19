@@ -8,10 +8,10 @@
 
 ;; test call/chain
 !(call #0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 0)
-!(chain #0x8b0d8bd2feef87f7347a8d2dbe7cc74ba045ec0f14c1417266e3f46d0a0ac5 1)
+!(chain #0x654d995f929e8603565704cc8b01c2cc9d0868a07ffc687fb927540f72e98f 1)
 
 ;; test transition
-!(def state (cons nil #0x8b0d8bd2feef87f7347a8d2dbe7cc74ba045ec0f14c1417266e3f46d0a0ac5))
+!(def state (cons nil #0x654d995f929e8603565704cc8b01c2cc9d0868a07ffc687fb927540f72e98f))
 !(transition state1 state 1)
 !(assert-eq (car state1) 1)
 

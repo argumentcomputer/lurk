@@ -352,14 +352,6 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         zptr
     }
 
-    fn intern_compact10(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>) -> ZPtr<F> {
-        let preimg = ZPtr::flatten_compact10(&a, &b);
-        let digest = self.hash3(preimg);
-        let zptr = ZPtr { tag, digest };
-        self.dag.insert(zptr, ZPtrType::Compact10(a, b));
-        zptr
-    }
-
     fn intern_compact110(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>, c: ZPtr<F>) -> ZPtr<F> {
         let preimg = ZPtr::flatten_compact110(&a, &b, &c);
         let digest = self.hash5(preimg);
@@ -506,8 +498,8 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
     }
 
     #[inline]
-    pub fn intern_thunk(&mut self, body: ZPtr<F>, env: ZPtr<F>) -> ZPtr<F> {
-        self.intern_compact10(Tag::Thunk, body, env)
+    pub fn intern_thunk(&mut self, binds: ZPtr<F>, body: ZPtr<F>, env: ZPtr<F>) -> ZPtr<F> {
+        self.intern_compact110(Tag::Thunk, binds, body, env)
     }
 
     #[inline]
@@ -612,6 +604,8 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
     }
 
     /// Memoizes the Lurk data dependencies of a tag/digest pair
+    // TODO: remove hashes3?
+    #[allow(clippy::only_used_in_recursion)]
     pub fn memoize_dag<'a>(
         &mut self,
         tag: Tag,
@@ -655,11 +649,6 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         macro_rules! memoize_tuple2 {
             ($fst_tag:expr, $fst_digest:expr, $snd_tag:expr, $snd_digest:expr) => {
                 memoize_tuple2_or_compact!($fst_tag, $fst_digest, $snd_tag, $snd_digest, true);
-            };
-        }
-        macro_rules! memoize_compact10 {
-            ($fst_tag:expr, $fst_digest:expr, $snd_tag:expr, $snd_digest:expr) => {
-                memoize_tuple2_or_compact!($fst_tag, $fst_digest, $snd_tag, $snd_digest, false);
             };
         }
         macro_rules! memoize_compact110 {
@@ -709,16 +698,6 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 digest = cdr_digest;
                 zptr = ZPtr::from_flat_data(cdr);
             },
-            Tag::Thunk => {
-                let preimg = hashes3_inv.get(digest).expect("Hash3 preimg not found");
-                let (fst, snd_digest) = preimg.split_at(ZPTR_SIZE);
-                let (fst_tag, fst_digest) = fst.split_at(DIGEST_SIZE);
-                let fst_tag = Tag::from_field(&fst_tag[0]);
-                let snd_tag = Tag::Env;
-                recurse!(fst_tag, fst_digest);
-                recurse!(snd_tag, snd_digest);
-                memoize_compact10!(fst_tag, fst_digest, snd_tag, snd_digest);
-            }
             Tag::Env => loop {
                 if digest == zeros {
                     self.memoize_atom_dag(ZPtr { tag, digest: zeros });
@@ -741,7 +720,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                     digest: into_sized(env_digest),
                 };
             },
-            Tag::Fun => {
+            Tag::Fun | Tag::Thunk => {
                 let preimg = hashes5_inv.get(digest).expect("Hash5 preimg not found");
                 let (args, rest) = preimg.split_at(ZPTR_SIZE);
                 let (body, env_digest) = rest.split_at(ZPTR_SIZE);
@@ -951,7 +930,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 format!("<Env ({})>", pairs_str)
             }
             Tag::Thunk => {
-                let (body, _) = self.fetch_compact10(zptr);
+                let (_, body, _) = self.fetch_compact110(zptr);
                 format!("<Thunk {}>", self.fmt_with_state(state, body))
             }
             Tag::Err => format!("<Err {:?}>", EvalErr::from_field(&zptr.digest[0])),
