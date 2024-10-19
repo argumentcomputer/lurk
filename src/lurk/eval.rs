@@ -110,7 +110,7 @@ fn native_lurk_funcs<F: PrimeField32>(
     [
         lurk_main(),
         preallocate_symbols(digests),
-        eval(),
+        eval(digests),
         eval_builtin_expr(digests),
         eval_apply_builtin(),
         eval_coroutine_expr(digests, coroutines),
@@ -127,7 +127,7 @@ fn native_lurk_funcs<F: PrimeField32>(
         equal_inner(),
         car_cdr(digests),
         eval_let(),
-        eval_letrec(digests),
+        eval_letrec(),
         apply(digests),
         env_lookup(),
         ingress(digests),
@@ -587,15 +587,7 @@ pub fn ingress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr);
                     return (tag, ptr)
                 }
-                Tag::Thunk => {
-                    let (fst_tag_full: [8], fst_digest: [8], snd_digest: [8]) = preimg(hash3, digest);
-                    let env_tag = Tag::Env;
-                    let (fst_tag, fst_ptr) = call(ingress, fst_tag_full, fst_digest);
-                    let (_snd_tag, snd_ptr) = call(ingress, env_tag, zeros, snd_digest);
-                    let ptr = store(fst_tag, fst_ptr, snd_ptr);
-                    return (tag, ptr)
-                }
-                Tag::Fun => {
+                Tag::Fun, Tag::Thunk => {
                     let (args_tag_full: [8], args_digest: [8],
                          body_tag_full: [8], body_digest: [8],
                                              env_digest: [8]) = preimg(hash5, digest);
@@ -679,18 +671,7 @@ pub fn egress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     let digest: [8] = call(hash4, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
                     return (tag, digest)
                 }
-                Tag::Thunk => {
-                    let (fst_tag, fst_ptr, snd_ptr) = load(val);
-                    let snd_tag = Tag::Env;
-                    let (fst_tag, fst_digest: [8]) = call(egress, fst_tag, fst_ptr);
-                    let (_snd_tag, snd_digest: [8]) = call(egress, snd_tag, snd_ptr);
-
-                    let padding = [0; 7];
-                    let fst_tag_full: [8] = (fst_tag, padding);
-                    let digest: [8] = call(hash3, fst_tag_full, fst_digest, snd_digest);
-                    return (tag, digest)
-                }
-                Tag::Fun => {
+                Tag::Fun, Tag::Thunk => {
                     let (args_tag, args_ptr, body_tag, body_ptr, env_ptr) = load(val);
                     let (args_tag, args_digest: [8]) = call(egress, args_tag, args_ptr);
                     let (body_tag, body_digest: [8]) = call(egress, body_tag, body_ptr);
@@ -849,7 +830,7 @@ pub fn big_num_lessthan<F>() -> FuncE<F> {
     )
 }
 
-pub fn eval<F: AbstractField>() -> FuncE<F> {
+pub fn eval<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn eval(expr_tag, expr, env): [2] {
             match expr_tag {
@@ -861,10 +842,14 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                             // In the case the result is a thunk we extend
                             // its environment with it and reduce its
                             // body in the extended environment
-                            let (body_tag, body, body_env) = load(res);
-                            // `expr` is the symbol
+                            let (binds_tag, binds, inner_body_tag, inner_body, body_env) = load(res);
+                            // `expr` is the symbol, `res` is the thunk
+                            let body_tag = Tag::Cons;
+                            let nil_tag = InternalTag::Nil;
+                            let nil = digests.lurk_symbol_ptr("nil");
+                            let body = store(inner_body_tag, inner_body, nil_tag, nil);
                             let thunk_env = store(expr_tag, expr, res_tag, res, body_env);
-                            let (res_tag, res) = call(eval, body_tag, body, thunk_env);
+                            let (res_tag, res) = call(eval_letrec, binds_tag, binds, body_tag, body, thunk_env);
                             return (res_tag, res)
                         }
                     };
@@ -1429,16 +1414,7 @@ pub fn equal_inner<F: AbstractField>() -> FuncE<F> {
                     let eq = mul(fst_eq, snd_eq);
                     return eq
                 }
-                Tag::Thunk => {
-                    let snd_tag = Tag::Env;
-                    let (a_fst: [2], a_snd) = load(a);
-                    let (b_fst: [2], b_snd) = load(b);
-                    let fst_eq = call(equal_inner, a_fst, b_fst);
-                    let snd_eq = call(equal_inner, snd_tag, a_snd, snd_tag, b_snd);
-                    let eq = mul(fst_eq, snd_eq);
-                    return eq
-                }
-                Tag::Fun => {
+                Tag::Fun, Tag::Thunk => {
                     let trd_tag = Tag::Env;
                     let (a_fst: [2], a_snd: [2], a_trd) = load(a);
                     let (b_fst: [2], b_snd: [2], b_trd) = load(b);
@@ -2023,7 +1999,7 @@ pub fn eval_let<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_letrec<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
+pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_letrec(binds_tag, binds, body_tag, body, env): [2] {
             let err_tag = Tag::Err;
@@ -2056,40 +2032,23 @@ pub fn eval_letrec<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                 return (err_tag, invalid_form)
                             }
 
-                            let rest_binds_not_nil = sub(nil_tag, rest_binds_tag);
-                            if rest_binds_not_nil {
-                                // build letrec expression
-                                let nil = digests.lurk_symbol_ptr("nil");
-                                let builtin_tag = Tag::Builtin;
-                                let letrec = digests.builtin_symbol_ptr("letrec");
-                                let cons = store(expr_tag, expr, nil_tag, nil);
-                                let cons = store(rest_binds_tag, rest_binds, cons_tag, cons);
-                                let letrec = store(builtin_tag, letrec, cons_tag, cons);
-                                // build thunk and extend environment
-                                let thunk_tag = Tag::Thunk;
-                                let thunk = store(cons_tag, letrec, env);
-                                let ext_env = store(param_tag, param, thunk_tag, thunk, env);
-                                // this will preemptively evaluate the thunk, so that we do not skip evaluation in case
-                                // the variable is not used inside the letrec body, and furthermore it follows a strict
-                                // evaluation order
-                                let (val_tag, val) = call(eval, thunk_tag, thunk, ext_env);
-                                match val_tag {
-                                    Tag::Err => {
-                                        return (val_tag, val)
-                                    }
-                                };
-                                let (res_tag, res) = call(eval_letrec, rest_binds_tag, rest_binds, body_tag, body, ext_env);
-                                return (res_tag, res)
-                            }
                             let thunk_tag = Tag::Thunk;
-                            let thunk = store(expr_tag, expr, env);
+                            let thunk = store(rest_binds_tag, rest_binds, expr_tag, expr, env);
                             let ext_env = store(param_tag, param, thunk_tag, thunk, env);
+                            // this will preemptively evaluate the thunk, so that we do not skip evaluation in case
+                            // the variable is not used inside the letrec body, and furthermore it follows a strict
+                            // evaluation order
                             let (val_tag, val) = call(eval, thunk_tag, thunk, ext_env);
                             match val_tag {
                                 Tag::Err => {
                                     return (val_tag, val)
                                 }
                             };
+                            let rest_binds_not_nil = sub(nil_tag, rest_binds_tag);
+                            if rest_binds_not_nil {
+                                let (res_tag, res) = call(eval_letrec, rest_binds_tag, rest_binds, body_tag, body, ext_env);
+                                return (res_tag, res)
+                            }
                             let (res_tag, res) = call(eval_begin, body_tag, body, ext_env);
                             return (res_tag, res)
                         }
@@ -2351,7 +2310,7 @@ mod test {
         expect_eq(lurk_main.width(), expect!["97"]);
         expect_eq(preallocate_symbols.width(), expect!["180"]);
         expect_eq(eval_coroutine_expr.width(), expect!["10"]);
-        expect_eq(eval.width(), expect!["77"]);
+        expect_eq(eval.width(), expect!["78"]);
         expect_eq(eval_builtin_expr.width(), expect!["146"]);
         expect_eq(eval_apply_builtin.width(), expect!["79"]);
         expect_eq(eval_opening_unop.width(), expect!["97"]);
@@ -2362,16 +2321,16 @@ mod test {
         expect_eq(eval_begin.width(), expect!["68"]);
         expect_eq(eval_list.width(), expect!["72"]);
         expect_eq(eval_let.width(), expect!["94"]);
-        expect_eq(eval_letrec.width(), expect!["111"]);
+        expect_eq(eval_letrec.width(), expect!["98"]);
         expect_eq(coerce_if_sym.width(), expect!["9"]);
         expect_eq(open_comm.width(), expect!["50"]);
         expect_eq(equal.width(), expect!["86"]);
-        expect_eq(equal_inner.width(), expect!["59"]);
+        expect_eq(equal_inner.width(), expect!["58"]);
         expect_eq(car_cdr.width(), expect!["61"]);
         expect_eq(apply.width(), expect!["114"]);
         expect_eq(env_lookup.width(), expect!["52"]);
-        expect_eq(ingress.width(), expect!["105"]);
-        expect_eq(egress.width(), expect!["82"]);
+        expect_eq(ingress.width(), expect!["104"]);
+        expect_eq(egress.width(), expect!["81"]);
         expect_eq(hash3.width(), expect!["493"]);
         expect_eq(hash4.width(), expect!["655"]);
         expect_eq(hash5.width(), expect!["815"]);
