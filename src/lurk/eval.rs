@@ -110,7 +110,7 @@ fn native_lurk_funcs<F: PrimeField32>(
     [
         lurk_main(),
         preallocate_symbols(digests),
-        eval(digests),
+        eval(),
         eval_builtin_expr(digests),
         eval_apply_builtin(),
         eval_coroutine_expr(digests, coroutines),
@@ -830,7 +830,7 @@ pub fn big_num_lessthan<F>() -> FuncE<F> {
     )
 }
 
-pub fn eval<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
+pub fn eval<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval(expr_tag, expr, env): [2] {
             match expr_tag {
@@ -842,14 +842,11 @@ pub fn eval<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                             // In the case the result is a thunk we extend
                             // its environment with it and reduce its
                             // body in the extended environment
-                            let (binds_tag, binds, inner_body_tag, inner_body, body_env) = load(res);
+                            let (binds_tag, binds, body_tag, body, body_env) = load(res);
                             // `expr` is the symbol, `res` is the thunk
-                            let body_tag = Tag::Cons;
-                            let nil_tag = InternalTag::Nil;
-                            let nil = digests.lurk_symbol_ptr("nil");
-                            let body = store(inner_body_tag, inner_body, nil_tag, nil);
                             let thunk_env = store(expr_tag, expr, res_tag, res, body_env);
-                            let (res_tag, res) = call(eval_letrec, binds_tag, binds, body_tag, body, thunk_env);
+                            let lazy = 0;
+                            let (res_tag, res) = call(eval_letrec, lazy, binds_tag, binds, body_tag, body, thunk_env);
                             return (res_tag, res)
                         }
                     };
@@ -914,7 +911,8 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
                         }
                         "letrec" => {
                             // analogous to `let`
-                            let (res_tag, res) = call(eval_letrec, fst_tag, fst, rest_tag, rest, env);
+                            let strict = 1;
+                            let (res_tag, res) = call(eval_letrec, strict, fst_tag, fst, rest_tag, rest, env);
                             return (res_tag, res)
                         }
                         "lambda" => {
@@ -2001,7 +1999,7 @@ pub fn eval_let<F: AbstractField>() -> FuncE<F> {
 
 pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
     func!(
-        partial fn eval_letrec(binds_tag, binds, body_tag, body, env): [2] {
+        partial fn eval_letrec(strictness, binds_tag, binds, body_tag, body, env): [2] {
             let err_tag = Tag::Err;
             let invalid_form = EvalErr::InvalidForm;
             match binds_tag {
@@ -2018,38 +2016,46 @@ pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
                         return (err_tag, invalid_form)
                     }
                     // each binding is in turn a 2 element list
-                    let (param_tag, param, rest_tag, rest) = load(bind);
-                    let rest_not_cons = sub(rest_tag, cons_tag);
-                    if rest_not_cons {
+                    let (param_tag, param, thunk_body_tag, thunk_body) = load(bind);
+                    let thunk_not_cons = sub(thunk_body_tag, cons_tag);
+                    if thunk_not_cons {
+                        let invalid_form = EvalErr::ApplyNonFunc;
+                        return (err_tag, invalid_form)
+                    }
+                    let (_inner_tag, _inner, rest_tag, _rest) = load(thunk_body);
+                    let nil_tag = InternalTag::Nil;
+                    let rest_not_nil = sub(rest_tag, nil_tag);
+                    if rest_not_nil {
+                        let invalid_form = EvalErr::ParamsNotList;
                         return (err_tag, invalid_form)
                     }
                     match param_tag {
                         Tag::Sym, Tag::Builtin, Tag::Coroutine => {
-                            let (expr_tag, expr, rest_tag, _rest) = load(rest);
-                            let nil_tag = InternalTag::Nil;
-                            let rest_not_nil = sub(rest_tag, nil_tag);
-                            if rest_not_nil {
-                                return (err_tag, invalid_form)
-                            }
-
                             let thunk_tag = Tag::Thunk;
-                            let thunk = store(rest_binds_tag, rest_binds, expr_tag, expr, env);
+                            let thunk = store(rest_binds_tag, rest_binds, thunk_body_tag, thunk_body, env);
                             let ext_env = store(param_tag, param, thunk_tag, thunk, env);
+                            let rest_binds_not_nil = sub(nil_tag, rest_binds_tag);
+                            if !rest_binds_not_nil {
+                                let (res_tag, res) = call(eval_begin, body_tag, body, ext_env);
+                                return (res_tag, res)
+                            }
+                            if !strictness {
+                                // strictness = lazy
+                                let (res_tag, res) = call(eval_letrec, strictness, rest_binds_tag, rest_binds, body_tag, body, ext_env);
+                                return (res_tag, res)
+                            }
                             // this will preemptively evaluate the thunk, so that we do not skip evaluation in case
                             // the variable is not used inside the letrec body, and furthermore it follows a strict
                             // evaluation order
-                            let (val_tag, val) = call(eval, thunk_tag, thunk, ext_env);
+                            let lazy = 0;
+                            let (val_tag, val) = call(eval_letrec, lazy, rest_binds_tag, rest_binds, cons_tag, thunk_body, ext_env);
                             match val_tag {
                                 Tag::Err => {
                                     return (val_tag, val)
                                 }
                             };
-                            let rest_binds_not_nil = sub(nil_tag, rest_binds_tag);
-                            if rest_binds_not_nil {
-                                let (res_tag, res) = call(eval_letrec, rest_binds_tag, rest_binds, body_tag, body, ext_env);
-                                return (res_tag, res)
-                            }
-                            let (res_tag, res) = call(eval_begin, body_tag, body, ext_env);
+                            // stricness = strict
+                            let (res_tag, res) = call(eval_letrec, strictness, rest_binds_tag, rest_binds, body_tag, body, ext_env);
                             return (res_tag, res)
                         }
                     };
@@ -2310,7 +2316,7 @@ mod test {
         expect_eq(lurk_main.width(), expect!["97"]);
         expect_eq(preallocate_symbols.width(), expect!["180"]);
         expect_eq(eval_coroutine_expr.width(), expect!["10"]);
-        expect_eq(eval.width(), expect!["78"]);
+        expect_eq(eval.width(), expect!["77"]);
         expect_eq(eval_builtin_expr.width(), expect!["146"]);
         expect_eq(eval_apply_builtin.width(), expect!["79"]);
         expect_eq(eval_opening_unop.width(), expect!["97"]);
@@ -2321,7 +2327,7 @@ mod test {
         expect_eq(eval_begin.width(), expect!["68"]);
         expect_eq(eval_list.width(), expect!["72"]);
         expect_eq(eval_let.width(), expect!["94"]);
-        expect_eq(eval_letrec.width(), expect!["98"]);
+        expect_eq(eval_letrec.width(), expect!["101"]);
         expect_eq(coerce_if_sym.width(), expect!["9"]);
         expect_eq(open_comm.width(), expect!["50"]);
         expect_eq(equal.width(), expect!["86"]);
