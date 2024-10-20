@@ -201,11 +201,15 @@ impl<C1: Chipset<BabyBear>, C2: Chipset<BabyBear>> Repl<BabyBear, C1, C2> {
     }
 }
 
-fn pretty_iterations_display(iterations: usize) -> String {
+fn pretty_iterations_display(iterations: usize, width: usize) -> String {
     if iterations != 1 {
-        format!("{iterations} iterations")
+        let average_width = width as f64 / iterations as f64;
+        format!(
+            "{iterations} iterations, {width} total width, average step size {:.2}",
+            average_width
+        )
     } else {
-        "1 iteration".into()
+        format!("1 iteration, width {width}")
     }
 }
 
@@ -487,10 +491,10 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         let env = env.unwrap_or(self.env);
         let result = self.reduce_with_env(expr, &env)?;
         self.memoize_dag(result.tag, &result.digest);
-        let iterations = self.queries.func_queries[self.eval_idx].len();
+        let (iterations, width) = self.queries.stats(&self.toplevel);
         println!(
             "[{}] => {}",
-            pretty_iterations_display(iterations),
+            pretty_iterations_display(iterations, width),
             self.fmt(&result)
         );
         Ok(result)
