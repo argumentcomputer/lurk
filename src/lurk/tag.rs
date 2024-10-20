@@ -35,7 +35,6 @@ pub enum Tag {
     Cons,
     Env,
     Thunk,
-    MutualThunk,
     Err,
 }
 
@@ -67,7 +66,7 @@ mod test {
 
     #[test]
     fn test_strum() {
-        assert_eq!(16, Tag::COUNT);
+        assert_eq!(15, Tag::COUNT);
         assert_eq!(Tag::COUNT, Tag::iter().count());
     }
 

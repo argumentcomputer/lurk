@@ -196,21 +196,14 @@ impl<F: AbstractField + Copy> ZPtr<F> {
         buffer.extract()
     }
 
-    pub fn flatten2(a: &ZPtr<F>, b: &ZPtr<F>) -> [F; HASH4_SIZE] {
+    pub fn flatten_as_tuple11(a: &ZPtr<F>, b: &ZPtr<F>) -> [F; HASH4_SIZE] {
         let mut buffer = SizedBuffer::default();
         buffer.write_slice(&a.flatten());
         buffer.write_slice(&b.flatten());
         buffer.extract()
     }
 
-    pub fn flatten_compact10(a: &ZPtr<F>, b: &ZPtr<F>) -> [F; HASH3_SIZE] {
-        let mut buffer = SizedBuffer::default();
-        buffer.write_slice(&a.flatten());
-        buffer.write_slice(&b.digest);
-        buffer.extract()
-    }
-
-    pub fn flatten_compact100(a: &ZPtr<F>, b: &ZPtr<F>, c: &ZPtr<F>) -> [F; HASH4_SIZE] {
+    pub fn flatten_as_tuple100(a: &ZPtr<F>, b: &ZPtr<F>, c: &ZPtr<F>) -> [F; HASH4_SIZE] {
         let mut buffer = SizedBuffer::default();
         buffer.write_slice(&a.flatten());
         buffer.write_slice(&b.digest);
@@ -218,7 +211,7 @@ impl<F: AbstractField + Copy> ZPtr<F> {
         buffer.extract()
     }
 
-    pub fn flatten_compact110(a: &ZPtr<F>, b: &ZPtr<F>, c: &ZPtr<F>) -> [F; HASH5_SIZE] {
+    pub fn flatten_as_tuple110(a: &ZPtr<F>, b: &ZPtr<F>, c: &ZPtr<F>) -> [F; HASH5_SIZE] {
         let mut buffer = SizedBuffer::default();
         buffer.write_slice(&a.flatten());
         buffer.write_slice(&b.flatten());
@@ -227,19 +220,18 @@ impl<F: AbstractField + Copy> ZPtr<F> {
     }
 }
 
-/// Specifies the dependencies of a `ZPtr` in a Merkle DAG for content-addressing
+/// Specifies the dependencies of a `ZPtr` in a Merkle DAG for content-addressing.
+/// There is a special notation for parent nodes: the number of 0's and 1's after
+/// "Tuple" tells the number of children a parent node has. From left to right,
+/// a 0 on position i means that the tag of the i-th child won't be used to compute
+/// the digest of such parent node. And 1 means that the tag will be used.
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum ZPtrType<F> {
-    /// A leaf datum without children
+    /// A leaf node without children
     Atom,
-    /// Consumes the tag and digest of two children `ZPtr`s
-    Tuple2(ZPtr<F>, ZPtr<F>),
-    /// Ignores the tag of the second `ZPtr`
-    Compact10(ZPtr<F>, ZPtr<F>),
-    /// Ignores the tag of the second and third `ZPtr`s
-    Compact100(ZPtr<F>, ZPtr<F>, ZPtr<F>),
-    /// Ignores the tag of the third `ZPtr`
-    Compact110(ZPtr<F>, ZPtr<F>, ZPtr<F>),
+    Tuple11(ZPtr<F>, ZPtr<F>),
+    Tuple100(ZPtr<F>, ZPtr<F>, ZPtr<F>),
+    Tuple110(ZPtr<F>, ZPtr<F>, ZPtr<F>),
 }
 
 /// This struct selects what the hash functions are in a given chipset
@@ -354,35 +346,27 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         digest
     }
 
-    pub fn intern_tuple2(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>) -> ZPtr<F> {
-        let preimg = ZPtr::flatten2(&a, &b);
+    pub fn intern_tuple11(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>) -> ZPtr<F> {
+        let preimg = ZPtr::flatten_as_tuple11(&a, &b);
         let digest = self.hash4(preimg);
         let zptr = ZPtr { tag, digest };
-        self.dag.insert(zptr, ZPtrType::Tuple2(a, b));
+        self.dag.insert(zptr, ZPtrType::Tuple11(a, b));
         zptr
     }
 
-    fn intern_compact10(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>) -> ZPtr<F> {
-        let preimg = ZPtr::flatten_compact10(&a, &b);
-        let digest = self.hash3(preimg);
-        let zptr = ZPtr { tag, digest };
-        self.dag.insert(zptr, ZPtrType::Compact10(a, b));
-        zptr
-    }
-
-    fn intern_compact100(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>, c: ZPtr<F>) -> ZPtr<F> {
-        let preimg = ZPtr::flatten_compact100(&a, &b, &c);
+    fn intern_tuple100(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>, c: ZPtr<F>) -> ZPtr<F> {
+        let preimg = ZPtr::flatten_as_tuple100(&a, &b, &c);
         let digest = self.hash4(preimg);
         let zptr = ZPtr { tag, digest };
-        self.dag.insert(zptr, ZPtrType::Compact100(a, b, c));
+        self.dag.insert(zptr, ZPtrType::Tuple100(a, b, c));
         zptr
     }
 
-    fn intern_compact110(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>, c: ZPtr<F>) -> ZPtr<F> {
-        let preimg = ZPtr::flatten_compact110(&a, &b, &c);
+    fn intern_tuple110(&mut self, tag: Tag, a: ZPtr<F>, b: ZPtr<F>, c: ZPtr<F>) -> ZPtr<F> {
+        let preimg = ZPtr::flatten_as_tuple110(&a, &b, &c);
         let digest = self.hash5(preimg);
         let zptr = ZPtr { tag, digest };
-        self.dag.insert(zptr, ZPtrType::Compact110(a, b, c));
+        self.dag.insert(zptr, ZPtrType::Tuple110(a, b, c));
         zptr
     }
 
@@ -438,7 +422,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         }
         let zptr = s.chars().rev().fold(self.intern_null(Tag::Str), |acc, c| {
             let char_zptr = self.intern_char(c);
-            self.intern_tuple2(Tag::Str, char_zptr, acc)
+            self.intern_tuple11(Tag::Str, char_zptr, acc)
         });
         self.str_cache.insert(s.to_string(), zptr);
         zptr
@@ -472,7 +456,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                     } else {
                         Tag::Sym
                     };
-                    zptr = self.intern_tuple2(tag, str_zptr, zptr);
+                    zptr = self.intern_tuple11(tag, str_zptr, zptr);
                 }
                 zptr
             }
@@ -507,7 +491,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
     {
         xs.into_iter()
             .rev()
-            .fold(y, |acc, x| self.intern_tuple2(Tag::Cons, x, acc))
+            .fold(y, |acc, x| self.intern_tuple11(Tag::Cons, x, acc))
     }
 
     #[inline]
@@ -520,32 +504,27 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
 
     #[inline]
     pub fn intern_cons(&mut self, car: ZPtr<F>, cdr: ZPtr<F>) -> ZPtr<F> {
-        self.intern_tuple2(Tag::Cons, car, cdr)
+        self.intern_tuple11(Tag::Cons, car, cdr)
     }
 
     #[inline]
-    pub fn intern_thunk(&mut self, body: ZPtr<F>, env: ZPtr<F>) -> ZPtr<F> {
-        self.intern_compact10(Tag::Thunk, body, env)
-    }
-
-    #[inline]
-    pub fn intern_mutual_thunk(
+    pub fn intern_thunk(
         &mut self,
         body: ZPtr<F>,
         mutual_env: ZPtr<F>,
         body_env: ZPtr<F>,
     ) -> ZPtr<F> {
-        self.intern_compact100(Tag::MutualThunk, body, mutual_env, body_env)
+        self.intern_tuple100(Tag::Thunk, body, mutual_env, body_env)
     }
 
     #[inline]
     pub fn intern_fun(&mut self, args: ZPtr<F>, body: ZPtr<F>, env: ZPtr<F>) -> ZPtr<F> {
-        self.intern_compact110(Tag::Fun, args, body, env)
+        self.intern_tuple110(Tag::Fun, args, body, env)
     }
 
     #[inline]
     pub fn intern_env(&mut self, sym: ZPtr<F>, val: ZPtr<F>, env: ZPtr<F>) -> ZPtr<F> {
-        self.intern_compact110(Tag::Env, sym, val, env)
+        self.intern_tuple110(Tag::Env, sym, val, env)
     }
 
     fn intern_syntax(
@@ -644,7 +623,6 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         &mut self,
         tag: Tag,
         mut digest: &'a [F],
-        hashes3_inv: &'a FxHashMap<List<F>, List<F>>,
         hashes4_inv: &'a FxHashMap<List<F>, List<F>>,
         hashes5_inv: &'a FxHashMap<List<F>, List<F>>,
     ) where
@@ -660,11 +638,11 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         let zeros = [F::zero(); DIGEST_SIZE];
         macro_rules! recurse {
             ($tag:expr, $digest:expr) => {
-                self.memoize_dag($tag, $digest, hashes3_inv, hashes4_inv, hashes5_inv);
+                self.memoize_dag($tag, $digest, hashes4_inv, hashes5_inv);
             };
         }
-        macro_rules! memoize_tuple2_or_compact {
-            ($fst_tag:expr, $fst_digest:expr, $snd_tag:expr, $snd_digest:expr, $tuple2:expr) => {
+        macro_rules! memoize_tuple11 {
+            ($fst_tag:expr, $fst_digest:expr, $snd_tag:expr, $snd_digest:expr) => {
                 let fst = ZPtr {
                     tag: $fst_tag,
                     digest: into_sized($fst_digest),
@@ -673,24 +651,10 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                     tag: $snd_tag,
                     digest: into_sized($snd_digest),
                 };
-                if $tuple2 {
-                    self.dag.insert(zptr, ZPtrType::Tuple2(fst, snd));
-                } else {
-                    self.dag.insert(zptr, ZPtrType::Compact10(fst, snd));
-                }
+                self.dag.insert(zptr, ZPtrType::Tuple11(fst, snd));
             };
         }
-        macro_rules! memoize_tuple2 {
-            ($fst_tag:expr, $fst_digest:expr, $snd_tag:expr, $snd_digest:expr) => {
-                memoize_tuple2_or_compact!($fst_tag, $fst_digest, $snd_tag, $snd_digest, true);
-            };
-        }
-        macro_rules! memoize_compact10 {
-            ($fst_tag:expr, $fst_digest:expr, $snd_tag:expr, $snd_digest:expr) => {
-                memoize_tuple2_or_compact!($fst_tag, $fst_digest, $snd_tag, $snd_digest, false);
-            };
-        }
-        macro_rules! memoize_compact100 {
+        macro_rules! memoize_tuple100 {
             ($fst_tag:expr, $fst_digest:expr, $snd_tag:expr, $snd_digest:expr, $trd_tag:expr, $trd_digest:expr) => {
                 let fst = ZPtr {
                     tag: $fst_tag,
@@ -704,10 +668,10 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                     tag: $trd_tag,
                     digest: into_sized($trd_digest),
                 };
-                self.dag.insert(zptr, ZPtrType::Compact100(fst, snd, trd));
+                self.dag.insert(zptr, ZPtrType::Tuple100(fst, snd, trd));
             };
         }
-        macro_rules! memoize_compact110 {
+        macro_rules! memoize_tuple110 {
             ($fst_tag:expr, $fst_digest:expr, $snd_tag:expr, $snd_digest:expr, $trd_tag:expr, $trd_digest:expr) => {
                 let fst = ZPtr {
                     tag: $fst_tag,
@@ -721,7 +685,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                     tag: $trd_tag,
                     digest: into_sized($trd_digest),
                 };
-                self.dag.insert(zptr, ZPtrType::Compact110(fst, snd, trd));
+                self.dag.insert(zptr, ZPtrType::Tuple110(fst, snd, trd));
             };
         }
         match tag {
@@ -734,7 +698,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 let (head, tail) = preimg.split_at(ZPTR_SIZE);
                 let head_digest = &head[DIGEST_SIZE..];
                 let tail_digest = &tail[DIGEST_SIZE..];
-                memoize_tuple2!(Tag::Char, head_digest, Tag::Str, tail_digest);
+                memoize_tuple11!(Tag::Char, head_digest, Tag::Str, tail_digest);
                 digest = tail_digest;
                 zptr = ZPtr::from_flat_data(tail);
             },
@@ -746,7 +710,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 let car_tag = Tag::from_field(&car_tag[0]);
                 let cdr_tag = Tag::from_field(&cdr_tag[0]);
                 recurse!(car_tag, car_digest);
-                memoize_tuple2!(car_tag, car_digest, cdr_tag, cdr_digest);
+                memoize_tuple11!(car_tag, car_digest, cdr_tag, cdr_digest);
                 if cdr_tag != Tag::Cons {
                     recurse!(cdr_tag, cdr_digest);
                     break;
@@ -755,16 +719,6 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 zptr = ZPtr::from_flat_data(cdr);
             },
             Tag::Thunk => {
-                let preimg = hashes3_inv.get(digest).expect("Hash3 preimg not found");
-                let (fst, snd_digest) = preimg.split_at(ZPTR_SIZE);
-                let (fst_tag, fst_digest) = fst.split_at(DIGEST_SIZE);
-                let fst_tag = Tag::from_field(&fst_tag[0]);
-                let snd_tag = Tag::Env;
-                recurse!(fst_tag, fst_digest);
-                recurse!(snd_tag, snd_digest);
-                memoize_compact10!(fst_tag, fst_digest, snd_tag, snd_digest);
-            }
-            Tag::MutualThunk => {
                 let preimg = hashes4_inv.get(digest).expect("Hash4 preimg not found");
                 let (fst, rest) = preimg.split_at(ZPTR_SIZE);
                 let (fst_tag, fst_digest) = fst.split_at(DIGEST_SIZE);
@@ -774,7 +728,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 recurse!(fst_tag, fst_digest);
                 recurse!(env_tag, snd_digest);
                 recurse!(env_tag, trd_digest);
-                memoize_compact100!(fst_tag, fst_digest, env_tag, snd_digest, env_tag, trd_digest);
+                memoize_tuple100!(fst_tag, fst_digest, env_tag, snd_digest, env_tag, trd_digest);
             }
             Tag::Env => loop {
                 if digest == zeros {
@@ -791,7 +745,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 let env_tag = Tag::Env;
                 recurse!(var_tag, var_digest);
                 recurse!(val_tag, val_digest);
-                memoize_compact110!(var_tag, var_digest, val_tag, val_digest, env_tag, env_digest);
+                memoize_tuple110!(var_tag, var_digest, val_tag, val_digest, env_tag, env_digest);
                 digest = env_digest;
                 zptr = ZPtr {
                     tag: env_tag,
@@ -810,7 +764,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 recurse!(args_tag, args_digest);
                 recurse!(body_tag, body_digest);
                 recurse!(env_tag, env_digest);
-                memoize_compact110!(
+                memoize_tuple110!(
                     args_tag,
                     args_digest,
                     body_tag,
@@ -830,33 +784,25 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
     }
 
     #[inline]
-    pub fn fetch_tuple2(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>) {
-        let Some(ZPtrType::Tuple2(a, b)) = self.dag.get(zptr) else {
-            panic!("Tuple2 data not found on DAG: {:?}", zptr)
+    pub fn fetch_tuple11(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>) {
+        let Some(ZPtrType::Tuple11(a, b)) = self.dag.get(zptr) else {
+            panic!("Tuple11 data not found on DAG: {:?}", zptr)
         };
         (a, b)
     }
 
     #[inline]
-    pub fn fetch_compact10(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>) {
-        let Some(ZPtrType::Compact10(a, b)) = self.dag.get(zptr) else {
-            panic!("Compact10 data not found on DAG: {:?}", zptr)
-        };
-        (a, b)
-    }
-
-    #[inline]
-    pub fn fetch_compact100(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>, &ZPtr<F>) {
-        let Some(ZPtrType::Compact100(a, b, c)) = self.dag.get(zptr) else {
-            panic!("Compact100 data not found on DAG: {:?}", zptr)
+    pub fn fetch_tuple100(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>, &ZPtr<F>) {
+        let Some(ZPtrType::Tuple100(a, b, c)) = self.dag.get(zptr) else {
+            panic!("Tuple100 data not found on DAG: {:?}", zptr)
         };
         (a, b, c)
     }
 
     #[inline]
-    pub fn fetch_compact110(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>, &ZPtr<F>) {
-        let Some(ZPtrType::Compact110(a, b, c)) = self.dag.get(zptr) else {
-            panic!("Compact110 data not found on DAG: {:?}", zptr)
+    pub fn fetch_tuple110(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>, &ZPtr<F>) {
+        let Some(ZPtrType::Tuple110(a, b, c)) = self.dag.get(zptr) else {
+            panic!("Tuple110 data not found on DAG: {:?}", zptr)
         };
         (a, b, c)
     }
@@ -869,7 +815,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         let mut string = String::new();
         let zeros = [F::zero(); DIGEST_SIZE];
         while zptr.digest != zeros {
-            let (car, cdr) = self.fetch_tuple2(zptr);
+            let (car, cdr) = self.fetch_tuple11(zptr);
             string.push(get_char(&car.digest));
             zptr = cdr;
         }
@@ -883,7 +829,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         let mut path = vec![];
         let zeros = [F::zero(); DIGEST_SIZE];
         while zptr.digest != zeros {
-            let (car, cdr) = self.fetch_tuple2(zptr);
+            let (car, cdr) = self.fetch_tuple11(zptr);
             path.push(self.fetch_string(car));
             zptr = cdr;
         }
@@ -904,7 +850,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         assert!(zptr.tag == Tag::Cons || zptr == &self.nil);
         let mut elts = vec![];
         while zptr.tag == Tag::Cons {
-            let (car, cdr) = self.fetch_tuple2(zptr);
+            let (car, cdr) = self.fetch_tuple11(zptr);
             elts.push(car);
             zptr = cdr;
         }
@@ -923,7 +869,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         let mut env = vec![];
         let zeros = [F::zero(); DIGEST_SIZE];
         while zptr.digest != zeros {
-            let (var, val, tail) = self.fetch_compact110(zptr);
+            let (var, val, tail) = self.fetch_tuple110(zptr);
             env.push((var, val));
             zptr = tail;
         }
@@ -990,7 +936,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 }
             }
             Tag::Fun => {
-                let (args, body, _) = self.fetch_compact110(zptr);
+                let (args, body, _) = self.fetch_tuple110(zptr);
                 if args == &self.nil {
                     format!("<Fun () {}>", self.fmt_with_state(state, body))
                 } else {
@@ -1016,12 +962,8 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 format!("<Env ({})>", pairs_str)
             }
             Tag::Thunk => {
-                let (body, _) = self.fetch_compact10(zptr);
+                let (body, ..) = self.fetch_tuple100(zptr);
                 format!("<Thunk {}>", self.fmt_with_state(state, body))
-            }
-            Tag::MutualThunk => {
-                let (body, ..) = self.fetch_compact100(zptr);
-                format!("<MutualThunk {}>", self.fmt_with_state(state, body))
             }
             Tag::Err => format!("<Err {:?}>", EvalErr::from_field(&zptr.digest[0])),
         }
@@ -1103,7 +1045,6 @@ mod test {
         zstore.memoize_dag(
             output_tag,
             output_digest,
-            record.get_inv_queries("hash3", &toplevel),
             record.get_inv_queries("hash4", &toplevel),
             record.get_inv_queries("hash5", &toplevel),
         );
@@ -1118,8 +1059,8 @@ mod test {
         let list_x = zstore.intern_list([x]);
         let expected_env = zstore.intern_empty_env();
 
-        let (car, cdr) = zstore.fetch_tuple2(&zptr);
-        let (args, body, env) = zstore.fetch_compact110(cdr);
+        let (car, cdr) = zstore.fetch_tuple11(&zptr);
+        let (args, body, env) = zstore.fetch_tuple110(cdr);
 
         assert_eq!(car, &hi);
         assert_eq!(args, &list_x);

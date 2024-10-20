@@ -221,7 +221,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
             if args.tag != Tag::Cons {
                 bail!("Missing argument {}", i + 1);
             }
-            let (arg, rst) = self.zstore.fetch_tuple2(args);
+            let (arg, rst) = self.zstore.fetch_tuple11(args);
             res.push(arg);
             args = rst;
         }
@@ -233,7 +233,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
 
     pub(crate) fn car_cdr(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>) {
         if zptr.tag == Tag::Cons {
-            self.zstore.fetch_tuple2(zptr)
+            self.zstore.fetch_tuple11(zptr)
         } else if zptr == self.zstore.nil() {
             (self.zstore.nil(), self.zstore.nil())
         } else {
@@ -280,7 +280,6 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         self.zstore.memoize_dag(
             tag,
             digest,
-            self.queries.get_inv_queries("hash3", &self.toplevel),
             self.queries.get_inv_queries("hash4", &self.toplevel),
             self.queries.get_inv_queries("hash5", &self.toplevel),
         )
@@ -500,11 +499,11 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         if expr.tag != Tag::Cons {
             bail!("Meta command calls must be written as cons lists");
         }
-        let (cmd_sym, &args) = self.zstore.fetch_tuple2(expr);
+        let (cmd_sym, &args) = self.zstore.fetch_tuple11(expr);
         if cmd_sym.tag != Tag::Sym {
             bail!("The meta command must be a symbol");
         }
-        let (cmd_sym_head, _) = self.zstore.fetch_tuple2(cmd_sym);
+        let (cmd_sym_head, _) = self.zstore.fetch_tuple11(cmd_sym);
         let cmd = self.zstore.fetch_string(cmd_sym_head);
         if let Some(meta_cmd) = self.meta_cmds.get(cmd.as_str()) {
             (meta_cmd.run)(self, &args, file_dir)

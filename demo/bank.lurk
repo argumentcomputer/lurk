@@ -192,7 +192,7 @@ ledger2
 
 ;; Now we can open the committed ledger transfer function on a transaction.
 
-!(call #0x5bb923b0d7c38df129ae4e4684691bfcf3516b129dfa18d7ba5c72abaeac2a '(1 0 2))
+!(call #0x6213c7c9bc4c135227d2a2ff2db25c50985c10b9862f81f321e16acd4ad561 '(1 0 2))
 
 ;; And the record reflects that Church sent one unit to Satoshi.
 
@@ -202,7 +202,7 @@ ledger2
 
 ;; We can verify the proof..
 
-!(verify "89bab6ac62462298d0c90fa2ac7893db838402b95fcc26ce08bec2f806edc2")
+!(verify "2e32da01f8c7799915652df4cf50d8b287ae8b42783305b8d61b8b505a2031")
 
 ;; Unfortunately, this functional commitment doesn't let us maintain state.
 ;; Let's turn our single-transaction function into a chained function.
@@ -219,24 +219,24 @@ ledger2
 
 ;; Now we can transfer one unit from Church to Satoshi like before.
 
-!(chain #0x4b799ce1a9ddfaec4cac1db4f18bdeab3a43bc85ce67dc92a3f8634c043b70 '(1 0 2))
+!(chain #0x69b8f3e2e4a5583dd2f9304f8b89aca6bd68962cdf0402ecd688f16d7ae320 '(1 0 2))
 
 !(prove)
 
-!(verify "e0bd82989a93b89c5b04cfd25f87d07c029550f0719b97a67163086b538a0")
+!(verify "5c88eb57ef6bc2cf03e0992b76dbc259af3a443a095a581879ba3ecee77ca3")
 
 ;; Then we can transfer 5 more, proceeding from the new head of the chain.
 
-!(chain #0x7122f393651f0e55f01c6805da851dc922c3937ef6e203cbf62e477e055872 '(5 0 2))
+!(chain #0x900311240aa810b146665f424ae325fa0226c8dcb51a1c2a43abb479fa67e6 '(5 0 2))
 
 !(prove)
 
-!(verify "68f57a430b626cf271ec0cfeb65ad47d8e6d8b21b5ba321ccd1573f44f988b")
+!(verify "3b9aa34fca22167d71071da509ab07ad44da80763805bb643d86a1a4f9194f")
 
 ;; And once more, this time we'll transfer 20 from Turing to Church.
 
-!(chain #0x5a3723ae5a02d84826f1ad237337b231b55b598ff9167de3529d6280ca952a '(20 1 0))
+!(chain #0x4667c5ca173b8e211f2b04dbf8120d95afa7fed26c91ad772a33cccd9f560b '(20 1 0))
 
 !(prove)
 
-!(verify "53b291171280518b20811c64f207ede4343ca2eeec3886c28a6c5e3c838671")
+!(verify "536aaeba3a0764051dd19c1ffba6a072fa6dac4c51eed5af473f5669c2113e")

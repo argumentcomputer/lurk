@@ -299,8 +299,8 @@ test_raw!(
     |z| {
         let eq = z.intern_symbol_no_lang(&builtin_sym("eq"));
         let env = z.intern_empty_env();
-        let arg1 = z.intern_thunk(*z.t(), env);
-        let arg2 = z.intern_thunk(*z.t(), env);
+        let arg1 = z.intern_thunk(*z.t(), env, env);
+        let arg2 = z.intern_thunk(*z.t(), env, env);
         z.intern_list([eq, arg1, arg2])
     },
     |z| *z.t()
@@ -310,8 +310,8 @@ test_raw!(
     |z| {
         let eq = z.intern_symbol_no_lang(&builtin_sym("eq"));
         let env = z.intern_empty_env();
-        let arg1 = z.intern_thunk(*z.nil(), env);
-        let arg2 = z.intern_thunk(*z.t(), env);
+        let arg1 = z.intern_thunk(*z.nil(), env, env);
+        let arg2 = z.intern_thunk(*z.t(), env, env);
         z.intern_list([eq, arg1, arg2])
     },
     |z| *z.nil()
@@ -364,32 +364,32 @@ test!(
     |_| uint(120)
 );
 test!(
-    test_mutrec,
-    "(mutrec ((odd? (lambda (n) (if (= n 0) nil (even? (- n 1)))))
+    test_letrec,
+    "(letrec ((odd? (lambda (n) (if (= n 0) nil (even? (- n 1)))))
          (x (even? 3))
          (even? (lambda (n) (if (= n 0) t (odd? (- n 1))))))
        (cons x (odd? 5)))",
     |z| z.intern_cons(*z.nil(), *z.t())
 );
 test!(
-    test_mutrec2,
-    "(mutrec ((odd? (lambda (n) (if (= n 0) nil (even? (- n 1)))))
+    test_letrec2,
+    "(letrec ((odd? (lambda (n) (if (= n 0) nil (even? (- n 1)))))
               (even? (lambda (n) (if (= n 0) t (odd? (- n 1))))))
         (let ((even? (lambda (n) 1000)))
           (odd? 5)))",
     |z| *z.t()
 );
 test!(
-    test_mutrec3,
+    test_letrec3,
     "(let ((true t))
-       (mutrec ((odd? (lambda (n) (if (= n 0) nil (even? (- n 1)))))
+       (letrec ((odd? (lambda (n) (if (= n 0) nil (even? (- n 1)))))
                 (even? (lambda (n) (if (= n 0) true (odd? (- n 1))))))
          (let ((true nil)) (odd? 5))))",
     |z| *z.t()
 );
 test!(
-    test_mutrec_error,
-    "(mutrec ((odd? (lambda (n) (if (= n 0) nil (even? (- n 1)))))
+    test_letrec_error,
+    "(letrec ((odd? (lambda (n) (if (= n 0) nil (even? (- n 1)))))
               (x a)
               (even? (lambda (n) (if (= n 0) true (odd? (- n 1))))))
        (odd? 1))",

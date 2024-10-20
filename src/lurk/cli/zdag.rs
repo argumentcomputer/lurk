@@ -29,11 +29,11 @@ impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
             .expect("Data missing from ZStore's DAG");
         match zptr_type {
             ZPtrType::Atom => (),
-            ZPtrType::Tuple2(a, b) | ZPtrType::Compact10(a, b) => {
+            ZPtrType::Tuple11(a, b) => {
                 self.populate_with(a, zstore, cache);
                 self.populate_with(b, zstore, cache);
             }
-            ZPtrType::Compact100(a, b, c) | ZPtrType::Compact110(a, b, c) => {
+            ZPtrType::Tuple100(a, b, c) | ZPtrType::Tuple110(a, b, c) => {
                 self.populate_with(a, zstore, cache);
                 self.populate_with(b, zstore, cache);
                 self.populate_with(c, zstore, cache);
@@ -65,23 +65,18 @@ impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
         for (zptr, zptr_type) in self.0 {
             match &zptr_type {
                 ZPtrType::Atom => (),
-                ZPtrType::Tuple2(a, b) => {
-                    let preimg = ZPtr::flatten2(a, b);
+                ZPtrType::Tuple11(a, b) => {
+                    let preimg = ZPtr::flatten_as_tuple11(a, b);
                     zstore.hashes4.insert(preimg, zptr.digest);
                     zstore.hashes4_diff.insert(preimg, zptr.digest);
                 }
-                ZPtrType::Compact10(a, b) => {
-                    let preimg = ZPtr::flatten_compact10(a, b);
-                    zstore.hashes3.insert(preimg, zptr.digest);
-                    zstore.hashes3_diff.insert(preimg, zptr.digest);
-                }
-                ZPtrType::Compact100(a, b, c) => {
-                    let preimg = ZPtr::flatten_compact100(a, b, c);
+                ZPtrType::Tuple100(a, b, c) => {
+                    let preimg = ZPtr::flatten_as_tuple100(a, b, c);
                     zstore.hashes4.insert(preimg, zptr.digest);
                     zstore.hashes4_diff.insert(preimg, zptr.digest);
                 }
-                ZPtrType::Compact110(a, b, c) => {
-                    let preimg = ZPtr::flatten_compact110(a, b, c);
+                ZPtrType::Tuple110(a, b, c) => {
+                    let preimg = ZPtr::flatten_as_tuple110(a, b, c);
                     zstore.hashes5.insert(preimg, zptr.digest);
                     zstore.hashes5_diff.insert(preimg, zptr.digest);
                 }
@@ -95,10 +90,8 @@ impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
         match self.0.get(zptr) {
             None => true,
             Some(ZPtrType::Atom) => false,
-            Some(ZPtrType::Tuple2(a, b) | ZPtrType::Compact10(a, b)) => {
-                self.has_opaque_data(a) || self.has_opaque_data(b)
-            }
-            Some(ZPtrType::Compact100(a, b, c) | ZPtrType::Compact110(a, b, c)) => {
+            Some(ZPtrType::Tuple11(a, b)) => self.has_opaque_data(a) || self.has_opaque_data(b),
+            Some(ZPtrType::Tuple100(a, b, c) | ZPtrType::Tuple110(a, b, c)) => {
                 self.has_opaque_data(a) || self.has_opaque_data(b) || self.has_opaque_data(c)
             }
         }
