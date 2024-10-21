@@ -106,7 +106,7 @@ impl<F> SymbolsDigests<F> {
 fn native_lurk_funcs<F: PrimeField32>(
     digests: &SymbolsDigests<F>,
     coroutines: &FxIndexMap<Symbol, Coroutine<F>>,
-) -> [FuncE<F>; 35] {
+) -> [FuncE<F>; 36] {
     [
         lurk_main(),
         preallocate_symbols(digests),
@@ -128,6 +128,7 @@ fn native_lurk_funcs<F: PrimeField32>(
         car_cdr(digests),
         eval_let(),
         eval_letrec(),
+        eval_letrec_binds(),
         apply(digests),
         env_lookup(),
         ingress(digests),
@@ -1821,7 +1822,7 @@ pub fn eval_unop<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     let err = EvalErr::CantCastToComm;
                     return(err_tag, err)
                 }
-             }
+            }
         }
     )
 }
@@ -2000,12 +2001,27 @@ pub fn eval_let<F: AbstractField>() -> FuncE<F> {
 pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_letrec(strictness, binds_tag, binds, body_tag, body, env): [2] {
+            let (ext_env_tag, ext_env) = call(eval_letrec_binds, strictness, binds_tag, binds, env);
+            match ext_env_tag {
+                Tag::Err => {
+                    return (ext_env_tag, ext_env)
+                }
+            };
+            let (val_tag, val) = call(eval_begin, body_tag, body, ext_env);
+            return (val_tag, val)
+        }
+    )
+}
+
+pub fn eval_letrec_binds<F: AbstractField>() -> FuncE<F> {
+    func!(
+        partial fn eval_letrec_binds(strictness, binds_tag, binds, env): [2] {
             let err_tag = Tag::Err;
+            let env_tag = Tag::Env;
             let invalid_form = EvalErr::InvalidForm;
             match binds_tag {
                 InternalTag::Nil => {
-                    let (res_tag, res) = call(eval_begin, body_tag, body, env);
-                    return (res_tag, res)
+                    return (env_tag, env)
                 }
                 Tag::Cons => {
                     let cons_tag = Tag::Cons;
@@ -2034,15 +2050,10 @@ pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
                             let thunk_tag = Tag::Thunk;
                             let thunk = store(rest_binds_tag, rest_binds, thunk_body_tag, thunk_body, env);
                             let ext_env = store(param_tag, param, thunk_tag, thunk, env);
-                            let rest_binds_not_nil = sub(nil_tag, rest_binds_tag);
-                            if !rest_binds_not_nil {
-                                let (res_tag, res) = call(eval_begin, body_tag, body, ext_env);
-                                return (res_tag, res)
-                            }
                             if !strictness {
                                 // strictness = lazy
-                                let (res_tag, res) = call(eval_letrec, strictness, rest_binds_tag, rest_binds, body_tag, body, ext_env);
-                                return (res_tag, res)
+                                let (res_env_tag, res_env) = call(eval_letrec_binds, strictness, rest_binds_tag, rest_binds, ext_env);
+                                return (res_env_tag, res_env)
                             }
                             // this will preemptively evaluate the thunk, so that we do not skip evaluation in case
                             // the variable is not used inside the letrec body, and furthermore it follows a strict
@@ -2055,14 +2066,15 @@ pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
                                 }
                             };
                             // stricness = strict
-                            let (res_tag, res) = call(eval_letrec, strictness, rest_binds_tag, rest_binds, body_tag, body, ext_env);
-                            return (res_tag, res)
+                            let (res_env_tag, res_env) = call(eval_letrec_binds, strictness, rest_binds_tag, rest_binds, ext_env);
+                            return (res_env_tag, res_env)
                         }
                     };
                     let err = EvalErr::IllegalBindingVar;
                     return (err_tag, err)
                 }
             };
+            let invalid_form = EvalErr::ParamInvalidRest;
             return (err_tag, invalid_form)
         }
     )
@@ -2289,6 +2301,7 @@ mod test {
         let eval_list = FuncChip::from_name("eval_list", toplevel);
         let eval_let = FuncChip::from_name("eval_let", toplevel);
         let eval_letrec = FuncChip::from_name("eval_letrec", toplevel);
+        let eval_letrec_binds = FuncChip::from_name("eval_letrec_binds", toplevel);
         let coerce_if_sym = FuncChip::from_name("coerce_if_sym", toplevel);
         let open_comm = FuncChip::from_name("open_comm", toplevel);
         let equal = FuncChip::from_name("equal", toplevel);
@@ -2327,7 +2340,8 @@ mod test {
         expect_eq(eval_begin.width(), expect!["68"]);
         expect_eq(eval_list.width(), expect!["72"]);
         expect_eq(eval_let.width(), expect!["94"]);
-        expect_eq(eval_letrec.width(), expect!["101"]);
+        expect_eq(eval_letrec.width(), expect!["60"]);
+        expect_eq(eval_letrec_binds.width(), expect!["97"]);
         expect_eq(coerce_if_sym.width(), expect!["9"]);
         expect_eq(open_comm.width(), expect!["50"]);
         expect_eq(equal.width(), expect!["86"]);
