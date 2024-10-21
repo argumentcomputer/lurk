@@ -6,7 +6,7 @@
 use p3_baby_bear::BabyBear;
 use p3_field::AbstractField;
 use sphinx_core::{
-    stark::{LocalProver, StarkGenericConfig, StarkMachine},
+    stark::{DefaultProver, MachineProver, StarkGenericConfig, StarkMachine},
     utils::{BabyBearPoseidon2, SphinxCoreOpts},
 };
 use std::time::Instant;
@@ -50,7 +50,7 @@ fn setup<C: Chipset<BabyBear>>(
     toplevel: &Toplevel<BabyBear, C, NoChip>,
 ) -> (
     List<BabyBear>,
-    FuncChip<'_, BabyBear, C, NoChip>,
+    FuncChip<BabyBear, C, NoChip>,
     QueryRecord<BabyBear>,
 ) {
     let code = build_lurk_expr(arg);
@@ -91,7 +91,10 @@ fn fib_e2e() {
     let mut challenger_p = machine.config().challenger();
     let opts = SphinxCoreOpts::default();
     let shard = Shard::new(&record);
-    machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
+    let prover = DefaultProver::new(machine);
+    prover
+        .prove(&pk, vec![shard], &mut challenger_p, opts)
+        .unwrap();
 
     let elapsed_time = start_time.elapsed().as_secs_f32();
     println!("Total time for e2e-{arg} = {:.2} s", elapsed_time);

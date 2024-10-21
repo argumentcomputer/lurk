@@ -9,7 +9,6 @@ use p3_matrix::dense::{RowMajorMatrix, RowMajorMatrixView};
 use p3_matrix::stack::VerticalPair;
 use p3_matrix::Matrix;
 use sphinx_core::air::MachineAir;
-use sphinx_core::stark::MachineRecord;
 use std::collections::BTreeMap;
 
 type LocalRowView<'a, F> = VerticalPair<RowMajorMatrixView<'a, F>, RowMajorMatrixView<'a, F>>;
@@ -122,14 +121,13 @@ pub fn debug_chip_constraints_and_queries_with_sharding<
     C2: Chipset<F>,
 >(
     record: &QueryRecord<F>,
-    chips: &[LairChip<'_, F, C1, C2>],
+    chips: &[LairChip<F, C1, C2>],
     config: Option<ShardingConfig>,
 ) {
-    let full_shard = Shard::new(record);
     let shards = if let Some(config) = config {
-        full_shard.shard(&config)
+        config.shard(record)
     } else {
-        vec![full_shard]
+        vec![Shard::new(&record.clone())]
     };
 
     let lookup_queries: Vec<_> = shards
