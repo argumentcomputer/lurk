@@ -461,7 +461,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         if call_expr == repl.zstore.nil() {
             bail!("Missing callable object");
         }
-        let (&callable, _) = repl.zstore.fetch_tuple2(call_expr);
+        let (&callable, _) = repl.zstore.fetch_tuple11(call_expr);
         match callable.tag {
             Tag::BigNum | Tag::Comm => {
                 let inv_hashes3 = repl.queries.get_inv_queries("hash3", &repl.toplevel);
@@ -494,7 +494,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         if cons.tag != Tag::Cons {
             bail!("Chain result must be a pair");
         }
-        let (_, next_callable) = repl.zstore.fetch_tuple2(cons);
+        let (_, next_callable) = repl.zstore.fetch_tuple11(cons);
         if matches!(next_callable.tag, Tag::Comm | Tag::BigNum) {
             let inv_hashes3 = repl.queries.get_inv_queries("hash3", &repl.toplevel);
             let preimg = inv_hashes3
@@ -521,7 +521,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                        (let ((counter (+ counter x)))
                          (cons counter (commit (add counter)))))))
                (add 0)))",
-            "!(chain #c0x8b0d8bd2feef87f7347a8d2dbe7cc74ba045ec0f14c1417266e3f46d0a0ac5 1)",
+            "!(chain #c0x545e921e6ef944cd72811575b1064f8737d520cd04dd75a47ad6c5bf509ea7 1)",
         ],
         run: |repl, args, _path| {
             let cons = Self::call(repl, args, None)?;
@@ -555,7 +555,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             bail!("Current state must reduce to a pair");
         }
         repl.memoize_dag(current_state.tag, &current_state.digest);
-        let (_, &callable) = repl.zstore.fetch_tuple2(&current_state);
+        let (_, &callable) = repl.zstore.fetch_tuple11(&current_state);
         let call_expr = repl.zstore.intern_cons(callable, call_args);
         Self::call(repl, &call_expr, env)
     }
@@ -950,7 +950,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             bail!("Protocol body must return a pair");
         }
         repl.memoize_dag(Tag::Cons, &io_data.digest);
-        let (claim, post_verify_predicate) = repl.zstore.fetch_tuple2(&io_data);
+        let (claim, post_verify_predicate) = repl.zstore.fetch_tuple11(&io_data);
         if claim == repl.zstore.nil() {
             bail!("Pre-verification predicate rejected the input");
         }
@@ -1035,11 +1035,11 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
 
             Self::post_verify_check(repl, post_verify_predicate)?;
 
-            let (expr_env, &expected_result) = repl.zstore.fetch_tuple2(&claim);
+            let (expr_env, &expected_result) = repl.zstore.fetch_tuple11(&claim);
             if expr_env.tag != Tag::Cons {
                 bail!("Malformed protocol claim");
             }
-            let (&expr, &env) = repl.zstore.fetch_tuple2(expr_env);
+            let (&expr, &env) = repl.zstore.fetch_tuple11(expr_env);
             let result = repl.reduce_with_env(&expr, &env)?;
             if result != expected_result {
                 bail!("Mismatch between result and expected result");
@@ -1105,11 +1105,11 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let (&claim, &post_verify_predicate) =
                 Self::get_claim_and_post_verify_predicade(repl, vars_vec, args_vec_reduced, &body)?;
 
-            let (expr_env, result) = repl.zstore.fetch_tuple2(&claim);
+            let (expr_env, result) = repl.zstore.fetch_tuple11(&claim);
             if expr_env.tag != Tag::Cons {
                 bail!("Malformed protocol claim");
             }
-            let (expr, env) = repl.zstore.fetch_tuple2(expr_env);
+            let (expr, env) = repl.zstore.fetch_tuple11(expr_env);
             let has_same_verifier_version = crypto_proof.has_same_verifier_version();
             let machine_proof = crypto_proof.into_machine_proof(expr, env, result);
             let machine = new_machine(&repl.toplevel);
@@ -1170,7 +1170,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
 
             repl.memoize_dag(state.tag, &state.digest);
 
-            let (&chain_result, &next_callable) = repl.zstore.fetch_tuple2(&state);
+            let (&chain_result, &next_callable) = repl.zstore.fetch_tuple11(&state);
             let chain_result = LurkData::new(chain_result, &repl.zstore);
             let callable_data = if next_callable.tag == Tag::Comm {
                 let comm_data = Self::build_comm_data(repl, next_callable.digest.as_slice());
@@ -1294,7 +1294,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             if state.tag != Tag::Cons {
                 bail!("New state is not a pair");
             }
-            let (&state_chain_result, &state_callable) = repl.zstore.fetch_tuple2(&state);
+            let (&state_chain_result, &state_callable) = repl.zstore.fetch_tuple11(&state);
 
             let proof_key = repl.prove_last_reduction()?;
             let cached_proof = Self::load_cached_proof(&proof_key)?;
@@ -1363,7 +1363,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 bail!("Could not read proofs from server");
             };
             repl.memoize_dag(genesis_state.tag, &genesis_state.digest);
-            let (_, &(mut callable)) = repl.zstore.fetch_tuple2(&genesis_state);
+            let (_, &(mut callable)) = repl.zstore.fetch_tuple11(&genesis_state);
             let mut state = genesis_state;
             let empty_env = repl.zstore.intern_empty_env();
             for (i, proof) in proofs.into_iter().enumerate() {
