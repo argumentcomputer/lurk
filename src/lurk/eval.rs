@@ -106,7 +106,7 @@ impl<F> SymbolsDigests<F> {
 fn native_lurk_funcs<F: PrimeField32>(
     digests: &SymbolsDigests<F>,
     coroutines: &FxIndexMap<Symbol, Coroutine<F>>,
-) -> [FuncE<F>; 38] {
+) -> [FuncE<F>; 37] {
     [
         lurk_main(),
         preallocate_symbols(digests),
@@ -128,9 +128,8 @@ fn native_lurk_funcs<F: PrimeField32>(
         car_cdr(digests),
         eval_let(),
         eval_letrec(),
-        collect_bindings_as_an_env(),
         extend_env_with_mutuals(),
-        eval_env_vals(),
+        eval_letrec_bindings(),
         apply(digests),
         env_lookup(),
         ingress(digests),
@@ -590,16 +589,7 @@ pub fn ingress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr);
                     return (tag, ptr)
                 }
-                Tag::Thunk => {
-                    let (fst_tag_full: [8], fst_digest: [8], snd_digest: [8], trd_digest: [8]) = preimg(hash4, digest);
-                    let env_tag = Tag::Env;
-                    let (fst_tag, fst_ptr) = call(ingress, fst_tag_full, fst_digest);
-                    let (_snd_tag, snd_ptr) = call(ingress, env_tag, zeros, snd_digest);
-                    let (_trd_tag, trd_ptr) = call(ingress, env_tag, zeros, trd_digest);
-                    let ptr = store(fst_tag, fst_ptr, snd_ptr, trd_ptr);
-                    return (tag, ptr)
-                }
-                Tag::Fun => {
+                Tag::Fun, Tag::Thunk => {
                     let (args_tag_full: [8], args_digest: [8],
                          body_tag_full: [8], body_digest: [8],
                                              env_digest:  [8]) = preimg(hash5, digest);
@@ -683,19 +673,7 @@ pub fn egress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     let digest: [8] = call(hash4, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
                     return (tag, digest)
                 }
-                Tag::Thunk => {
-                    let (fst_tag, fst_ptr, snd_ptr, trd_ptr) = load(val);
-                    let env_tag = Tag::Env;
-                    let (fst_tag, fst_digest: [8]) = call(egress, fst_tag, fst_ptr);
-                    let (_snd_tag, snd_digest: [8]) = call(egress, env_tag, snd_ptr);
-                    let (_trd_tag, trd_digest: [8]) = call(egress, env_tag, trd_ptr);
-
-                    let padding = [0; 7];
-                    let fst_tag_full: [8] = (fst_tag, padding);
-                    let digest: [8] = call(hash4, fst_tag_full, fst_digest, snd_digest, trd_digest);
-                    return (tag, digest)
-                }
-                Tag::Fun => {
+                Tag::Fun, Tag::Thunk => {
                     let (args_tag, args_ptr, body_tag, body_ptr, env_ptr) = load(val);
                     let (args_tag, args_digest: [8]) = call(egress, args_tag, args_ptr);
                     let (body_tag, body_digest: [8]) = call(egress, body_tag, body_ptr);
@@ -863,9 +841,10 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                     let (res_tag, res) = call(env_lookup, expr_tag, expr_digest, env);
                     match res_tag {
                         Tag::Thunk => {
-                            let (body_tag, body, mutual_env, body_env) = load(res);
+                            let (body_tag, body, binds_tag, binds, mutual_env) = load(res);
                             // extend `body_env` with the bindings from `mutual_env`, with thunked values
-                            let ext_env = call(extend_env_with_mutuals, mutual_env, mutual_env, body_env, body_env);
+                            // IMPORTANT: at this point this operation cannot return an error
+                            let (_tag, ext_env) = call(extend_env_with_mutuals, binds_tag, binds, binds, mutual_env);
                             let (res_tag, res) = call(eval, body_tag, body, ext_env);
                             return (res_tag, res)
                         }
@@ -1431,18 +1410,7 @@ pub fn equal_inner<F: AbstractField>() -> FuncE<F> {
                     let eq = mul(fst_eq, snd_eq);
                     return eq
                 }
-                Tag::Thunk => {
-                    let env_tag = Tag::Env;
-                    let (a_fst: [2], a_snd, a_trd) = load(a);
-                    let (b_fst: [2], b_snd, b_trd) = load(b);
-                    let fst_eq = call(equal_inner, a_fst, b_fst);
-                    let snd_eq = call(equal_inner, env_tag, a_snd, env_tag, b_snd);
-                    let trd_eq = call(equal_inner, env_tag, a_trd, env_tag, b_trd);
-                    let eq = mul(fst_eq, snd_eq);
-                    let eq = mul(eq, trd_eq);
-                    return eq
-                }
-                Tag::Fun => {
+                Tag::Fun, Tag::Thunk => {
                     let trd_tag = Tag::Env;
                     let (a_fst: [2], a_snd: [2], a_trd) = load(a);
                     let (b_fst: [2], b_snd: [2], b_trd) = load(b);
@@ -2027,94 +1995,76 @@ pub fn eval_let<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-/// Tries to collect the bindings from a `letrec` (or `let`) expression. The bindings
-/// are turned into an environment for succinctness.
-/// In case of success, return `(1, collected_env)`. If an error `err` is found,
-/// return `(0, err)` instead.
-pub fn collect_bindings_as_an_env<F: AbstractField>() -> FuncE<F> {
+/// Extends the original environment of a `letrec` with thunk values from its list of mutual bindings
+pub fn extend_env_with_mutuals<F: AbstractField>() -> FuncE<F> {
     func!(
-        fn collect_bindings_as_an_env(binds_tag, binds): [2] {
-            let zero = 0;
+        fn extend_env_with_mutuals(binds_tag, binds, mutual_binds, mutual_env): [2] {
+            let err_tag = Tag::Err;
+            let env_tag = Tag::Env;
             let invalid_form_err = EvalErr::InvalidForm;
             match binds_tag {
                 InternalTag::Nil => {
-                    let one = 1;
-                    return (one, zero)
+                    return (env_tag, mutual_env)
                 }
                 Tag::Cons => {
                     let cons_tag = Tag::Cons;
                     let (binding_tag, binding, binds_tag, binds) = load(binds);
-                    let (success, tail_env) = call(collect_bindings_as_an_env, binds_tag, binds);
-                    if !success {
-                        return (zero, invalid_form_err)
-                    }
                     let binding_not_cons = sub(binding_tag, cons_tag);
                     if binding_not_cons {
-                        return (zero, invalid_form_err)
+                        return (err_tag, invalid_form_err)
                     }
                     let (var_tag, var, rest_tag, rest) = load(binding);
+                    let rest_tag_not_cons = sub(rest_tag, cons_tag);
+                    if rest_tag_not_cons {
+                        return (err_tag, invalid_form_err)
+                    }
+                    let (expr_tag, expr, rest_tag, _rest) = load(rest);
+                    let nil_tag = InternalTag::Nil;
+                    let rest_tag_not_nil = sub(rest_tag, nil_tag);
+                    if rest_tag_not_nil {
+                        return (err_tag, invalid_form_err)
+                    }
                     match var_tag {
                         Tag::Sym, Tag::Builtin, Tag::Coroutine => {
-                            let rest_tag_not_cons = sub(rest_tag, cons_tag);
-                            if rest_tag_not_cons {
-                                return (zero, invalid_form_err)
-                            }
-                            let (val_tag, val, rest_tag, _rest) = load(rest);
-                            let nil_tag = InternalTag::Nil;
-                            let rest_tag_not_nil = sub(rest_tag, nil_tag);
-                            if rest_tag_not_nil {
-                                return (zero, invalid_form_err)
-                            }
-                            let one = 1;
-                            let env = store(var_tag, var, val_tag, val, tail_env);
-                            return (one, env)
+                            let (ext_env_tag, ext_env) = call(extend_env_with_mutuals, binds_tag, binds, mutual_binds, mutual_env);
+                            match ext_env_tag {
+                                Tag::Err => {
+                                    return (ext_env_tag, ext_env)
+                                }
+                            };
+                            let thunk_tag = Tag::Thunk;
+                            // IMPORTANT: At this point, `mutual_binds` must be a cons
+                            let thunk = store(expr_tag, expr, cons_tag, mutual_binds, mutual_env);
+                            let res_env = store(var_tag, var, thunk_tag, thunk, ext_env);
+                            return (env_tag, res_env)
                         }
                     };
                     let illegal_binding_var_err = EvalErr::IllegalBindingVar;
-                    return (zero, illegal_binding_var_err)
+                    return (err_tag, illegal_binding_var_err)
                 }
             };
-            return (zero, invalid_form_err)
+            return (err_tag, invalid_form_err)
         }
     )
 }
 
-/// Extends `extended_env` with the bindings from `consumed_env` such that the bound values
-/// are turned into thunks that hold `mutual_env` and `body_env`
-pub fn extend_env_with_mutuals<F: AbstractField>() -> FuncE<F> {
+/// Evaluates the mutual thunks in an environment extended by `letrec` bindings
+pub fn eval_letrec_bindings<F: AbstractField>() -> FuncE<F> {
     func!(
-        fn extend_env_with_mutuals(consumed_env, mutual_env, body_env, extended_env): [1] {
-            if !consumed_env {
-                return extended_env
-            }
-            let (var_tag, var, val_tag, val, consumed_env) = load(consumed_env);
-            let constructed_env = call(extend_env_with_mutuals, consumed_env, mutual_env, body_env, extended_env);
-            let mutual_thunk_tag = Tag::Thunk;
-            let mutual_thunk = store(val_tag, val, mutual_env, body_env);
-            let extended_constructed_env = store(var_tag, var, mutual_thunk_tag, mutual_thunk, constructed_env);
-            return extended_constructed_env
-        }
-    )
-}
-
-/// Evaluates the values bound in `env_to_evaluate` w.r.t. `env`. Returns
-/// `(Tag::Env, env)` if no error is found. If an error `err` is found, ruturns
-/// `(Tag::Err, err)` instead.
-pub fn eval_env_vals<F: AbstractField>() -> FuncE<F> {
-    func!(
-        partial fn eval_env_vals(env_to_evaluate, env): [2] {
-            if !env_to_evaluate {
+        partial fn eval_letrec_bindings(init_env, ext_env): [2] {
+            let not_eq = sub(ext_env, init_env);
+            if !not_eq {
                 let env_tag = Tag::Env;
-                return (env_tag, env)
+                return (env_tag, init_env)
             }
-            let (_var_tag, _var, val_tag, val, env_to_evaluate) = load(env_to_evaluate);
-            let (res_tag, res) = call(eval, val_tag, val, env);
+            let (_var_tag, _var, val_tag, val, ext_env) = load(ext_env);
+            let (res_tag, res) = call(eval, val_tag, val, init_env);
             match res_tag {
                 Tag::Err => {
                     return (res_tag, res)
                 }
             };
-            let (res_tag, res) = call(eval_env_vals, env_to_evaluate, env);
+            let (res_tag, res) = call(eval_letrec_bindings, init_env, ext_env);
             return (res_tag, res)
         }
     )
@@ -2123,16 +2073,15 @@ pub fn eval_env_vals<F: AbstractField>() -> FuncE<F> {
 pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_letrec(binds_tag, binds, body_tag, body, env): [2] {
-            // collect the mutual env
-            let (success, mutual_env_or_err) = call(collect_bindings_as_an_env, binds_tag, binds);
-            if !success {
-                let err_tag = Tag::Err;
-                return (err_tag, mutual_env_or_err)
-            }
             // extend `env` with the bindings from the mutual env, but with thunked values
-            let ext_env = call(extend_env_with_mutuals, mutual_env_or_err, mutual_env_or_err, env, env);
+            let (ext_env_tag, ext_env) = call(extend_env_with_mutuals, binds_tag, binds, binds, env);
+            match ext_env_tag {
+                Tag::Err => {
+                    return (ext_env_tag, ext_env)
+                }
+            };
             // preemptively evaluate each binding value for side-effects, error detection and memoization
-            let (res_tag, res) = call(eval_env_vals, mutual_env_or_err, ext_env);
+            let (res_tag, res) = call(eval_letrec_bindings, env, ext_env);
             match res_tag {
                 Tag::Err => {
                     return (res_tag, res)
@@ -2366,10 +2315,8 @@ mod test {
         let eval_list = FuncChip::from_name("eval_list", toplevel);
         let eval_let = FuncChip::from_name("eval_let", toplevel);
         let eval_letrec = FuncChip::from_name("eval_letrec", toplevel);
-        let collect_bindings_as_an_env =
-            FuncChip::from_name("collect_bindings_as_an_env", toplevel);
         let extend_env_with_mutuals = FuncChip::from_name("extend_env_with_mutuals", toplevel);
-        let eval_env_vals = FuncChip::from_name("eval_env_vals", toplevel);
+        let eval_letrec_bindings = FuncChip::from_name("eval_letrec_bindings", toplevel);
         let coerce_if_sym = FuncChip::from_name("coerce_if_sym", toplevel);
         let open_comm = FuncChip::from_name("open_comm", toplevel);
         let equal = FuncChip::from_name("equal", toplevel);
@@ -2408,19 +2355,18 @@ mod test {
         expect_eq(eval_begin.width(), expect!["68"]);
         expect_eq(eval_list.width(), expect!["72"]);
         expect_eq(eval_let.width(), expect!["94"]);
-        expect_eq(eval_letrec.width(), expect!["70"]);
-        expect_eq(collect_bindings_as_an_env.width(), expect!["48"]);
-        expect_eq(extend_env_with_mutuals.width(), expect!["31"]);
-        expect_eq(eval_env_vals.width(), expect!["66"]);
+        expect_eq(eval_letrec.width(), expect!["66"]);
+        expect_eq(extend_env_with_mutuals.width(), expect!["54"]);
+        expect_eq(eval_letrec_bindings.width(), expect!["66"]);
         expect_eq(coerce_if_sym.width(), expect!["9"]);
         expect_eq(open_comm.width(), expect!["50"]);
         expect_eq(equal.width(), expect!["86"]);
-        expect_eq(equal_inner.width(), expect!["59"]);
+        expect_eq(equal_inner.width(), expect!["58"]);
         expect_eq(car_cdr.width(), expect!["61"]);
         expect_eq(apply.width(), expect!["114"]);
         expect_eq(env_lookup.width(), expect!["52"]);
-        expect_eq(ingress.width(), expect!["105"]);
-        expect_eq(egress.width(), expect!["82"]);
+        expect_eq(ingress.width(), expect!["104"]);
+        expect_eq(egress.width(), expect!["81"]);
         expect_eq(hash3.width(), expect!["493"]);
         expect_eq(hash4.width(), expect!["655"]);
         expect_eq(hash5.width(), expect!["815"]);

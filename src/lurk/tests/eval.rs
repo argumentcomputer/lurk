@@ -299,8 +299,8 @@ test_raw!(
     |z| {
         let eq = z.intern_symbol_no_lang(&builtin_sym("eq"));
         let env = z.intern_empty_env();
-        let arg1 = z.intern_thunk(*z.t(), env, env);
-        let arg2 = z.intern_thunk(*z.t(), env, env);
+        let arg1 = z.intern_thunk(*z.t(), *z.nil(), env);
+        let arg2 = z.intern_thunk(*z.t(), *z.nil(), env);
         z.intern_list([eq, arg1, arg2])
     },
     |z| *z.t()
