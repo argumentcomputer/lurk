@@ -129,7 +129,7 @@ fn native_lurk_funcs<F: PrimeField32>(
         eval_let(),
         eval_letrec(),
         extend_env_with_mutuals(),
-        eval_env_vals(),
+        eval_letrec_bindings(),
         apply(digests),
         env_lookup(),
         ingress(digests),
@@ -1995,8 +1995,7 @@ pub fn eval_let<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-/// Extends `extended_env` with the bindings from `consumed_env` such that the bound values
-/// are turned into thunks that hold `mutual_env` and `body_env`
+/// Extends the original environment of a `letrec` with thunk values from its list of mutual bindings
 pub fn extend_env_with_mutuals<F: AbstractField>() -> FuncE<F> {
     func!(
         fn extend_env_with_mutuals(binds_tag, binds, mutual_binds, mutual_env): [2] {
@@ -2049,25 +2048,23 @@ pub fn extend_env_with_mutuals<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-/// Evaluates the values bound in `env_to_evaluate` w.r.t. `env`. Returns
-/// `(Tag::Env, env)` if no error is found. If an error `err` is found, ruturns
-/// `(Tag::Err, err)` instead.
-pub fn eval_env_vals<F: AbstractField>() -> FuncE<F> {
+/// Evaluates the mutual thunks in an environment extended by `letrec` bindings
+pub fn eval_letrec_bindings<F: AbstractField>() -> FuncE<F> {
     func!(
-        partial fn eval_env_vals(env, ext_env): [2] {
-            let not_eq = sub(ext_env, env);
+        partial fn eval_letrec_bindings(init_env, ext_env): [2] {
+            let not_eq = sub(ext_env, init_env);
             if !not_eq {
                 let env_tag = Tag::Env;
-                return (env_tag, env)
+                return (env_tag, init_env)
             }
             let (_var_tag, _var, val_tag, val, ext_env) = load(ext_env);
-            let (res_tag, res) = call(eval, val_tag, val, env);
+            let (res_tag, res) = call(eval, val_tag, val, init_env);
             match res_tag {
                 Tag::Err => {
                     return (res_tag, res)
                 }
             };
-            let (res_tag, res) = call(eval_env_vals, env, ext_env);
+            let (res_tag, res) = call(eval_letrec_bindings, init_env, ext_env);
             return (res_tag, res)
         }
     )
@@ -2084,7 +2081,7 @@ pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
                 }
             };
             // preemptively evaluate each binding value for side-effects, error detection and memoization
-            let (res_tag, res) = call(eval_env_vals, env, ext_env);
+            let (res_tag, res) = call(eval_letrec_bindings, env, ext_env);
             match res_tag {
                 Tag::Err => {
                     return (res_tag, res)
@@ -2319,7 +2316,7 @@ mod test {
         let eval_let = FuncChip::from_name("eval_let", toplevel);
         let eval_letrec = FuncChip::from_name("eval_letrec", toplevel);
         let extend_env_with_mutuals = FuncChip::from_name("extend_env_with_mutuals", toplevel);
-        let eval_env_vals = FuncChip::from_name("eval_env_vals", toplevel);
+        let eval_letrec_bindings = FuncChip::from_name("eval_letrec_bindings", toplevel);
         let coerce_if_sym = FuncChip::from_name("coerce_if_sym", toplevel);
         let open_comm = FuncChip::from_name("open_comm", toplevel);
         let equal = FuncChip::from_name("equal", toplevel);
@@ -2360,7 +2357,7 @@ mod test {
         expect_eq(eval_let.width(), expect!["94"]);
         expect_eq(eval_letrec.width(), expect!["66"]);
         expect_eq(extend_env_with_mutuals.width(), expect!["54"]);
-        expect_eq(eval_env_vals.width(), expect!["66"]);
+        expect_eq(eval_letrec_bindings.width(), expect!["66"]);
         expect_eq(coerce_if_sym.width(), expect!["9"]);
         expect_eq(open_comm.width(), expect!["50"]);
         expect_eq(equal.width(), expect!["86"]);
