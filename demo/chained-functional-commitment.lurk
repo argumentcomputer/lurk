@@ -9,7 +9,7 @@
 
 ;; We chain a next commitment by applying the committed function to a value of 9.
 
-!(chain #0x545e921e6ef944cd72811575b1064f8737d520cd04dd75a47ad6c5bf509ea7 9)
+!(chain #0x64fee21bad514ff18399dfc5066caebf34acc0441c9af675ba95a998077591 9)
 
 ;; The new counter value is 9, and the function returns a new functional commitment.
 
@@ -21,11 +21,11 @@
 
 ;; We can verify the proof.
 
-!(verify "728e57b72d7d05e5356f8fb218fa26f053e8851f4cbf7372c9441460496b21")
+!(verify "11207b18c7ff19e5453f44c56c524afd68286e2d11e1bc279d72481da32e1")
 
 ;; Now let's chain another call to the new head, adding 12 to the counter.
 
-!(chain #0x360823fcaffc682078bccb4b38e24620faf4255866f771f5371e3f28dac21d 12)
+!(chain #0x47a1841934c42377e67725038c71987faea4d67eecc704923502f9c0e5754a 12)
 
 ;; Now the counter is 21, and we have a new head commitment.
 
@@ -35,11 +35,11 @@
 
 ;; And verify.
 
-!(verify "3415622ca92481bae4e55ba49b44ab53987064f4cbfcb51805a1bce14d2f88")
+!(verify "61948c697ea4756c4f4c6f47d44af1e4f7174a94e16f6fac3f4e84d13ec65a")
 
 ;; One more time, we'll add 14 to the head commitment's internal state.
 
-!(chain #0x6cd6765d9d15e7f771b4a10adedf32bbf5fbe35f8815f9d8bd6a6b9a485987 14)
+!(chain #0x5d5b7127c8013ab1c8bd602623e96973ea20626053f60d8c21ba07757d1344 14)
 
 ;; 21 + 14 = 35, as expected.
 
@@ -49,7 +49,7 @@
 
 ;; Verify.
 
-!(verify "65dbb2b7a29e01514ccf4463826c4c799c101ed60ffd89f2b5f83706a9e00e")
+!(verify "4f2554b0723e723c82fda0b00368bc676f961b0024085b0b74822317a6c513")
 
 ;; Repeat indefinitely.
 
