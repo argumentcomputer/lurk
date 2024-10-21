@@ -128,7 +128,7 @@ fn native_lurk_funcs<F: PrimeField32>(
         car_cdr(digests),
         eval_let(),
         eval_letrec(),
-        eval_letrec_binds(),
+        letrec_extend_env(),
         apply(digests),
         env_lookup(),
         ingress(digests),
@@ -846,8 +846,7 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                             let (binds_tag, binds, body_tag, body, body_env) = load(res);
                             // `expr` is the symbol, `res` is the thunk
                             let thunk_env = store(expr_tag, expr, res_tag, res, body_env);
-                            let lazy = 0;
-                            let (res_tag, res) = call(eval_letrec, lazy, binds_tag, binds, body_tag, body, thunk_env);
+                            let (res_tag, res) = call(eval_letrec, binds_tag, binds, body_tag, body, thunk_env);
                             return (res_tag, res)
                         }
                     };
@@ -912,8 +911,7 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
                         }
                         "letrec" => {
                             // analogous to `let`
-                            let strict = 1;
-                            let (res_tag, res) = call(eval_letrec, strict, fst_tag, fst, rest_tag, rest, env);
+                            let (res_tag, res) = call(eval_letrec, fst_tag, fst, rest_tag, rest, env);
                             return (res_tag, res)
                         }
                         "lambda" => {
@@ -2000,8 +1998,8 @@ pub fn eval_let<F: AbstractField>() -> FuncE<F> {
 
 pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
     func!(
-        partial fn eval_letrec(strictness, binds_tag, binds, body_tag, body, env): [2] {
-            let (ext_env_tag, ext_env) = call(eval_letrec_binds, strictness, binds_tag, binds, env);
+        partial fn eval_letrec(binds_tag, binds, body_tag, body, env): [2] {
+            let (ext_env_tag, ext_env) = call(letrec_extend_env, binds_tag, binds, env);
             match ext_env_tag {
                 Tag::Err => {
                     return (ext_env_tag, ext_env)
@@ -2013,9 +2011,9 @@ pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_letrec_binds<F: AbstractField>() -> FuncE<F> {
+pub fn letrec_extend_env<F: AbstractField>() -> FuncE<F> {
     func!(
-        partial fn eval_letrec_binds(strictness, binds_tag, binds, env): [2] {
+        fn letrec_extend_env(binds_tag, binds, env): [2] {
             let err_tag = Tag::Err;
             let env_tag = Tag::Env;
             let invalid_form = EvalErr::InvalidForm;
@@ -2050,23 +2048,7 @@ pub fn eval_letrec_binds<F: AbstractField>() -> FuncE<F> {
                             let thunk_tag = Tag::Thunk;
                             let thunk = store(rest_binds_tag, rest_binds, thunk_body_tag, thunk_body, env);
                             let ext_env = store(param_tag, param, thunk_tag, thunk, env);
-                            if !strictness {
-                                // strictness = lazy
-                                let (res_env_tag, res_env) = call(eval_letrec_binds, strictness, rest_binds_tag, rest_binds, ext_env);
-                                return (res_env_tag, res_env)
-                            }
-                            // this will preemptively evaluate the thunk, so that we do not skip evaluation in case
-                            // the variable is not used inside the letrec body, and furthermore it follows a strict
-                            // evaluation order
-                            let lazy = 0;
-                            let (val_tag, val) = call(eval_letrec, lazy, rest_binds_tag, rest_binds, cons_tag, thunk_body, ext_env);
-                            match val_tag {
-                                Tag::Err => {
-                                    return (val_tag, val)
-                                }
-                            };
-                            // stricness = strict
-                            let (res_env_tag, res_env) = call(eval_letrec_binds, strictness, rest_binds_tag, rest_binds, ext_env);
+                            let (res_env_tag, res_env) = call(letrec_extend_env, rest_binds_tag, rest_binds, ext_env);
                             return (res_env_tag, res_env)
                         }
                     };
@@ -2301,7 +2283,7 @@ mod test {
         let eval_list = FuncChip::from_name("eval_list", toplevel);
         let eval_let = FuncChip::from_name("eval_let", toplevel);
         let eval_letrec = FuncChip::from_name("eval_letrec", toplevel);
-        let eval_letrec_binds = FuncChip::from_name("eval_letrec_binds", toplevel);
+        let letrec_extend_env = FuncChip::from_name("letrec_extend_env", toplevel);
         let coerce_if_sym = FuncChip::from_name("coerce_if_sym", toplevel);
         let open_comm = FuncChip::from_name("open_comm", toplevel);
         let equal = FuncChip::from_name("equal", toplevel);
@@ -2340,8 +2322,8 @@ mod test {
         expect_eq(eval_begin.width(), expect!["68"]);
         expect_eq(eval_list.width(), expect!["72"]);
         expect_eq(eval_let.width(), expect!["94"]);
-        expect_eq(eval_letrec.width(), expect!["60"]);
-        expect_eq(eval_letrec_binds.width(), expect!["97"]);
+        expect_eq(eval_letrec.width(), expect!["46"]);
+        expect_eq(letrec_extend_env.width(), expect!["51"]);
         expect_eq(coerce_if_sym.width(), expect!["9"]);
         expect_eq(open_comm.width(), expect!["50"]);
         expect_eq(equal.width(), expect!["86"]);
