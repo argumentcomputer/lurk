@@ -12,7 +12,7 @@ use crate::{
     lair::{chipset::Chipset, toplevel::Toplevel, Name},
     lurk::{
         chipset::LurkChip,
-        eval::{build_lurk_toplevel, EvalErr},
+        eval_direct::{build_lurk_toplevel, EvalErr},
         lang::{Coroutine, Lang},
         state::user_sym,
         symbol::Symbol,

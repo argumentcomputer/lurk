@@ -14,7 +14,7 @@ use crate::{
     lurk::{
         big_num::field_elts_to_biguint,
         chipset::{lurk_hasher, LurkChip},
-        eval::EvalErr,
+        eval_direct::EvalErr,
         parser::{syntax::parse, Span},
         state::{builtin_sym, lurk_sym, State, StateRcCell, BUILTIN_SYMBOLS},
         symbol::Symbol,
@@ -908,7 +908,7 @@ mod test {
         lair::execute::QueryRecord,
         lurk::{
             chipset::lurk_hasher,
-            eval::build_lurk_toplevel_native,
+            eval_direct::build_lurk_toplevel_native,
             state::{builtin_sym, user_sym, State},
             symbol::Symbol,
             tag::Tag,

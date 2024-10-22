@@ -17,7 +17,7 @@ use crate::{
     lair::{chipset::Chipset, lair_chip::LairMachineProgram},
     lurk::{
         chipset::LurkChip,
-        eval::build_lurk_toplevel,
+        eval_direct::build_lurk_toplevel,
         lang::Lang,
         stark_machine::new_machine,
         zstore::{ZPtr, ZStore, DIGEST_SIZE},

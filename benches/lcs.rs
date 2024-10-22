@@ -19,7 +19,7 @@ use loam::{
         List,
     },
     lurk::{
-        eval::build_lurk_toplevel_native,
+        eval_direct::build_lurk_toplevel_native,
         zstore::{lurk_zstore, ZPtr},
     },
 };
