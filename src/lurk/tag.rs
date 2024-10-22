@@ -34,7 +34,7 @@ pub enum Tag {
     Sym,
     Cons,
     Env,
-    Thunk,
+    Fix,
     Err,
 }
 

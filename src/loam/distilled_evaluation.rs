@@ -188,14 +188,14 @@ ascent! {
 
     // Register thunk value.
     ptr_value(thunk, value) <--
-        alloc(tag, value), if *tag == Tag::Thunk.elt(),
+        alloc(tag, value), if *tag == Tag::Fix.elt(),
         thunk_digest_mem(value, addr),
-        let thunk = Ptr(Tag::Thunk.elt(), *addr);
+        let thunk = Ptr(Tag::Fix.elt(), *addr);
     // Register thunk relation.
     thunk_rel(body, closed_env, thunk) <--
         thunk(body, closed_env),
         thunk_mem(body, closed_env, addr),
-        let thunk = Ptr(Tag::Thunk.elt(), *addr);
+        let thunk = Ptr(Tag::Fix.elt(), *addr);
 
     // Populate ptr_value if a thunk_rel has been hashed in hash4_rel.
     ptr_value(thunk, digest) <--
@@ -204,7 +204,7 @@ ascent! {
         hash4_rel(body.wide_tag(), body_value, closed_env.wide_tag(), closed_env_value, digest);
     // Other way around
     thunk_rel(body, closed_env, thunk) <--
-        ptr_value(thunk, digest), if thunk.tag() == Tag::Thunk,
+        ptr_value(thunk, digest), if thunk.tag() == Tag::Fix,
         hash4_rel(body_tag, body_value, closed_env_tag, closed_env_value, digest),
         ptr_value(body, body_value), ptr_value(closed_env, closed_env_value),
         if body.wide_tag() == *body_tag && closed_env.wide_tag() == *closed_env_tag;
@@ -477,7 +477,7 @@ ascent! {
 
     // Signal: Match on the Thunk tag and query the children
     eq_rel_tuple2_cont(arg1, arg2, body1, body2, closed_env1, closed_env2, is_eq) <--
-        eq_rel_cont1(arg1, arg2, &Tag::Thunk.elt()),
+        eq_rel_cont1(arg1, arg2, &Tag::Fix.elt()),
         thunk_rel(body1, closed_env1, arg1),
         thunk_rel(body2, closed_env2, arg2),
         let is_eq = Lattice::join(body1.is_eq(body2), closed_env1.is_eq(closed_env2));
