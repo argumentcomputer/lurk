@@ -908,7 +908,7 @@ mod test {
         lair::execute::QueryRecord,
         lurk::{
             chipset::lurk_hasher,
-            eval::build_lurk_toplevel_native,
+            eval_direct::build_lurk_toplevel_native,
             state::{builtin_sym, user_sym, State},
             symbol::Symbol,
             tag::Tag,

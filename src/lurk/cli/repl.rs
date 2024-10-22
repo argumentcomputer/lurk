@@ -33,7 +33,7 @@ use crate::{
             paths::{current_dir, proofs_dir, repl_history},
             proofs::{CachedProof, CryptoProof},
         },
-        eval::build_lurk_toplevel,
+        eval_direct::build_lurk_toplevel,
         lang::Lang,
         parser::{
             syntax::{parse, parse_space, parse_syntax_eof},

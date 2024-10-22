@@ -13,7 +13,7 @@ use crate::{
     lurk::{
         chipset::LurkChip,
         error::EvalErr,
-        eval::build_lurk_toplevel,
+        eval_direct::build_lurk_toplevel,
         lang::{Coroutine, Lang},
         state::user_sym,
         symbol::Symbol,

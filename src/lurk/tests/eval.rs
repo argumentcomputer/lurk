@@ -10,7 +10,7 @@ use crate::{
     lurk::{
         chipset::{lurk_hasher, LurkChip},
         error::EvalErr,
-        eval::build_lurk_toplevel_native,
+        eval_direct::build_lurk_toplevel_native,
         state::{builtin_sym, user_sym},
         symbol::Symbol,
         tag::Tag,

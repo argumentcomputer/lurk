@@ -4,7 +4,7 @@ pub mod big_num;
 pub mod chipset;
 pub mod cli;
 pub mod error;
-pub mod eval;
+pub mod eval_direct;
 pub mod ingress;
 pub mod lang;
 pub mod misc;
