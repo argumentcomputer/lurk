@@ -1,0 +1,57 @@
+;; Adapted from demo/mastermind.lurk but just implementing code to score a single turn, to provide a simpler comparison
+;; with https://github.com/Veridise/zk-language-comparison
+
+!(defrec length (lambda (l) (if l (+ 1 (length (cdr l))) 0)))
+
+;; Returns a pair: a boolean that is true if elt was removed from list; and the remaining elements in reverse order.
+!(def maybe-remove (lambda (elt list)
+                     (letrec ((aux (lambda (removed? acc elt list remaining)
+                                     (if (> remaining 0)
+                                         (if (eq elt (car list))
+                                             (aux t
+                                                  (if removed? (cons (car list) acc) acc)
+                                                  elt
+                                                  (if removed? list (cdr list))
+                                                  (- remaining 1))
+                                             (aux removed? (cons (car list) acc) elt (cdr list) (- remaining 1)))
+                                         (cons removed? acc)))))
+                       (aux nil () elt list (length list)))))
+
+!(def score (lambda (code guess)
+              (letrec ((aux (lambda (hits code-miss guess-miss code guess)
+                              (if code
+                                  (if (eq (car code) (car guess))
+                                      (aux (+ 1 hits) code-miss guess-miss (cdr code) (cdr guess))
+                                      (aux hits (cons (car code) code-miss) (cons (car guess) guess-miss) (cdr code) (cdr guess)))
+                                  (letrec ((aux2 (lambda (partial-hits code-miss guess-miss)
+                                                   (if code-miss
+                                                       (let ((removed?-remaining (maybe-remove (car code-miss) guess-miss)))
+                                                         (if (car removed?-remaining)
+                                                             (aux2 (+ 1 partial-hits) (cdr code-miss) (cdr removed?-remaining))
+                                                             (aux2 partial-hits (cdr code-miss) guess-miss)))
+                                                       partial-hits))))
+                                    (cons hits (aux2 0 code-miss guess-miss)))))))
+                (aux 0 () () code guess))))
+
+!(def code-valid? (lambda (code expected-length num-choices)
+                    (if (= expected-length (length code))
+                        (letrec ((aux (lambda (code)
+                                        (if code
+                                            (if (< (car code) num-choices)
+                                                (if (>= (car code) 0)
+                                                    (aux (cdr code))))
+                                            t))))
+                          (aux code)))))
+
+!(def score-one-turn (lambda (code-commitment code-length num-choices guess)
+                        (if (code-valid? (open code-commitment) code-length num-choices)
+                            (if (code-valid? guess code-length num-choices)
+                                (score (open code-commitment) guess)
+                                :bad-guess)
+                            :bad-code)))
+
+;; Note that #0x42 and #0x43 are weak secrets and could easily be brute-forced by a naive algorithm.
+!(assert-eq '(1 . 2) (score-one-turn (hide #0x42 '(1 2 3 4)) 4 6 '(0 2 4 3)))
+!(assert-eq '(0 . 0) (score-one-turn (hide #0x43 '(0 0 0 0)) 4 6 '(1 2 3 4)))
+!(assert-eq :bad-code (score-one-turn (hide #0x42 '(1 2 3 9)) 4 6 '(0 2 4 3)))
+!(assert-eq :bad-guess (score-one-turn (hide #0x42 '(1 2 3 4)) 4 6 '(9 2 4 3)))
