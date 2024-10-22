@@ -3,6 +3,7 @@
 pub mod big_num;
 pub mod chipset;
 pub mod cli;
+pub mod compile;
 pub mod error;
 pub mod eval_direct;
 pub mod ingress;
