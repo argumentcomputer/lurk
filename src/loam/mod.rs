@@ -128,7 +128,7 @@ impl Ptr {
         self.0 == Tag::Fun.elt()
     }
     fn is_thunk(&self) -> bool {
-        self.0 == Tag::Thunk.elt()
+        self.0 == Tag::Fix.elt()
     }
     fn is_err(&self) -> bool {
         self.0 == Tag::Err.elt()

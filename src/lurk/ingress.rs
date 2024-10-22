@@ -205,7 +205,7 @@ pub fn ingress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr);
                     return (tag, ptr)
                 }
-                Tag::Fun, Tag::Thunk => {
+                Tag::Fun, Tag::Fix => {
                     let (args_tag_full: [8], args_digest: [8],
                          body_tag_full: [8], body_digest: [8],
                                              env_digest:  [8]) = preimg(hash5, digest);
@@ -289,7 +289,7 @@ pub fn egress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     let digest: [8] = call(hash4, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
                     return (tag, digest)
                 }
-                Tag::Fun, Tag::Thunk => {
+                Tag::Fun, Tag::Fix => {
                     let (args_tag, args_ptr, body_tag, body_ptr, env_ptr) = load(val);
                     let (args_tag, args_digest: [8]) = call(egress, args_tag, args_ptr);
                     let (body_tag, body_digest: [8]) = call(egress, body_tag, body_ptr);

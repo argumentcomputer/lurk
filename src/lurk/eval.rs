@@ -384,8 +384,8 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                     let expr_digest: [8] = load(expr);
                     let (res_tag, res) = call(env_lookup, expr_tag, expr_digest, env);
                     match res_tag {
-                        Tag::Thunk => {
-                            // Thunks are closed expressions, so we can choose an empty environment
+                        Tag::Fix => {
+                            // Fixed points are closed expressions, so we can choose an empty environment
                             let nil_env = 0;
                             let (res_tag, res) = call(eval, res_tag, res, nil_env);
                             return (res_tag, res)
@@ -419,10 +419,9 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                     let (res_tag, res) = call(apply, head_tag, head, rest_tag, rest, env);
                     return (res_tag, res)
                 }
-                Tag::Thunk => {
+                Tag::Fix => {
                     let (body_tag, body, binds_tag, binds, mutual_env) = load(expr);
-                    // creates an environment with the bindings from `binds` extended with the bindings
-                    // from `mutual_env`, with thunked values
+                    // extend `mutual_env` with the fixed points from the `letrec` bindings
                     // IMPORTANT: at this point this operation cannot return an error
                     let (_tag, ext_env) = call(extend_env_with_mutuals, binds_tag, binds, binds, mutual_env);
                     let (res_tag, res) = call(eval, body_tag, body, ext_env);
@@ -961,7 +960,7 @@ pub fn equal_inner<F: AbstractField>() -> FuncE<F> {
                     let eq = mul(fst_eq, snd_eq);
                     return eq
                 }
-                Tag::Fun, Tag::Thunk => {
+                Tag::Fun, Tag::Fix => {
                     let trd_tag = Tag::Env;
                     let (a_fst: [2], a_snd: [2], a_trd) = load(a);
                     let (b_fst: [2], b_snd: [2], b_trd) = load(b);
@@ -1546,7 +1545,7 @@ pub fn eval_let<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-/// Extends the original environment of a `letrec` with thunk values from its list of mutual bindings
+/// Extends the original environment of a `letrec` with fixed points from its list of mutual bindings
 pub fn extend_env_with_mutuals<F: AbstractField>() -> FuncE<F> {
     func!(
         fn extend_env_with_mutuals(binds_tag, binds, mutual_binds, mutual_env): [2] {
@@ -1583,10 +1582,10 @@ pub fn extend_env_with_mutuals<F: AbstractField>() -> FuncE<F> {
                                     return (ext_env_tag, ext_env)
                                 }
                             };
-                            let thunk_tag = Tag::Thunk;
+                            let fix_tag = Tag::Fix;
                             // IMPORTANT: At this point, `mutual_binds` must be a cons
-                            let thunk = store(expr_tag, expr, cons_tag, mutual_binds, mutual_env);
-                            let res_env = store(var_tag, var, thunk_tag, thunk, ext_env);
+                            let fix = store(expr_tag, expr, cons_tag, mutual_binds, mutual_env);
+                            let res_env = store(var_tag, var, fix_tag, fix, ext_env);
                             return (env_tag, res_env)
                         }
                     };
@@ -1599,7 +1598,7 @@ pub fn extend_env_with_mutuals<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-/// Evaluates the mutual thunks in an environment extended by `letrec` bindings
+/// Evaluates the mutual fixed points in an environment extended by `letrec` bindings
 pub fn eval_letrec_bindings<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_letrec_bindings(init_env, ext_env): [2] {
@@ -1609,11 +1608,11 @@ pub fn eval_letrec_bindings<F: AbstractField>() -> FuncE<F> {
                 return (env_tag, init_env)
             }
             let (_var_tag, _var, val_tag, val, ext_env) = load(ext_env);
-            let thunk_tag = Tag::Thunk;
-            // Safety check: letrec bindings must be thunks
-            assert_eq!(thunk_tag, val_tag);
+            let fix_tag = Tag::Fix;
+            // Safety check: letrec bindings must be fixed points
+            assert_eq!(fix_tag, val_tag);
             let nil_env = 0;
-            // Thunks are closed expressions, so we can choose an empty environment
+            // Fixed points are closed expressions, so we can choose an empty environment
             let (res_tag, res) = call(eval, val_tag, val, nil_env);
             match res_tag {
                 Tag::Err => {
@@ -1629,7 +1628,7 @@ pub fn eval_letrec_bindings<F: AbstractField>() -> FuncE<F> {
 pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_letrec(binds_tag, binds, body_tag, body, env): [2] {
-            // extend `env` with the bindings from the mutual env, but with thunked values
+            // extend `env` with the bindings from the mutual env
             let (ext_env_tag, ext_env) = call(extend_env_with_mutuals, binds_tag, binds, binds, env);
             match ext_env_tag {
                 Tag::Err => {

@@ -360,15 +360,15 @@ ascent! {
 
     // Populating alloc(...) triggers allocation in thunk_digest_mem.
     thunk_digest_mem(value, Dual(addr)) <--
-        alloc(tag, value), if *tag == Tag::Thunk.elt(),
-        let addr = LEWrap(_self.alloc_addr(Tag::Thunk.elt(), LE::zero()));
+        alloc(tag, value), if *tag == Tag::Fix.elt(),
+        let addr = LEWrap(_self.alloc_addr(Tag::Fix.elt(), LE::zero()));
     // Populating cons(...) triggers allocation in cons mem.
-    thunk_mem(body, closed_env, Dual(addr)) <-- thunk(body, closed_env), let addr = LEWrap(_self.alloc_addr(Tag::Thunk.elt(), LE::zero()));
+    thunk_mem(body, closed_env, Dual(addr)) <-- thunk(body, closed_env), let addr = LEWrap(_self.alloc_addr(Tag::Fix.elt(), LE::zero()));
 
     // Register thunk value.
-    ptr_value(ptr, value) <-- thunk_digest_mem(value, addr), let ptr = Ptr(Tag::Thunk.elt(), addr.0.0);
+    ptr_value(ptr, value) <-- thunk_digest_mem(value, addr), let ptr = Ptr(Tag::Fix.elt(), addr.0.0);
     // Register thunk relation.
-    thunk_rel(body, closed_env, cons) <-- thunk_mem(body, closed_env, addr), let cons = Ptr(Tag::Thunk.elt(), addr.0.0);
+    thunk_rel(body, closed_env, cons) <-- thunk_mem(body, closed_env, addr), let cons = Ptr(Tag::Fix.elt(), addr.0.0);
 
     // Populate thunk_digest_mem if a thunk in thunk_mem has been hashed in hash4_rel.
     thunk_digest_mem(digest, addr) <--
@@ -669,7 +669,7 @@ ascent! {
 
     // Signal: Match on the Thunk tag and query the children
     eq_rel_tuple2_cont(arg1, arg2, body1, body2, closed_env1, closed_env2, is_eq) <--
-        eq_rel_cont1(arg1, arg2, &Tag::Thunk.elt()),
+        eq_rel_cont1(arg1, arg2, &Tag::Fix.elt()),
         thunk_rel(body1, closed_env1, arg1),
         thunk_rel(body2, closed_env2, arg2),
         let is_eq = Lattice::join(body1.is_eq(body2), closed_env1.is_eq(closed_env2));
