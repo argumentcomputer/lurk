@@ -17,7 +17,9 @@ trait ConstantsProvided {}
 
 /// The Poseidon configuration trait storing the data needed for
 #[allow(non_camel_case_types, private_bounds)]
-pub trait PoseidonConfig<const WIDTH: usize>: Clone + Copy + Sync + ConstantsProvided {
+pub trait PoseidonConfig<const WIDTH: usize>:
+    Clone + Copy + Send + Sync + ConstantsProvided
+{
     type F: PrimeField;
     type R_P: ArraySize + Sub<B1>;
     type R_F: ArraySize;

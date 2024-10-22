@@ -38,7 +38,8 @@ impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> PoseidonChipset<C, WIDTH> {
     }
 }
 
-impl<C: PoseidonConfig<WIDTH>, const WIDTH: usize> Chipset<C::F> for PoseidonChipset<C, WIDTH>
+impl<C: PoseidonConfig<WIDTH> + 'static, const WIDTH: usize> Chipset<C::F>
+    for PoseidonChipset<C, WIDTH>
 where
     Sub1<C::R_P>: ArraySize,
 {

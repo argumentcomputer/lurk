@@ -1923,6 +1923,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "plain"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
+
+[[package]]
 name = "plotters"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2525,7 +2531,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 [[package]]
 name = "sphinx-core"
 version = "1.0.0"
-source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#68a48fb36cf521097e18220afb78de24ce67187a"
+source = "git+https://github.com/argumentcomputer/sphinx.git?branch=forward_ports_48#2aacea1f40ca3b8e17f4b198fd06ef9a6f9990ae"
 dependencies = [
  "anyhow",
  "arrayref",
@@ -2565,6 +2571,7 @@ dependencies = [
  "p3-symmetric",
  "p3-uni-stark",
  "p3-util",
+ "plain",
  "rand",
  "rayon-scan",
  "rrs-lib",
@@ -2587,7 +2594,7 @@ dependencies = [
 [[package]]
 name = "sphinx-derive"
 version = "1.0.0"
-source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#68a48fb36cf521097e18220afb78de24ce67187a"
+source = "git+https://github.com/argumentcomputer/sphinx.git?branch=forward_ports_48#2aacea1f40ca3b8e17f4b198fd06ef9a6f9990ae"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2610,7 +2617,7 @@ dependencies = [
 [[package]]
 name = "sphinx-primitives"
 version = "1.0.0"
-source = "git+https://github.com/argumentcomputer/sphinx.git?branch=dev#68a48fb36cf521097e18220afb78de24ce67187a"
+source = "git+https://github.com/argumentcomputer/sphinx.git?branch=forward_ports_48#2aacea1f40ca3b8e17f4b198fd06ef9a6f9990ae"
 dependencies = [
  "itertools 0.12.1",
  "lazy_static",
