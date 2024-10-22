@@ -4,6 +4,7 @@ pub mod big_num;
 pub mod chipset;
 pub mod cli;
 pub mod eval;
+pub mod ingress;
 pub mod lang;
 pub mod misc;
 pub mod package;
