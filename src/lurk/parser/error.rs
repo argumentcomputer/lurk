@@ -1,7 +1,6 @@
 use std::{
     cmp::Ordering,
     fmt::{self, Write},
-    marker::PhantomData,
     num::ParseIntError,
     string::String,
 };
@@ -12,14 +11,11 @@ use num_bigint::BigUint;
 use crate::lurk::parser::{base, Span};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub enum ParseErrorKind<F> {
+pub enum ParseErrorKind {
     InvalidBase16EscapeSequence(String, Option<ParseIntError>),
     InvalidBaseEncoding(base::LitBase),
     NumError(String),
-    DigestLiteralTooBig {
-        literal: BigUint,
-        _marker: PhantomData<F>,
-    },
+    DigestLiteralTooBig(BigUint),
     UnknownBaseCode,
     ParseIntErr(ParseIntError),
     InvalidChar(String),
@@ -28,7 +24,7 @@ pub enum ParseErrorKind<F> {
     Custom(String),
 }
 
-impl<F: fmt::Debug> fmt::Display for ParseErrorKind<F> {
+impl fmt::Display for ParseErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidBase16EscapeSequence(seq, _) => {
@@ -45,21 +41,21 @@ impl<F: fmt::Debug> fmt::Display for ParseErrorKind<F> {
     }
 }
 
-impl<F> ParseErrorKind<F> {
+impl ParseErrorKind {
     pub fn is_nom_err(&self) -> bool {
         matches!(self, Self::Nom(_))
     }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct ParseError<I: AsBytes, F> {
+pub struct ParseError<I: AsBytes> {
     pub input: I,
     pub expected: Option<&'static str>,
-    pub errors: Vec<ParseErrorKind<F>>,
+    pub errors: Vec<ParseErrorKind>,
 }
 
-impl<I: AsBytes, F> ParseError<I, F> {
-    pub fn new(input: I, error: ParseErrorKind<F>) -> Self {
+impl<I: AsBytes> ParseError<I> {
+    pub fn new(input: I, error: ParseErrorKind) -> Self {
         ParseError {
             input,
             expected: None,
@@ -67,18 +63,18 @@ impl<I: AsBytes, F> ParseError<I, F> {
         }
     }
 
-    pub fn throw<A>(input: I, e: ParseErrorKind<F>) -> IResult<I, A, Self> {
+    pub fn throw<A>(input: I, e: ParseErrorKind) -> IResult<I, A, Self> {
         Err(Err::Error(ParseError::new(input, e)))
     }
 
-    pub fn opt<A>(opt: Option<A>, input: I, error: ParseErrorKind<F>) -> IResult<I, A, Self> {
+    pub fn opt<A>(opt: Option<A>, input: I, error: ParseErrorKind) -> IResult<I, A, Self> {
         match opt {
             Some(a) => Ok((input, a)),
             None => Err(Err::Error(ParseError::new(input, error))),
         }
     }
 
-    pub fn res<A, E, Fun: Fn(E) -> ParseErrorKind<F>>(
+    pub fn res<A, E, Fun: Fn(E) -> ParseErrorKind>(
         res: Result<A, E>,
         input: I,
         f: Fun,
@@ -90,7 +86,7 @@ impl<I: AsBytes, F> ParseError<I, F> {
     }
 }
 
-impl<'a, F: fmt::Debug> fmt::Display for ParseError<Span<'a>, F> {
+impl<'a> fmt::Display for ParseError<Span<'a>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut res = String::new();
 
@@ -130,7 +126,7 @@ impl<'a, F: fmt::Debug> fmt::Display for ParseError<Span<'a>, F> {
     }
 }
 
-impl<I: AsBytes, F> nom::error::ParseError<I> for ParseError<I, F>
+impl<I: AsBytes> nom::error::ParseError<I> for ParseError<I>
 where
     I: InputLength,
 {
@@ -163,7 +159,7 @@ where
     }
 }
 
-impl<I: AsBytes, F> nom::error::ContextError<I> for ParseError<I, F>
+impl<I: AsBytes> nom::error::ContextError<I> for ParseError<I>
 where
     I: InputLength,
 {
@@ -187,10 +183,10 @@ where
     }
 }
 
-pub fn map_parse_err<I: AsBytes, F, A, Fun: Fn(ParseError<I, F>) -> ParseError<I, F>>(
-    x: IResult<I, A, ParseError<I, F>>,
+pub fn map_parse_err<I: AsBytes, A, Fun: Fn(ParseError<I>) -> ParseError<I>>(
+    x: IResult<I, A, ParseError<I>>,
     f: Fun,
-) -> IResult<I, A, ParseError<I, F>> {
+) -> IResult<I, A, ParseError<I>> {
     x.map_err(|e| match e {
         Err::Incomplete(n) => Err::Incomplete(n),
         Err::Error(e) => Err::Error(f(e)),

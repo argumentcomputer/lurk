@@ -59,9 +59,7 @@ fn test_case_raw(
 fn test_case(input_code: &'static str, expected_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>) {
     let (toplevel, zstore, config) = test_setup_data();
     let mut zstore = zstore.clone();
-    let zptr = zstore
-        .read(input_code, &Default::default())
-        .expect("Read failure");
+    let zptr = zstore.read(input_code, &Default::default());
     run_tests(
         &zptr,
         &ZPtr::null(Tag::Env),
@@ -79,9 +77,7 @@ fn test_case_env(
 ) {
     let (toplevel, zstore, config) = test_setup_data();
     let mut zstore = zstore.clone();
-    let zptr = zstore
-        .read(input_code, &Default::default())
-        .expect("Read failure");
+    let zptr = zstore.read(input_code, &Default::default());
     let env = env_cloj(&mut zstore);
     run_tests(
         &zptr,

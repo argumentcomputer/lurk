@@ -30,7 +30,7 @@ impl Default for LitBase {
 }
 
 impl LitBase {
-    pub fn parse_code<F>(i: Span<'_>) -> ParseResult<'_, F, Self> {
+    pub fn parse_code(i: Span<'_>) -> ParseResult<'_, Self> {
         alt((
             value(Self::Bin, tag("b")),
             value(Self::Oct, tag("o")),
@@ -76,7 +76,7 @@ impl LitBase {
         base_x::encode(self.base_digits(), input.as_ref())
     }
 
-    pub fn decode<'a, F>(&self, input: Span<'a>) -> ParseResult<'a, F, Vec<u8>> {
+    pub fn decode<'a>(&self, input: Span<'a>) -> ParseResult<'a, Vec<u8>> {
         let (i, o) = input.split_at_position_complete(|x| !self.is_digit(x))?;
         match base_x::decode(self.base_digits(), o.fragment()) {
             Ok(bytes) => Ok((i, bytes)),
@@ -90,7 +90,7 @@ impl LitBase {
 
 macro_rules! define_parse_digits {
     ($name:ident, $base:ident, $digit_str:expr, $digits_str:expr, $map_fn:expr) => {
-        pub fn $name<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, String> {
+        pub fn $name() -> impl Fn(Span<'_>) -> ParseResult<'_, String> {
             move |from: Span<'_>| {
                 let (i, d) = context($digit_str, satisfy(|x| LitBase::$base.is_digit(x)))(from)?;
                 let (i, ds) = context(
@@ -131,7 +131,7 @@ define_parse_digits!(
     |x| x.to_ascii_lowercase()
 );
 
-pub fn parse_litbase_code<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, LitBase> {
+pub fn parse_litbase_code() -> impl Fn(Span<'_>) -> ParseResult<'_, LitBase> {
     move |from: Span<'_>| {
         map_parse_err(
             alt((
@@ -146,9 +146,7 @@ pub fn parse_litbase_code<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, LitBas
 }
 
 #[allow(clippy::type_complexity)]
-pub fn parse_litbase_digits<F>(
-    base: LitBase,
-) -> Box<dyn Fn(Span<'_>) -> ParseResult<'_, F, String>> {
+pub fn parse_litbase_digits(base: LitBase) -> Box<dyn Fn(Span<'_>) -> ParseResult<'_, String>> {
     Box::new(move |from: Span<'_>| match base {
         LitBase::Bin => parse_bin_digits()(from),
         LitBase::Oct => parse_oct_digits()(from),

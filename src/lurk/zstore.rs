@@ -2,7 +2,6 @@ use anyhow::{bail, Result};
 use core::str;
 use indexmap::IndexSet;
 use itertools::Itertools;
-use nom::{sequence::preceded, Parser};
 use once_cell::sync::OnceCell;
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, Field, PrimeField32};
@@ -13,22 +12,15 @@ use std::marker::PhantomData;
 use crate::{
     lair::{chipset::Chipset, List},
     lurk::{
-        parser::{
-            syntax::{parse_maybe_meta, parse_space},
-            Error, Span,
-        },
-        state::{lurk_sym, State, StateRcCell, BUILTIN_SYMBOLS},
+        big_num::field_elts_to_biguint,
+        chipset::{lurk_hasher, LurkChip},
+        eval::EvalErr,
+        parser::{syntax::parse, Span},
+        state::{builtin_sym, lurk_sym, State, StateRcCell, BUILTIN_SYMBOLS},
         symbol::Symbol,
         syntax::Syntax,
         tag::Tag,
     },
-};
-
-use super::{
-    big_num::field_elts_to_biguint,
-    chipset::{lurk_hasher, LurkChip},
-    eval::EvalErr,
-    state::builtin_sym,
 };
 
 pub(crate) const DIGEST_SIZE: usize = 8;
@@ -306,7 +298,7 @@ impl Default for ZStore<BabyBear, LurkChip> {
 }
 
 static QUOTE: OnceCell<Symbol> = OnceCell::new();
-fn quote() -> &'static Symbol {
+pub(crate) fn quote() -> &'static Symbol {
     QUOTE.get_or_init(|| builtin_sym("quote"))
 }
 
@@ -519,19 +511,14 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         self.intern_tuple110(Tag::Env, sym, val, env)
     }
 
-    fn intern_syntax(
-        &mut self,
-        syn: &Syntax<F>,
-        lang_symbols: &FxHashSet<Symbol>,
-    ) -> Result<ZPtr<F>> {
+    fn intern_syntax(&mut self, syn: &Syntax<F>, lang_symbols: &FxHashSet<Symbol>) -> ZPtr<F> {
         if let Some(zptr) = self.syn_cache.get(syn) {
-            return Ok(*zptr);
+            return *zptr;
         }
         let zptr = match syn {
             Syntax::Num(_, f) => self.intern_num(*f),
             Syntax::Char(_, c) => self.intern_char(*c),
             Syntax::U64(_, u) => self.intern_u64(*u),
-            Syntax::I64(..) => bail!("Transient error: Signed integers are not yet supported. Using `(- 0 x)` instead of `-x` might work as a temporary workaround."),
             Syntax::BigNum(_, c) => self.intern_big_num(*c),
             Syntax::Comm(_, c) => self.intern_comm(*c),
             Syntax::String(_, s) => self.intern_string(s),
@@ -540,74 +527,44 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 let xs = xs
                     .iter()
                     .map(|x| self.intern_syntax(x, lang_symbols))
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<Vec<_>>();
                 self.intern_list(xs)
             }
             Syntax::Improper(_, xs, y) => {
                 let xs = xs
                     .iter()
                     .map(|x| self.intern_syntax(x, lang_symbols))
-                    .collect::<Result<Vec<_>>>()?;
-                let y = self.intern_syntax(y, lang_symbols)?;
+                    .collect::<Vec<_>>();
+                let y = self.intern_syntax(y, lang_symbols);
                 self.intern_list_full(xs, y)
             }
             Syntax::Quote(_, x) => {
                 let quote = self.intern_symbol(quote(), lang_symbols);
-                let x = self.intern_syntax(x, lang_symbols)?;
+                let x = self.intern_syntax(x, lang_symbols);
                 self.intern_list([quote, x])
             }
+            Syntax::I64(..) | Syntax::Meta(..) => panic!("not supported"),
         };
         self.syn_cache.insert(syn.clone(), zptr);
-        Ok(zptr)
-    }
-
-    #[inline]
-    pub fn read_maybe_meta_with_state<'a>(
-        &mut self,
-        state: StateRcCell,
-        input: &'a str,
-        lang_symbols: &FxHashSet<Symbol>,
-    ) -> Result<(usize, Span<'a>, bool, ZPtr<F>), Error> {
-        match preceded(parse_space, parse_maybe_meta(state, false)).parse(Span::new(input)) {
-            Ok((_, None)) => Err(Error::NoInput),
-            Err(e) => Err(Error::Syntax(format!("{e}"))),
-            Ok((rest, Some((is_meta, syn)))) => {
-                let offset = syn
-                    .get_pos()
-                    .get_from_offset()
-                    .expect("Parsed syntax should have its Pos set");
-                let syn = self
-                    .intern_syntax(&syn, lang_symbols)
-                    .map_err(|e| Error::Syntax(format!("{e}")))?;
-                Ok((offset, rest, is_meta, syn))
-            }
-        }
-    }
-
-    #[inline]
-    pub fn read_maybe_meta<'a>(
-        &mut self,
-        input: &'a str,
-        lang_symbols: &FxHashSet<Symbol>,
-    ) -> Result<(usize, Span<'a>, bool, ZPtr<F>), Error> {
-        self.read_maybe_meta_with_state(State::init_lurk_state().rccell(), input, lang_symbols)
+        zptr
     }
 
     #[inline]
     pub fn read_with_state(
         &mut self,
-        state: StateRcCell,
         input: &str,
+        state: StateRcCell,
         lang_symbols: &FxHashSet<Symbol>,
-    ) -> Result<ZPtr<F>> {
-        let (.., is_meta, zptr) = self.read_maybe_meta_with_state(state, input, lang_symbols)?;
-        assert!(!is_meta);
-        Ok(zptr)
+    ) -> ZPtr<F> {
+        let (_, syn) = parse(Span::new(input), state, false)
+            .expect("parse error")
+            .expect("no input");
+        self.intern_syntax(&syn, lang_symbols)
     }
 
     #[inline]
-    pub fn read(&mut self, input: &str, lang_symbols: &FxHashSet<Symbol>) -> Result<ZPtr<F>> {
-        self.read_with_state(State::init_lurk_state().rccell(), input, lang_symbols)
+    pub fn read(&mut self, input: &str, lang_symbols: &FxHashSet<Symbol>) -> ZPtr<F> {
+        self.read_with_state(input, State::init_lurk_state().rccell(), lang_symbols)
     }
 
     /// Memoizes the Lurk data dependencies of a tag/digest pair
@@ -987,9 +944,7 @@ mod test {
         let ZPtr {
             tag: expr_tag,
             digest: expr_digest,
-        } = zstore
-            .read("(cons \"hi\" (lambda (x) x))", &lang_symbols)
-            .unwrap();
+        } = zstore.read("(cons \"hi\" (lambda (x) x))", &lang_symbols);
 
         let record = &mut QueryRecord::new(&toplevel);
         record.inject_inv_queries("hash4", &toplevel, &zstore.hashes4);

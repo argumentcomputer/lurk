@@ -13,7 +13,8 @@ use crate::{
         big_num::field_elts_to_biguint,
         package::{Package, SymbolRef},
         stark_machine::new_machine,
-        state::builtin_sym,
+        state::{builtin_sym, meta_sym, META_SYMBOLS},
+        symbol::Symbol,
         tag::Tag,
         zstore::{ZPtr, DIGEST_SIZE},
     },
@@ -29,28 +30,29 @@ use super::{
     repl::Repl,
 };
 
-#[allow(dead_code)]
 #[allow(clippy::type_complexity)]
 pub(crate) struct MetaCmd<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> {
     name: &'static str,
     summary: &'static str,
-    format: &'static str,
     info: &'static [&'static str],
+    format: &'static str,
     example: &'static [&'static str],
+    returns: &'static str,
     pub(crate) run:
-        fn(repl: &mut Repl<F, C1, C2>, args: &ZPtr<F>, file_path: &Utf8Path) -> Result<()>,
+        fn(repl: &mut Repl<F, C1, C2>, args: &ZPtr<F>, file_dir: &Utf8Path) -> Result<ZPtr<F>>,
 }
 
-pub(crate) type MetaCmdsMap<F, C1, C2> = FxHashMap<&'static str, MetaCmd<F, C1, C2>>;
+pub(crate) type MetaCmdsMap<F, C1, C2> = FxHashMap<Symbol, MetaCmd<F, C1, C2>>;
 
 impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const ASSERT: Self = Self {
         name: "assert",
         summary: "Asserts that an expression doesn't reduce to nil.",
+        info: &["Exits the REPL if the assertion is not satisfied."],
         format: "!(assert <expr>)",
-        info: &[],
         example: &["!(assert t)", "!(assert (eq 3 (+ 1 2)))"],
-        run: |repl, args, _path| {
+        returns: "t",
+        run: |repl, args, _dir| {
             let [&expr] = repl.take(args)?;
             let (result, _) = repl.reduce_aux(&expr)?;
             if result.tag == Tag::Err {
@@ -60,17 +62,18 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 eprintln!("assert failed. {} evaluates to nil", repl.fmt(&expr));
                 std::process::exit(1);
             }
-            Ok(())
+            Ok(*repl.zstore.t())
         },
     };
 
     const ASSERT_EQ: Self = Self {
         name: "assert-eq",
-        summary: "Assert that two expressions evaluate to the same value.",
+        summary: "Asserts that two expressions evaluate to the same value.",
+        info: &["Exits the REPL if the assertion is not satisfied."],
         format: "!(assert-eq <expr1> <expr2>)",
-        info: &[],
         example: &["!(assert-eq 3 (+ 1 2))"],
-        run: |repl, args, _path| {
+        returns: "t",
+        run: |repl, args, _dir| {
             let [&expr1, &expr2] = repl.take(args)?;
             let (result1, _) = repl.reduce_aux(&expr1)?;
             if result1.tag == Tag::Err {
@@ -90,17 +93,18 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 );
                 std::process::exit(1);
             }
-            Ok(())
+            Ok(*repl.zstore.t())
         },
     };
 
     const ASSERT_ERROR: Self = Self {
         name: "assert-error",
-        summary: "Assert that a evaluation of <expr> fails.",
+        summary: "Asserts that a evaluation of <expr> fails.",
+        info: &["Exits the REPL if the assertion is not satisfied."],
         format: "!(assert-error <expr>)",
-        info: &[],
         example: &["!(assert-error (1 1))"],
-        run: |repl, args, _path| {
+        returns: "t",
+        run: |repl, args, _dir| {
             let [&expr] = repl.take(args)?;
             let (result, _) = repl.reduce_aux(&expr)?;
             if result.tag != Tag::Err {
@@ -110,20 +114,22 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 );
                 std::process::exit(1);
             }
-            Ok(())
+            Ok(*repl.zstore.t())
         },
     };
 
     const ASSERT_EMITTED: Self = Self {
         name: "assert-emitted",
         summary: "Asserts that the evaluation of an expr emits expected values",
-        format: "!(assert-emitted <expr> <expr>)",
         info: &[
             "Asserts that the list of values in the first <expr> are emitted by",
             "the reduction of the second <expr>.",
+            "Exits the REPL if the assertion is not satisfied.",
         ],
+        format: "!(assert-emitted <expr> <expr>)",
         example: &["!(assert-emitted '(1 2) (begin (emit 1) (emit 2)))"],
-        run: |repl, args, _path| {
+        returns: "t",
+        run: |repl, args, _dir| {
             let [&expected_expr, &expr] = repl.take(args)?;
             let (expected, _) = repl.reduce_aux(&expected_expr)?;
             let (result, emitted) = repl.reduce_aux(&expr)?;
@@ -141,14 +147,13 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 );
                 std::process::exit(1);
             }
-            Ok(())
+            Ok(*repl.zstore.t())
         },
     };
 
     const DEBUG: Self = Self {
         name: "debug",
         summary: "Enters the debug mode for a reduction",
-        format: "!(debug <expr>?)",
         info: &[
             "There are three kinds of lines shown in debug mode:",
             " ?<d>: <e>       - at depth <d>, <e> will be evaluated",
@@ -167,45 +172,71 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             " End          - last line",
             " Esc/q        - quit debug mode",
         ],
+        format: "!(debug <expr>?)",
         example: &["(+ 1 1)", "!(debug)", "!(debug (+ 1 1))"],
-        run: |repl, args, _path| {
+        returns: "t",
+        run: |repl, args, _dir| {
             if args != repl.zstore.nil() {
                 let [&expr] = repl.take(args)?;
                 let result = repl.handle_non_meta(&expr, None);
                 debug_mode(&repl.format_debug_data())?;
-                result.map(|_| ())
+                result.map(|_| ())?;
             } else {
-                debug_mode(&repl.format_debug_data())
+                debug_mode(&repl.format_debug_data())?;
             }
+            Ok(*repl.zstore.t())
         },
     };
+
+    fn validate_path_type(path: &ZPtr<F>) -> Result<()> {
+        if path.tag != Tag::Str {
+            bail!("Path must be a string");
+        }
+        Ok(())
+    }
 
     const LOAD: Self = Self {
         name: "load",
         summary: "Load Lurk expressions from a file.",
-        format: "!(load <string>)",
         info: &[],
+        format: "!(load <string>)",
         example: &["!(load \"my_file.lurk\")"],
+        returns: "t",
         run: |repl, args, path| {
             let [file_name_zptr] = repl.take(args)?;
-            if file_name_zptr.tag != Tag::Str {
-                bail!("Path must be a string");
-            }
+            Self::validate_path_type(file_name_zptr)?;
             let file_name = repl.zstore.fetch_string(file_name_zptr);
-            repl.load_file(&path.join(file_name), false)
+            repl.load_file(&path.join(file_name), false)?;
+            Ok(*repl.zstore.t())
+        },
+    };
+
+    const DEFQ: Self = Self {
+        name: "defq",
+        summary: "Extends env with a non-evaluated expression.",
+        info: &[],
+        format: "!(defq <symbol> <value>)",
+        example: &["!(defq foo (1 . 2))"],
+        returns: "The binding symbol",
+        run: |repl, args, _dir| {
+            let [&sym, &val] = repl.take(args)?;
+            Self::validate_binding_symbol(repl, &sym)?;
+            repl.bind(sym, val);
+            Ok(sym)
         },
     };
 
     const DEF: Self = Self {
         name: "def",
         summary: "Extends env with a non-recursive binding.",
-        format: "!(def <symbol> <expr>)",
         info: &[
-            "Gets macroexpanded to (let ((<symbol> <value>)) (current-env)).",
+            "Gets macroexpanded to (let ((<symbol> <expr>)) (current-env)).",
             "The REPL's env is set to the result.",
         ],
+        format: "!(def <symbol> <expr>)",
         example: &["!(def foo (lambda () 123))"],
-        run: |repl, args, _path| {
+        returns: "The binding symbol",
+        run: |repl, args, _dir| {
             let [&sym, _] = repl.take(args)?;
             let let_ = repl
                 .zstore
@@ -222,23 +253,24 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             }
             repl.env = output;
             println!("{}", repl.fmt(&sym));
-            Ok(())
+            Ok(sym)
         },
     };
 
     const DEFREC: Self = Self {
         name: "defrec",
         summary: "Extends env with a recursive binding.",
-        format: "!(defrec <symbol> <value>)",
         info: &[
-            "Gets macroexpanded to (letrec ((<symbol> <value>)) (current-env)).",
+            "Gets macroexpanded to (letrec ((<symbol> <expr>)) (current-env)).",
             "The REPL's env is set to the result.",
         ],
+        format: "!(defrec <symbol> <expr>)",
         example: &[
             "!(defrec sum (lambda (l) (if (eq l nil) 0 (+ (car l) (sum (cdr l))))))",
             "(sum '(1 2 3))",
         ],
-        run: |repl, args, _path| {
+        returns: "The binding symbol",
+        run: |repl, args, _dir| {
             let [&sym, _] = repl.take(args)?;
             let letrec = repl
                 .zstore
@@ -257,19 +289,35 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             }
             repl.env = output;
             println!("{}", repl.fmt(&sym));
-            Ok(())
+            Ok(sym)
         },
     };
+
+    fn validate_binding_symbol(repl: &Repl<F, C1, C2>, zptr: &ZPtr<F>) -> Result<()> {
+        match zptr.tag {
+            Tag::Builtin | Tag::Coroutine => Ok(()),
+            Tag::Sym => {
+                let zstore = &repl.zstore;
+                if zptr.digest != zstore.nil().digest && zptr.digest != zstore.t().digest {
+                    Ok(())
+                } else {
+                    bail!("Illegal binding: {}", repl.fmt(zptr));
+                }
+            }
+            _ => bail!("Illegal binding: {}", repl.fmt(zptr)),
+        }
+    }
 
     const UPDATE: Self = Self {
         name: "update",
         summary: "Updates an env variable by applying it to a function.",
-        format: "!(update <symbol> <function_expr>)",
         info: &[],
+        format: "!(update <symbol> <function_expr>)",
         example: &["!(def a 1)", "!(update a (lambda (x) (+ x 1)))"],
-        run: |repl, args, _path| {
+        returns: "The symbol whose bound value was updated",
+        run: |repl, args, _dir| {
             let [&sym, &fun] = repl.take(args)?;
-            Self::validate_binding_var(repl, &sym)?;
+            Self::validate_binding_symbol(repl, &sym)?;
             let expr = repl.zstore.intern_list([fun, sym]);
             let (res, _) = repl.reduce_aux(&expr)?;
             if res.tag == Tag::Err {
@@ -277,46 +325,49 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             }
             println!("{}", repl.fmt(&sym));
             repl.bind(sym, res);
-            Ok(())
+            Ok(sym)
         },
     };
 
     const CLEAR: Self = Self {
         name: "clear",
         summary: "Resets the current environment to be empty.",
-        format: "!(clear)",
         info: &[],
+        format: "!(clear)",
         example: &["!(def a 1)", "(current-env)", "!(clear)", "(current-env)"],
-        run: |repl, _args, _path| {
+        returns: "t",
+        run: |repl, _args, _dir| {
             repl.env = repl.zstore.intern_empty_env();
-            Ok(())
+            Ok(*repl.zstore.t())
         },
     };
 
     const SET_ENV: Self = Self {
         name: "set-env",
         summary: "Sets the env to the result of evaluating the argument.",
-        format: "!(set-env <expr>)",
         info: &[],
+        format: "!(set-env <expr>)",
         example: &["!(set-env (eval '(let ((a 1)) (current-env))))", "a"],
-        run: |repl, args, _path| {
+        returns: "t",
+        run: |repl, args, _dir| {
             let [&env_expr] = repl.take(args)?;
             let (env, _) = repl.reduce_aux(&env_expr)?;
             if env.tag != Tag::Env {
                 bail!("Value must be an environment");
             }
             repl.env = env;
-            Ok(())
+            Ok(*repl.zstore.t())
         },
     };
 
     const ERASE_FROM_ENV: Self = Self {
         name: "erase-from-env",
         summary: "Erases all bindings for the provided variables from the environment.",
-        format: "!(erase-from-env <var1> <var2> ...)",
         info: &["If a variable is not present in the environment, it's ignored."],
+        format: "!(erase-from-env <var1> <var2> ...)",
         example: &["!(erase-from-env foo bar)"],
-        run: |repl, args, _path| {
+        returns: "t",
+        run: |repl, args, _dir| {
             repl.memoize_env_dag();
             let (args_vec, _) = repl.zstore.fetch_list(args);
             let new_env_vec = repl
@@ -330,15 +381,16 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             for (var, val) in new_env_vec.into_iter().rev() {
                 repl.bind(var, val);
             }
-            Ok(())
+            Ok(*repl.zstore.t())
         },
     };
 
+    /// Persists commitment data and returns the corresponding commitment
     fn persist_comm_data(
         secret: ZPtr<F>,
         payload: ZPtr<F>,
         repl: &mut Repl<F, C1, C2>,
-    ) -> Result<()> {
+    ) -> Result<ZPtr<F>> {
         repl.memoize_dag(secret.tag, &secret.digest);
         repl.memoize_dag(payload.tag, &payload.digest);
         let comm_data = CommData::new(secret, payload, &repl.zstore);
@@ -346,10 +398,14 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         let hash = format!("{:x}", field_elts_to_biguint(&comm.digest));
         std::fs::write(commits_dir()?.join(&hash), bincode::serialize(&comm_data)?)?;
         println!("Hash: #0x{hash}");
-        Ok(())
+        Ok(comm)
     }
 
-    fn hide(secret: ZPtr<F>, payload_expr: &ZPtr<F>, repl: &mut Repl<F, C1, C2>) -> Result<()> {
+    fn hide(
+        secret: ZPtr<F>,
+        payload_expr: &ZPtr<F>,
+        repl: &mut Repl<F, C1, C2>,
+    ) -> Result<ZPtr<F>> {
         let (payload, _) = repl.reduce_aux(payload_expr)?;
         if payload.tag == Tag::Err {
             bail!("Payload reduction error: {}", repl.fmt(&payload));
@@ -360,13 +416,14 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const HIDE: Self = Self {
         name: "hide",
         summary: "Persists a hiding commitment.",
-        format: "!(hide <secret_expr> <payload_expr>)",
         info: &[
             "The secret is the reduction of <secret_expr>, which must be a",
             "bignum, and the payload is the reduction of <payload_expr>.",
         ],
+        format: "!(hide <secret_expr> <payload_expr>)",
         example: &["!(hide (bignum (commit 123)) 42)", "!(hide #0x123 42)"],
-        run: |repl, args, _path| {
+        returns: "The resulting commitment",
+        run: |repl, args, _dir| {
             let [&secret_expr, &payload_expr] = repl.take(args)?;
             let (secret, _) = repl.reduce_aux(&secret_expr)?;
             if secret.tag != Tag::BigNum {
@@ -379,14 +436,15 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const COMMIT: Self = Self {
         name: "commit",
         summary: "Persists a commitment.",
-        format: "!(commit <payload_expr>)",
         info: &[
             "The secret is an opaque commitment whose digest amounts to zeros",
             "and the payload is the reduction of <payload_expr>. Equivalent to",
             "!(hide #0x0 <payload_expr>).",
         ],
+        format: "!(commit <payload_expr>)",
         example: &["!(commit 42)"],
-        run: |repl, args, _path| {
+        returns: "The resulting commitment",
+        run: |repl, args, _dir| {
             let [&payload_expr] = repl.take(args)?;
             let secret = ZPtr::null(Tag::BigNum);
             Self::hide(secret, &payload_expr, repl)
@@ -397,7 +455,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         repl: &mut Repl<F, C1, C2>,
         digest: &[F],
         print_payload: Option<bool>,
-    ) -> Result<()> {
+    ) -> Result<ZPtr<F>> {
         let hash = format!("{:x}", field_elts_to_biguint(digest));
         let comm_data_bytes = std::fs::read(commits_dir()?.join(&hash))?;
         let comm_data: CommData<F> = bincode::deserialize(&comm_data_bytes)?;
@@ -408,23 +466,25 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 "Data is now available".to_string()
             }
         });
+        let zptr = comm_data.payload;
         comm_data.populate_zstore(&mut repl.zstore);
         if let Some(message) = message {
             println!("{message}");
         }
-        Ok(())
+        Ok(zptr)
     }
 
     const OPEN: Self = Self {
         name: "open",
         summary: "Fetches a persisted commitment and prints the payload.",
-        format: "!(open <comm>)",
         info: &[],
+        format: "!(open <comm>)",
         example: &[
             "!(commit 123)",
             "!(open #c0x944834111822843979ace19833d05ca9daf2f655230faec517433e72fe777b)",
         ],
-        run: |repl, args, _path| {
+        returns: "The commitment payload",
+        run: |repl, args, _dir| {
             let [&expr] = repl.take(args)?;
             let (result, _) = repl.reduce_aux(&expr)?;
             match result.tag {
@@ -437,13 +497,14 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const FETCH: Self = Self {
         name: "fetch",
         summary: "Fetches a persisted commitment.",
-        format: "!(fetch <comm>)",
         info: &[],
+        format: "!(fetch <comm>)",
         example: &[
             "!(commit 123)",
             "!(fetch #c0x944834111822843979ace19833d05ca9daf2f655230faec517433e72fe777b)",
         ],
-        run: |repl, args, _path| {
+        returns: "The commitment payload",
+        run: |repl, args, _dir| {
             let [&expr] = repl.take(args)?;
             let (result, _) = repl.reduce_aux(&expr)?;
             match result.tag {
@@ -478,16 +539,14 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const CALL: Self = Self {
         name: "call",
         summary: "Applies arguments to a callable object",
-        format: "!(call <callable> <call_args>)",
         info: &["It's also capable of opening persisted commitments."],
+        format: "!(call <callable> <call_args>)",
         example: &[
             "(commit (lambda (x) x))",
             "!(call #c0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 0)",
         ],
-        run: |repl, args, _path| {
-            Self::call(repl, args, None)?;
-            Ok(())
-        },
+        returns: "The call result",
+        run: |repl, args, _dir| Self::call(repl, args, None),
     };
 
     fn persist_chain_comm(repl: &mut Repl<F, C1, C2>, cons: &ZPtr<F>) -> Result<()> {
@@ -511,11 +570,11 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const CHAIN: Self = Self {
         name: "chain",
         summary: "Chains a callable object",
-        format: "!(chain <callable> <call_args>)",
         info: &[
             "It's also capable of opening persisted commitments.",
             "If the next callable is a commitment, it's persisted.",
         ],
+        format: "!(chain <callable> <call_args>)",
         example: &[
             "(commit (letrec ((add (lambda (counter x)
                        (let ((counter (+ counter x)))
@@ -523,26 +582,13 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                (add 0)))",
             "!(chain #c0x545e921e6ef944cd72811575b1064f8737d520cd04dd75a47ad6c5bf509ea7 1)",
         ],
-        run: |repl, args, _path| {
+        returns: "The chained result",
+        run: |repl, args, _dir| {
             let cons = Self::call(repl, args, None)?;
-            Self::persist_chain_comm(repl, &cons)
+            Self::persist_chain_comm(repl, &cons)?;
+            Ok(cons)
         },
     };
-
-    fn validate_binding_var(repl: &Repl<F, C1, C2>, zptr: &ZPtr<F>) -> Result<()> {
-        match zptr.tag {
-            Tag::Builtin | Tag::Coroutine => Ok(()),
-            Tag::Sym => {
-                let zstore = &repl.zstore;
-                if zptr.digest != zstore.nil().digest && zptr.digest != zstore.t().digest {
-                    Ok(())
-                } else {
-                    bail!("Illegal binding: {}", repl.fmt(zptr));
-                }
-            }
-            _ => bail!("Illegal binding: {}", repl.fmt(zptr)),
-        }
-    }
 
     fn transition_call(
         repl: &mut Repl<F, C1, C2>,
@@ -563,28 +609,26 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const TRANSITION: Self = Self {
         name: "transition",
         summary: "Chains a callable object and binds the next state to a variable",
-        format: "!(transition <symbol> <state_expr> <call_args>)",
         info: &["It has the same side effects of the `chain` meta command."],
+        format: "!(transition <state_expr> <call_args>)",
         example: &["!(transition new-state old-state input0)"],
-        run: |repl, args, _path| {
-            let (&next_state_sym, rest) = repl.car_cdr(args);
-            Self::validate_binding_var(repl, &next_state_sym)?;
-            let (&current_state_expr, &call_args) = repl.car_cdr(rest);
+        returns: "The chained result",
+        run: |repl, args, _dir| {
+            let (&current_state_expr, &call_args) = repl.car_cdr(args);
             let cons = Self::transition_call(repl, &current_state_expr, call_args, None)?;
             Self::persist_chain_comm(repl, &cons)?;
-            println!("{}", repl.fmt(&next_state_sym));
-            repl.bind(next_state_sym, cons);
-            Ok(())
+            Ok(cons)
         },
     };
 
     const DEFPACKAGE: Self = Self {
         name: "defpackage",
-        summary: "Add a package to the state.",
-        format: "!(defpackage <string|symbol>)",
+        summary: "Adds a package to the state.",
         info: &[],
+        format: "!(defpackage <string|symbol>)",
         example: &["!(defpackage abc)"],
-        run: |repl, args, _path| {
+        returns: "The symbol naming the new package",
+        run: |repl, args, _dir| {
             // TODO: handle args
             let (name, _args) = repl.car_cdr(args);
             let name = match name.tag {
@@ -595,20 +639,22 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 Tag::Sym => repl.zstore.fetch_symbol(name).into(),
                 _ => bail!("Package name must be a string or a symbol"),
             };
-            println!("{}", repl.state.borrow().fmt_to_string(&name));
+            let name_zptr = repl.zstore.intern_symbol(&name, &repl.lang_symbols);
+            println!("{}", repl.fmt(&name_zptr));
             let package = Package::new(name);
             repl.state.borrow_mut().add_package(package);
-            Ok(())
+            Ok(name_zptr)
         },
     };
 
     const IMPORT: Self = Self {
         name: "import",
         summary: "Import a single or several packages.",
-        format: "!(import <string|package> ...)",
         info: &[],
+        format: "!(import <string|package> ...)",
         example: &[],
-        run: |repl, args, _path| {
+        returns: "t",
+        run: |repl, args, _dir| {
             // TODO: handle pkg
             let (mut symbols, _pkg) = repl.car_cdr(args);
             if symbols.tag == Tag::Sym {
@@ -629,15 +675,15 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 }
                 repl.state.borrow_mut().import(&symbols_vec)?;
             }
-            Ok(())
+            Ok(*repl.zstore.t())
         },
     };
 
     const IN_PACKAGE: Self = Self {
         name: "in-package",
         summary: "set the current package.",
-        format: "!(in-package <string|symbol>)",
         info: &[],
+        format: "!(in-package <string|symbol>)",
         example: &[
             "!(defpackage abc)",
             "!(in-package abc)",
@@ -645,36 +691,37 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             "!(in-package .lurk-user)",
             ".lurk-user.abc.two",
         ],
-        run: |repl, args, _path| {
+        returns: "t",
+        run: |repl, args, _dir| {
             let [arg] = repl.take(args)?;
             match arg.tag {
                 Tag::Str => {
                     let name = repl.zstore.fetch_string(arg);
                     let package_name = repl.state.borrow_mut().intern(name);
-                    repl.state.borrow_mut().set_current_package(package_name)
+                    repl.state.borrow_mut().set_current_package(package_name)?;
                 }
                 Tag::Sym => {
                     let package_name = repl.zstore.fetch_symbol(arg);
                     repl.state
                         .borrow_mut()
-                        .set_current_package(package_name.into())
+                        .set_current_package(package_name.into())?;
                 }
                 _ => bail!("Expected string or symbol. Got {}", repl.fmt(arg)),
             }
+            Ok(*repl.zstore.t())
         },
     };
 
     const DUMP_EXPR: Self = Self {
         name: "dump-expr",
         summary: "Evaluates an expression and dumps the result to the file system",
-        format: "!(dump-expr <expr> <string>)",
         info: &["Commitments are persisted opaquely."],
+        format: "!(dump-expr <expr> <string>)",
         example: &["!(dump-expr (+ 1 1) \"my_file\")"],
-        run: |repl, args, _path| {
+        returns: "The persisted data",
+        run: |repl, args, _dir| {
             let [&expr, &path] = repl.take(args)?;
-            if path.tag != Tag::Str {
-                bail!("Path must be a string");
-            }
+            Self::validate_path_type(&path)?;
             let (result, _) = repl.reduce_aux(&expr)?;
             if result.tag == Tag::Err {
                 bail!("Reduction error: {}", repl.fmt(&result));
@@ -685,39 +732,34 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let lurk_data_bytes = bincode::serialize(&lurk_data)?;
             std::fs::write(&path_str, lurk_data_bytes)?;
             println!("Data persisted at {path_str}");
-            Ok(())
+            Ok(result)
         },
     };
 
     const LOAD_EXPR: Self = Self {
         name: "load-expr",
-        summary: "Loads Lurk data from the file system and binds it to a symbol",
-        format: "!(load-expr <symbol> <string>)",
+        summary: "Loads Lurk data from the file system",
         info: &[],
+        format: "!(load-expr <string>)",
         example: &[
             "!(dump-expr (+ 1 1) \"my_file\")",
-            "!(load-expr x \"my_file\")",
+            "!(assert-eq 2 !(load-expr \"my_file\"))",
         ],
-        run: |repl, args, _path| {
-            let [&sym, &path] = repl.take(args)?;
-            Self::validate_binding_var(repl, &sym)?;
-            if path.tag != Tag::Str {
-                bail!("Path must be a string");
-            }
+        returns: "The loaded data",
+        run: |repl, args, _dir| {
+            let [&path] = repl.take(args)?;
+            Self::validate_path_type(&path)?;
             let path_str = repl.zstore.fetch_string(&path);
             let lurk_data_bytes = std::fs::read(&path_str)?;
             let lurk_data: LurkData<F> = bincode::deserialize(&lurk_data_bytes)?;
             let payload = lurk_data.populate_zstore(&mut repl.zstore);
-            println!("{}", repl.fmt(&sym));
-            repl.bind(sym, payload);
-            Ok(())
+            Ok(payload)
         },
     };
 
     const DEFPROTOCOL: Self = Self {
         name: "defprotocol",
         summary: "Defines a protocol",
-        format: "!(defprotocol <symbol> <vars> <body> options...)",
         info: &[
             "The protocol body cannot have any free variable besides the ones",
             "declared in the vars list. The body must return a pair such that:",
@@ -731,6 +773,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             "  :lang specifies the Lang (ignored, WIP)",
             "  :description is a description of the protocol, defaulting to \"\"",
         ],
+        format: "!(defprotocol <symbol> <vars> <body> options...)",
         example: &[
             "!(defprotocol my-protocol (hash pair)",
             "  (cons",
@@ -740,11 +783,12 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             "    (lambda () (> (car pair) 10)))",
             "  :description \"hash opens to a pair (a, b) s.t. a+b=30 and a>10\")",
         ],
-        run: |repl, args, _path| {
+        returns: "The symbol naming the protocol",
+        run: |repl, args, _dir| {
             let (&name, rest) = repl.car_cdr(args);
             let (&vars, rest) = repl.car_cdr(rest);
             let (&body, &props) = repl.car_cdr(rest);
-            Self::validate_binding_var(repl, &name)?;
+            Self::validate_binding_symbol(repl, &name)?;
             if vars.tag != Tag::Cons && &vars != repl.zstore.nil() {
                 bail!("Protocol vars must be a list");
             }
@@ -775,20 +819,21 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let protocol = repl.zstore.intern_list([vars, body, lang, description]);
             println!("{}", repl.fmt(&name));
             repl.bind(name, protocol);
-            Ok(())
+            Ok(name)
         },
     };
 
     const HELP: Self = Self {
         name: "help",
         summary: "Prints a help message",
-        format: "!(help <symbol>)",
         info: &[
             "Without arguments it prints a summary of all available commands.",
             "Otherwise the full help for the command in the first argument is printed.",
         ],
+        format: "!(help <symbol>)",
         example: &["!(help)", "!(help prove)"],
-        run: |repl, args, _path| {
+        returns: "t",
+        run: |repl, args, _dir| {
             if args != repl.zstore.nil() {
                 let [arg] = repl.take(args)?;
                 if !matches!(arg.tag, Tag::Sym | Tag::Builtin) {
@@ -798,7 +843,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 let Some(name) = sym_path.last() else {
                     bail!("Argument can't be the root symbol");
                 };
-                let Some(meta_cmd) = repl.meta_cmds.get(name.as_str()) else {
+                let Some(meta_cmd) = repl.meta_cmds.get(&meta_sym(name)) else {
                     bail!("Unknown meta command");
                 };
                 println!("{} - {}", meta_cmd.name, meta_cmd.summary);
@@ -808,20 +853,21 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 for e in meta_cmd.info {
                     println!("    {e}");
                 }
-                println!("  Usage: {}", meta_cmd.format);
+                println!("  Format: {}", meta_cmd.format);
                 if !meta_cmd.example.is_empty() {
                     println!("  Example:");
                 }
                 for e in meta_cmd.example {
                     println!("    {e}");
                 }
+                println!("  Returns: {}", meta_cmd.returns);
             } else {
                 println!("Available commands:");
                 for (_, i) in repl.meta_cmds.iter().sorted_by_key(|x| x.0) {
                     println!("  {} - {}", i.name, i.summary);
                 }
             }
-            Ok(())
+            Ok(*repl.zstore.t())
         },
     };
 }
@@ -831,39 +877,41 @@ type F = BabyBear;
 impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const PROVE: Self = Self {
         name: "prove",
-        summary: "Proves a Lurk reduction",
+        summary: "Prove a Lurk reduction, persists the proof and prints its key",
+        info: &[],
         format: "!(prove <expr>?)",
-        info: &["Prove a Lurk reduction, persists the proof and prints its key"],
         example: &["'(1 2 3)", "!(prove)", "!(prove '(1 2 3))"],
-        run: |repl, args, _path| {
+        returns: "The proof key as a string",
+        run: |repl, args, _dir| {
             if args != repl.zstore.nil() {
                 let [&expr] = repl.take(args)?;
                 repl.handle_non_meta(&expr, None)?;
             }
-            repl.prove_last_reduction()?;
-            Ok(())
+            let proof_key = repl.prove_last_reduction()?;
+            Ok(repl.zstore.intern_string(&proof_key))
         },
     };
 
     fn load_cached_proof(proof_key: &str) -> Result<CachedProof> {
-        let proof_path = proofs_dir()?.join(proof_key);
-        if !proof_path.exists() {
+        let proof_dir = proofs_dir()?.join(proof_key);
+        if !proof_dir.exists() {
             bail!("Proof not found");
         }
-        let cached_proof_bytes = std::fs::read(proof_path)?;
+        let cached_proof_bytes = std::fs::read(proof_dir)?;
         let cached_proof = bincode::deserialize(&cached_proof_bytes)?;
         Ok(cached_proof)
     }
 
     fn load_cached_proof_with_repl(
-        repl: &Repl<F, C1, C2>,
+        repl: &mut Repl<F, C1, C2>,
         args: &ZPtr<F>,
     ) -> Result<(String, CachedProof)> {
-        let [proof_key_zptr] = repl.take(args)?;
+        let [&proof_key_expr] = repl.take(args)?;
+        let (proof_key_zptr, _) = repl.reduce_aux(&proof_key_expr)?;
         if proof_key_zptr.tag != Tag::Str {
             bail!("Proof key must be a string");
         }
-        let proof_key = repl.zstore.fetch_string(proof_key_zptr);
+        let proof_key = repl.zstore.fetch_string(&proof_key_zptr);
         let cached_proof = Self::load_cached_proof(&proof_key)?;
         Ok((proof_key, cached_proof))
     }
@@ -871,10 +919,14 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const VERIFY: Self = Self {
         name: "verify",
         summary: "Verifies Lurk reduction proof",
+        info: &[
+            "Verifies a Lurk reduction proof by its key.",
+            "Errors if the proof doesn't verify.",
+        ],
         format: "!(verify <string>)",
-        info: &["Verifies a Lurk reduction proof by its key"],
         example: &["!(verify \"2ae20412c6f4740f409196522c15b0e42aae2338c2b5b9c524f675cba0a93e\")"],
-        run: |repl, args, _path| {
+        returns: "t",
+        run: |repl, args, _dir| {
             let (proof_key, cached_proof) = Self::load_cached_proof_with_repl(repl, args)?;
             let has_same_verifier_version = cached_proof.crypto_proof.has_same_verifier_version();
             let machine = new_machine(&repl.toplevel);
@@ -883,7 +935,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let challenger = &mut machine.config().challenger();
             if machine.verify(&vk, &machine_proof, challenger).is_ok() {
                 println!("✓ Proof \"{proof_key}\" verified");
-                Ok(())
+                Ok(*repl.zstore.t())
             } else {
                 let mut msg = format!("✗ Proof \"{proof_key}\" failed on verification");
                 if !has_same_verifier_version {
@@ -897,10 +949,11 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const INSPECT: Self = Self {
         name: "inspect",
         summary: "Prints a proof claim",
-        format: "!(inspect <string>)",
         info: &[],
+        format: "!(inspect <string>)",
         example: &["!(inspect \"2ae20412c6f4740f409196522c15b0e42aae2338c2b5b9c524f675cba0a93e\")"],
-        run: |repl, args, _path| {
+        returns: "The proof claim",
+        run: |repl, args, _dir| {
             let CachedProof {
                 expr,
                 env,
@@ -915,7 +968,8 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 repl.fmt(&env),
                 repl.fmt(&result)
             );
-            Ok(())
+            let expr_env = repl.zstore.intern_cons(expr, env);
+            Ok(repl.zstore.intern_cons(expr_env, result))
         },
     };
 
@@ -976,13 +1030,13 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const PROVE_PROTOCOL: Self = Self {
         name: "prove-protocol",
         summary: "Creates a proof for a protocol",
-        format: "!(prove-protocol <protocol> <string> args...)",
         info: &[
             "The proof is created only if the protocol can be satisfied by the",
             "provided arguments.",
             "The second (string) argument for this meta command is the path to",
             "the file where the protocol proof will be saved.",
         ],
+        format: "!(prove-protocol <protocol> <string> args...)",
         example: &[
             "(commit '(13 . 17))",
             "!(prove-protocol my-protocol",
@@ -990,7 +1044,8 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             "  #c0x955f855f302a30ed988cc48685c442ebd98c8711e989fc64df8f27f52e1350",
             "  '(13 . 17))",
         ],
-        run: |repl, args, _path| {
+        returns: "The proof key",
+        run: |repl, args, _dir| {
             let (&protocol_expr, rest) = repl.car_cdr(args);
             let (path, &args) = repl.car_cdr(rest);
 
@@ -1053,14 +1108,13 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let protocol_proof = ProtocolProof::new(crypto_proof, args_reduced, &repl.zstore);
             std::fs::write(&path_str, bincode::serialize(&protocol_proof)?)?;
             println!("Protocol proof saved at {path_str}");
-            Ok(())
+            Ok(repl.zstore.intern_string(&proof_key))
         },
     };
 
     const VERIFY_PROTOCOL: Self = Self {
         name: "verify-protocol",
         summary: "Verifies a proof for a protocol",
-        format: "!(verify-protocol <protocol> <string>)",
         info: &[
             "Reconstructs the proof input with the args provided by the prover",
             "according to the protocol and then verifies the proof.",
@@ -1068,9 +1122,12 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             "failing if the predicate returns nil.",
             "The second (string) argument is the path to the file containing the",
             "protocol proof.",
+            "Errors if the proof doesn't verify.",
         ],
+        format: "!(verify-protocol <protocol> <string>)",
         example: &["!(verify-protocol my-protocol \"protocol-proof\")"],
-        run: |repl, args, _path| {
+        returns: "t",
+        run: |repl, args, _dir| {
             let [&protocol_expr, path] = repl.take(args)?;
             if path.tag != Tag::Str {
                 bail!("Path must be a string");
@@ -1126,7 +1183,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             Self::post_verify_check(repl, post_verify_predicate)?;
 
             println!("Proof accepted by the protocol");
-            Ok(())
+            Ok(*repl.zstore.t())
         },
     };
 
@@ -1145,19 +1202,20 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const MICROCHAIN_START: Self = Self {
         name: "microchain-start",
         summary: "Starts a new microchain and binds the resulting ID to a symbol",
-        format: "!(microchain-start <addr_expr> <state_expr> <id_sym>)",
         info: &[
             "A microchain ID is a hiding commitment to the genesis state, using",
             "a timestamp-based secret generated in the server.",
             "Upon success, it becomes possible to open the ID and retrieve genesis",
             "state associated with the microchain.",
         ],
+        format: "!(microchain-start <addr_expr> <state_expr>)",
         example: &[
-            "!(microchain-start \"127.0.0.1:1234\" state0 id)",
+            "!(defq id !(microchain-start \"127.0.0.1:1234\" state0))",
             "!(assert-eq state0 (open id))",
         ],
-        run: |repl, args, _path| {
-            let [&addr_expr, &state_expr, &id_sym] = repl.take(args)?;
+        returns: "The microchain's ID",
+        run: |repl, args, _dir| {
+            let [&addr_expr, &state_expr] = repl.take(args)?;
             let (addr, _) = repl.reduce_aux(&addr_expr)?;
             if addr.tag != Tag::Str {
                 bail!("Address must be a string");
@@ -1166,7 +1224,6 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             if state.tag != Tag::Cons {
                 bail!("State must be a pair");
             }
-            Self::validate_binding_var(repl, &id_sym)?;
 
             repl.memoize_dag(state.tag, &state.digest);
 
@@ -1194,9 +1251,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let id_digest = CommData::hash(&id_secret, &state, &mut repl.zstore);
 
             let id = repl.zstore.intern_comm(id_digest);
-            println!("{}", repl.fmt(&id_sym));
-            repl.bind(id_sym, id);
-            Ok(())
+            Ok(id)
         },
     };
 
@@ -1204,35 +1259,34 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         repl: &mut Repl<F, C1, C2>,
         args: &ZPtr<F>,
         mk_request: fn([F; DIGEST_SIZE]) -> Request,
-    ) -> Result<(ZPtr<F>, TcpStream)> {
-        let [&addr_expr, &id_expr, &state_sym] = repl.take(args)?;
+    ) -> Result<TcpStream> {
+        let [&addr_expr, &id_expr] = repl.take(args)?;
         let (addr, _) = repl.reduce_aux(&addr_expr)?;
         if addr.tag != Tag::Str {
             bail!("Address must be a string");
         }
         let (id, _) = repl.reduce_aux(&id_expr)?;
-        Self::validate_binding_var(repl, &state_sym)?;
         let addr_str = repl.zstore.fetch_string(&addr);
         let mut stream = TcpStream::connect(addr_str)?;
         write_data(&mut stream, mk_request(id.digest))?;
-        Ok((state_sym, stream))
+        Ok(stream)
     }
 
     const MICROCHAIN_GET_GENESIS: Self = Self {
         name: "microchain-get-genesis",
         summary: "Binds the genesis state of a microchain to a symbol",
-        format: "!(microchain-get-genesis <addr_expr> <id_expr> <symbol>)",
         info: &[
             "Similarly to `microchain-start`, the preimage of the ID becomes",
             "available so opening the ID returns the genesis state.",
         ],
+        format: "!(microchain-get-genesis <addr_expr> <id_expr>)",
         example: &[
-            "!(microchain-get-genesis \"127.0.0.1:1234\" #c0x123 state0)",
-            "!(assert-eq state0 (open id))",
+            "!(defq state0 !(microchain-get-genesis \"127.0.0.1:1234\" #c0x123))",
+            "!(assert-eq state0 (open #c0x123))",
         ],
-        run: |repl, args, _path| {
-            let (state_sym, mut stream) =
-                Self::send_get_state_request(repl, args, Request::GetGenesis)?;
+        returns: "The microchain's genesis state",
+        run: |repl, args, _dir| {
+            let mut stream = Self::send_get_state_request(repl, args, Request::GetGenesis)?;
             let Response::Genesis(id_secret, chain_state) = read_data(&mut stream)? else {
                 bail!("Could not read state from server");
             };
@@ -1241,28 +1295,24 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             // memoize preimg so it's possible to open the ID
             CommData::hash(&id_secret, &state, &mut repl.zstore);
 
-            println!("{}", repl.fmt(&state_sym));
-            repl.bind(state_sym, state);
-            Ok(())
+            Ok(state)
         },
     };
 
     const MICROCHAIN_GET_STATE: Self = Self {
         name: "microchain-get-state",
         summary: "Binds the current state of a microchain to a symbol",
-        format: "!(microchain-get-state <addr_expr> <id_expr> <symbol>)",
         info: &[],
-        example: &["!(microchain-get-state \"127.0.0.1:1234\" #c0x123 state)"],
-        run: |repl, args, _path| {
-            let (state_sym, mut stream) =
-                Self::send_get_state_request(repl, args, Request::GetState)?;
+        format: "!(microchain-get-state <addr_expr> <id_expr>)",
+        example: &["!(microchain-get-state \"127.0.0.1:1234\" #c0x123)"],
+        returns: "The microchain's latest state",
+        run: |repl, args, _dir| {
+            let mut stream = Self::send_get_state_request(repl, args, Request::GetState)?;
             let Response::State(chain_state) = read_data(&mut stream)? else {
                 bail!("Could not read state from server");
             };
             let state = chain_state.into_zptr(&mut repl.zstore);
-            println!("{}", repl.fmt(&state_sym));
-            repl.bind(state_sym, state);
-            Ok(())
+            Ok(state)
         },
     };
 
@@ -1270,23 +1320,22 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         name: "microchain-transition",
         summary:
             "Proves a state transition via chaining and sends the proof to a microchain server",
-        format: "!(microchain-transition <addr_expr> <id_expr> <symbol> <state_expr> <call_args>)",
         info: &[
             "The transition is successful iff the proof is accepted by the server.",
             "Unlike in the `transition` meta command, the call arguments will be",
             "evaluated w.r.t. the empty environment.",
         ],
-        example: &["!(microchain-transition \"127.0.0.1:1234\" #c0x123 state2 state1 arg0 arg1)"],
-        run: |repl, args, _path| {
+        format: "!(microchain-transition <addr_expr> <id_expr> <state_expr> <call_args>)",
+        example: &["!(microchain-transition \"127.0.0.1:1234\" #c0x123 state arg0 arg1)"],
+        returns: "The new state",
+        run: |repl, args, _dir| {
             let (&addr_expr, rest) = repl.car_cdr(args);
-            let (&id_expr, rest) = repl.car_cdr(rest);
-            let (&next_state_sym, &rest) = repl.car_cdr(rest);
+            let (&id_expr, &rest) = repl.car_cdr(rest);
             let (addr, _) = repl.reduce_aux(&addr_expr)?;
             if addr.tag != Tag::Str {
                 bail!("Address must be a string");
             }
             let (id, _) = repl.reduce_aux(&id_expr)?;
-            Self::validate_binding_var(repl, &next_state_sym)?;
             let (&current_state_expr, &call_args) = repl.car_cdr(&rest);
             let empty_env = repl.zstore.intern_empty_env();
             let state =
@@ -1320,8 +1369,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             match read_data::<Response>(stream)? {
                 Response::ProofAccepted => {
                     println!("Proof accepted by the server");
-                    println!("{}", repl.fmt(&next_state_sym));
-                    repl.bind(next_state_sym, state);
+                    Ok(state)
                 }
                 Response::ProofVerificationFailed(verifier_version) => {
                     let mut msg = "Proof verification failed".to_string();
@@ -1334,17 +1382,17 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 }
                 _ => bail!("Bad server response"),
             }
-            Ok(())
         },
     };
 
     const MICROCHAIN_VERIFY: Self = Self {
         name: "microchain-verify",
         summary: "Checks if a series of microchain transition proofs takes state A to B",
-        format: "!(microchain-verify <addr_expr> <id_expr> <state_a_expr> <state_b_expr>)",
         info: &["The state arguments are meant to be the genesis and the current state."],
+        format: "!(microchain-verify <addr_expr> <id_expr> <state_a_expr> <state_b_expr>)",
         example: &["!(microchain-verify \"127.0.0.1:1234\" #c0x123 genesis current)"],
-        run: |repl, args, _path| {
+        returns: "t",
+        run: |repl, args, _dir| {
             let [&addr_expr, &id_expr, &genesis_state_expr, &current_state_expr] =
                 repl.take(args)?;
             let (addr, _) = repl.reduce_aux(&addr_expr)?;
@@ -1390,7 +1438,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 bail!("Chain final state doesn't match target final state");
             }
             println!("Microchain verification succeeded");
-            Ok(())
+            Ok(*repl.zstore.t())
         },
     };
 }
@@ -1401,13 +1449,15 @@ fn copy_inner<'a, T: Copy + 'a, I: IntoIterator<Item = &'a T>>(xs: I) -> Vec<T> 
 
 #[inline]
 pub(crate) fn meta_cmds<C1: Chipset<F>, C2: Chipset<F>>() -> MetaCmdsMap<F, C1, C2> {
-    [
+    let mut meta_cmds = MetaCmdsMap::default();
+    for mc in [
         MetaCmd::ASSERT,
         MetaCmd::ASSERT_EQ,
         MetaCmd::ASSERT_ERROR,
         MetaCmd::ASSERT_EMITTED,
         MetaCmd::DEBUG,
         MetaCmd::LOAD,
+        MetaCmd::DEFQ,
         MetaCmd::DEF,
         MetaCmd::DEFREC,
         MetaCmd::UPDATE,
@@ -1438,8 +1488,9 @@ pub(crate) fn meta_cmds<C1: Chipset<F>, C2: Chipset<F>>() -> MetaCmdsMap<F, C1, 
         MetaCmd::MICROCHAIN_TRANSITION,
         MetaCmd::MICROCHAIN_VERIFY,
         MetaCmd::HELP,
-    ]
-    .map(|mc| (mc.name, mc))
-    .into_iter()
-    .collect()
+    ] {
+        assert!(meta_cmds.insert(meta_sym(mc.name), mc).is_none());
+    }
+    assert_eq!(meta_cmds.len(), META_SYMBOLS.len());
+    meta_cmds
 }

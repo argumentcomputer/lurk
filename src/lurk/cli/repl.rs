@@ -34,14 +34,15 @@ use crate::{
         eval::build_lurk_toplevel,
         lang::Lang,
         parser::{
-            syntax::{parse_maybe_meta, parse_space},
+            syntax::{parse, parse_space, parse_syntax_eof},
             Error, Span,
         },
         stark_machine::{new_machine, INPUT_SIZE},
         state::{State, StateRcCell},
         symbol::Symbol,
+        syntax::Syntax,
         tag::Tag,
-        zstore::{ZPtr, ZStore, DIGEST_SIZE},
+        zstore::{quote, ZPtr, ZStore, DIGEST_SIZE},
     },
 };
 
@@ -52,27 +53,30 @@ use super::{
 };
 
 #[derive(Helper, Highlighter, Hinter, Completer)]
-struct InputValidator<F: Field + Debug> {
+struct InputValidator<F: Field> {
     state: StateRcCell,
     _marker: PhantomData<F>,
 }
 
-impl<F: Field + Debug> InputValidator<F> {
+impl<F: Field> InputValidator<F> {
     fn try_parse(&self, input: &str) -> Result<(), Error> {
-        match delimited(
-            parse_space::<F>,
-            parse_maybe_meta(self.state.clone(), false),
-            parse_space,
-        )
-        .parse(Span::new(input))
-        {
-            Err(e) => Err(Error::Syntax(format!("{}", e))),
-            Ok((_, None)) => Ok(()),
-            Ok((rest, Some(_))) => {
-                if rest.is_empty() {
-                    Ok(())
-                } else {
-                    self.try_parse(&rest)
+        let mut input = Span::new(input);
+        loop {
+            match delimited(
+                parse_space,
+                parse_syntax_eof::<F>(self.state.clone(), false),
+                parse_space,
+            )
+            .parse(input)
+            {
+                Err(e) => return Err(Error::Syntax(format!("{}", e))),
+                Ok((_, None)) => return Ok(()),
+                Ok((rest, Some(_))) => {
+                    if rest.is_empty() {
+                        return Ok(());
+                    } else {
+                        input = rest;
+                    }
                 }
             }
         }
@@ -82,16 +86,12 @@ impl<F: Field + Debug> InputValidator<F> {
 impl<F: Field + Debug> Validator for InputValidator<F> {
     fn validate(&self, ctx: &mut ValidationContext<'_>) -> rustyline::Result<ValidationResult> {
         let input = ctx.input();
-        let parse_result = self.try_parse(input);
-        let result = match parse_result {
-            Ok(_) => ValidationResult::Valid(None),
-            Err(_) => ValidationResult::Invalid(None),
-        };
-        if input.ends_with("\n\n") {
-            // user has pressed enter a lot of times, there is probably a syntax error and we should just send it to the repl
+        if input.ends_with("\n\n") || self.try_parse(input).is_ok() {
+            // user has pressed enter a lot of times so there is probably a syntax
+            // error and we should just send it to the repl
             Ok(ValidationResult::Valid(None))
         } else {
-            Ok(result)
+            Ok(ValidationResult::Invalid(None))
         }
     }
 }
@@ -291,9 +291,9 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
     }
 
     #[inline]
-    pub(crate) fn bind(&mut self, var: ZPtr<F>, val: ZPtr<F>) {
+    pub(crate) fn bind(&mut self, sym: ZPtr<F>, val: ZPtr<F>) {
         self.memoize_env_dag();
-        self.env = self.zstore.intern_env(var, val, self.env);
+        self.env = self.zstore.intern_env(sym, val, self.env);
     }
 
     /// Produces a minimal `QueryRecord` with just enough data to manually execute
@@ -495,21 +495,77 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         Ok(result)
     }
 
-    fn handle_meta(&mut self, expr: &ZPtr<F>, file_dir: &Utf8Path) -> Result<()> {
-        if expr.tag != Tag::Cons {
-            bail!("Meta command calls must be written as cons lists");
-        }
-        let (cmd_sym, &args) = self.zstore.fetch_tuple11(expr);
-        if cmd_sym.tag != Tag::Sym {
-            bail!("The meta command must be a symbol");
-        }
-        let (cmd_sym_head, _) = self.zstore.fetch_tuple11(cmd_sym);
-        let cmd = self.zstore.fetch_string(cmd_sym_head);
-        if let Some(meta_cmd) = self.meta_cmds.get(cmd.as_str()) {
-            (meta_cmd.run)(self, &args, file_dir)
-        } else {
-            bail!("Invalid meta command: {cmd}")
-        }
+    fn intern_syntax_slice(
+        &mut self,
+        slice: &[Syntax<F>],
+        file_dir: &Utf8Path,
+    ) -> Result<Vec<ZPtr<F>>> {
+        slice
+            .iter()
+            .map(|x| self.intern_syntax(x, file_dir))
+            .collect()
+    }
+
+    fn intern_syntax(&mut self, syn: &Syntax<F>, file_dir: &Utf8Path) -> Result<ZPtr<F>> {
+        let zptr = match syn {
+            Syntax::Meta(_, sym, args) => {
+                let zptrs = self.intern_syntax_slice(args, file_dir)?;
+                let args = self.zstore.intern_list(zptrs);
+                if let Some(meta_cmd) = self.meta_cmds.get(sym) {
+                    (meta_cmd.run)(self, &args, file_dir)?
+                } else {
+                    bail!("Invalid meta command: {sym}")
+                }
+            },
+            Syntax::Num(_, f) => self.zstore.intern_num(*f),
+            Syntax::Char(_, c) => self.zstore.intern_char(*c),
+            Syntax::U64(_, u) => self.zstore.intern_u64(*u),
+            Syntax::I64(..) => bail!("Transient error: Signed integers are not yet supported. Using `(- 0 x)` instead of `-x` might work as a temporary workaround."),
+            Syntax::BigNum(_, c) => self.zstore.intern_big_num(*c),
+            Syntax::Comm(_, c) => self.zstore.intern_comm(*c),
+            Syntax::String(_, s) => self.zstore.intern_string(s),
+            Syntax::Symbol(_, s) => self.zstore.intern_symbol(s, &self.lang_symbols),
+            Syntax::List(_, xs) => {
+                let zptrs = self.intern_syntax_slice(xs, file_dir)?;
+                self.zstore.intern_list(zptrs)
+            }
+            Syntax::Improper(_, xs, y) => {
+                let zptrs = self.intern_syntax_slice(xs, file_dir)?;
+                let y = self.intern_syntax(y, file_dir)?;
+                self.zstore.intern_list_full(zptrs, y)
+            }
+            Syntax::Quote(_, x) => {
+                let quote = self.zstore.intern_symbol(quote(), &self.lang_symbols);
+                let x = self.intern_syntax(x, file_dir)?;
+                self.zstore.intern_list([quote, x])
+            }
+        };
+        Ok(zptr)
+    }
+
+    /// Parses textual input, resolves meta commands and returns:
+    /// * `None` if there was no `Syntax` to parse
+    /// * `Some(offset, rest, zptr, non_meta)` if a `Syntax` node was parsed, where
+    ///     * `offset: usize` is the number of characters before the `Syntax`
+    ///     * `rest: Span<'_>` is the textual input to be parsed next
+    ///     * `zptr: ZPtr<F>` is the pointer to the interned Lurk expression
+    ///     * `non_meta: bool` tells whether the parsed code was a meta command or not
+    #[allow(clippy::type_complexity)]
+    fn parse<'a>(
+        &mut self,
+        input: Span<'a>,
+        file_dir: &Utf8Path,
+    ) -> Result<Option<(usize, Span<'a>, ZPtr<F>, bool)>> {
+        let Some((rest, syn)) = parse(input, self.state.clone(), false)? else {
+            return Ok(None);
+        };
+        let offset = syn
+            .get_pos()
+            .get_from_offset()
+            .expect("Parsed syntax should have its Pos set");
+        let non_meta = !matches!(syn, Syntax::Meta(..));
+        let zptr = self.intern_syntax(&syn, file_dir)?;
+        Ok(Some((offset, rest, zptr, non_meta)))
     }
 
     fn handle_form<'a>(
@@ -517,15 +573,12 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         input: Span<'a>,
         file_dir: &Utf8Path,
         demo: bool,
-    ) -> Result<Span<'a>> {
-        let (syntax_start, mut new_input, is_meta, zptr) = self.zstore.read_maybe_meta_with_state(
-            self.state.clone(),
-            &input,
-            &self.lang_symbols,
-        )?;
+    ) -> Result<Option<Span<'a>>> {
+        let Some((syntax_start, mut new_input, zptr, non_meta)) = self.parse(input, file_dir)?
+        else {
+            return Ok(None);
+        };
         if demo {
-            // adjustment to print the exclamation mark in the right place
-            let syntax_start = syntax_start - usize::from(is_meta);
             let potential_commentaries = &input[..syntax_start];
             let actual_syntax = &input[syntax_start..new_input.location_offset()];
             let prompt_marker = &self.prompt_marker();
@@ -541,16 +594,14 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
             // ENTER already prints a new line so we can remove it from the start of incoming input
             new_input = new_input.trim_start_matches('\n').into();
         }
-        if is_meta {
-            self.handle_meta(&zptr, file_dir)?;
-        } else {
+        if non_meta {
             let result = self.handle_non_meta(&zptr, None)?;
             if result.tag == Tag::Err {
                 // error out when loading a file
                 bail!("Reduction error: {}", self.fmt(&result));
             }
         }
-        Ok(new_input)
+        Ok(Some(new_input))
     }
 
     pub(crate) fn load_file(&mut self, file_path: &Utf8Path, demo: bool) -> Result<()> {
@@ -566,14 +617,9 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         let mut input = Span::new(&input);
         loop {
             match self.handle_form(input, file_dir, demo) {
-                Ok(new_input) => input = new_input,
-                Err(e) => {
-                    if let Some(Error::NoInput) = e.downcast_ref::<Error>() {
-                        // It's ok, it just means we've hit the EOF
-                        return Ok(());
-                    }
-                    return Err(e);
-                }
+                Ok(None) => return Ok(()),
+                Ok(Some(new_input)) => input = new_input,
+                Err(e) => return Err(e),
             }
         }
     }
@@ -599,28 +645,18 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
                     editor.add_history_entry(&line)?;
 
                     while !line.trim_end().is_empty() {
-                        match self.zstore.read_maybe_meta_with_state(
-                            self.state.clone(),
-                            &line,
-                            &self.lang_symbols,
-                        ) {
-                            Ok((.., rest, is_meta, zptr)) => {
-                                if is_meta {
-                                    if let Err(e) = self.handle_meta(&zptr, &self.pwd_path.clone())
-                                    {
-                                        eprintln!("!Error: {e}");
+                        match self.parse(Span::new(&line), &self.pwd_path.clone()) {
+                            Ok(Some((_, rest, zptr, non_meta))) => {
+                                if non_meta {
+                                    if let Err(e) = self.handle_non_meta(&zptr, None) {
+                                        eprintln!("Error: {e}");
                                     }
-                                } else if let Err(e) = self.handle_non_meta(&zptr, None) {
-                                    eprintln!("Error: {e}");
                                 }
                                 line = rest.to_string();
                             }
-                            Err(Error::NoInput) => {
-                                // It's ok, the line is only a single comment
-                                break;
-                            }
+                            Ok(None) => break,
                             Err(e) => {
-                                eprintln!("Read error: {e}");
+                                eprintln!("Error: {e}");
                                 break;
                             }
                         }
