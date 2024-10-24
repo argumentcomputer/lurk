@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use camino::Utf8Path;
 use itertools::Itertools;
+use nom::Parser;
 use p3_baby_bear::BabyBear;
 use p3_field::PrimeField32;
 use rustc_hash::FxHashMap;
@@ -12,12 +13,14 @@ use crate::{
     lurk::{
         big_num::field_elts_to_biguint,
         package::{Package, SymbolRef},
+        parser::Span,
         stark_machine::new_machine,
         state::{builtin_sym, meta_sym, META_SYMBOLS},
         symbol::Symbol,
         tag::Tag,
         zstore::{ZPtr, DIGEST_SIZE},
     },
+    ocaml,
 };
 
 use super::{
@@ -1416,6 +1419,72 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             Ok(*repl.zstore.t())
         },
     };
+
+    const LOAD_OCAML: Self = Self {
+        name: "load-ocaml",
+        summary: "(Experimental) Load OCaml expressions from a file, and runs the resulting Lurk program, printing the result.",
+        info: &[],
+        format: "!(load-ocaml <string>)",
+        example: &[
+            "!(load-ocaml \"my_file.ml\") !(prove)",
+        ],
+        returns: "t",
+        run: |repl, args, path| {
+            let [file_name_zptr] = repl.take(args)?;
+            if file_name_zptr.tag != Tag::Str {
+                bail!("Path must be a string");
+            }
+            let file_name = repl.zstore.fetch_string(file_name_zptr);
+
+            // CLEANUP: better import paths, factor out
+            let lambda_ir = ocaml::compile::compile_single_file(&path.join(file_name))?;
+            let (rest, lambda) = ocaml::parser::syntax::parse_syntax
+                .parse(Span::new(&lambda_ir))
+                .expect("Lambda IR failed to parse");
+            assert!(rest.is_empty(), "Lambda parsing failure");
+            let zptr = ocaml::compile::transform_lambda_program(&mut repl.zstore, &repl.state, &lambda)?;
+
+            let result = repl.handle_non_meta(&zptr, None)?;
+            if result.tag == Tag::Err {
+                // error out when loading a file
+                bail!("Reduction error: {}", repl.fmt(&result));
+            }
+
+            Ok(*repl.zstore.t())
+        },
+    };
+
+    const LOAD_OCAML_EXPR: Self = Self {
+        name: "load-ocaml-expr",
+        summary: "(Experimental) Load OCaml expressions from a file.",
+        info: &[],
+        format: "!(load-ocaml-expr <string>)",
+        example: &[
+            "!(load-ocaml-expr \"my_file.ml\")",
+            "!(defq ocaml-program !(load-ocaml-expr \"my_file.ml\")) (eval ocaml-program)",
+            "(eval (quote !(load-ocaml-expr \"my_file.ml\")))",
+            "!(prove !(load-ocaml-expr \"my_file.ml\"))",
+        ],
+        returns: "The Lurk program corresponding to the OCaml expressions in the file",
+        run: |repl, args, path| {
+            let [file_name_zptr] = repl.take(args)?;
+            if file_name_zptr.tag != Tag::Str {
+                bail!("Path must be a string");
+            }
+            let file_name = repl.zstore.fetch_string(file_name_zptr);
+
+            // CLEANUP: better import paths, factor out
+            let lambda_ir = ocaml::compile::compile_single_file(&path.join(file_name))?;
+            let (rest, lambda) = ocaml::parser::syntax::parse_syntax
+                .parse(Span::new(&lambda_ir))
+                .expect("Lambda IR failed to parse");
+            assert!(rest.is_empty(), "Lambda parsing failure");
+            let zptr =
+                ocaml::compile::transform_lambda_program(&mut repl.zstore, &repl.state, &lambda)?;
+
+            Ok(zptr)
+        },
+    };
 }
 
 fn copy_inner<'a, T: Copy + 'a, I: IntoIterator<Item = &'a T>>(xs: I) -> Vec<T> {
@@ -1462,6 +1531,8 @@ pub(crate) fn meta_cmds<C1: Chipset<F>, C2: Chipset<F>>() -> MetaCmdsMap<F, C1, 
         MetaCmd::MICROCHAIN_GET_STATE,
         MetaCmd::MICROCHAIN_TRANSITION,
         MetaCmd::MICROCHAIN_VERIFY,
+        MetaCmd::LOAD_OCAML,
+        MetaCmd::LOAD_OCAML_EXPR,
         MetaCmd::HELP,
     ] {
         assert!(meta_cmds.insert(meta_sym(mc.name), mc).is_none());

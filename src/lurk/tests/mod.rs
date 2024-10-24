@@ -1,5 +1,6 @@
 mod eval_compiled;
 mod eval_direct;
+mod eval_ocaml;
 mod lang_compiled;
 mod lang_direct;
 

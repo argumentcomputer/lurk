@@ -8,4 +8,5 @@ pub mod lair;
 pub mod gadgets;
 pub mod loam;
 pub mod lurk;
+pub mod ocaml;
 pub mod poseidon;

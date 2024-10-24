@@ -22,6 +22,7 @@ pub enum ParseErrorKind {
     Nom(ErrorKind),
     InterningError(String),
     Custom(String),
+    OCaml(String),
 }
 
 impl fmt::Display for ParseErrorKind {

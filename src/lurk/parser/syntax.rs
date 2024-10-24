@@ -357,6 +357,7 @@ fn parse_char<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, Syntax<F>> {
     move |from: Span<'_>| {
         let (i, _) = tag("'")(from)?;
         let (i, s) = string::parse_string_inner1('\'', true, "()'")(i)?;
+        // FIXME: '(' does not parse, do we need () in the `must_escape` above
         let (upto, _) = tag("'")(i)?;
         let mut chars: Vec<char> = s.chars().collect();
         if chars.len() == 1 {
