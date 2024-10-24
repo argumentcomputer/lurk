@@ -58,7 +58,7 @@ fn setup<C: Chipset<BabyBear>>(
     let code = build_lurk_expr(n);
 
     let zstore = &mut lurk_zstore();
-    let ZPtr { tag, digest } = zstore.read(&code, &Default::default()).unwrap();
+    let ZPtr { tag, digest } = zstore.read(&code, &Default::default());
 
     let mut record = QueryRecord::new(toplevel);
     record.inject_inv_queries("hash4", toplevel, &zstore.hashes4);

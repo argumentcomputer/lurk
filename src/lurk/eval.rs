@@ -2392,9 +2392,7 @@ mod test {
 
         let assert_ingress_egress_correctness = |code| {
             let zstore = &mut zstore.clone();
-            let ZPtr { tag, digest } = zstore
-                .read_with_state(state.clone(), code, lang_symbols)
-                .unwrap();
+            let ZPtr { tag, digest } = zstore.read_with_state(code, state.clone(), lang_symbols);
             let tag = tag.to_field();
 
             let digest: List<_> = digest.into();

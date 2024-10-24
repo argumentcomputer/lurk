@@ -1232,7 +1232,7 @@ mod test {
     }
 
     fn read_wideptr(zstore: &mut ZStore<BabyBear, LurkChip>, src: &str) -> WidePtr {
-        let ZPtr { tag, digest } = zstore.read(src, &Default::default()).unwrap();
+        let ZPtr { tag, digest } = zstore.read(src, &Default::default());
         wide_ptr(tag.elt(), digest)
     }
 
@@ -1391,8 +1391,8 @@ mod test {
     #[test]
     fn test_lambda() {
         let mut zstore = lurk_zstore();
-        let args = zstore.read("(x)", &Default::default()).unwrap();
-        let body = zstore.read("(+ x 1)", &Default::default()).unwrap();
+        let args = zstore.read("(x)", &Default::default());
+        let body = zstore.read("(+ x 1)", &Default::default());
         let env = *zstore.nil();
 
         let fun = zstore.intern_fun(args, body, env);

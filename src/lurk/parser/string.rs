@@ -21,7 +21,7 @@ use super::{
 /// Parse a unicode sequence, of the form u{XXXX}, where XXXX is 1 to 6
 /// hexadecimal numerals. We will combine this later with parse_escaped_char
 /// to parse sequences like \u{00AC}.
-pub fn parse_unicode<'a, F>() -> impl Fn(Span<'a>) -> ParseResult<'a, F, char> {
+pub fn parse_unicode<'a>() -> impl Fn(Span<'a>) -> ParseResult<'a, char> {
     move |from: Span<'a>| {
         let (i, hex) = preceded(
             char('u'),
@@ -43,10 +43,10 @@ pub fn parse_unicode<'a, F>() -> impl Fn(Span<'a>) -> ParseResult<'a, F, char> {
 }
 
 /// Parse an escaped character: \n, \t, \r, \u{00AC}, etc.
-pub fn parse_escaped_char<'a, F>(
+pub fn parse_escaped_char<'a>(
     delim: char,
     must_escape: &'static str,
-) -> impl Fn(Span<'a>) -> ParseResult<'a, F, char> {
+) -> impl Fn(Span<'a>) -> ParseResult<'a, char> {
     move |from: Span<'a>| {
         let (i, _) = char('\\')(from)?;
         let (i, esc) = alt((
@@ -69,16 +69,16 @@ pub fn parse_escaped_char<'a, F>(
 
 /// Parse a backslash, followed by any amount of whitespace. This is used
 /// later to discard any escaped whitespace.
-pub fn parse_escaped_whitespace<'a, F>() -> impl Fn(Span<'a>) -> ParseResult<'a, F, Span<'a>> {
+pub fn parse_escaped_whitespace<'a>() -> impl Fn(Span<'a>) -> ParseResult<'a, Span<'a>> {
     move |from: Span<'a>| preceded(char('\\'), multispace1)(from)
 }
 
 ///// Parse a non-empty block of text that doesn't include \ or delim
-pub fn parse_literal<'a, F>(
+pub fn parse_literal<'a>(
     delim: char,
     whitespace: bool,
     must_escape: &'static str,
-) -> impl Fn(Span<'a>) -> ParseResult<'a, F, Span<'a>> {
+) -> impl Fn(Span<'a>) -> ParseResult<'a, Span<'a>> {
     move |from: Span<'a>| {
         let mut s = String::from(must_escape);
         s.push(delim);
@@ -105,11 +105,11 @@ pub enum StringFragment<'a> {
 
 /// Combine parse_literal, parse_escaped_whitespace, and parse_escaped_char
 /// into a StringFragment.
-pub fn parse_fragment<'a, F>(
+pub fn parse_fragment<'a>(
     delim: char,
     whitespace: bool,
     must_escape: &'static str,
-) -> impl Fn(Span<'a>) -> ParseResult<'a, F, StringFragment<'a>> {
+) -> impl Fn(Span<'a>) -> ParseResult<'a, StringFragment<'a>> {
     move |from: Span<'a>| {
         if whitespace {
             alt((
@@ -140,11 +140,11 @@ pub fn parse_fragment<'a, F>(
 
 /// Parse a non-empty string. Use a loop of parse_fragment and push all of the fragments
 /// into an output string.
-pub fn parse_string_inner1<'a, F>(
+pub fn parse_string_inner1<'a>(
     delim: char,
     whitespace: bool,
     must_escape: &'static str,
-) -> impl Fn(Span<'a>) -> ParseResult<'a, F, String> {
+) -> impl Fn(Span<'a>) -> ParseResult<'a, String> {
     move |from: Span<'a>| {
         fold_many1(
             parse_fragment(delim, whitespace, must_escape),
@@ -163,11 +163,11 @@ pub fn parse_string_inner1<'a, F>(
 
 /// Parse a string. Use a loop of parse_fragment and push all of the fragments
 /// into an output string.
-pub fn parse_string_inner<'a, F>(
+pub fn parse_string_inner<'a>(
     delim: char,
     whitespace: bool,
     must_escape: &'static str,
-) -> impl Fn(Span<'a>) -> ParseResult<'a, F, String> {
+) -> impl Fn(Span<'a>) -> ParseResult<'a, String> {
     move |from: Span<'a>| {
         fold_many0(
             parse_fragment(delim, whitespace, must_escape),
@@ -185,7 +185,7 @@ pub fn parse_string_inner<'a, F>(
 }
 
 /// Parse a string with the outer delimiter characters
-pub fn parse_string<'a, F>(delim: char) -> impl Fn(Span<'a>) -> ParseResult<'a, F, String> {
+pub fn parse_string<'a>(delim: char) -> impl Fn(Span<'a>) -> ParseResult<'a, String> {
     move |from: Span<'a>| {
         delimited(
             char(delim),

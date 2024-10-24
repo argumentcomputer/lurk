@@ -31,6 +31,8 @@ pub enum Syntax<F> {
     List(Pos, Vec<Syntax<F>>),
     /// An improper cons-list of expressions: (1 2 . 3)
     Improper(Pos, Vec<Syntax<F>>, Box<Syntax<F>>),
+    /// A meta command: !(foo 1 'a')
+    Meta(Pos, SymbolRef, Vec<Syntax<F>>),
 }
 
 impl<F> Syntax<F> {
@@ -47,7 +49,8 @@ impl<F> Syntax<F> {
             | Self::Char(pos, _)
             | Self::Quote(pos, _)
             | Self::List(pos, _)
-            | Self::Improper(pos, ..) => pos,
+            | Self::Improper(pos, ..)
+            | Self::Meta(pos, ..) => pos,
         }
     }
 }
@@ -92,33 +95,13 @@ impl<F: fmt::Display + PrimeField> fmt::Display for Syntax<F> {
                 }
                 write!(f, ")")
             }
+            Self::Meta(_, sym, args) => {
+                write!(f, "!({sym}")?;
+                for x in args {
+                    write!(f, " {x}")?;
+                }
+                write!(f, ")")
+            }
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use p3_baby_bear::BabyBear;
-
-    use crate::lurk::{parser::syntax::parse_syntax, state::State};
-
-    #[test]
-    fn test_digest() {
-        let state = State::init_lurk_state().rccell();
-        let (rest, syn) = parse_syntax::<BabyBear>(state.clone(), false, false)(
-            "#0x123456789ABCDEFEDCBA98765432123456789ABCDEFEDCBA98765432123456".into(),
-        )
-        .unwrap();
-        assert!(rest.is_empty());
-        assert_eq!(
-            format!("{syn}"),
-            "#0x123456789abcdefedcba98765432123456789abcdefedcba98765432123456"
-        );
-
-        let (rest, syn) =
-            parse_syntax::<BabyBear>(state, false, false)("#0x000000000000000000123456789".into())
-                .unwrap();
-        assert!(rest.is_empty());
-        assert_eq!(format!("{syn}"), "#0x123456789");
     }
 }

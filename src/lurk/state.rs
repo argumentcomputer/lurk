@@ -237,6 +237,12 @@ pub fn builtin_sym(name: &str) -> Symbol {
     Symbol::sym(&[LURK_PACKAGE_NAME, BUILTIN_PACKAGE_NAME, name])
 }
 
+/// Returns the symbol in the `.lurk.meta` package given the symbol name
+#[inline]
+pub fn meta_sym(name: &str) -> Symbol {
+    Symbol::sym(&[LURK_PACKAGE_NAME, META_PACKAGE_NAME, name])
+}
+
 /// Returns the symbol corresponding to the name of the meta package
 #[inline]
 pub fn meta_package_symbol() -> Symbol {
@@ -307,8 +313,9 @@ pub(crate) const BUILTIN_SYMBOLS: [&str; 41] = [
     "fail",
 ];
 
-const META_SYMBOLS: [&str; 36] = [
+pub(crate) const META_SYMBOLS: [&str; 37] = [
     "def",
+    "defq",
     "defrec",
     "update",
     "load",

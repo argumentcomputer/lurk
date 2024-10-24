@@ -1,11 +1,12 @@
+use anyhow::{bail, Result};
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_till},
     character::complete::{anychar, char, multispace0, multispace1, none_of},
     combinator::{eof, opt, peek, success, value},
-    error::context,
     multi::{many0, many_till, separated_list1},
     sequence::{delimited, preceded, terminated},
+    Parser,
 };
 use nom_locate::LocatedSpan;
 use num_bigint::BigUint;
@@ -25,20 +26,19 @@ use crate::lurk::{
     zstore::DIGEST_SIZE,
 };
 
-pub fn parse_line_comment<F>(i: Span<'_>) -> ParseResult<'_, F, Span<'_>> {
+fn parse_line_comment(i: Span<'_>) -> ParseResult<'_, Span<'_>> {
     let (i, _) = tag(";")(i)?;
     let (i, com) = take_till(|c| c == '\n')(i)?;
     Ok((i, com))
 }
-pub fn parse_space<F>(i: Span<'_>) -> ParseResult<'_, F, Vec<Span<'_>>> {
+
+pub fn parse_space(i: Span<'_>) -> ParseResult<'_, Vec<Span<'_>>> {
     let (i, _) = multispace0(i)?;
     let (i, com) = many0(terminated(parse_line_comment, alt((multispace1, eof))))(i)?;
     Ok((i, com))
 }
 
-pub fn parse_symbol_limb<F>(
-    escape: &'static str,
-) -> impl Fn(Span<'_>) -> ParseResult<'_, F, String> {
+fn parse_symbol_limb(escape: &'static str) -> impl Fn(Span<'_>) -> ParseResult<'_, String> {
     move |from: Span<'_>| {
         let (i, s) = alt((
             string::parse_string_inner1(symbol::SYM_SEPARATOR, false, escape),
@@ -53,9 +53,7 @@ pub fn parse_symbol_limb<F>(
     }
 }
 
-pub fn parse_symbol_limb_raw<F>(
-    escape: &'static str,
-) -> impl Fn(Span<'_>) -> ParseResult<'_, F, String> {
+fn parse_symbol_limb_raw(escape: &'static str) -> impl Fn(Span<'_>) -> ParseResult<'_, String> {
     move |from: Span<'_>| {
         let (i, s) = alt((
             string::parse_string_inner1(' ', false, escape),
@@ -70,7 +68,7 @@ pub fn parse_symbol_limb_raw<F>(
     }
 }
 
-pub fn parse_symbol_limbs<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Vec<String>> {
+fn parse_symbol_limbs() -> impl Fn(Span<'_>) -> ParseResult<'_, Vec<String>> {
     move |from: Span<'_>| {
         let (i, path) = separated_list1(
             char(symbol::SYM_SEPARATOR),
@@ -81,13 +79,13 @@ pub fn parse_symbol_limbs<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Vec<St
     }
 }
 
-fn intern_path<'a, F>(
+fn intern_path<'a>(
     state: &StateRcCell,
     upto: LocatedSpan<&'a str>,
     path: &[String],
     keyword: Option<bool>,
     create_unknown_packages: bool,
-) -> ParseResult<'a, F, SymbolRef> {
+) -> ParseResult<'a, SymbolRef> {
     use nom::Err::Failure;
     match keyword {
         Some(keyword) => state
@@ -106,10 +104,10 @@ fn intern_path<'a, F>(
     })
 }
 
-pub fn parse_absolute_symbol<F>(
+fn parse_absolute_symbol(
     state: StateRcCell,
     create_unknown_packages: bool,
-) -> impl Fn(Span<'_>) -> ParseResult<'_, F, SymbolRef> {
+) -> impl Fn(Span<'_>) -> ParseResult<'_, SymbolRef> {
     move |from: Span<'_>| {
         let (i, is_key) = alt((
             value(false, char(symbol::SYM_MARKER)),
@@ -120,10 +118,10 @@ pub fn parse_absolute_symbol<F>(
     }
 }
 
-pub fn parse_relative_symbol<F>(
+fn parse_relative_symbol(
     state: StateRcCell,
     create_unknown_packages: bool,
-) -> impl Fn(Span<'_>) -> ParseResult<'_, F, SymbolRef> {
+) -> impl Fn(Span<'_>) -> ParseResult<'_, SymbolRef> {
     move |from: Span<'_>| {
         let (i, _) = peek(none_of(",~#(){}[]1234567890."))(from)?;
         let (upto, path) = parse_symbol_limbs()(i)?;
@@ -131,10 +129,10 @@ pub fn parse_relative_symbol<F>(
     }
 }
 
-pub fn parse_raw_symbol<F>(
+fn parse_raw_symbol(
     state: StateRcCell,
     create_unknown_packages: bool,
-) -> impl Fn(Span<'_>) -> ParseResult<'_, F, SymbolRef> {
+) -> impl Fn(Span<'_>) -> ParseResult<'_, SymbolRef> {
     move |from: Span<'_>| {
         let (i, _) = tag("~(")(from)?;
         let (i, mut path) = many0(preceded(parse_space, parse_symbol_limb_raw("|()")))(i)?;
@@ -144,10 +142,10 @@ pub fn parse_raw_symbol<F>(
     }
 }
 
-pub fn parse_raw_keyword<F>(
+fn parse_raw_keyword(
     state: StateRcCell,
     create_unknown_packages: bool,
-) -> impl Fn(Span<'_>) -> ParseResult<'_, F, SymbolRef> {
+) -> impl Fn(Span<'_>) -> ParseResult<'_, SymbolRef> {
     move |from: Span<'_>| {
         let (i, _) = tag("~:(")(from)?;
         let (i, mut path) = many0(preceded(parse_space, parse_symbol_limb_raw("|()")))(i)?;
@@ -161,10 +159,10 @@ pub fn parse_raw_keyword<F>(
 /// absolute: .foo.bar.baz, :foo.bar (escaped limbs: .|foo|.|bar|.|baz|)
 /// raw: ~(foo bar baz) = .baz.bar.foo
 /// raw keyword: ~:(foo bar) = :bar.foo
-pub fn parse_symbol<F>(
+fn parse_symbol(
     state: StateRcCell,
     create_unknown_packages: bool,
-) -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
+) -> impl Fn(Span<'_>) -> ParseResult<'_, SymbolRef> {
     move |from: Span<'_>| {
         let (upto, sym) = alt((
             parse_relative_symbol(state.clone(), create_unknown_packages),
@@ -172,11 +170,21 @@ pub fn parse_symbol<F>(
             parse_raw_symbol(state.clone(), create_unknown_packages),
             parse_raw_keyword(state.clone(), create_unknown_packages),
         ))(from)?;
+        Ok((upto, sym))
+    }
+}
+
+fn parse_symbol_syntax<F>(
+    state: StateRcCell,
+    create_unknown_packages: bool,
+) -> impl Fn(Span<'_>) -> ParseResult<'_, Syntax<F>> {
+    move |from: Span<'_>| {
+        let (upto, sym) = parse_symbol(state.clone(), create_unknown_packages)(from)?;
         Ok((upto, Syntax::Symbol(Pos::from_upto(from, upto), sym)))
     }
 }
 
-pub fn parse_numeric_suffix<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Span<'_>> {
+fn parse_numeric_suffix() -> impl Fn(Span<'_>) -> ParseResult<'_, Span<'_>> {
     move |from: Span<'_>| {
         let (upto, suffix) = alt((
             tag("u8"),
@@ -195,7 +203,7 @@ pub fn parse_numeric_suffix<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Span
     }
 }
 
-pub fn parse_numeric<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
+fn parse_numeric<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, Syntax<F>> {
     move |from: Span<'_>| {
         let (i, neg) = opt(tag("-"))(from)?;
         let (i, base) = alt((
@@ -256,10 +264,10 @@ pub fn parse_numeric<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Synt
     }
 }
 
-pub fn parse_prefixed_hex_digest<F: Field>(
+fn parse_prefixed_hex_digest<F: Field>(
     prefix: &'static str,
     digest_size: usize,
-) -> impl Fn(Span<'_>) -> ParseResult<'_, F, (Pos, Vec<F>)> {
+) -> impl Fn(Span<'_>) -> ParseResult<'_, (Pos, Vec<F>)> {
     move |from: Span<'_>| {
         let (i, _) = tag(prefix)(from)?;
         let (i, digits) = base::parse_litbase_digits(base::LitBase::Hex)(i)?;
@@ -274,10 +282,7 @@ pub fn parse_prefixed_hex_digest<F: Field>(
         if num != BigUint::ZERO {
             ParseError::throw(
                 from,
-                ParseErrorKind::DigestLiteralTooBig {
-                    literal: BigUint::from_bytes_be(&be_bytes),
-                    _marker: Default::default(),
-                },
+                ParseErrorKind::DigestLiteralTooBig(BigUint::from_bytes_be(&be_bytes)),
             )
         } else {
             let pos = Pos::from_upto(from, i);
@@ -286,25 +291,25 @@ pub fn parse_prefixed_hex_digest<F: Field>(
     }
 }
 
-pub fn parse_big_num<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
+fn parse_big_num<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, Syntax<F>> {
     move |from: Span<'_>| {
         let (i, (pos, res)) = parse_prefixed_hex_digest("#0x", DIGEST_SIZE)(from)?;
         Ok((i, Syntax::BigNum(pos, res.try_into().unwrap())))
     }
 }
 
-pub fn parse_comm<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
+fn parse_comm<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, Syntax<F>> {
     move |from: Span<'_>| {
         let (i, (pos, res)) = parse_prefixed_hex_digest("#c0x", DIGEST_SIZE)(from)?;
         Ok((i, Syntax::Comm(pos, res.try_into().unwrap())))
     }
 }
 
-fn be_bytes_from_digits<'a, F>(
+fn be_bytes_from_digits<'a>(
     base: base::LitBase,
     digits: &str,
     i: Span<'a>,
-) -> ParseResult<'a, F, Vec<u8>> {
+) -> ParseResult<'a, Vec<u8>> {
     let (i, bytes) = match base_x::decode(base.base_digits(), digits) {
         Ok(bytes) => Ok((i, bytes)),
         Err(_) => Err(nom::Err::Error(ParseError::new(
@@ -330,7 +335,7 @@ fn f_from_be_bytes<F: Field>(bs: &[u8]) -> F {
     res
 }
 
-pub fn parse_string<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
+fn parse_string<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, Syntax<F>> {
     move |from: Span<'_>| {
         let (upto, s) = string::parse_string('"')(from)?;
         let pos = Pos::from_upto(from, upto);
@@ -339,7 +344,7 @@ pub fn parse_string<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
 }
 
 // hash syntax for chars
-pub fn parse_hash_char<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
+fn parse_hash_char<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, Syntax<F>> {
     |from: Span<'_>| {
         let (i, _) = tag("#\\")(from)?;
         let (upto, c) = alt((string::parse_unicode(), anychar))(i)?;
@@ -348,7 +353,7 @@ pub fn parse_hash_char<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>
     }
 }
 
-pub fn parse_char<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
+fn parse_char<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, Syntax<F>> {
     move |from: Span<'_>| {
         let (i, _) = tag("'")(from)?;
         let (i, s) = string::parse_string_inner1('\'', true, "()'")(i)?;
@@ -364,47 +369,21 @@ pub fn parse_char<F>() -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
     }
 }
 
-pub fn parse_list<F: Field>(
+fn parse_list<F: Field>(
     state: StateRcCell,
-    meta: bool,
     create_unknown_packages: bool,
-) -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
+) -> impl Fn(Span<'_>) -> ParseResult<'_, Syntax<F>> {
     move |from: Span<'_>| {
         let (i, _) = tag("(")(from)?;
-        let (i, xs) = if meta {
-            // parse the head symbol in the meta package
-            let saved_package = state.borrow().get_current_package_name().clone();
-            state
-                .borrow_mut()
-                .set_current_package(meta_package_symbol().into())
-                .expect("meta package is available");
-            let (i, h) = preceded(
-                parse_space,
-                parse_symbol(state.clone(), create_unknown_packages),
-            )(i)?;
-            // then recover the previous package
-            state
-                .borrow_mut()
-                .set_current_package(saved_package)
-                .expect("previous package is available");
-            let (i, t) = many0(preceded(
-                parse_space,
-                parse_syntax(state.clone(), false, create_unknown_packages),
-            ))(i)?;
-            let mut xs = vec![h];
-            xs.extend(t);
-            (i, xs)
-        } else {
-            many0(preceded(
-                parse_space,
-                parse_syntax(state.clone(), false, create_unknown_packages),
-            ))(i)?
-        };
+        let (i, xs) = many0(preceded(
+            parse_space,
+            parse_syntax(state.clone(), create_unknown_packages),
+        ))(i)?;
         let (i, end) = opt(preceded(
             preceded(parse_space, tag(".")),
             preceded(
                 parse_space,
-                parse_syntax(state.clone(), false, create_unknown_packages),
+                parse_syntax(state.clone(), create_unknown_packages),
             ),
         ))(i)?;
         let (i, _) = parse_space(i)?;
@@ -418,62 +397,130 @@ pub fn parse_list<F: Field>(
     }
 }
 
-pub fn parse_quote<F: Field>(
+fn parse_meta<F: Field>(
     state: StateRcCell,
     create_unknown_packages: bool,
-) -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
+) -> impl Fn(Span<'_>) -> ParseResult<'_, Syntax<F>> {
     move |from: Span<'_>| {
-        let (i, c) = opt(parse_char())(from)?;
-        if let Some(c) = c {
+        let (i, _) = tag("!(")(from)?;
+
+        // parse the head symbol in the meta package
+        let saved_package = state.borrow().get_current_package_name().clone();
+        state
+            .borrow_mut()
+            .set_current_package(meta_package_symbol().into())
+            .expect("meta package is not available");
+        let (i, sym) = preceded(
+            parse_space,
+            parse_symbol(state.clone(), create_unknown_packages),
+        )(i)?;
+        // then recover the previous package
+        state
+            .borrow_mut()
+            .set_current_package(saved_package)
+            .expect("previous package is not available");
+
+        let (i, args) = many0(preceded(
+            parse_space,
+            parse_syntax(state.clone(), create_unknown_packages),
+        ))(i)?;
+
+        let (i, _) = parse_space(i)?;
+        let (upto, _) = tag(")")(i)?;
+        let pos = Pos::from_upto(from, upto);
+        Ok((upto, Syntax::Meta(pos, sym, args)))
+    }
+}
+
+fn parse_char_or_quote<F: Field>(
+    state: StateRcCell,
+    create_unknown_packages: bool,
+) -> impl Fn(Span<'_>) -> ParseResult<'_, Syntax<F>> {
+    move |from: Span<'_>| {
+        if let (i, Some(c)) = opt(parse_char())(from)? {
             Ok((i, c))
         } else {
             let (i, _) = tag("'")(from)?;
-            let (upto, s) = parse_syntax(state.clone(), false, create_unknown_packages)(i)?;
+            let (upto, s) = parse_syntax(state.clone(), create_unknown_packages)(i)?;
             let pos = Pos::from_upto(from, upto);
             Ok((upto, Syntax::Quote(pos, Box::new(s))))
         }
     }
 }
 
-// top-level syntax parser
-pub fn parse_syntax<F: Field>(
+fn parse_syntax<F: Field>(
     state: StateRcCell,
-    meta: bool,
-    // this parameter triggers a less strict mode for testing purposes
     create_unknown_packages: bool,
-) -> impl Fn(Span<'_>) -> ParseResult<'_, F, Syntax<F>> {
+) -> impl Fn(Span<'_>) -> ParseResult<'_, Syntax<F>> {
     move |from: Span<'_>| {
         alt((
-            context(
-                "list",
-                parse_list(state.clone(), meta, create_unknown_packages),
-            ),
+            parse_list(state.clone(), create_unknown_packages),
+            parse_meta(state.clone(), create_unknown_packages),
             parse_numeric(),
             parse_comm(),
             parse_big_num(),
-            context(
-                "symbol",
-                parse_symbol(state.clone(), create_unknown_packages),
-            ),
+            parse_symbol_syntax(state.clone(), create_unknown_packages),
             parse_string(),
-            context("quote", parse_quote(state.clone(), create_unknown_packages)),
+            parse_char_or_quote(state.clone(), create_unknown_packages),
             parse_hash_char(),
         ))(from)
     }
 }
 
-pub fn parse_maybe_meta<F: Field>(
+pub fn parse_syntax_eof<F: Field>(
     state: StateRcCell,
     create_unknown_packages: bool,
-) -> impl Fn(Span<'_>) -> ParseResult<'_, F, Option<(bool, Syntax<F>)>> {
+) -> impl Fn(Span<'_>) -> ParseResult<'_, Option<Syntax<F>>> {
     move |from: Span<'_>| {
-        let (_, is_eof) = opt(eof)(from)?;
-        if is_eof.is_some() {
+        if let (_, Some(_)) = opt(eof)(from)? {
+            // end of file
             return Ok((from, None));
         }
-        let (next, meta) = opt(char('!'))(from)?;
-        let meta = meta.is_some();
-        let (end, syntax) = parse_syntax(state.clone(), meta, create_unknown_packages)(next)?;
-        Ok((end, Some((meta, syntax))))
+        let (end, syntax) = parse_syntax(state.clone(), create_unknown_packages)(from)?;
+        Ok((end, Some(syntax)))
+    }
+}
+
+pub fn parse<F: Field>(
+    input: Span<'_>,
+    state: StateRcCell,
+    create_unknown_packages: bool,
+) -> Result<Option<(Span<'_>, Syntax<F>)>> {
+    match preceded(
+        parse_space,
+        parse_syntax_eof(state, create_unknown_packages),
+    )
+    .parse(input)
+    {
+        Err(e) => bail!(format!("{e}")),
+        Ok((_, None)) => Ok(None),
+        Ok((rest, Some(syn))) => Ok(Some((rest, syn))),
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use p3_baby_bear::BabyBear;
+
+    use crate::lurk::{parser::syntax::parse_syntax, state::State};
+
+    #[test]
+    fn test_digest() {
+        let state = State::init_lurk_state().rccell();
+        let (rest, syn) = parse_syntax::<BabyBear>(state.clone(), false)(
+            "#0x123456789ABCDEFEDCBA98765432123456789ABCDEFEDCBA98765432123456".into(),
+        )
+        .unwrap();
+        assert!(rest.is_empty());
+        assert_eq!(
+            format!("{syn}"),
+            "#0x123456789abcdefedcba98765432123456789abcdefedcba98765432123456"
+        );
+
+        let (rest, syn) =
+            parse_syntax::<BabyBear>(state, false)("#0x000000000000000000123456789".into())
+                .unwrap();
+        assert!(rest.is_empty());
+        assert_eq!(format!("{syn}"), "#0x123456789");
     }
 }

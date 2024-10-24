@@ -46,10 +46,10 @@
 !(chain #0x64fee21bad514ff18399dfc5066caebf34acc0441c9af675ba95a998077591 1)
 
 !(def state0 (cons nil (comm #0x64fee21bad514ff18399dfc5066caebf34acc0441c9af675ba95a998077591)))
-!(transition state1 state0 1)
+!(defq state1 !(transition state0 1))
 !(assert-eq (car state1) 1)
 !(fetch (cdr state1))
-!(transition state2 state1 4)
+!(defq state2 !(transition state1 4))
 !(assert-eq (car state2) 5)
 !(fetch (cdr state2))
 
@@ -60,10 +60,10 @@
                (add 0))))
 
 !(def state0 (cons nil #0x446f7ccf9698cd19b7b1aa3e08f7a2746a080e205612292ed0405dcb144420))
-!(transition state1 state0 1)
+!(defq state1 !(transition state0 1))
 !(assert-eq (car state1) 1)
 !(fetch (cdr state1))
-!(transition state2 state1 4)
+!(defq state2 !(transition state1 4))
 !(assert-eq (car state2) 5)
 !(fetch (cdr state2))
 
@@ -78,5 +78,5 @@
 
 ;; test dump-expr/load-expr
 !(dump-expr (+ 1 1) "repl-test-two")
-!(load-expr two "repl-test-two")
+!(defq two !(load-expr "repl-test-two"))
 !(assert-eq two 2)

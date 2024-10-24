@@ -147,7 +147,7 @@ fn test_setup_data() -> &'static (
 fn test_case(input_code: &'static str, expected_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>) {
     let (lang_symbols, toplevel, zstore, config) = test_setup_data();
     let mut zstore = zstore.clone();
-    let zptr = zstore.read(input_code, lang_symbols).expect("Read failure");
+    let zptr = zstore.read(input_code, lang_symbols);
     run_tests(
         &zptr,
         &ZPtr::null(Tag::Env),
