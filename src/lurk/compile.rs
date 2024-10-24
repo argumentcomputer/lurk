@@ -1,8 +1,13 @@
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
+use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField32};
 
-use crate::{func, lair::expr::FuncE, lurk::ingress::InternalTag};
+use crate::{
+    func,
+    lair::{chipset::NoChip, expr::FuncE, toplevel::Toplevel},
+    lurk::ingress::InternalTag,
+};
 
 use super::{ingress::SymbolsDigests, tag::Tag};
 
@@ -990,4 +995,67 @@ pub fn deconvert_data<F: AbstractField + Ord>() -> FuncE<F> {
             }
         }
     )
+}
+
+pub fn native_lurk_funcs<F: PrimeField32>(digests: &SymbolsDigests<F>) -> Vec<FuncE<F>> {
+    vec![
+        compile(digests),
+        symbol_to_op(digests),
+        compile_app(),
+        compile_lambda(),
+        compile_let(),
+        compile_fold_right(),
+        compile_fold_left(),
+        compile_fold_rel(),
+        convert_data(digests),
+        deconvert_data(),
+    ]
+}
+
+pub fn build_compile_toplevel_native() -> Toplevel<BabyBear, NoChip, NoChip> {
+    use super::zstore::lurk_zstore;
+
+    let mut zstore = lurk_zstore();
+    let digests = SymbolsDigests::new(&Default::default(), &mut zstore);
+    let funcs_exprs = native_lurk_funcs(&digests);
+    Toplevel::new_pure(&funcs_exprs)
+}
+
+#[cfg(test)]
+mod test {
+    use expect_test::{expect, Expect};
+
+    use crate::lair::func_chip::FuncChip;
+
+    use super::*;
+
+    #[test]
+    fn test_widths() {
+        let toplevel = &build_compile_toplevel_native();
+
+        let compile = FuncChip::from_name("compile", toplevel);
+        let symbol_to_op = FuncChip::from_name("symbol_to_op", toplevel);
+        let compile_app = FuncChip::from_name("compile_app", toplevel);
+        let compile_lambda = FuncChip::from_name("compile_lambda", toplevel);
+        let compile_let = FuncChip::from_name("compile_let", toplevel);
+        let compile_fold_right = FuncChip::from_name("compile_fold_right", toplevel);
+        let compile_fold_left = FuncChip::from_name("compile_fold_left", toplevel);
+        let compile_fold_rel = FuncChip::from_name("compile_fold_rel", toplevel);
+        let convert_data = FuncChip::from_name("convert_data", toplevel);
+        let deconvert_data = FuncChip::from_name("deconvert_data", toplevel);
+
+        let expect_eq = |computed: usize, expected: Expect| {
+            expected.assert_eq(&computed.to_string());
+        };
+        expect_eq(compile.width(), expect!["112"]);
+        expect_eq(symbol_to_op.width(), expect!["46"]);
+        expect_eq(compile_app.width(), expect!["35"]);
+        expect_eq(compile_lambda.width(), expect!["33"]);
+        expect_eq(compile_let.width(), expect!["56"]);
+        expect_eq(compile_fold_right.width(), expect!["40"]);
+        expect_eq(compile_fold_left.width(), expect!["38"]);
+        expect_eq(compile_fold_rel.width(), expect!["58"]);
+        expect_eq(convert_data.width(), expect!["62"]);
+        expect_eq(deconvert_data.width(), expect!["60"]);
+    }
 }
