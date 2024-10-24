@@ -387,7 +387,7 @@ test!(
     test_letrec_error,
     "(letrec ((odd? (lambda (n) (if (= n 0) nil (even? (- n 1)))))
               (x a)
-              (even? (lambda (n) (if (= n 0) true (odd? (- n 1))))))
+              (even? (lambda (n) (if (= n 0) t (odd? (- n 1))))))
        (odd? 1))",
     |_| ZPtr::err(EvalErr::UnboundVar)
 );

@@ -842,11 +842,14 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                     match res_tag {
                         Tag::Thunk => {
                             let (body_tag, body, binds_tag, binds, mutual_env) = load(res);
-                            // extend `body_env` with the bindings from `mutual_env`, with thunked values
+                            // --- DUPLICATED THUNK BLOCK START ---
+                            // creates an environment with the bindings from `binds` extended with the bindings
+                            // from `mutual_env`, with thunked values
                             // IMPORTANT: at this point this operation cannot return an error
                             let (_tag, ext_env) = call(extend_env_with_mutuals, binds_tag, binds, binds, mutual_env);
                             let (res_tag, res) = call(eval, body_tag, body, ext_env);
                             return (res_tag, res)
+                            // --- DUPLICATED THUNK BLOCK END ---
                         }
                     };
                     return (res_tag, res)
@@ -876,6 +879,17 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                     };
                     let (res_tag, res) = call(apply, head_tag, head, rest_tag, rest, env);
                     return (res_tag, res)
+                }
+                Tag::Thunk => {
+                    let (body_tag, body, binds_tag, binds, mutual_env) = load(expr);
+                    // --- DUPLICATED THUNK BLOCK START ---
+                    // creates an environment with the bindings from `binds` extended with the bindings
+                    // from `mutual_env`, with thunked values
+                    // IMPORTANT: at this point this operation cannot return an error
+                    let (_tag, ext_env) = call(extend_env_with_mutuals, binds_tag, binds, binds, mutual_env);
+                    let (res_tag, res) = call(eval, body_tag, body, ext_env);
+                    return (res_tag, res)
+                    // --- DUPLICATED THUNK BLOCK END ---
                 }
             };
             return (expr_tag, expr)
@@ -2180,7 +2194,6 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                 let err = EvalErr::ParamsNotList;
                                 return (err_tag, err)
                             }
-                            // NOTE: the two block of codes below delimited by the comments are the *exact* same and *must* be kept in sync
                             // --- DUPLICATED APPLY BLOCK START ---
                             match args_tag {
                                 InternalTag::Nil => {
@@ -2344,7 +2357,7 @@ mod test {
         expect_eq(lurk_main.width(), expect!["97"]);
         expect_eq(preallocate_symbols.width(), expect!["180"]);
         expect_eq(eval_coroutine_expr.width(), expect!["10"]);
-        expect_eq(eval.width(), expect!["77"]);
+        expect_eq(eval.width(), expect!["78"]);
         expect_eq(eval_builtin_expr.width(), expect!["146"]);
         expect_eq(eval_apply_builtin.width(), expect!["79"]);
         expect_eq(eval_opening_unop.width(), expect!["97"]);
