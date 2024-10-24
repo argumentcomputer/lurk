@@ -841,15 +841,10 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                     let (res_tag, res) = call(env_lookup, expr_tag, expr_digest, env);
                     match res_tag {
                         Tag::Thunk => {
-                            let (body_tag, body, binds_tag, binds, mutual_env) = load(res);
-                            // --- DUPLICATED THUNK BLOCK START ---
-                            // creates an environment with the bindings from `binds` extended with the bindings
-                            // from `mutual_env`, with thunked values
-                            // IMPORTANT: at this point this operation cannot return an error
-                            let (_tag, ext_env) = call(extend_env_with_mutuals, binds_tag, binds, binds, mutual_env);
-                            let (res_tag, res) = call(eval, body_tag, body, ext_env);
+                            // Thunks are closed expressions, so we can choose an empty environment
+                            let nil_env = 0;
+                            let (res_tag, res) = call(eval, res_tag, res, nil_env);
                             return (res_tag, res)
-                            // --- DUPLICATED THUNK BLOCK END ---
                         }
                     };
                     return (res_tag, res)
@@ -2072,7 +2067,12 @@ pub fn eval_letrec_bindings<F: AbstractField>() -> FuncE<F> {
                 return (env_tag, init_env)
             }
             let (_var_tag, _var, val_tag, val, ext_env) = load(ext_env);
-            let (res_tag, res) = call(eval, val_tag, val, init_env);
+            let thunk_tag = Tag::Thunk;
+            // Safety check: letrec bindings must be thunks
+            assert_eq!(thunk_tag, val_tag);
+            let nil_env = 0;
+            // Thunks are closed expressions, so we can choose an empty environment
+            let (res_tag, res) = call(eval, val_tag, val, nil_env);
             match res_tag {
                 Tag::Err => {
                     return (res_tag, res)
