@@ -877,14 +877,12 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                 }
                 Tag::Thunk => {
                     let (body_tag, body, binds_tag, binds, mutual_env) = load(expr);
-                    // --- DUPLICATED THUNK BLOCK START ---
                     // creates an environment with the bindings from `binds` extended with the bindings
                     // from `mutual_env`, with thunked values
                     // IMPORTANT: at this point this operation cannot return an error
                     let (_tag, ext_env) = call(extend_env_with_mutuals, binds_tag, binds, binds, mutual_env);
                     let (res_tag, res) = call(eval, body_tag, body, ext_env);
                     return (res_tag, res)
-                    // --- DUPLICATED THUNK BLOCK END ---
                 }
             };
             return (expr_tag, expr)

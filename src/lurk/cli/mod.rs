@@ -6,6 +6,7 @@ mod meta;
 mod microchain;
 mod paths;
 mod proofs;
+mod rdg;
 pub mod repl;
 #[cfg(test)]
 mod tests;

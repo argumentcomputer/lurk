@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8Path;
 use nom::sequence::delimited;
 use nom::Parser;
 use p3_baby_bear::BabyBear;
@@ -28,8 +28,10 @@ use crate::{
         big_num::field_elts_to_biguint,
         chipset::LurkChip,
         cli::{
+            debug::{FormattedDebugData, FormattedDebugEntry},
             meta::{meta_cmds, MetaCmdsMap},
-            paths::{current_dir, repl_history},
+            paths::{current_dir, proofs_dir, repl_history},
+            proofs::{CachedProof, CryptoProof},
         },
         eval::build_lurk_toplevel,
         lang::Lang,
@@ -44,12 +46,6 @@ use crate::{
         tag::Tag,
         zstore::{quote, ZPtr, ZStore, DIGEST_SIZE},
     },
-};
-
-use super::{
-    debug::{FormattedDebugData, FormattedDebugEntry},
-    paths::proofs_dir,
-    proofs::{CachedProof, CryptoProof},
 };
 
 #[derive(Helper, Highlighter, Hinter, Completer)]
@@ -107,16 +103,30 @@ struct ProcessedDebugEntry<F> {
     kind: ProcessedDebugEntryKind<F>,
 }
 
+/// Holds the indices of some functions in the Lurk toplevel
+struct FuncIndices {
+    lurk_main: usize,
+    eval: usize,
+    egress: usize,
+}
+
+impl FuncIndices {
+    fn new<F, C1: Chipset<F>, C2: Chipset<F>>(toplevel: &Toplevel<F, C1, C2>) -> Self {
+        Self {
+            lurk_main: toplevel.func_by_name("lurk_main").index,
+            eval: toplevel.func_by_name("eval").index,
+            egress: toplevel.func_by_name("egress").index,
+        }
+    }
+}
+
 pub(crate) struct Repl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> {
     pub(crate) zstore: ZStore<F, C1>,
     pub(crate) queries: QueryRecord<F>,
     pub(crate) toplevel: Toplevel<F, C1, C2>,
-    pub(crate) lurk_main_idx: usize,
-    eval_idx: usize,
-    egress_idx: usize,
+    func_indices: FuncIndices,
     pub(crate) env: ZPtr<F>,
     pub(crate) state: StateRcCell,
-    pwd_path: Utf8PathBuf,
     pub(crate) meta_cmds: MetaCmdsMap<F, C1, C2>,
     pub(crate) lang_symbols: FxHashSet<Symbol>,
 }
@@ -124,20 +134,15 @@ pub(crate) struct Repl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> {
 impl<C2: Chipset<BabyBear>> Repl<BabyBear, LurkChip, C2> {
     pub(crate) fn new(lang: Lang<BabyBear, C2>) -> Self {
         let (toplevel, mut zstore, lang_symbols) = build_lurk_toplevel(lang);
-        let lurk_main_idx = toplevel.func_by_name("lurk_main").index;
-        let eval_idx = toplevel.func_by_name("eval").index;
-        let egress_idx = toplevel.func_by_name("egress").index;
+        let func_indices = FuncIndices::new(&toplevel);
         let env = zstore.intern_empty_env();
         Self {
             zstore,
             queries: QueryRecord::new(&toplevel),
             toplevel,
-            lurk_main_idx,
-            eval_idx,
-            egress_idx,
+            func_indices,
             env,
             state: State::init_lurk_state().rccell(),
-            pwd_path: current_dir().expect("Couldn't get current directory"),
             meta_cmds: meta_cmds(),
             lang_symbols,
         }
@@ -334,7 +339,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
     fn manual_egression(&self, egress_input: &[F], queries_tmp: &mut QueryRecord<F>) -> ZPtr<F> {
         let egress_output = self
             .toplevel
-            .execute_by_index(self.egress_idx, egress_input, queries_tmp, None)
+            .execute_by_index(self.func_indices.egress, egress_input, queries_tmp, None)
             .expect("Egression failed");
         ZPtr::from_flat_digest(Tag::from_field(&egress_output[0]), &egress_output[1..])
     }
@@ -354,7 +359,8 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
             } else {
                 dbg_depth_map.insert(*dbg_depth, vec![processed_debug_entries.len()]);
             }
-            let (input, QueryResult { output, .. }) = &self.queries.func_queries[self.eval_idx]
+            let (input, QueryResult { output, .. }) = &self.queries.func_queries
+                [self.func_indices.eval]
                 .get_index(*query_idx)
                 .expect("Missing query");
             let input_zptr = self.manual_egression(&input[..2], &mut queries_tmp);
@@ -431,7 +437,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         self.prepare_queries();
         let mut queries_tmp = self.queries.clone();
         let result_data = self.toplevel.execute_by_index(
-            self.lurk_main_idx,
+            self.func_indices.lurk_main,
             &self.build_input(expr, env),
             &mut queries_tmp,
             None,
@@ -458,10 +464,10 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
     pub(crate) fn reduce_with_env(&mut self, expr: &ZPtr<F>, env: &ZPtr<F>) -> Result<ZPtr<F>> {
         self.prepare_queries();
         let result_data = self.toplevel.execute_by_index(
-            self.lurk_main_idx,
+            self.func_indices.lurk_main,
             &self.build_input(expr, env),
             &mut self.queries,
-            Some(self.eval_idx),
+            Some(self.func_indices.eval),
         );
         if !self.queries.emitted.is_empty() {
             let mut queries_tmp = self.tmp_queries_for_egression();
@@ -486,7 +492,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         let env = env.unwrap_or(self.env);
         let result = self.reduce_with_env(expr, &env)?;
         self.memoize_dag(result.tag, &result.digest);
-        let iterations = self.queries.func_queries[self.eval_idx].len();
+        let iterations = self.queries.func_queries[self.func_indices.eval].len();
         println!(
             "[{}] => {}",
             pretty_iterations_display(iterations),
@@ -639,13 +645,15 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
             editor.load_history(repl_history)?;
         }
 
+        let pwd_path = current_dir().expect("Couldn't get current directory");
+
         loop {
             match editor.readline(&self.prompt_marker()) {
                 Ok(mut line) => {
                     editor.add_history_entry(&line)?;
 
                     while !line.trim_end().is_empty() {
-                        match self.parse(Span::new(&line), &self.pwd_path.clone()) {
+                        match self.parse(Span::new(&line), &pwd_path) {
                             Ok(Some((_, rest, zptr, non_meta))) => {
                                 if non_meta {
                                     if let Err(e) = self.handle_non_meta(&zptr, None) {
