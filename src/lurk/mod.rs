@@ -5,6 +5,7 @@ pub mod chipset;
 pub mod cli;
 pub mod compile;
 pub mod error;
+pub mod eval_compiled;
 pub mod eval_direct;
 pub mod ingress;
 pub mod lang;

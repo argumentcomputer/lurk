@@ -26,6 +26,7 @@ pub enum EvalErr {
     CantCastToU64,
     CantCastToBigNum,
     CantCastToComm,
+    Todo,
 }
 
 impl EvalErr {
