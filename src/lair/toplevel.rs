@@ -49,12 +49,17 @@ impl<F: Field + Ord, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
 impl<F, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
     #[inline]
     pub fn func_by_index(&self, i: usize) -> &Func<F> {
-        self.func_map.get_index(i).expect("Index out of bounds").1
+        self.func_map
+            .get_index(i)
+            .unwrap_or_else(|| panic!("Func index {i} out of bounds"))
+            .1
     }
 
     #[inline]
     pub fn func_by_name(&self, name: &'static str) -> &Func<F> {
-        self.func_map.get(&Name(name)).expect("Func not found")
+        self.func_map
+            .get(&Name(name))
+            .unwrap_or_else(|| panic!("Func {name} not found"))
     }
 
     #[inline]
@@ -64,7 +69,10 @@ impl<F, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
 
     #[inline]
     pub fn chip_by_index(&self, i: usize) -> &Either<C1, C2> {
-        self.chip_map.get_index(i).expect("Index out of bounds").1
+        self.chip_map
+            .get_index(i)
+            .unwrap_or_else(|| panic!("Chip index {i} out of bounds"))
+            .1
     }
 }
 
@@ -355,38 +363,38 @@ impl<F: Field + Ord> OpE<F> {
     ) {
         match self {
             OpE::AssertNe(a, b) => {
-                assert_eq!(a.size, b.size);
+                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self);
                 let a = use_var(a, ctx).into();
                 let b = use_var(b, ctx).into();
                 ops.push(Op::AssertNe(a, b));
             }
             OpE::AssertEq(a, b, fmt) => {
-                assert_eq!(a.size, b.size);
+                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self);
                 let a = use_var(a, ctx).into();
                 let b = use_var(b, ctx).into();
                 ops.push(Op::AssertEq(a, b, *fmt));
             }
             OpE::Contains(a, b) => {
-                assert_eq!(b.size, 1);
+                assert_eq!(b.size, 1, "Var mismatch on {:?}", self);
                 let a = use_var(a, ctx).into();
                 let b = use_var(b, ctx)[0];
                 ops.push(Op::Contains(a, b));
             }
             OpE::Const(tgt, f) => {
-                assert_eq!(tgt.size, 1);
+                assert_eq!(tgt.size, 1, "Var mismatch on {:?}", self);
                 ops.push(Op::Const(*f));
                 bind_new(tgt, ctx);
             }
             OpE::Array(tgt, fs) => {
-                assert_eq!(tgt.size, fs.len());
+                assert_eq!(tgt.size, fs.len(), "Var mismatch on {:?}", self);
                 for f in fs.iter() {
                     ops.push(Op::Const(*f));
                 }
                 bind_new(tgt, ctx);
             }
             OpE::Add(tgt, a, b) => {
-                assert_eq!(a.size, b.size);
-                assert_eq!(a.size, tgt.size);
+                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self);
+                assert_eq!(a.size, tgt.size, "Var mismatch on {:?}", self);
                 let a = use_var(a, ctx).to_vec();
                 let b = use_var(b, ctx);
                 for (a, b) in a.iter().zip(b.iter()) {
@@ -395,8 +403,8 @@ impl<F: Field + Ord> OpE<F> {
                 bind_new(tgt, ctx);
             }
             OpE::Mul(tgt, a, b) => {
-                assert_eq!(a.size, b.size);
-                assert_eq!(a.size, tgt.size);
+                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self);
+                assert_eq!(a.size, tgt.size, "Var mismatch on {:?}", self);
                 let a = use_var(a, ctx).to_vec();
                 let b = use_var(b, ctx);
                 for (a, b) in a.iter().zip(b.iter()) {
@@ -405,8 +413,8 @@ impl<F: Field + Ord> OpE<F> {
                 bind_new(tgt, ctx);
             }
             OpE::Sub(tgt, a, b) => {
-                assert_eq!(a.size, b.size);
-                assert_eq!(a.size, tgt.size);
+                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self);
+                assert_eq!(a.size, tgt.size, "Var mismatch on {:?}", self);
                 let a = use_var(a, ctx).to_vec();
                 let b = use_var(b, ctx);
                 for (a, b) in a.iter().zip(b.iter()) {
@@ -415,8 +423,8 @@ impl<F: Field + Ord> OpE<F> {
                 bind_new(tgt, ctx);
             }
             OpE::Div(tgt, a, b) => {
-                assert_eq!(a.size, b.size);
-                assert_eq!(a.size, tgt.size);
+                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self);
+                assert_eq!(a.size, tgt.size, "Var mismatch on {:?}", self);
                 let b = use_var(b, ctx);
                 for b in b.iter() {
                     ops.push(Op::Inv(*b));
@@ -428,7 +436,7 @@ impl<F: Field + Ord> OpE<F> {
                 bind_new(tgt, ctx);
             }
             OpE::Inv(tgt, a) => {
-                assert_eq!(a.size, tgt.size);
+                assert_eq!(a.size, tgt.size, "Var mismatch on {:?}", self);
                 let a = use_var(a, ctx);
                 for a in a.iter() {
                     ops.push(Op::Inv(*a));
@@ -436,16 +444,16 @@ impl<F: Field + Ord> OpE<F> {
                 bind_new(tgt, ctx);
             }
             OpE::Not(tgt, a) => {
-                assert_eq!(tgt.size, 1);
-                assert_eq!(a.size, 1);
+                assert_eq!(tgt.size, 1, "Var mismatch on {:?}", self);
+                assert_eq!(a.size, 1, "Var mismatch on {:?}", self);
                 let a = use_var(a, ctx)[0];
                 ops.push(Op::Not(a));
                 bind_new(tgt, ctx);
             }
             OpE::Eq(tgt, a, b) => {
-                assert_eq!(tgt.size, 1);
-                assert_eq!(a.size, 1);
-                assert_eq!(b.size, 1);
+                assert_eq!(tgt.size, 1, "Var mismatch on {:?}", self);
+                assert_eq!(a.size, 1, "Var mismatch on {:?}", self);
+                assert_eq!(b.size, 1, "Var mismatch on {:?}", self);
                 let a = use_var(a, ctx)[0];
                 let b = use_var(b, ctx)[0];
                 ops.push(Op::Sub(a, b));
@@ -465,8 +473,13 @@ impl<F: Field + Ord> OpE<F> {
                 if partial {
                     assert!(ctx.partial);
                 }
-                assert_eq!(inp.total_size(), input_size);
-                assert_eq!(out.total_size(), output_size);
+                assert_eq!(inp.total_size(), input_size, "Input mismatch on {:?}", self);
+                assert_eq!(
+                    out.total_size(),
+                    output_size,
+                    "Output mismatch on {:?}",
+                    self
+                );
                 let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
                 ops.push(Op::Call(name_idx, inp));
                 out.iter().for_each(|t| bind_new(t, ctx));
@@ -484,26 +497,36 @@ impl<F: Field + Ord> OpE<F> {
                 if partial {
                     assert!(ctx.partial);
                 }
-                assert_eq!(out.total_size(), input_size);
-                assert_eq!(inp.total_size(), output_size);
+                assert_eq!(out.total_size(), input_size, "Input mismatch on {:?}", self);
+                assert_eq!(
+                    inp.total_size(),
+                    output_size,
+                    "Output mismatch on {:?}",
+                    self
+                );
                 let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
                 ops.push(Op::PreImg(name_idx, inp, *fmt));
                 out.iter().for_each(|t| bind_new(t, ctx));
             }
             OpE::Store(ptr, vals) => {
-                assert_eq!(ptr.size, 1);
+                assert_eq!(ptr.size, 1, "Var mismatch on {:?}", self);
                 let vals = vals.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
                 ops.push(Op::Store(vals));
                 bind_new(ptr, ctx);
             }
             OpE::Load(vals, ptr) => {
-                assert_eq!(ptr.size, 1);
+                assert_eq!(ptr.size, 1, "Var mismatch on {:?}", self);
                 let ptr = use_var(ptr, ctx)[0];
                 ops.push(Op::Load(vals.total_size(), ptr));
                 vals.iter().for_each(|val| bind_new(val, ctx));
             }
             OpE::Slice(pats, args) => {
-                assert_eq!(pats.total_size(), args.total_size());
+                assert_eq!(
+                    pats.total_size(),
+                    args.total_size(),
+                    "Var mismatch on {:?}",
+                    self
+                );
                 let args: List<_> = args.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
                 let mut i = 0;
                 for pat in pats.as_slice() {
@@ -518,8 +541,18 @@ impl<F: Field + Ord> OpE<F> {
                     .get_index_of(name)
                     .unwrap_or_else(|| panic!("Unknown extern chip {name}"));
                 let (_, chip) = ctx.chip_map.get_index(name_idx).unwrap();
-                assert_eq!(inp.total_size(), chip.input_size());
-                assert_eq!(out.total_size(), chip.output_size());
+                assert_eq!(
+                    inp.total_size(),
+                    chip.input_size(),
+                    "Input mismatch on {:?}",
+                    self
+                );
+                assert_eq!(
+                    out.total_size(),
+                    chip.output_size(),
+                    "Output mismatch on {:?}",
+                    self
+                );
                 let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
                 ops.push(Op::ExternCall(name_idx, inp));
                 out.iter().for_each(|t| bind_new(t, ctx));
