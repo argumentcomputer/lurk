@@ -27,6 +27,7 @@ use super::{
     microchain::{read_data, write_data, CallableData, ChainState, Request, Response},
     paths::{commits_dir, proofs_dir},
     proofs::{get_verifier_version, CachedProof, ChainProof, OpaqueChainProof, ProtocolProof},
+    rdg::rand_digest,
     repl::Repl,
 };
 
@@ -430,6 +431,21 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 bail!("Secret must reduce to a bignum");
             }
             Self::hide(secret, &payload_expr, repl)
+        },
+    };
+
+    const RAND: Self = Self {
+        name: "rand",
+        summary: "Creates a random big num that can be used for secrets",
+        info: &["The randomness comes from fresh system entropy everytime."],
+        format: "!(rand)",
+        example: &["(hide !(rand) 42)"],
+        returns: "The random big num",
+        run: |repl, args, _dir| {
+            if args != repl.zstore.nil() {
+                bail!("No arguments are accepted");
+            }
+            Ok(repl.zstore.intern_big_num(rand_digest()))
         },
     };
 
@@ -1465,6 +1481,7 @@ pub(crate) fn meta_cmds<C1: Chipset<F>, C2: Chipset<F>>() -> MetaCmdsMap<F, C1, 
         MetaCmd::SET_ENV,
         MetaCmd::ERASE_FROM_ENV,
         MetaCmd::HIDE,
+        MetaCmd::RAND,
         MetaCmd::COMMIT,
         MetaCmd::OPEN,
         MetaCmd::FETCH,

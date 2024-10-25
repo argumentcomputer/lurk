@@ -313,7 +313,7 @@ pub(crate) const BUILTIN_SYMBOLS: [&str; 41] = [
     "fail",
 ];
 
-pub(crate) const META_SYMBOLS: [&str; 37] = [
+pub(crate) const META_SYMBOLS: [&str; 38] = [
     "def",
     "defq",
     "defrec",
@@ -324,8 +324,9 @@ pub(crate) const META_SYMBOLS: [&str; 37] = [
     "assert-emitted",
     "assert-error",
     "debug",
-    "commit",
     "hide",
+    "rand",
+    "commit",
     "fetch",
     "open",
     "clear",

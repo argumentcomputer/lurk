@@ -1,22 +1,19 @@
 use anyhow::Result;
 use clap::Args;
 use p3_baby_bear::BabyBear;
-use p3_field::{AbstractField, PrimeField32};
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha8Rng;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use sphinx_core::stark::StarkGenericConfig;
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
     lair::{chipset::Chipset, lair_chip::LairMachineProgram},
     lurk::{
         chipset::LurkChip,
+        cli::rdg::rand_digest,
         eval::build_lurk_toplevel,
         lang::Lang,
         stark_machine::new_machine,
@@ -157,10 +154,11 @@ impl MicrochainArgs {
                                 return_msg!(Response::NextCallableIsOpaque);
                             }
 
-                            let chain_result_zptr = chain_state.chain_result.zptr;
+                            let id_secret = rand_digest();
                             let callable_zptr = chain_state.callable_data.zptr(&mut zstore);
-                            let (id_secret, id) =
-                                generate_id(chain_result_zptr, callable_zptr, &mut zstore);
+                            let state_cons =
+                                zstore.intern_cons(chain_state.chain_result.zptr, callable_zptr);
+                            let id = CommData::hash(&id_secret, &state_cons, &mut zstore);
 
                             let chain_data = ChainData {
                                 genesis: (id_secret, chain_state.clone()),
@@ -274,39 +272,6 @@ impl MicrochainArgs {
 
         Ok(())
     }
-}
-
-/// Returns a `(secret, digest)` pair s.t. `secret` is randomly generated from a
-/// timestamp-based seed and `digest` is a hiding commitment that uses `secret`
-/// and whose payload the `Cons` pair formed with `chain_result_zptr` and
-/// `callable_zptr`.
-fn generate_id(
-    chain_result_zptr: ZPtr<F>,
-    callable_zptr: ZPtr<F>,
-    zstore: &mut ZStore<F, LurkChip>,
-) -> ([F; DIGEST_SIZE], [F; DIGEST_SIZE]) {
-    // TODO: factor this snippet out in order to implement the `rand` meta command
-    let mut id_secret = [F::zero(); DIGEST_SIZE];
-    let mut rng = ChaCha8Rng::seed_from_u64(timestamp_seed());
-    for limb in id_secret.iter_mut().take(DIGEST_SIZE) {
-        *limb = F::from_canonical_u32(rng.gen_range(0..F::ORDER_U32));
-    }
-
-    let cons = zstore.intern_cons(chain_result_zptr, callable_zptr);
-    let id_digest = CommData::hash(&id_secret, &cons, zstore);
-
-    (id_secret, id_digest)
-}
-
-fn timestamp_seed() -> u64 {
-    let duration_since_epoch = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards");
-
-    let seconds_part = duration_since_epoch.as_secs();
-    let nanos_part = duration_since_epoch.subsec_nanos();
-
-    (seconds_part << 32) | u64::from(nanos_part)
 }
 
 pub(crate) fn read_data<T: for<'a> Deserialize<'a>>(stream: &mut TcpStream) -> Result<T> {
