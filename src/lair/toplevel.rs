@@ -363,38 +363,38 @@ impl<F: Field + Ord> OpE<F> {
     ) {
         match self {
             OpE::AssertNe(a, b) => {
-                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self);
+                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self.pretty());
                 let a = use_var(a, ctx).into();
                 let b = use_var(b, ctx).into();
                 ops.push(Op::AssertNe(a, b));
             }
             OpE::AssertEq(a, b, fmt) => {
-                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self);
+                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self.pretty());
                 let a = use_var(a, ctx).into();
                 let b = use_var(b, ctx).into();
                 ops.push(Op::AssertEq(a, b, *fmt));
             }
             OpE::Contains(a, b) => {
-                assert_eq!(b.size, 1, "Var mismatch on {:?}", self);
+                assert_eq!(b.size, 1, "Var mismatch on {:?}", self.pretty());
                 let a = use_var(a, ctx).into();
                 let b = use_var(b, ctx)[0];
                 ops.push(Op::Contains(a, b));
             }
             OpE::Const(tgt, f) => {
-                assert_eq!(tgt.size, 1, "Var mismatch on {:?}", self);
+                assert_eq!(tgt.size, 1, "Var mismatch on {:?}", self.pretty());
                 ops.push(Op::Const(*f));
                 bind_new(tgt, ctx);
             }
             OpE::Array(tgt, fs) => {
-                assert_eq!(tgt.size, fs.len(), "Var mismatch on {:?}", self);
+                assert_eq!(tgt.size, fs.len(), "Var mismatch on {:?}", self.pretty());
                 for f in fs.iter() {
                     ops.push(Op::Const(*f));
                 }
                 bind_new(tgt, ctx);
             }
             OpE::Add(tgt, a, b) => {
-                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self);
-                assert_eq!(a.size, tgt.size, "Var mismatch on {:?}", self);
+                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self.pretty());
+                assert_eq!(a.size, tgt.size, "Var mismatch on {:?}", self.pretty());
                 let a = use_var(a, ctx).to_vec();
                 let b = use_var(b, ctx);
                 for (a, b) in a.iter().zip(b.iter()) {
@@ -403,8 +403,8 @@ impl<F: Field + Ord> OpE<F> {
                 bind_new(tgt, ctx);
             }
             OpE::Mul(tgt, a, b) => {
-                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self);
-                assert_eq!(a.size, tgt.size, "Var mismatch on {:?}", self);
+                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self.pretty());
+                assert_eq!(a.size, tgt.size, "Var mismatch on {:?}", self.pretty());
                 let a = use_var(a, ctx).to_vec();
                 let b = use_var(b, ctx);
                 for (a, b) in a.iter().zip(b.iter()) {
@@ -413,8 +413,8 @@ impl<F: Field + Ord> OpE<F> {
                 bind_new(tgt, ctx);
             }
             OpE::Sub(tgt, a, b) => {
-                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self);
-                assert_eq!(a.size, tgt.size, "Var mismatch on {:?}", self);
+                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self.pretty());
+                assert_eq!(a.size, tgt.size, "Var mismatch on {:?}", self.pretty());
                 let a = use_var(a, ctx).to_vec();
                 let b = use_var(b, ctx);
                 for (a, b) in a.iter().zip(b.iter()) {
@@ -423,8 +423,8 @@ impl<F: Field + Ord> OpE<F> {
                 bind_new(tgt, ctx);
             }
             OpE::Div(tgt, a, b) => {
-                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self);
-                assert_eq!(a.size, tgt.size, "Var mismatch on {:?}", self);
+                assert_eq!(a.size, b.size, "Var mismatch on {:?}", self.pretty());
+                assert_eq!(a.size, tgt.size, "Var mismatch on {:?}", self.pretty());
                 let b = use_var(b, ctx);
                 for b in b.iter() {
                     ops.push(Op::Inv(*b));
@@ -436,7 +436,7 @@ impl<F: Field + Ord> OpE<F> {
                 bind_new(tgt, ctx);
             }
             OpE::Inv(tgt, a) => {
-                assert_eq!(a.size, tgt.size, "Var mismatch on {:?}", self);
+                assert_eq!(a.size, tgt.size, "Var mismatch on {:?}", self.pretty());
                 let a = use_var(a, ctx);
                 for a in a.iter() {
                     ops.push(Op::Inv(*a));
@@ -444,16 +444,16 @@ impl<F: Field + Ord> OpE<F> {
                 bind_new(tgt, ctx);
             }
             OpE::Not(tgt, a) => {
-                assert_eq!(tgt.size, 1, "Var mismatch on {:?}", self);
-                assert_eq!(a.size, 1, "Var mismatch on {:?}", self);
+                assert_eq!(tgt.size, 1, "Var mismatch on {:?}", self.pretty());
+                assert_eq!(a.size, 1, "Var mismatch on {:?}", self.pretty());
                 let a = use_var(a, ctx)[0];
                 ops.push(Op::Not(a));
                 bind_new(tgt, ctx);
             }
             OpE::Eq(tgt, a, b) => {
-                assert_eq!(tgt.size, 1, "Var mismatch on {:?}", self);
-                assert_eq!(a.size, 1, "Var mismatch on {:?}", self);
-                assert_eq!(b.size, 1, "Var mismatch on {:?}", self);
+                assert_eq!(tgt.size, 1, "Var mismatch on {:?}", self.pretty());
+                assert_eq!(a.size, 1, "Var mismatch on {:?}", self.pretty());
+                assert_eq!(b.size, 1, "Var mismatch on {:?}", self.pretty());
                 let a = use_var(a, ctx)[0];
                 let b = use_var(b, ctx)[0];
                 ops.push(Op::Sub(a, b));
@@ -473,12 +473,17 @@ impl<F: Field + Ord> OpE<F> {
                 if partial {
                     assert!(ctx.partial);
                 }
-                assert_eq!(inp.total_size(), input_size, "Input mismatch on {:?}", self);
+                assert_eq!(
+                    inp.total_size(),
+                    input_size,
+                    "Input mismatch on {:?}",
+                    self.pretty()
+                );
                 assert_eq!(
                     out.total_size(),
                     output_size,
                     "Output mismatch on {:?}",
-                    self
+                    self.pretty()
                 );
                 let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
                 ops.push(Op::Call(name_idx, inp));
@@ -497,25 +502,30 @@ impl<F: Field + Ord> OpE<F> {
                 if partial {
                     assert!(ctx.partial);
                 }
-                assert_eq!(out.total_size(), input_size, "Input mismatch on {:?}", self);
+                assert_eq!(
+                    out.total_size(),
+                    input_size,
+                    "Input mismatch on {:?}",
+                    self.pretty()
+                );
                 assert_eq!(
                     inp.total_size(),
                     output_size,
                     "Output mismatch on {:?}",
-                    self
+                    self.pretty()
                 );
                 let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
                 ops.push(Op::PreImg(name_idx, inp, *fmt));
                 out.iter().for_each(|t| bind_new(t, ctx));
             }
             OpE::Store(ptr, vals) => {
-                assert_eq!(ptr.size, 1, "Var mismatch on {:?}", self);
+                assert_eq!(ptr.size, 1, "Var mismatch on {:?}", self.pretty());
                 let vals = vals.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
                 ops.push(Op::Store(vals));
                 bind_new(ptr, ctx);
             }
             OpE::Load(vals, ptr) => {
-                assert_eq!(ptr.size, 1, "Var mismatch on {:?}", self);
+                assert_eq!(ptr.size, 1, "Var mismatch on {:?}", self.pretty());
                 let ptr = use_var(ptr, ctx)[0];
                 ops.push(Op::Load(vals.total_size(), ptr));
                 vals.iter().for_each(|val| bind_new(val, ctx));
@@ -525,7 +535,7 @@ impl<F: Field + Ord> OpE<F> {
                     pats.total_size(),
                     args.total_size(),
                     "Var mismatch on {:?}",
-                    self
+                    self.pretty()
                 );
                 let args: List<_> = args.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
                 let mut i = 0;
@@ -545,13 +555,13 @@ impl<F: Field + Ord> OpE<F> {
                     inp.total_size(),
                     chip.input_size(),
                     "Input mismatch on {:?}",
-                    self
+                    self.pretty()
                 );
                 assert_eq!(
                     out.total_size(),
                     chip.output_size(),
                     "Output mismatch on {:?}",
-                    self
+                    self.pretty()
                 );
                 let inp = inp.iter().flat_map(|a| use_var(a, ctx).to_vec()).collect();
                 ops.push(Op::ExternCall(name_idx, inp));
