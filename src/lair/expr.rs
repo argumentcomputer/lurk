@@ -1,5 +1,9 @@
 //! Lair's IR, which uses named references for variables and functions.
 
+use std::fmt::Debug;
+
+use itertools::Itertools;
+
 use super::{List, Name};
 
 /// The type for variable references
@@ -17,7 +21,11 @@ impl Var {
 
 impl std::fmt::Display for Var {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", &self.name)
+        if self.size == 1 {
+            write!(f, "{}", self.name)
+        } else {
+            write!(f, "{}: [{}]", self.name, self.size)
+        }
     }
 }
 
@@ -38,6 +46,21 @@ impl VarList {
     #[inline]
     pub fn iter(&self) -> core::slice::Iter<'_, Var> {
         self.as_slice().iter()
+    }
+
+    fn var_list_str(&self) -> String {
+        self.iter().map(|v| format!("{v}")).join(", ")
+    }
+}
+
+impl std::fmt::Display for VarList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = self.var_list_str();
+        if self.as_slice().len() == 1 {
+            write!(f, "{}", s)
+        } else {
+            write!(f, "({})", s)
+        }
     }
 }
 
@@ -182,4 +205,75 @@ pub struct FuncE<F> {
     pub input_params: VarList,
     pub output_size: usize,
     pub body: BlockE<F>,
+}
+
+impl<F: Debug> OpE<F> {
+    pub fn pretty(&self) -> String {
+        match self {
+            OpE::AssertEq(x, y, _) => {
+                format!("assert_eq!({x}, {y})")
+            }
+            OpE::AssertNe(x, y) => {
+                format!("assert_ne!({x}, {y})")
+            }
+            OpE::Contains(x, y) => {
+                format!("contains!({x}, {y})")
+            }
+            OpE::Const(x, c) => {
+                format!("let {x} = {:?};", c)
+            }
+            OpE::Array(x, cs) => {
+                format!("let {x} = Array({:?});", cs)
+            }
+            OpE::Add(x, y, z) => {
+                format!("let {x} = add({y}, {z});")
+            }
+            OpE::Sub(x, y, z) => {
+                format!("let {x} = sub({y}, {z});")
+            }
+            OpE::Mul(x, y, z) => {
+                format!("let {x} = mul({y}, {z});")
+            }
+            OpE::Div(x, y, z) => {
+                format!("let {x} = div({y}, {z});")
+            }
+            OpE::Inv(x, y) => {
+                format!("let {x} = inv({y});")
+            }
+            OpE::Not(x, y) => {
+                format!("let {x} = not({y});")
+            }
+            OpE::Eq(x, y, z) => {
+                format!("let {x} = eq({y}, {z});")
+            }
+            OpE::Call(xs, n, ys) => {
+                format!("let {xs} = call({n}, {});", ys.var_list_str())
+            }
+            OpE::PreImg(xs, n, ys, _) => {
+                format!("let {xs} = preimg({n}, {});", ys.var_list_str())
+            }
+            OpE::Store(x, ys) => {
+                format!("let {x} = store({});", ys.var_list_str())
+            }
+            OpE::Load(xs, y) => {
+                format!("let {xs} = load({y});")
+            }
+            OpE::Slice(xs, ys) => {
+                format!("let {xs} = {ys};")
+            }
+            OpE::ExternCall(xs, n, ys) => {
+                format!("let {xs} = extern_call({n}, {});", ys.var_list_str())
+            }
+            OpE::Emit(xs) => {
+                format!("emit({})", xs.var_list_str())
+            }
+            OpE::RangeU8(xs) => {
+                format!("range_u8!({})", xs.var_list_str())
+            }
+            OpE::Breakpoint => "breakpoint".into(),
+            OpE::Debug(s) => {
+                format!("debug!({s})")
+            }
+        }
+    }
 }
