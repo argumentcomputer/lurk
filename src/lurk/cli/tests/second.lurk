@@ -1,5 +1,5 @@
 ;; test fetching data from first.lurk
-!(fetch #0x22b5fa9cf049349a7d0e5fdeef38e865b79e13a9feb29730c845973af08bef)
+!(open #0x22b5fa9cf049349a7d0e5fdeef38e865b79e13a9feb29730c845973af08bef)
 !(assert-eq (open #0x22b5fa9cf049349a7d0e5fdeef38e865b79e13a9feb29730c845973af08bef) 42)
 
 ;; test open
