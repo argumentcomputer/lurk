@@ -9,7 +9,7 @@ use crate::{
     func,
     lair::{
         chipset::{Chipset, NoChip},
-        expr::{BlockE, CasesE, CtrlE, FuncE, OpE, Var},
+        expr::{BlockE, CaseType, CasesE, CtrlE, FuncE, OpE, Var},
         toplevel::Toplevel,
         FxIndexMap, List, Name,
     },
@@ -441,10 +441,12 @@ pub fn eval_coroutine_expr<F: AbstractField>(
                                 branches: vec![(
                                     [InternalTag::Nil.to_field()].into(),
                                     coroutine_call_block,
+                                    CaseType::Constrained,
                                 )],
-                                default: Some(
+                                default: Some((
                                     BlockE::no_op(CtrlE::return_vars([err_tag, err])).into(),
-                                ),
+                                    CaseType::Constrained,
+                                )),
                             };
                             BlockE {
                                 ops: [load_op].into(),
@@ -472,15 +474,20 @@ pub fn eval_coroutine_expr<F: AbstractField>(
                                         branches: vec![(
                                             [InternalTag::Nil.to_field()].into(),
                                             BlockE::no_op(CtrlE::return_vars([err_tag, err])),
+                                            CaseType::Constrained,
                                         )],
-                                        default: Some(block.into()),
+                                        default: Some((block.into(), CaseType::Constrained)),
                                     },
                                 ),
                             };
                         }
                         block
                     };
-                    ([digests.symbol_ptr(symbol).to_field()].into(), block)
+                    (
+                        [digests.symbol_ptr(symbol).to_field()].into(),
+                        block,
+                        CaseType::Constrained,
+                    )
                 })
                 .collect();
             CtrlE::Match(head, CasesE::no_default(branches))
@@ -490,10 +497,11 @@ pub fn eval_coroutine_expr<F: AbstractField>(
             let case = (
                 [Tag::Err.to_field()].into(),
                 BlockE::no_op(CtrlE::return_vars([args_tag, args])),
+                CaseType::Constrained,
             );
             let cases = CasesE {
                 branches: vec![case],
-                default: Some(BlockE::no_op(match_head).into()),
+                default: Some((BlockE::no_op(match_head).into(), CaseType::Constrained)),
             };
             CtrlE::Match(args_tag, cases)
         };

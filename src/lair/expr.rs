@@ -176,18 +176,24 @@ impl<F> CtrlE<F> {
     }
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum CaseType {
+    Constrained,
+    Unconstrained,
+}
+
 /// Represents the cases for `CtrlE::Match`, containing the branches for successful
 /// matches and an optional default case in case there's no match. Each code path
 /// is encoded as its own block
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CasesE<K, F> {
-    pub branches: Vec<(K, BlockE<F>)>,
-    pub default: Option<Box<BlockE<F>>>,
+    pub branches: Vec<(K, BlockE<F>, CaseType)>,
+    pub default: Option<(Box<BlockE<F>>, CaseType)>,
 }
 
 impl<K, F> CasesE<K, F> {
     #[inline]
-    pub fn no_default(branches: Vec<(K, BlockE<F>)>) -> Self {
+    pub fn no_default(branches: Vec<(K, BlockE<F>, CaseType)>) -> Self {
         Self {
             branches,
             default: None,
