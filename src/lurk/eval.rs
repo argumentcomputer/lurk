@@ -1,5 +1,3 @@
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::FxHashSet;
@@ -12,7 +10,7 @@ use crate::{
         toplevel::Toplevel,
         FxIndexMap, Name,
     },
-    lurk::big_num::field_elts_to_biguint,
+    lurk::{big_num::field_elts_to_biguint, error::EvalErr},
 };
 
 use super::{
@@ -114,42 +112,6 @@ pub fn build_lurk_toplevel_native() -> (
     FxHashSet<Symbol>,
 ) {
     build_lurk_toplevel(Lang::empty())
-}
-
-#[derive(Clone, Copy, FromPrimitive, Debug)]
-#[repr(u32)]
-pub enum EvalErr {
-    UnboundVar = 0,
-    InvalidForm,
-    IllegalBindingVar,
-    ApplyNonFunc,
-    ParamsNotList,
-    ParamNotSymbol,
-    ParamInvalidRest,
-    ArgsNotList,
-    InvalidArg,
-    DivByZero,
-    NotEnv,
-    NotChar,
-    NotCons,
-    NotString,
-    NotU64,
-    NotBigNum,
-    CantOpen,
-    CantCastToChar,
-    CantCastToU64,
-    CantCastToBigNum,
-    CantCastToComm,
-}
-
-impl EvalErr {
-    pub(crate) fn to_field<F: AbstractField>(self) -> F {
-        F::from_canonical_u32(self as u32)
-    }
-
-    pub(crate) fn from_field<F: PrimeField32>(f: &F) -> Self {
-        Self::from_u32(f.as_canonical_u32()).expect("Field element doesn't map to a EvalErr")
-    }
 }
 
 pub fn lurk_main<F: AbstractField>() -> FuncE<F> {

@@ -14,7 +14,7 @@ use crate::{
     lurk::{
         big_num::field_elts_to_biguint,
         chipset::{lurk_hasher, LurkChip},
-        eval::EvalErr,
+        error::EvalErr,
         parser::{syntax::parse, Span},
         state::{builtin_sym, lurk_sym, State, StateRcCell, BUILTIN_SYMBOLS},
         symbol::Symbol,

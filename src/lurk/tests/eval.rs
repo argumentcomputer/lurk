@@ -9,7 +9,8 @@ use crate::{
     lair::{chipset::NoChip, toplevel::Toplevel},
     lurk::{
         chipset::{lurk_hasher, LurkChip},
-        eval::{build_lurk_toplevel_native, EvalErr},
+        error::EvalErr,
+        eval::build_lurk_toplevel_native,
         state::{builtin_sym, user_sym},
         symbol::Symbol,
         tag::Tag,

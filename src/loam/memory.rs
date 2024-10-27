@@ -9,7 +9,7 @@ use crate::{
     loam::{allocation::Allocator, LEWrap, Num, Ptr, PtrEq, Wide, WidePtr, LE},
     lurk::{
         chipset::LurkChip,
-        eval::EvalErr,
+        error::EvalErr,
         state::{StateRcCell, BUILTIN_SYMBOLS},
         tag::Tag,
         zstore::{self, builtin_set, lurk_zstore, ZPtr, ZStore},
