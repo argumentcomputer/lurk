@@ -19,6 +19,10 @@ use crate::{
 use super::{
     chipset::{lurk_chip_map, LurkChip},
     lang::{Coroutine, Lang},
+    misc::{
+        big_num_lessthan, digest_equal, hash3, hash4, hash5, u64_add, u64_divrem, u64_iszero,
+        u64_lessthan, u64_mul, u64_sub,
+    },
     state::{builtin_sym, lurk_sym, BUILTIN_SYMBOLS, LURK_SYMBOLS},
     symbol::Symbol,
     tag::Tag,
@@ -711,131 +715,6 @@ pub fn egress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     return (tag, digest)
                 }
             }
-        }
-    )
-}
-
-pub fn hash3<F>() -> FuncE<F> {
-    func!(
-        invertible fn hash3(preimg: [24]): [8] {
-            let img: [8] = extern_call(hasher3, preimg);
-            return img
-        }
-    )
-}
-
-pub fn hash4<F>() -> FuncE<F> {
-    func!(
-        invertible fn hash4(preimg: [32]): [8] {
-            let img: [8] = extern_call(hasher4, preimg);
-            return img
-        }
-    )
-}
-
-pub fn hash5<F>() -> FuncE<F> {
-    func!(
-        invertible fn hash5(preimg: [40]): [8] {
-            let img: [8] = extern_call(hasher5, preimg);
-            return img
-        }
-    )
-}
-
-pub fn u64_add<F>() -> FuncE<F> {
-    func!(
-        fn u64_add(a, b): [1] {
-            let a: [8] = load(a);
-            let b: [8] = load(b);
-            let c: [8] = extern_call(u64_add, a, b);
-            let c = store(c);
-            return c
-        }
-    )
-}
-
-pub fn u64_sub<F>() -> FuncE<F> {
-    func!(
-        fn u64_sub(a, b): [1] {
-            let a: [8] = load(a);
-            let b: [8] = load(b);
-            let c: [8] = extern_call(u64_sub, a, b);
-            let c = store(c);
-            return c
-        }
-    )
-}
-
-pub fn u64_mul<F>() -> FuncE<F> {
-    func!(
-        fn u64_mul(a, b): [1] {
-            let a: [8] = load(a);
-            let b: [8] = load(b);
-            let c: [8] = extern_call(u64_mul, a, b);
-            let c = store(c);
-            return c
-        }
-    )
-}
-
-pub fn u64_divrem<F>() -> FuncE<F> {
-    func!(
-        fn u64_divrem(a, b): [2] {
-            let a: [8] = load(a);
-            let b: [8] = load(b);
-            let (q: [8], r: [8]) = extern_call(u64_divrem, a, b);
-            let q = store(q);
-            let r = store(r);
-            return (q, r)
-        }
-    )
-}
-
-pub fn u64_lessthan<F>() -> FuncE<F> {
-    func!(
-        fn u64_lessthan(a, b): [1] {
-            let a: [8] = load(a);
-            let b: [8] = load(b);
-            let c = extern_call(u64_lessthan, a, b);
-            return c
-        }
-    )
-}
-
-pub fn u64_iszero<F>() -> FuncE<F> {
-    func!(
-        fn u64_iszero(a): [1] {
-            let a: [8] = load(a);
-            // this is slightly cheaper than doing it in Lair itself
-            let b = extern_call(u64_iszero, a);
-            return b
-        }
-    )
-}
-
-pub fn digest_equal<F: AbstractField>() -> FuncE<F> {
-    func!(
-        fn digest_equal(a, b): [1] {
-            let a: [8] = load(a);
-            let b: [8] = load(b);
-            let diff = sub(a, b);
-            if diff {
-                let zero = 0;
-                return zero
-            }
-            let one = 1;
-            return one
-        }
-    )
-}
-
-pub fn big_num_lessthan<F>() -> FuncE<F> {
-    func!(
-        fn big_num_lessthan(a, b): [1] {
-            let a: [8] = load(a);
-            let b: [8] = load(b);
-            let c = extern_call(big_num_lessthan, a, b);
-            return c
         }
     )
 }

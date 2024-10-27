@@ -5,6 +5,7 @@ pub mod chipset;
 pub mod cli;
 pub mod eval;
 pub mod lang;
+pub mod misc;
 pub mod package;
 pub mod parser;
 pub mod poseidon;
