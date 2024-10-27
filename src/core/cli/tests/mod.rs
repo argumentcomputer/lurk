@@ -53,6 +53,7 @@ fn test_demo_files() {
         "demo/mastermind.lurk",
         "demo/mini-mastermind.lurk",
         "demo/microbank.lurk",
+        "demo/theorems.lurk",
     ];
     for file in demo_files {
         let mut repl = Repl::new_native();

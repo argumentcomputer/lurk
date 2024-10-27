@@ -1,0 +1,132 @@
+;; propositions
+!(def equals (lambda (lhs rhs) (cons :equals (cons lhs rhs))))
+!(def forall (lambda (var prop) (cons :forall (cons var prop))))
+; !(def and (lambda (prop-l prop-r) (cons :and (cons prop-l prop-r))))
+; !(def or (lambda (prop-l prop-r) (cons :or (cons prop-l prop-r))))
+; !(def implies (lambda (prop-l prop-r) (cons :implies (cons prop-l prop-r))))
+; !(def iff (lambda (prop-l prop-r) (cons :iff (cons prop-l prop-r))))
+
+;; tactics
+!(def refl (lambda (var) (cons :refl var)))
+!(def intro (lambda (var) (cons :intro var)))
+; !(def split '(:split))
+; !(def choose-l '(:choose-l))
+; !(def choose-r '(:choose-r))
+; !(def rw (lambda (hyp) (cons :rw hyp)))
+; !(def exact (lambda (hyp) (cons :exact hyp)))
+; !(def curry (lambda (imp hyp) (cons :curry (cons imp hyp))))
+
+!(defrec contains
+  (lambda (list elt)
+    (if list
+      (if (eq (car list) elt)
+        t
+        (contains (cdr list) elt))
+      nil)))
+!(assert-eq nil (contains () :a))
+!(assert-eq t (contains '(:a) :a))
+!(assert-eq nil (contains '(:a) :b))
+!(assert-eq t (contains '(:a :b) :a))
+!(assert-eq t (contains '(:a :b) :b))
+!(assert-eq nil (contains '(:a :b) :c))
+
+!(def rename-if-eq-and-free
+  (lambda (var old new bound-vars)
+    (if (eq var old)
+      (if (contains bound-vars old) old new)
+      old)))
+!(assert-eq :b (rename-if-eq-and-free :a :a :b ()))
+!(assert-eq :a (rename-if-eq-and-free :a :a :b '(:a)))
+!(assert-eq :b (rename-if-eq-and-free :a :b :c ()))
+
+!(defrec rename-free-var-in-prop
+  (lambda (old new prop bound-vars)
+    (let ((prop-kind (car prop))
+          (prop-body (cdr prop)))
+      (if (eq prop-kind :equals)
+        (cons (rename-if-eq-and-free (car prop-body) old new bound-vars)
+              (rename-if-eq-and-free (cdr prop-body) old new bound-vars))
+        (if (eq prop-kind :forall)
+          (if (eq (car prop-body) old)
+            prop-body
+            (rename-free-var-in-prop old new
+              (cdr prop-body) ;; inner prop
+              (cons (car prop-body) bound-vars))) ;; extended bound vars
+          (fail)))))) ;; todo: more propositions
+
+!(defrec ctx-contains
+  (lambda (ctx var)
+    (if ctx
+      (if (eq (car (car ctx)) var)
+        t
+        (contains (cdr ctx) var))
+      nil)))
+
+;; Returns `t` if `tactics` can close all `goals` w.r.t. `ctx`.
+;; Returns `nil` otherwise.
+!(defrec theorem-aux
+  (lambda (ctx goals tactics)
+    (if (eq goals nil)
+      (eq tactics nil) ;; no more goals, so there should be no more tactics
+      (let ((goal (car goals))
+            (goal-kind (car goal))
+            (tactic (car tactics))
+            (tactic-kind (car tactic)))
+        (if (eq tactic-kind :intro)
+          (if (eq goal-kind :forall)
+            (let ((intro-var (cdr tactic))
+                  (forall (cdr goal))
+                  (forall-var (car forall))
+                  (forall-prop (cdr forall))
+                  (new-goal (cons (car forall-prop)
+                                  (rename-free-var-in-prop forall-var intro-var forall-prop nil))))
+              (theorem-aux (cons (list intro-var) ctx) (cons new-goal (cdr goals)) (cdr tactics)))
+            nil) ;; invalid goal kind for the intro tactic
+          (if (eq tactic-kind :refl)
+            (if (eq goal-kind :equals)
+              (let ((refl-var (cdr tactic)))
+                (if (ctx-contains ctx refl-var)
+                  (if (eq (cons refl-var refl-var) (cdr goal))
+                    (theorem-aux ctx (cdr goals) (cdr tactics))
+                    nil) ;; goal doesn't match the refl proof
+                  nil)) ;; refl variable is not available in the context
+              nil) ;; invalid goal kind for the refl tactic
+            (fail))))))) ;; todo: more tactics
+
+;; Returns the `proof` itself if it can close the `goal` w.r.t. `ctx`.
+;; Fails unprovably otherwise.
+;;
+;; A proof can either be a list of tactics or a commitment to one.
+;;
+;; The idea of returning the proof is that a theorem should be reusable when
+;; proving other theorems.
+!(def theorem
+  (lambda (ctx goal proof)
+    (let ((tactics (if (type-eqq #c0x0 proof) (open proof) proof)))
+      (if (theorem-aux ctx (list goal) tactics)
+        proof
+        (fail)))))
+
+!(def forall-eq
+  (theorem ()
+    (forall :x (equals :x :x))
+    (list (intro :a) (refl :a))))
+
+;; Using currying to store the theorem claim
+!(def forall-eq-claim (theorem () (forall :x (equals :x :x))))
+
+;; The same proof should obviously prove the theorem again
+!(assert (forall-eq-claim forall-eq))
+
+;; And we can hide our proof as well
+!(assert (forall-eq-claim (hide !(rand) forall-eq)))
+
+; !(def eq-trans
+;   (theorem (list (cons :hab (equals :a :b)) (cons :hbc (equals :b :c)))
+;     (equals :a :c)
+;     (list (rw :hab) (exact :hbc))))
+
+; !(def implies-of-premise
+;   (theorem (list (cons :h (implies :p :q)) (cons :hp :p))
+;     :q
+;     (list (curry :h :hp))))
