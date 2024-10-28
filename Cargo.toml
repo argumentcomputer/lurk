@@ -66,7 +66,7 @@ strum = { version = "0.26", features = ["derive"] }
 thiserror = "1.0.44"
 hybrid-array = "0.2.0-rc"
 lazy_static = "1.4.0"
-hashbrown = "0.14.5"
+hashbrown = "0.15.0"
 rand_chacha = "0.3.1"
 proptest = "1.5.0"
 
