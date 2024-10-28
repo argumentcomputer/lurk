@@ -253,7 +253,6 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 bail!("Reduction resulted in {}", repl.fmt(&output));
             }
             repl.env = output;
-            println!("{}", repl.fmt(&sym));
             Ok(sym)
         },
     };
@@ -289,7 +288,6 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 bail!("Reduction resulted in {}", repl.fmt(&output));
             }
             repl.env = output;
-            println!("{}", repl.fmt(&sym));
             Ok(sym)
         },
     };
@@ -324,7 +322,6 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             if res.tag == Tag::Err {
                 bail!("Reduction error: {}", repl.fmt(&res));
             }
-            println!("{}", repl.fmt(&sym));
             repl.bind(sym, res);
             Ok(sym)
         },
@@ -398,7 +395,6 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         let comm = comm_data.commit(&mut repl.zstore);
         let hash = format!("{:x}", field_elts_to_biguint(&comm.digest));
         std::fs::write(commits_dir()?.join(&hash), bincode::serialize(&comm_data)?)?;
-        println!("Hash: #0x{hash}");
         Ok(comm)
     }
 
@@ -467,27 +463,13 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         },
     };
 
-    fn fetch_comm_data(
-        repl: &mut Repl<F, C1, C2>,
-        digest: &[F],
-        print_payload: Option<bool>,
-    ) -> Result<ZPtr<F>> {
+    fn fetch_comm_data(repl: &mut Repl<F, C1, C2>, digest: &[F]) -> Result<ZPtr<F>> {
         let hash = format!("{:x}", field_elts_to_biguint(digest));
         let comm_data_bytes = std::fs::read(commits_dir()?.join(&hash))?;
         let comm_data: CommData<F> = bincode::deserialize(&comm_data_bytes)?;
-        let message = print_payload.map(|print_payload| {
-            if print_payload {
-                repl.fmt(&comm_data.payload)
-            } else {
-                "Data is now available".to_string()
-            }
-        });
-        let zptr = comm_data.payload;
+        let payload = comm_data.payload;
         comm_data.populate_zstore(&mut repl.zstore);
-        if let Some(message) = message {
-            println!("{message}");
-        }
-        Ok(zptr)
+        Ok(payload)
     }
 
     const OPEN: Self = Self {
@@ -504,27 +486,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let [&expr] = repl.take(args)?;
             let (result, _) = repl.reduce_aux(&expr)?;
             match result.tag {
-                Tag::BigNum | Tag::Comm => Self::fetch_comm_data(repl, &result.digest, Some(true)),
-                _ => bail!("Expected a commitment or a BigNum"),
-            }
-        },
-    };
-
-    const FETCH: Self = Self {
-        name: "fetch",
-        summary: "Fetches a persisted commitment.",
-        info: &[],
-        format: "!(fetch <comm>)",
-        example: &[
-            "!(commit 123)",
-            "!(fetch #c0x944834111822843979ace19833d05ca9daf2f655230faec517433e72fe777b)",
-        ],
-        returns: "The commitment payload",
-        run: |repl, args, _dir| {
-            let [&expr] = repl.take(args)?;
-            let (result, _) = repl.reduce_aux(&expr)?;
-            match result.tag {
-                Tag::BigNum | Tag::Comm => Self::fetch_comm_data(repl, &result.digest, Some(false)),
+                Tag::BigNum | Tag::Comm => Self::fetch_comm_data(repl, &result.digest),
                 _ => bail!("Expected a commitment or a BigNum"),
             }
         },
@@ -544,7 +506,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 let inv_hashes3 = repl.queries.get_inv_queries("hash3", &repl.toplevel);
                 if !inv_hashes3.contains_key(callable.digest.as_slice()) {
                     // try to fetch a persisted commitment
-                    Self::fetch_comm_data(repl, &callable.digest, None)?;
+                    Self::fetch_comm_data(repl, &callable.digest)?;
                 }
             }
             _ => (),
@@ -656,9 +618,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 _ => bail!("Package name must be a string or a symbol"),
             };
             let name_zptr = repl.zstore.intern_symbol(&name, &repl.lang_symbols);
-            println!("{}", repl.fmt(&name_zptr));
-            let package = Package::new(name);
-            repl.state.borrow_mut().add_package(package);
+            repl.state.borrow_mut().add_package(Package::new(name));
             Ok(name_zptr)
         },
     };
@@ -747,7 +707,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let lurk_data = LurkData::new(result, &repl.zstore);
             let lurk_data_bytes = bincode::serialize(&lurk_data)?;
             std::fs::write(&path_str, lurk_data_bytes)?;
-            println!("Data persisted at {path_str}");
+            println!("Data persisted on file `{path_str}`");
             Ok(result)
         },
     };
@@ -833,7 +793,6 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let description = get_prop("description", |val| val.tag == Tag::Str, empty_str)?;
 
             let protocol = repl.zstore.intern_list([vars, body, lang, description]);
-            println!("{}", repl.fmt(&name));
             repl.bind(name, protocol);
             Ok(name)
         },
@@ -1123,7 +1082,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             repl.memoize_dag(args_reduced.tag, &args_reduced.digest);
             let protocol_proof = ProtocolProof::new(crypto_proof, args_reduced, &repl.zstore);
             std::fs::write(&path_str, bincode::serialize(&protocol_proof)?)?;
-            println!("Protocol proof saved at {path_str}");
+            println!("Protocol proof saved on file `{path_str}`");
             Ok(repl.zstore.intern_string(&proof_key))
         },
     };
@@ -1484,7 +1443,6 @@ pub(crate) fn meta_cmds<C1: Chipset<F>, C2: Chipset<F>>() -> MetaCmdsMap<F, C1, 
         MetaCmd::RAND,
         MetaCmd::COMMIT,
         MetaCmd::OPEN,
-        MetaCmd::FETCH,
         MetaCmd::CALL,
         MetaCmd::CHAIN,
         MetaCmd::TRANSITION,

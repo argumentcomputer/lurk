@@ -555,9 +555,9 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
     ///     * `offset: usize` is the number of characters before the `Syntax`
     ///     * `rest: Span<'_>` is the textual input to be parsed next
     ///     * `zptr: ZPtr<F>` is the pointer to the interned Lurk expression
-    ///     * `non_meta: bool` tells whether the parsed code was a meta command or not
+    ///     * `meta: bool` tells whether the parsed code was a meta command or not
     #[allow(clippy::type_complexity)]
-    fn parse<'a>(
+    fn process<'a>(
         &mut self,
         input: Span<'a>,
         file_dir: &Utf8Path,
@@ -569,9 +569,9 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
             .get_pos()
             .get_from_offset()
             .expect("Parsed syntax should have its Pos set");
-        let non_meta = !matches!(syn, Syntax::Meta(..));
+        let meta = matches!(syn, Syntax::Meta(..));
         let zptr = self.intern_syntax(&syn, file_dir)?;
-        Ok(Some((offset, rest, zptr, non_meta)))
+        Ok(Some((offset, rest, zptr, meta)))
     }
 
     fn handle_form<'a>(
@@ -580,8 +580,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         file_dir: &Utf8Path,
         demo: bool,
     ) -> Result<Option<Span<'a>>> {
-        let Some((syntax_start, mut new_input, zptr, non_meta)) = self.parse(input, file_dir)?
-        else {
+        let Some((syntax_start, mut new_input, zptr, meta)) = self.process(input, file_dir)? else {
             return Ok(None);
         };
         if demo {
@@ -600,7 +599,9 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
             // ENTER already prints a new line so we can remove it from the start of incoming input
             new_input = new_input.trim_start_matches('\n').into();
         }
-        if non_meta {
+        if meta {
+            println!("{}", self.fmt(&zptr));
+        } else {
             let result = self.handle_non_meta(&zptr, None)?;
             if result.tag == Tag::Err {
                 // error out when loading a file
@@ -653,12 +654,12 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
                     editor.add_history_entry(&line)?;
 
                     while !line.trim_end().is_empty() {
-                        match self.parse(Span::new(&line), &pwd_path) {
-                            Ok(Some((_, rest, zptr, non_meta))) => {
-                                if non_meta {
-                                    if let Err(e) = self.handle_non_meta(&zptr, None) {
-                                        eprintln!("Error: {e}");
-                                    }
+                        match self.process(Span::new(&line), &pwd_path) {
+                            Ok(Some((_, rest, zptr, meta))) => {
+                                if meta {
+                                    println!("{}", self.fmt(&zptr));
+                                } else if let Err(e) = self.handle_non_meta(&zptr, None) {
+                                    eprintln!("Error: {e}");
                                 }
                                 line = rest.to_string();
                             }
