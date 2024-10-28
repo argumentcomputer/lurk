@@ -21,7 +21,9 @@ use strum::{EnumCount, EnumIter};
     EnumIter,
 )]
 pub enum Tag {
-    U64 = 0,
+    I64 = 0,
+    U64,
+    I63,
     Num,
     BigNum,
     Comm,

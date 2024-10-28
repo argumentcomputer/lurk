@@ -13,7 +13,7 @@ use crate::{
         toplevel::Toplevel,
         FxIndexMap, List, Name,
     },
-    lurk::big_num::field_elts_to_biguint,
+    lurk::gadgets::big_num::field_elts_to_biguint,
 };
 
 use super::{
@@ -26,7 +26,7 @@ use super::{
 };
 
 /// `usize` wrapper in order to implement `to_field`
-pub struct DigestIndex(usize);
+struct DigestIndex(usize);
 
 impl DigestIndex {
     fn to_field<F: AbstractField>(&self) -> F {
@@ -37,21 +37,21 @@ impl DigestIndex {
 /// Tags that are internal to the VM
 #[repr(usize)]
 #[derive(Clone, Copy, EnumIter)]
-pub enum InternalTag {
+enum InternalTag {
     Nil = 0,
     T,
 }
 
 impl InternalTag {
     /// Starts from where `Tag` ends
-    pub fn to_field<F: AbstractField>(self) -> F {
+    fn to_field<F: AbstractField>(self) -> F {
         F::from_canonical_usize(Tag::COUNT + self as usize)
     }
 }
 
 /// Keeps track of symbols digests to be allocated in memory, following the same
 /// order of insertion (hence an `IndexMap`)
-pub struct SymbolsDigests<F>(FxIndexMap<Symbol, List<F>>);
+struct SymbolsDigests<F>(FxIndexMap<Symbol, List<F>>);
 
 impl SymbolsDigests<BabyBear> {
     fn new(lang_symbols: &FxHashSet<Symbol>, zstore: &mut ZStore<BabyBear, LurkChip>) -> Self {
@@ -171,10 +171,9 @@ pub fn build_lurk_toplevel<C2: Chipset<BabyBear>>(
         let Coroutine { func_expr, .. } = coroutine;
         let name = func_expr.name;
         assert!(
-            !func_expr_map.contains_key(&name),
+            func_expr_map.insert(name, func_expr).is_none(),
             "Name conflict with native function {name}"
         );
-        func_expr_map.insert(name, func_expr);
     }
     let funcs_exprs: Vec<_> = func_expr_map.into_values().collect();
     let lurk_chip_map = lurk_chip_map(gadgets);
@@ -227,7 +226,7 @@ impl EvalErr {
     }
 }
 
-pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
+fn lurk_main<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn lurk_main(full_expr_tag: [8], expr_digest: [8], env_digest: [8]): [16] {
             let _foo: [0] = call(preallocate_symbols,); // TODO: replace by `exec` - needs to be constrained to run though
@@ -262,7 +261,7 @@ pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
 ///     return
 /// }
 /// ```
-pub fn preallocate_symbols<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
+fn preallocate_symbols<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     let mut ops = Vec::with_capacity(2 * digests.0.len());
     let arr_var = Var {
         name: "arr",
@@ -347,7 +346,7 @@ pub fn preallocate_symbols<F: AbstractField>(digests: &SymbolsDigests<F>) -> Fun
 ///     }
 /// }
 /// ```
-pub fn eval_coroutine_expr<F: AbstractField>(
+fn eval_coroutine_expr<F: AbstractField>(
     digests: &SymbolsDigests<F>,
     coroutines: &FxIndexMap<Symbol, Coroutine<F>>,
 ) -> FuncE<F> {
@@ -522,7 +521,7 @@ pub fn eval_coroutine_expr<F: AbstractField>(
     }
 }
 
-pub fn ingress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
+fn ingress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         fn ingress(tag_full: [8], digest: [8]): [2] {
             let zeros = [0; 7];
@@ -619,7 +618,7 @@ pub fn ingress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     )
 }
 
-pub fn egress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
+fn egress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         fn egress(tag, val): [9] {
             match tag {
@@ -707,7 +706,7 @@ pub fn egress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     )
 }
 
-pub fn hash3<F>() -> FuncE<F> {
+fn hash3<F>() -> FuncE<F> {
     func!(
         invertible fn hash3(preimg: [24]): [8] {
             let img: [8] = extern_call(hasher3, preimg);
@@ -716,7 +715,7 @@ pub fn hash3<F>() -> FuncE<F> {
     )
 }
 
-pub fn hash4<F>() -> FuncE<F> {
+fn hash4<F>() -> FuncE<F> {
     func!(
         invertible fn hash4(preimg: [32]): [8] {
             let img: [8] = extern_call(hasher4, preimg);
@@ -725,7 +724,7 @@ pub fn hash4<F>() -> FuncE<F> {
     )
 }
 
-pub fn hash5<F>() -> FuncE<F> {
+fn hash5<F>() -> FuncE<F> {
     func!(
         invertible fn hash5(preimg: [40]): [8] {
             let img: [8] = extern_call(hasher5, preimg);
@@ -734,7 +733,7 @@ pub fn hash5<F>() -> FuncE<F> {
     )
 }
 
-pub fn u64_add<F>() -> FuncE<F> {
+fn u64_add<F>() -> FuncE<F> {
     func!(
         fn u64_add(a, b): [1] {
             let a: [8] = load(a);
@@ -746,7 +745,7 @@ pub fn u64_add<F>() -> FuncE<F> {
     )
 }
 
-pub fn u64_sub<F>() -> FuncE<F> {
+fn u64_sub<F>() -> FuncE<F> {
     func!(
         fn u64_sub(a, b): [1] {
             let a: [8] = load(a);
@@ -758,7 +757,7 @@ pub fn u64_sub<F>() -> FuncE<F> {
     )
 }
 
-pub fn u64_mul<F>() -> FuncE<F> {
+fn u64_mul<F>() -> FuncE<F> {
     func!(
         fn u64_mul(a, b): [1] {
             let a: [8] = load(a);
@@ -770,7 +769,7 @@ pub fn u64_mul<F>() -> FuncE<F> {
     )
 }
 
-pub fn u64_divrem<F>() -> FuncE<F> {
+fn u64_divrem<F>() -> FuncE<F> {
     func!(
         fn u64_divrem(a, b): [2] {
             let a: [8] = load(a);
@@ -783,7 +782,7 @@ pub fn u64_divrem<F>() -> FuncE<F> {
     )
 }
 
-pub fn u64_lessthan<F>() -> FuncE<F> {
+fn u64_lessthan<F>() -> FuncE<F> {
     func!(
         fn u64_lessthan(a, b): [1] {
             let a: [8] = load(a);
@@ -794,7 +793,7 @@ pub fn u64_lessthan<F>() -> FuncE<F> {
     )
 }
 
-pub fn u64_iszero<F>() -> FuncE<F> {
+fn u64_iszero<F>() -> FuncE<F> {
     func!(
         fn u64_iszero(a): [1] {
             let a: [8] = load(a);
@@ -805,7 +804,7 @@ pub fn u64_iszero<F>() -> FuncE<F> {
     )
 }
 
-pub fn digest_equal<F: AbstractField>() -> FuncE<F> {
+fn digest_equal<F: AbstractField>() -> FuncE<F> {
     func!(
         fn digest_equal(a, b): [1] {
             let a: [8] = load(a);
@@ -821,7 +820,7 @@ pub fn digest_equal<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn big_num_lessthan<F>() -> FuncE<F> {
+fn big_num_lessthan<F>() -> FuncE<F> {
     func!(
         fn big_num_lessthan(a, b): [1] {
             let a: [8] = load(a);
@@ -832,7 +831,7 @@ pub fn big_num_lessthan<F>() -> FuncE<F> {
     )
 }
 
-pub fn eval<F: AbstractField>() -> FuncE<F> {
+fn eval<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval(expr_tag, expr, env): [2] {
             match expr_tag {
@@ -890,7 +889,7 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
+fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn eval_builtin_expr(head, rest_tag, rest, env): [2] {
             let nil_tag = InternalTag::Nil;
@@ -1211,7 +1210,7 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
     )
 }
 
-pub fn eval_apply_builtin<F: AbstractField>() -> FuncE<F> {
+fn eval_apply_builtin<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_apply_builtin(fst_tag, fst, snd_tag, snd, env): [2] {
             let (fst_tag, fst) = call(eval, fst_tag, fst, env);
@@ -1232,7 +1231,7 @@ pub fn eval_apply_builtin<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn coerce_if_sym<F: AbstractField>() -> FuncE<F> {
+fn coerce_if_sym<F: AbstractField>() -> FuncE<F> {
     func!(
         fn coerce_if_sym(tag): [1] {
             match tag {
@@ -1246,7 +1245,7 @@ pub fn coerce_if_sym<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn open_comm<F: PrimeField32>() -> FuncE<F> {
+fn open_comm<F: PrimeField32>() -> FuncE<F> {
     func!(
         fn open_comm(hash_ptr): [2] {
             let comm_hash: [8] = load(hash_ptr);
@@ -1261,7 +1260,7 @@ pub fn open_comm<F: PrimeField32>() -> FuncE<F> {
     )
 }
 
-pub fn car_cdr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
+fn car_cdr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn car_cdr(rest_tag, rest, env): [4] {
             let nil = digests.lurk_symbol_ptr("nil");
@@ -1308,7 +1307,7 @@ pub fn car_cdr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     )
 }
 
-pub fn equal<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
+fn equal<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn equal(rest_tag, rest, env, eval_first): [2] {
             let err_tag = Tag::Err;
@@ -1361,7 +1360,7 @@ pub fn equal<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     )
 }
 
-pub fn equal_inner<F: AbstractField>() -> FuncE<F> {
+fn equal_inner<F: AbstractField>() -> FuncE<F> {
     func!(
         fn equal_inner(a_tag, a, b_tag, b): [1] {
             let not_eq_tag = sub(a_tag, b_tag);
@@ -1447,7 +1446,7 @@ pub fn equal_inner<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_list<F: AbstractField>() -> FuncE<F> {
+fn eval_list<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_list(rest_tag, rest, env): [2] {
             match rest_tag {
@@ -1480,7 +1479,7 @@ pub fn eval_list<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_begin<F: AbstractField>() -> FuncE<F> {
+fn eval_begin<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_begin(rest_tag, rest, env): [2] {
             match rest_tag {
@@ -1511,7 +1510,7 @@ pub fn eval_begin<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_binop_num<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
+fn eval_binop_num<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn eval_binop_num(head, exp1_tag, exp1, exp2_tag, exp2, env): [2] {
             let err_tag = Tag::Err;
@@ -1688,7 +1687,7 @@ pub fn eval_binop_num<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F>
     )
 }
 
-pub fn eval_binop_misc<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
+fn eval_binop_misc<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn eval_binop_misc(head, exp1_tag, exp1, exp2_tag, exp2, env): [2] {
             let err_tag = Tag::Err;
@@ -1731,7 +1730,7 @@ pub fn eval_binop_misc<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F
     )
 }
 
-pub fn eval_unop<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
+fn eval_unop<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn eval_unop(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
@@ -1831,7 +1830,7 @@ pub fn eval_unop<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     )
 }
 
-pub fn eval_opening_unop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
+fn eval_opening_unop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn eval_opening_unop(head, rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
@@ -1893,7 +1892,7 @@ pub fn eval_opening_unop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<
     )
 }
 
-pub fn eval_hide<F: AbstractField>() -> FuncE<F> {
+fn eval_hide<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_hide(rest_tag, rest, env): [2] {
             let err_tag = Tag::Err;
@@ -1943,7 +1942,7 @@ pub fn eval_hide<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_let<F: AbstractField>() -> FuncE<F> {
+fn eval_let<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_let(binds_tag, binds, body_tag, body, env): [2] {
             let err_tag = Tag::Err;
@@ -2003,7 +2002,7 @@ pub fn eval_let<F: AbstractField>() -> FuncE<F> {
 }
 
 /// Extends the original environment of a `letrec` with thunk values from its list of mutual bindings
-pub fn extend_env_with_mutuals<F: AbstractField>() -> FuncE<F> {
+fn extend_env_with_mutuals<F: AbstractField>() -> FuncE<F> {
     func!(
         fn extend_env_with_mutuals(binds_tag, binds, mutual_binds, mutual_env): [2] {
             let err_tag = Tag::Err;
@@ -2056,7 +2055,7 @@ pub fn extend_env_with_mutuals<F: AbstractField>() -> FuncE<F> {
 }
 
 /// Evaluates the mutual thunks in an environment extended by `letrec` bindings
-pub fn eval_letrec_bindings<F: AbstractField>() -> FuncE<F> {
+fn eval_letrec_bindings<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_letrec_bindings(init_env, ext_env): [2] {
             let not_eq = sub(ext_env, init_env);
@@ -2082,7 +2081,7 @@ pub fn eval_letrec_bindings<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
+fn eval_letrec<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_letrec(binds_tag, binds, body_tag, body, env): [2] {
             // extend `env` with the bindings from the mutual env, but with thunked values
@@ -2106,7 +2105,7 @@ pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
+fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn apply(head_tag, head, args_tag, args, args_env): [2] {
             // Constants, tags, etc
@@ -2266,7 +2265,7 @@ pub fn apply<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     )
 }
 
-pub fn env_lookup<F: AbstractField>() -> FuncE<F> {
+fn env_lookup<F: AbstractField>() -> FuncE<F> {
     func!(
         fn env_lookup(x_tag_digest: [9], env): [2] {
             if !env {

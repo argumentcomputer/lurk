@@ -527,7 +527,9 @@ impl Store {
                 format!("<Thunk {}>", self.fmt(zstore, body))
             }
             Tag::Err => format!("<Err {:?}>", EvalErr::from_field(&ptr.addr())),
-            Tag::U64 | Tag::Char | Tag::Comm | Tag::Str | Tag::Env => unimplemented!(),
+            Tag::U64 | Tag::I63 | Tag::I64 | Tag::Char | Tag::Comm | Tag::Str | Tag::Env => {
+                unimplemented!()
+            }
         }
     }
 }

@@ -12,9 +12,9 @@ use std::marker::PhantomData;
 use crate::{
     lair::{chipset::Chipset, List},
     lurk::{
-        big_num::field_elts_to_biguint,
         chipset::{lurk_hasher, LurkChip},
         eval::EvalErr,
+        gadgets::big_num::field_elts_to_biguint,
         parser::{syntax::parse, Span},
         state::{builtin_sym, lurk_sym, State, StateRcCell, BUILTIN_SYMBOLS},
         symbol::Symbol,
@@ -133,6 +133,31 @@ impl<F: AbstractField + Copy> ZPtr<F> {
         Self {
             tag: Tag::U64,
             digest: u.to_le_bytes().map(F::from_canonical_u8),
+        }
+    }
+
+    #[inline]
+    pub fn i63(i: i64) -> Self {
+        assert_eq!((i >> 62) & 1, 0);
+        let mut digest = i.abs().to_le_bytes().map(F::from_canonical_u8);
+        if i < 0 {
+            digest[7] += F::from_canonical_u32(1 << 7);
+        }
+        Self {
+            tag: Tag::I63,
+            digest,
+        }
+    }
+
+    #[inline]
+    pub fn i64(i: i64) -> Self {
+        let mut digest = i.abs().to_le_bytes().map(F::from_canonical_u8);
+        if i < 0 {
+            digest[7] += F::from_canonical_u32(1 << 8);
+        }
+        Self {
+            tag: Tag::I64,
+            digest,
         }
     }
 
@@ -386,6 +411,16 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
     }
 
     #[inline]
+    pub fn intern_i63(&mut self, i: i64) -> ZPtr<F> {
+        self.memoize_atom_dag(ZPtr::i63(i))
+    }
+
+    #[inline]
+    pub fn intern_i64(&mut self, i: i64) -> ZPtr<F> {
+        self.memoize_atom_dag(ZPtr::i64(i))
+    }
+
+    #[inline]
     pub fn intern_big_num(&mut self, c: [F; DIGEST_SIZE]) -> ZPtr<F> {
         self.memoize_atom_dag(ZPtr::big_num(c))
     }
@@ -519,6 +554,8 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
             Syntax::Num(_, f) => self.intern_num(*f),
             Syntax::Char(_, c) => self.intern_char(*c),
             Syntax::U64(_, u) => self.intern_u64(*u),
+            Syntax::I63(_, i) => self.intern_i63(*i),
+            Syntax::I64(_, i) => self.intern_i64(*i),
             Syntax::BigNum(_, c) => self.intern_big_num(*c),
             Syntax::Comm(_, c) => self.intern_comm(*c),
             Syntax::String(_, s) => self.intern_string(s),
@@ -543,7 +580,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 let x = self.intern_syntax(x, lang_symbols);
                 self.intern_list([quote, x])
             }
-            Syntax::I64(..) | Syntax::Meta(..) => panic!("not supported"),
+            Syntax::Meta(..) => panic!("not supported"),
         };
         self.syn_cache.insert(syn.clone(), zptr);
         zptr
@@ -694,7 +731,14 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 );
             }
             Tag::Sym | Tag::Key | Tag::Builtin | Tag::Coroutine => (), // these should be already memoized
-            Tag::Num | Tag::U64 | Tag::Char | Tag::Err | Tag::BigNum | Tag::Comm => {
+            Tag::Num
+            | Tag::U64
+            | Tag::I63
+            | Tag::I64
+            | Tag::Char
+            | Tag::Err
+            | Tag::BigNum
+            | Tag::Comm => {
                 self.memoize_atom_dag(ZPtr {
                     tag,
                     digest: into_sized(digest),
@@ -839,6 +883,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                         .map(|f| u8::try_from(f.as_canonical_u32()).expect("invalid u64 limbs"))
                 )
             ),
+            Tag::I63 | Tag::I64 => todo!(),
             Tag::Char => format!("'{}'", get_char(&zptr.digest)),
             Tag::BigNum => format!("#{:#x}", field_elts_to_biguint(&zptr.digest)),
             Tag::Comm => format!("#c{:#x}", field_elts_to_biguint(&zptr.digest)),

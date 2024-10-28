@@ -14,7 +14,10 @@ use crate::{
 
 use crate::lurk::poseidon::PoseidonChipset;
 
-use super::{big_num::BigNum, u64::U64, zstore::Hasher};
+use super::{
+    gadgets::{big_num::BigNum, extract_sign::ExtractSign, u64::U64},
+    zstore::Hasher,
+};
 
 #[derive(Clone)]
 pub enum LurkChip {
@@ -23,6 +26,8 @@ pub enum LurkChip {
     Hasher5(PoseidonChipset<BabyBearConfig40, 40>),
     U64(U64),
     BigNum(BigNum),
+    ExtractSign7(ExtractSign<7>),
+    ExtractSign8(ExtractSign<8>),
 }
 
 pub fn lurk_chip_map<C2: Chipset<BabyBear>>(
@@ -38,6 +43,8 @@ pub fn lurk_chip_map<C2: Chipset<BabyBear>>(
     let u64_lessthan = LurkChip::U64(U64::LessThan);
     let u64_iszero = LurkChip::U64(U64::IsZero);
     let big_num_lessthan = LurkChip::BigNum(BigNum::LessThan);
+    let extract_sign_7 = LurkChip::ExtractSign7(ExtractSign);
+    let extract_sign_8 = LurkChip::ExtractSign8(ExtractSign);
     let mut chips: FxIndexMap<_, _> = [
         (Name("hasher3"), Either::Left(hasher3)),
         (Name("hasher4"), Either::Left(hasher4)),
@@ -49,15 +56,16 @@ pub fn lurk_chip_map<C2: Chipset<BabyBear>>(
         (Name("u64_lessthan"), Either::Left(u64_lessthan)),
         (Name("u64_iszero"), Either::Left(u64_iszero)),
         (Name("big_num_lessthan"), Either::Left(big_num_lessthan)),
+        (Name("extract_sign_7"), Either::Left(extract_sign_7)),
+        (Name("extract_sign_8"), Either::Left(extract_sign_8)),
     ]
     .into_iter()
     .collect();
     for (name, chip) in lang_chips {
         assert!(
-            !chips.contains_key(&name),
+            chips.insert(name, Either::Right(chip)).is_none(),
             "Name conflict with native chip {name}"
         );
-        chips.insert(name, Either::Right(chip));
     }
     chips
 }
@@ -76,6 +84,8 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher5(op) => op.input_size(),
             LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::input_size(op),
             LurkChip::BigNum(op) => <BigNum as Chipset<BabyBear>>::input_size(op),
+            LurkChip::ExtractSign7(op) => <ExtractSign<7> as Chipset<BabyBear>>::input_size(op),
+            LurkChip::ExtractSign8(op) => <ExtractSign<8> as Chipset<BabyBear>>::input_size(op),
         }
     }
 
@@ -87,6 +97,8 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher5(op) => op.output_size(),
             LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::output_size(op),
             LurkChip::BigNum(op) => <BigNum as Chipset<BabyBear>>::output_size(op),
+            LurkChip::ExtractSign7(op) => <ExtractSign<7> as Chipset<BabyBear>>::output_size(op),
+            LurkChip::ExtractSign8(op) => <ExtractSign<8> as Chipset<BabyBear>>::output_size(op),
         }
     }
 
@@ -97,6 +109,8 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher5(op) => op.witness_size(),
             LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::witness_size(op),
             LurkChip::BigNum(op) => <BigNum as Chipset<BabyBear>>::witness_size(op),
+            LurkChip::ExtractSign7(op) => <ExtractSign<7> as Chipset<BabyBear>>::witness_size(op),
+            LurkChip::ExtractSign8(op) => <ExtractSign<8> as Chipset<BabyBear>>::witness_size(op),
         }
     }
 
@@ -107,6 +121,8 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher5(op) => op.require_size(),
             LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::require_size(op),
             LurkChip::BigNum(op) => <BigNum as Chipset<BabyBear>>::require_size(op),
+            LurkChip::ExtractSign7(op) => <ExtractSign<7> as Chipset<BabyBear>>::require_size(op),
+            LurkChip::ExtractSign8(op) => <ExtractSign<8> as Chipset<BabyBear>>::require_size(op),
         }
     }
 
@@ -116,6 +132,8 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher4(hasher) => hasher.execute_simple(input),
             LurkChip::Hasher5(hasher) => hasher.execute_simple(input),
             LurkChip::U64(..) | LurkChip::BigNum(..) => panic!("use `execute`"),
+            LurkChip::ExtractSign7(op) => op.execute_simple(input),
+            LurkChip::ExtractSign8(op) => op.execute_simple(input),
         }
     }
 
@@ -132,6 +150,8 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher5(hasher) => hasher.execute(input, nonce, queries, requires),
             LurkChip::U64(op) => op.execute(input, nonce, queries, requires),
             LurkChip::BigNum(op) => op.execute(input, nonce, queries, requires),
+            LurkChip::ExtractSign7(op) => op.execute(input, nonce, queries, requires),
+            LurkChip::ExtractSign8(op) => op.execute(input, nonce, queries, requires),
         }
     }
 
@@ -142,6 +162,8 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher5(hasher) => hasher.populate_witness(input, witness),
             LurkChip::U64(op) => op.populate_witness(input, witness),
             LurkChip::BigNum(op) => op.populate_witness(input, witness),
+            LurkChip::ExtractSign7(op) => op.populate_witness(input, witness),
+            LurkChip::ExtractSign8(op) => op.populate_witness(input, witness),
         }
     }
 
@@ -166,6 +188,12 @@ impl Chipset<BabyBear> for LurkChip {
             }
             LurkChip::U64(op) => op.eval(builder, is_real, preimg, witness, nonce, requires),
             LurkChip::BigNum(op) => op.eval(builder, is_real, preimg, witness, nonce, requires),
+            LurkChip::ExtractSign7(op) => {
+                op.eval(builder, is_real, preimg, witness, nonce, requires)
+            }
+            LurkChip::ExtractSign8(op) => {
+                op.eval(builder, is_real, preimg, witness, nonce, requires)
+            }
         }
     }
 }
