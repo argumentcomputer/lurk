@@ -370,6 +370,26 @@ impl<F: PrimeField32> QueryRecord<F> {
     pub fn expect_public_values(&self) -> &[F] {
         self.public_values.as_ref().expect("Public values not set")
     }
+
+    pub fn stats<C1: Chipset<F>, C2: Chipset<F>>(
+        &self,
+        toplevel: &Toplevel<F, C1, C2>,
+    ) -> (usize, usize) {
+        let mut steps = 0;
+        let mut width = 0;
+        for (i, queries) in self.func_queries.iter().enumerate() {
+            steps += queries.len();
+            let func = toplevel.func_by_index(i);
+            let func_width = func.compute_layout_sizes(toplevel).total();
+            width += queries.len() * func_width;
+        }
+        for (i, queries) in self.mem_queries.iter().enumerate() {
+            steps += queries.len();
+            let mem_width = 4 + mem_index_to_len(i);
+            width += queries.len() * mem_width;
+        }
+        (steps, width)
+    }
 }
 
 impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
