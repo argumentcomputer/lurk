@@ -64,12 +64,17 @@ macro_rules! var {
 
 #[macro_export]
 macro_rules! block_init {
+    ({ #[unconstrained] $($body:tt)+ }) => {{
+        #[allow(unused_mut)]
+        let mut ops = vec![];
+        $crate::block!({ $($body)+ }, ops)
+    }};
     ({ $($body:tt)+ }) => {{
         #[allow(unused_mut)]
         let mut ops = vec![];
         $crate::block!({ $($body)+ }, ops)
-    }
-}}
+    }}
+}
 
 #[macro_export]
 macro_rules! block {
@@ -303,14 +308,19 @@ macro_rules! block {
         let mut branches = Vec::new();
         {
             $(
+                let constrained = $crate::constrained!($branch);
                 let f = $crate::lair::field_from_i32;
                 branches.push((
                     [f($num), $(f($other_num), )*].into(),
-                    $crate::block_init!( $branch )
+                    $crate::block_init!( $branch ),
+                    constrained,
                 ));
             )*
         }
-        let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;
+        let default = None $( .or ({
+            let constrained = $crate::constrained!({ $($def)* });
+            Some((Box::new($crate::block_init!({ $($def)* })), constrained))
+        }) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
         $crate::lair::expr::BlockE { ops, ctrl }
@@ -320,21 +330,27 @@ macro_rules! block {
         let mut branches = Vec::new();
         {
             $({
+                let constrained = $crate::constrained!($branch);
                 let arr = $arr.map(|x| $crate::lair::field_from_i32(x.into())).into_iter().collect();
                 branches.push((
                     arr,
-                    $crate::block_init!( $branch )
+                    $crate::block_init!( $branch ),
+                    constrained,
                 ));
                 $({
                     let other_arr = $other_arr.map($crate::lair::field_from_i32).into_iter().collect();
                     branches.push((
                         other_arr,
                         $crate::block_init!( $branch ),
+                        constrained,
                     ));
                 })*
             })*
         }
-        let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;
+        let default = None $( .or ({
+            let constrained = $crate::constrained!({ $($def)* });
+            Some((Box::new($crate::block_init!({ $($def)* })), constrained))
+        }) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::MatchMany($var, cases);
         $crate::lair::expr::BlockE { ops, ctrl }
@@ -345,13 +361,18 @@ macro_rules! block {
         #[allow(clippy::redundant_closure_call)]
         {
             $(
+                let constrained = $crate::constrained!($branch);
                 branches.push((
                     [$raw.to_field(), $($other_raw.to_field(),)*].into(),
-                    $crate::block_init!( $branch )
+                    $crate::block_init!( $branch ),
+                    constrained,
                 ));
             )*
         }
-        let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;
+        let default = None $( .or ({
+            let constrained = $crate::constrained!({ $($def)* });
+            Some((Box::new($crate::block_init!({ $($def)* })), constrained))
+        }) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
         $crate::lair::expr::BlockE { ops, ctrl }
@@ -362,15 +383,30 @@ macro_rules! block {
         #[allow(clippy::redundant_closure_call)]
         {
             $(
+                let constrained = $crate::constrained!($branch);
                 branches.push((
                     [$cloj($raw), $($cloj($other_raw),)*].into(),
-                    $crate::block_init!( $branch )
+                    $crate::block_init!( $branch ),
+                    constrained,
                 ));
             )*
         }
-        let default = None $( .or (Some(Box::new($crate::block_init!({ $($def)* })))) )?;
+        let default = None $( .or ({
+            let constrained = $crate::constrained!({ $($def)* });
+            Some((Box::new($crate::block_init!({ $($def)* })), constrained))
+        }) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
+}
+
+#[macro_export]
+macro_rules! constrained {
+    ({ #[unconstrained] $($body:tt)+ }) => {
+        $crate::lair::expr::CaseType::Unconstrained
+    };
+    ({ $($body:tt)+ }) => {
+        $crate::lair::expr::CaseType::Constrained
+    };
 }

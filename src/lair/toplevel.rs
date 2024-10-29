@@ -249,30 +249,34 @@ impl<F: Field + Ord> CtrlE<F> {
                 let var = use_var(t, ctx)[0];
                 let mut vec = Vec::with_capacity(cases.branches.len());
                 let mut unique_branches = Vec::new();
-                for (fs, block) in cases.branches.iter() {
+                for (fs, block, constrained) in cases.branches.iter() {
                     ctx.block_ident += 1;
                     let state = ctx.save_bind_state();
                     let mut ops = Vec::new();
                     // Collect all constants as vars
                     let fs_vars = push_const_array(fs, &mut ops, ctx);
                     // Assert that var is contained in the constants
-                    ops.push(Op::Contains(fs_vars, var));
+                    if let CaseType::Constrained = constrained {
+                        ops.push(Op::Contains(fs_vars, var));
+                    }
                     let block = block.check_and_link_with_ops(ops, ctx);
                     ctx.restore_bind_state(state);
                     fs.iter().for_each(|f| vec.push((*f, block.clone())));
                     unique_branches.push(block);
                 }
                 let branches = Map::from_vec(vec);
-                let default = cases.default.as_ref().map(|def| {
+                let default = cases.default.as_ref().map(|(def, constrained)| {
                     ctx.block_ident += 1;
                     let mut ops = Vec::new();
-                    for (fs, _) in cases.branches.iter() {
-                        for f in fs.iter() {
-                            // Collect constant as var
-                            ops.push(Op::Const(*f));
-                            let f_var = ctx.new_var();
-                            // Assert inequality of matched var
-                            ops.push(Op::AssertNe([var].into(), [f_var].into()));
+                    if let CaseType::Constrained = constrained {
+                        for (fs, _, _) in cases.branches.iter() {
+                            for f in fs.iter() {
+                                // Collect constant as var
+                                ops.push(Op::Const(*f));
+                                let f_var = ctx.new_var();
+                                // Assert inequality of matched var
+                                ops.push(Op::AssertNe([var].into(), [f_var].into()));
+                            }
                         }
                     }
                     def.check_and_link_with_ops(ops, ctx).into()
@@ -284,7 +288,7 @@ impl<F: Field + Ord> CtrlE<F> {
                 let size = t.size;
                 let vars: List<_> = use_var(t, ctx).into();
                 let mut vec = Vec::with_capacity(cases.branches.len());
-                for (fs, block) in cases.branches.iter() {
+                for (fs, block, constrained) in cases.branches.iter() {
                     assert_eq!(fs.len(), size, "Pattern must have size {size}");
                     ctx.block_ident += 1;
                     let state = ctx.save_bind_state();
@@ -292,20 +296,24 @@ impl<F: Field + Ord> CtrlE<F> {
                     // Collect all constants as vars
                     let fs_vars = push_const_array(fs, &mut ops, ctx);
                     // Assert equality of matched vars
-                    ops.push(Op::AssertEq(vars.clone(), fs_vars, None));
+                    if let CaseType::Constrained = constrained {
+                        ops.push(Op::AssertEq(vars.clone(), fs_vars, None));
+                    }
                     let block = block.check_and_link_with_ops(ops, ctx);
                     ctx.restore_bind_state(state);
                     vec.push((fs.clone(), block))
                 }
                 let branches = Map::from_vec(vec);
-                let default = cases.default.as_ref().map(|def| {
+                let default = cases.default.as_ref().map(|(def, constrained)| {
                     ctx.block_ident += 1;
                     let mut ops = Vec::new();
-                    for (fs, _) in cases.branches.iter() {
-                        // Collect all constants as vars
-                        let fs_vars = push_const_array(fs, &mut ops, ctx);
-                        // Assert inequality of matched vars
-                        ops.push(Op::AssertNe(vars.clone(), fs_vars));
+                    if let CaseType::Constrained = constrained {
+                        for (fs, _, _) in cases.branches.iter() {
+                            // Collect all constants as vars
+                            let fs_vars = push_const_array(fs, &mut ops, ctx);
+                            // Assert inequality of matched vars
+                            ops.push(Op::AssertNe(vars.clone(), fs_vars));
+                        }
                     }
                     def.check_and_link_with_ops(ops, ctx).into()
                 });
