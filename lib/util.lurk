@@ -78,6 +78,24 @@
                                      (aux (cdr (cdr plist))))))))
                (aux plist))))
 
+!(def set-property-aux
+     (lambda (plist indicator)
+       (letrec ((aux (lambda (acc plist)
+                       (if plist
+                           (if (eq (car plist) indicator)
+                               (cons acc (cdr plist))
+                               (aux (cons (cadr plist)
+                                          (cons (car plist) acc))
+                                    (cdr (cdr plist))))))))
+         (aux nil plist))))
+
+!(def set-property (lambda (plist indicator value)
+                     (let ((found (set-property-aux plist indicator)))
+                       (if found
+                         (revappend (car found)
+                                    (cons indicator (cons value (cdr (cdr found))))) ; memoized
+                         (cons indicator (cons value plist))))))
+
 !(def assoc (lambda (item alist)
               (letrec ((aux (lambda (alist)
                               (if alist
