@@ -1,0 +1,15 @@
+!(load "macros.lurk")
+
+;; and
+!(assert-eq '(if a (and b c)) (macroexpand-1 macro-env '(and a b c)))
+!(assert-eq t (macroexpand-1 macro-env '(and)))
+
+;; or
+!(assert-eq '(if a a (or b c)) (macroexpand-1 macro-env '(or a b c)))
+!(assert-eq nil (macroexpand-1 macro-env '(or)))
+
+!(assert-eq '(if a (if b c)) (macroexpand-all macro-env '(and a b c)))
+!(assert-eq '(if a a (if b b c)) (macroexpand-all macro-env '(or a b c)))
+
+;; cond
+!(assert-eq '(if a 1 (if b 2 (if t 3 nil))) (macroexpand-all macro-env '(cond ((a 1) (b 2) (t 3)))))
