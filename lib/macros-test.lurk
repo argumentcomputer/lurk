@@ -12,4 +12,13 @@
 !(assert-eq '(if a a (if b b c)) (macroexpand-all macro-env '(or a b c)))
 
 ;; cond
-!(assert-eq '(if a 1 (if b 2 (if t 3 nil))) (macroexpand-all macro-env '(cond ((a 1) (b 2) (t 3)))))
+!(assert-eq '(if a 1 (if b 2 (if t 3 nil))) (macroexpand-all macro-env '(cond (a 1) (b 2) (t 3))))
+
+;; typecase
+
+!(assert-eq '(cond
+              ((type-eqq 0 x) 123)
+              ((type-eqq 'x' x) 321))
+            (macroexpand-1 macro-env '(typecase x
+                                       (0 123)
+                                       ('x' 321))))

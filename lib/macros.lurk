@@ -7,30 +7,40 @@
                             (lambda (whole)
                               (if (cdr whole)
                                   (if (cdr (cdr whole))
-                                      (list 'if (car (cdr whole))
-                                            (cons 'and (cdr (cdr whole))))
-                                      (car (cdr whole)))
+                                      (list 'if (cadr whole)
+                                            (cons 'and (cddr whole)))
+                                      (cadr whole))
                                   t))))
 
 !(def macro-env (bind-macro 'or macro-env
                             (lambda (whole)
                               (if (cdr whole)
-                                  (if (cdr (cdr whole))
-                                      (list 'if (car (cdr whole))
-                                            (car (cdr whole)) ;; this is memoized
-                                            (cons 'or (cdr (cdr whole))))
-                                      (car (cdr whole)))
+                                  (if (cddr whole)
+                                      (list 'if (cadr whole)
+                                            (cadr whole) ;; this is memoized
+                                            (cons 'or (cddr whole)))
+                                      (cadr whole))
                                   nil))))
 
 !(def macro-env (bind-macro 'cond macro-env
                             (lambda (whole)
                               (letrec ((aux (lambda (clauses)
                                               (if clauses
-                                                  (list 'if
-                                                        (caar clauses)
-                                                        (cadar clauses)
-                                                        (aux (cdr clauses))                                                        )
-                                                  nil))))
-                                (if (cdr (cdr whole)) (error "malformed cond")
-                                    (aux (car (cdr whole))))))))
+                                                  (if (cdddr (car clauses))
+                                                      (error (cons "malformed cond clause" (cdddr (car clauses))))
+                                                      (list 'if
+                                                            (caar clauses)
+                                                            (cadar clauses)
+                                                            (aux (cdr clauses))))))))
+                                (aux (cdr whole))))))
 
+!(def macro-env (bind-macro 'typecase macro-env
+                            (lambda (whole)
+                              (let ((var (cadr whole)))
+                                (letrec ((aux (lambda (clauses)
+                                                (if clauses
+                                                    (if (cddar clauses)
+                                                        (error (cons "malformed typecase clause" (cddar clauses)))
+                                                        (cons (list (list 'type-eqq (caar clauses) var) (cadar clauses))
+                                                              (aux (cdr clauses))))))))
+                                  (cons 'cond (aux (cddr whole))))))))

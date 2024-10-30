@@ -10,8 +10,8 @@
 !(def cadar (lambda (x) (car (cdr (car x)))))
 !(def caddr (lambda (x) (car (cdr (cdr x)))))
 !(def cdaar (lambda (x) (cdr (car (car x)))))
-!(def cdadr (lambda (x) (cdr (car (cdar x)))))
-!(def caddr (lambda (x) (car (cdr (cdr x)))))
+!(def cdadr (lambda (x) (cdr (car (cdr x)))))
+!(def cddar (lambda (x) (cdr (cdr (car x)))))
 !(def cdddr (lambda (x) (cdr (cdr (cdr x)))))
 
 !(def todo (lambda (x)
@@ -20,9 +20,9 @@
               ;; this will error
               (break))))
 
-!(def error (lambda (type data)
+!(def error (lambda (data)
               (begin
-               (emit (list :error (list type data)))
+               (emit (list :error data))
               ;; this will error
               (break))))
 
@@ -94,6 +94,14 @@
                        (if found
                          (revappend (car found)
                                     (cons indicator (cons value (cdr (cdr found))))) ; memoized
+                         (cons indicator (cons value plist))))))
+
+!(def update-property (lambda (plist indicator update-fn)
+                     (let ((found (set-property-aux plist indicator)))
+                       (if found
+                         (revappend (car found)
+                                    (cons indicator (cons (update-fn (car (cdr found)))
+                                                          (cdr (cdr found))))) ; memoized
                          (cons indicator (cons value plist))))))
 
 !(def assoc (lambda (item alist)
