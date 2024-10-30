@@ -1,5 +1,6 @@
-!(load "macro.lurk") ;; this will also load util.lurk.
-!(load "util.lurk")
+!(load "macro.lurk") ;; this will also load util.lurk, so we omit that below. An eventual better system would only load
+                     ;; dependencies once.
+;; !(load "util.lurk")
 
 !(def macro-env ())
 !(def macro-env (bind-macro 'and macro-env
