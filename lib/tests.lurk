@@ -1,3 +1,4 @@
 !(load "util-test.lurk")
 !(load "struct-test.lurk")
 !(load "macro-test.lurk")
+!(load "macros-test.lurk")
