@@ -22,6 +22,8 @@ use strum::{EnumCount, EnumIter};
 )]
 pub enum Tag {
     U64 = 0,
+    I64,
+    I63, // OCaml ints
     Num,
     BigNum,
     Comm,

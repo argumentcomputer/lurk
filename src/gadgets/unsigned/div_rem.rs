@@ -15,21 +15,21 @@ use std::ops::Div;
 
 #[derive(Clone, Default, AlignedBorrow)]
 #[repr(C)]
-pub struct DivRem<T, const W: usize> {
+pub struct DivRem<T, const W: usize, const M: u8> {
     b_non_zero: IsZeroWitness<T, W>,
     /// q = a // b
     q: UncheckedWord<T, W>,
     /// qb = q * b
-    qb: Product<T, W>,
+    qb: Product<T, W, M>,
     /// r = a % b = a - q * b
-    r: Diff<T, W>,
+    r: Diff<T, W, M>,
     /// is_r_lt_b = r < b
     r_lt_b: LessThanWitness<T, W>,
     /// is_qb_lte_a = qb <= a
     qb_cmp_a: CompareWitness<T, W>,
 }
 
-impl<F: PrimeField, const W: usize> DivRem<F, W> {
+impl<F: PrimeField, const W: usize, const M: u8> DivRem<F, W, M> {
     pub fn populate<U>(&mut self, a: &U, b: &U, byte_record: &mut impl ByteRecord) -> (U, U)
     where
         U: ToBytes<Bytes = [u8; W]>
@@ -44,7 +44,7 @@ impl<F: PrimeField, const W: usize> DivRem<F, W> {
         self.b_non_zero.populate_non_zero(b);
 
         // q = a // b
-        let q = a.div(*b);
+        let q = *a / *b;
         self.q.assign_bytes(&q.to_le_bytes(), byte_record);
 
         let qb = self.qb.populate(&q, b, byte_record);
@@ -59,7 +59,7 @@ impl<F: PrimeField, const W: usize> DivRem<F, W> {
     }
 }
 
-impl<Var, const W: usize> DivRem<Var, W> {
+impl<Var, const W: usize, const M: u8> DivRem<Var, W, M> {
     pub fn eval<AB: AirBuilder<Var = Var>>(
         &self,
         builder: &mut AB,
@@ -102,17 +102,18 @@ impl<Var, const W: usize> DivRem<Var, W> {
         (q, r)
     }
 }
-impl<T, const W: usize> DivRem<T, W> {
+
+impl<T, const W: usize, const M: u8> DivRem<T, W, M> {
     pub const fn num_requires() -> usize {
         W / 2
-            + Diff::<T, W>::num_requires()
-            + Product::<T, W>::num_requires()
+            + Diff::<T, W, M>::num_requires()
+            + Product::<T, W, M>::num_requires()
             + LessThanWitness::<T, W>::num_requires()
             + CompareWitness::<T, W>::num_requires()
     }
 
     pub const fn witness_size() -> usize {
-        size_of::<DivRem<u8, W>>()
+        size_of::<DivRem<u8, W, M>>()
     }
 
     pub fn iter_result(&self) -> impl IntoIterator<Item = T>
@@ -137,17 +138,18 @@ mod tests {
 
     #[test]
     fn test_witness_size() {
-        expect!["34"].assert_eq(&DivRem::<u8, 4>::witness_size().to_string());
-        expect!["62"].assert_eq(&DivRem::<u8, 8>::witness_size().to_string());
+        expect!["34"].assert_eq(&DivRem::<u8, 4, 255>::witness_size().to_string());
+        expect!["62"].assert_eq(&DivRem::<u8, 8, 255>::witness_size().to_string());
     }
     #[test]
     fn test_num_requires() {
-        expect!["12"].assert_eq(&DivRem::<u8, 4>::num_requires().to_string());
-        expect!["22"].assert_eq(&DivRem::<u8, 8>::num_requires().to_string());
+        expect!["12"].assert_eq(&DivRem::<u8, 4, 255>::num_requires().to_string());
+        expect!["22"].assert_eq(&DivRem::<u8, 8, 255>::num_requires().to_string());
     }
 
     fn test_div_rem<
         const W: usize,
+        const M: u8,
         U: ToBytes<Bytes = [u8; W]>
             + FromBytes<Bytes = [u8; W]>
             + Unsigned
@@ -165,7 +167,7 @@ mod tests {
         }
         let record = &mut ByteRecordTester::default();
 
-        let mut witness = DivRem::<F, W>::default();
+        let mut witness = DivRem::<F, W, M>::default();
         let (q, r) = witness.populate(&a, &b, record);
         assert_eq!(b * q + r, a);
         assert!(r < b);
@@ -174,7 +176,7 @@ mod tests {
             &mut GadgetTester::passing(),
             &Word::<F, W>::from_unsigned(&a),
             &Word::<F, W>::from_unsigned(&b),
-            &mut record.passing(DivRem::<F, W>::num_requires()),
+            &mut record.passing(DivRem::<F, W, M>::num_requires()),
             F::one(),
         );
         assert_eq!(q_f, Word::from_unsigned(&q));
@@ -185,12 +187,12 @@ mod tests {
 
     #[test]
     fn test_div_rem_32(a: u32, b: u32) {
-        test_div_rem::<4, _>(a, b);
+        test_div_rem::<4, 255, _>(a, b);
     }
 
     #[test]
     fn test_div_rem_64(a: u64, b: u64) {
-        test_div_rem::<8, _>(a, b);
+        test_div_rem::<8, 255, _>(a, b);
     }
 
     }

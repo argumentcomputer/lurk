@@ -8,6 +8,7 @@ pub mod error;
 pub mod eval_compiled;
 pub mod eval_direct;
 pub mod ingress;
+pub mod integers;
 pub mod lang;
 pub mod misc;
 pub mod package;
@@ -18,7 +19,6 @@ pub mod state;
 pub mod symbol;
 pub mod syntax;
 pub mod tag;
-pub mod u64;
 pub mod zstore;
 
 #[cfg(test)]

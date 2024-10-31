@@ -18,8 +18,9 @@ use super::{
     ingress::{egress, ingress, preallocate_symbols, InternalTag, SymbolsDigests},
     lang::{Coroutine, Lang},
     misc::{
-        big_num_lessthan, digest_equal, hash3, hash4, hash5, u64_add, u64_divrem, u64_iszero,
-        u64_lessthan, u64_mul, u64_sub,
+        big_num_lessthan, digest_equal, hash3, hash4, hash5, i63_add, i63_divrem, i63_lessthan,
+        i63_mul, i63_sub, i64_divrem, i64_lessthan, u64_add, u64_divrem, u64_iszero, u64_lessthan,
+        u64_mul, u64_sub,
     },
     symbol::Symbol,
     tag::Tag,
@@ -29,7 +30,7 @@ use super::{
 fn native_lurk_funcs<F: PrimeField32>(
     digests: &SymbolsDigests<F>,
     coroutines: &FxIndexMap<Symbol, Coroutine<F>>,
-) -> [FuncE<F>; 37] {
+) -> [FuncE<F>; 44] {
     [
         lurk_main(),
         preallocate_symbols(digests),
@@ -66,6 +67,13 @@ fn native_lurk_funcs<F: PrimeField32>(
         u64_divrem(),
         u64_lessthan(),
         u64_iszero(),
+        i64_divrem(),
+        i64_lessthan(),
+        i63_add(),
+        i63_sub(),
+        i63_mul(),
+        i63_divrem(),
+        i63_lessthan(),
         digest_equal(),
         big_num_lessthan(),
     ]
@@ -1060,6 +1068,8 @@ pub fn eval_binop_num<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F>
             let err_tag = Tag::Err;
             let num_tag = Tag::Num;
             let u64_tag = Tag::U64;
+            let i64_tag = Tag::I64;
+            let i63_tag = Tag::I63;
             let nil_tag = InternalTag::Nil;
             let err_div_zero = EvalErr::DivByZero;
             let t = digests.lurk_symbol_ptr("t");
@@ -1146,6 +1156,142 @@ pub fn eval_binop_num<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F>
                         }
                     }
                 }
+                [Tag::I64, Tag::I64] => {
+                    match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
+                        // for addition, subtraction and multiplication we can use the
+                        // `u64` functions/gadgets because of two's complement
+                        "+" => {
+                            let res = call(u64_add, val1, val2);
+                            return (i64_tag, res)
+                        }
+                        "-" => {
+                            let res = call(u64_sub, val1, val2);
+                            return (i64_tag, res)
+                        }
+                        "*" => {
+                            let res = call(u64_mul, val1, val2);
+                            return (i64_tag, res)
+                        }
+                        "/", "%" => {
+                            let is_zero = call(u64_iszero, val2);
+                            if is_zero {
+                                return (err_tag, err_div_zero)
+                            }
+                            let (quot, rem) = call(i64_divrem, val1, val2);
+                            match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
+                                "/" => {
+                                    return (i64_tag, quot)
+                                }
+                                "%" => {
+                                    return (i64_tag, rem)
+                                }
+                            }
+                        }
+                        "<" => {
+                            let res = call(i64_lessthan, val1, val2);
+                            if res {
+                                return (t_tag, t)
+                            }
+                            return (nil_tag, nil)
+                        }
+                        ">=" => {
+                            let res = call(i64_lessthan, val1, val2);
+                            if res {
+                                return (nil_tag, nil)
+                            }
+                            return (t_tag, t)
+
+                        }
+                        ">" => {
+                            let res = call(i64_lessthan, val2, val1);
+                            if res {
+                                return (t_tag, t)
+                            }
+                            return (nil_tag, nil)
+                        }
+                        "<=" => {
+                            let res = call(i64_lessthan, val2, val1);
+                            if res {
+                                return (nil_tag, nil)
+                            }
+                            return (t_tag, t)
+                        }
+                        "=" => {
+                            let res = call(digest_equal, val1, val2);
+                            if res {
+                                return (t_tag, t)
+                            }
+                            return (nil_tag, nil)
+                        }
+                    }
+                }
+                [Tag::I63, Tag::I63] => {
+                    match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
+                        "+" => {
+                            let res = call(i63_add, val1, val2);
+                            return (i63_tag, res)
+                        }
+                        "-" => {
+                            let res = call(i63_sub, val1, val2);
+                            return (i63_tag, res)
+                        }
+                        "*" => {
+                            let res = call(i63_mul, val1, val2);
+                            return (i63_tag, res)
+                        }
+                        "/", "%" => {
+                            let is_zero = call(u64_iszero, val2);
+                            if is_zero {
+                                return (err_tag, err_div_zero)
+                            }
+                            let (quot, rem) = call(i63_divrem, val1, val2);
+                            match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
+                                "/" => {
+                                    return (i63_tag, quot)
+                                }
+                                "%" => {
+                                    return (i63_tag, rem)
+                                }
+                            }
+                        }
+                        "<" => {
+                            let res = call(i63_lessthan, val1, val2);
+                            if res {
+                                return (t_tag, t)
+                            }
+                            return (nil_tag, nil)
+                        }
+                        ">=" => {
+                            let res = call(i63_lessthan, val1, val2);
+                            if res {
+                                return (nil_tag, nil)
+                            }
+                            return (t_tag, t)
+
+                        }
+                        ">" => {
+                            let res = call(i63_lessthan, val2, val1);
+                            if res {
+                                return (t_tag, t)
+                            }
+                            return (nil_tag, nil)
+                        }
+                        "<=" => {
+                            let res = call(i63_lessthan, val2, val1);
+                            if res {
+                                return (nil_tag, nil)
+                            }
+                            return (t_tag, t)
+                        }
+                        "=" => {
+                            let res = call(digest_equal, val1, val2);
+                            if res {
+                                return (t_tag, t)
+                            }
+                            return (nil_tag, nil)
+                        }
+                    }
+                }
                 [Tag::Num, Tag::Num] => {
                     match head [|name| digests.builtin_symbol_ptr(name).to_field()] {
                         "+" => {
@@ -1175,7 +1321,7 @@ pub fn eval_binop_num<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F>
                             return (t_tag, t)
                         }
                         "%", "<", ">", "<=", ">=" => {
-                            let err = EvalErr::NotU64;
+                            let err = EvalErr::NotInt;
                             return (err_tag, err)
                         }
                     }
@@ -1889,6 +2035,13 @@ mod test {
         let u64_divrem = FuncChip::from_name("u64_divrem", toplevel);
         let u64_lessthan = FuncChip::from_name("u64_lessthan", toplevel);
         let u64_iszero = FuncChip::from_name("u64_iszero", toplevel);
+        let i64_divrem = FuncChip::from_name("i64_divrem", toplevel);
+        let i64_lessthan = FuncChip::from_name("i64_lessthan", toplevel);
+        let i63_add = FuncChip::from_name("i63_add", toplevel);
+        let i63_sub = FuncChip::from_name("i63_sub", toplevel);
+        let i63_mul = FuncChip::from_name("i63_mul", toplevel);
+        let i63_divrem = FuncChip::from_name("i63_divrem", toplevel);
+        let i63_lessthan = FuncChip::from_name("i63_lessthan", toplevel);
         let digest_equal = FuncChip::from_name("digest_equal", toplevel);
         let big_num_lessthan = FuncChip::from_name("big_num_lessthan", toplevel);
 
@@ -1930,6 +2083,13 @@ mod test {
         expect_eq(u64_divrem.width(), expect!["166"]);
         expect_eq(u64_lessthan.width(), expect!["44"]);
         expect_eq(u64_iszero.width(), expect!["26"]);
+        expect_eq(i64_divrem.width(), expect!["166"]);
+        expect_eq(i64_lessthan.width(), expect!["44"]);
+        expect_eq(i63_add.width(), expect!["53"]);
+        expect_eq(i63_sub.width(), expect!["53"]);
+        expect_eq(i63_mul.width(), expect!["85"]);
+        expect_eq(i63_divrem.width(), expect!["166"]);
+        expect_eq(i63_lessthan.width(), expect!["44"]);
         expect_eq(digest_equal.width(), expect!["38"]);
         expect_eq(big_num_lessthan.width(), expect!["78"]);
     }

@@ -15,6 +15,7 @@ use crate::{
         big_num::field_elts_to_biguint,
         chipset::{lurk_hasher, LurkChip},
         error::EvalErr,
+        integers::i63::I63,
         parser::{syntax::parse, Span},
         state::{builtin_sym, lurk_sym, State, StateRcCell, BUILTIN_SYMBOLS},
         symbol::Symbol,
@@ -89,6 +90,14 @@ fn get_char<F: PrimeField32>(digest: &[F; DIGEST_SIZE]) -> char {
     c
 }
 
+/// Turns a slice of field elements into a slice of bytes.
+///
+/// # Panics
+/// Panics if some limb is not in the byte range.
+pub fn digest_to_bytes<F: PrimeField32>(digest: &[F; DIGEST_SIZE]) -> [u8; DIGEST_SIZE] {
+    digest.map(|f| u8::try_from(f.as_canonical_u32()).expect("invalid byte limbs"))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ZPtr<F> {
     pub tag: Tag,
@@ -133,6 +142,22 @@ impl<F: AbstractField + Copy> ZPtr<F> {
         Self {
             tag: Tag::U64,
             digest: u.to_le_bytes().map(F::from_canonical_u8),
+        }
+    }
+
+    #[inline]
+    pub fn i64(i: i64) -> Self {
+        Self {
+            tag: Tag::I64,
+            digest: i.to_le_bytes().map(F::from_canonical_u8),
+        }
+    }
+
+    #[inline]
+    pub fn i63(i: I63) -> Self {
+        Self {
+            tag: Tag::I63,
+            digest: i.to_le_bytes().map(F::from_canonical_u8),
         }
     }
 
@@ -386,6 +411,16 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
     }
 
     #[inline]
+    pub fn intern_i64(&mut self, i: i64) -> ZPtr<F> {
+        self.memoize_atom_dag(ZPtr::i64(i))
+    }
+
+    #[inline]
+    pub fn intern_i63(&mut self, i: I63) -> ZPtr<F> {
+        self.memoize_atom_dag(ZPtr::i63(i))
+    }
+
+    #[inline]
     pub fn intern_big_num(&mut self, c: [F; DIGEST_SIZE]) -> ZPtr<F> {
         self.memoize_atom_dag(ZPtr::big_num(c))
     }
@@ -511,9 +546,11 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
             return *zptr;
         }
         let zptr = match syn {
+            Syntax::U64(_, u) => self.intern_u64(*u),
+            Syntax::I64(_, i) => self.intern_i64(*i),
+            Syntax::I63(_, i) => self.intern_i63(*i),
             Syntax::Num(_, f) => self.intern_num(*f),
             Syntax::Char(_, c) => self.intern_char(*c),
-            Syntax::U64(_, u) => self.intern_u64(*u),
             Syntax::BigNum(_, c) => self.intern_big_num(*c),
             Syntax::Comm(_, c) => self.intern_comm(*c),
             Syntax::String(_, s) => self.intern_string(s),
@@ -538,7 +575,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 let x = self.intern_syntax(x, lang_symbols);
                 self.intern_list([quote, x])
             }
-            Syntax::I64(..) | Syntax::Meta(..) => panic!("not supported"),
+            Syntax::Meta(..) => panic!("not supported outside a REPL context"),
         };
         self.syn_cache.insert(syn.clone(), zptr);
         zptr
@@ -689,7 +726,14 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 );
             }
             Tag::Sym | Tag::Key | Tag::Builtin | Tag::Coroutine => (), // these should be already memoized
-            Tag::Num | Tag::U64 | Tag::Char | Tag::Err | Tag::BigNum | Tag::Comm => {
+            Tag::U64
+            | Tag::I64
+            | Tag::I63
+            | Tag::Num
+            | Tag::Char
+            | Tag::Err
+            | Tag::BigNum
+            | Tag::Comm => {
                 self.memoize_atom_dag(ZPtr {
                     tag,
                     digest: into_sized(digest),
@@ -826,14 +870,10 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         F: PrimeField32,
     {
         match zptr.tag {
+            Tag::U64 => format!("{}", u64::from_le_bytes(digest_to_bytes(&zptr.digest))),
+            Tag::I64 => format!("{}i64", i64::from_le_bytes(digest_to_bytes(&zptr.digest))),
+            Tag::I63 => format!("{}i63", I63::from_le_bytes(digest_to_bytes(&zptr.digest))),
             Tag::Num => format!("{}n", zptr.digest[0]),
-            Tag::U64 => format!(
-                "{}",
-                u64::from_le_bytes(
-                    zptr.digest
-                        .map(|f| u8::try_from(f.as_canonical_u32()).expect("invalid u64 limbs"))
-                )
-            ),
             Tag::Char => format!("'{}'", get_char(&zptr.digest)),
             Tag::BigNum => format!("#{:#x}", field_elts_to_biguint(&zptr.digest)),
             Tag::Comm => format!("#c{:#x}", field_elts_to_biguint(&zptr.digest)),

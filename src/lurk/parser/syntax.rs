@@ -13,6 +13,7 @@ use num_bigint::BigUint;
 use p3_field::Field;
 
 use crate::lurk::{
+    integers::i63::is_within_i63_range,
     package::SymbolRef,
     parser::{
         base,
@@ -195,6 +196,7 @@ fn parse_numeric_suffix() -> impl Fn(Span<'_>) -> ParseResult<'_, Span<'_>> {
             tag("i8"),
             tag("i16"),
             tag("i32"),
+            tag("i63"),
             tag("i64"),
             tag("i128"),
             tag("n"),
@@ -211,55 +213,74 @@ fn parse_numeric<F: Field>() -> impl Fn(Span<'_>) -> ParseResult<'_, Syntax<F>> 
             success(base::LitBase::Dec),
         ))(i)?;
         let (i, digits) = base::parse_litbase_digits(base)(i)?;
-        // when more uint types are supported we can do:
         let (upto, suffix) = opt(parse_numeric_suffix())(i)?;
+
+        macro_rules! parse_from_radix {
+            ($parse_fn:expr) => {
+                ParseError::res($parse_fn(&digits, base.radix()), from, |e| {
+                    ParseErrorKind::ParseIntErr(e)
+                })
+            };
+        }
+        macro_rules! parse_i64 {
+            () => {{
+                let (_, x) = parse_from_radix!(i64::from_str_radix)?;
+                let x = if neg.is_some() { x.wrapping_neg() } else { x };
+                let pos = Pos::from_upto(from, upto);
+                Ok((upto, Syntax::I64(pos, x)))
+            }};
+        }
+        macro_rules! parse_u64 {
+            () => {{
+                let (_, x) = parse_from_radix!(u64::from_str_radix)?;
+                let pos = Pos::from_upto(from, upto);
+                Ok((upto, Syntax::U64(pos, x)))
+            }};
+        }
+
         let suffix = suffix.map(|x| *x.fragment());
         match suffix {
             Some("n") => {
                 // Field elements
                 let (_, be_bytes) = be_bytes_from_digits(base, &digits, i)?;
                 let f = f_from_be_bytes::<F>(&be_bytes);
-                let num = f;
-                let mut tmp = F::zero();
-                if neg.is_some() {
-                    tmp -= num;
-                } else {
-                    tmp = num;
-                }
+                let num = if neg.is_some() { -f } else { f };
                 let pos = Pos::from_upto(from, upto);
-                Ok((upto, Syntax::Num(pos, tmp)))
+                Ok((upto, Syntax::Num(pos, num)))
             }
             // when more uint types are supported we can do:
             #[allow(clippy::unnested_or_patterns)]
             Some("u8") | Some("u16") | Some("u32") | Some("u128") | Some("i8") | Some("i16")
-            | Some("i32") | Some("i128") => {
-                let suffix = suffix.unwrap();
-                ParseError::throw(
-                    from,
-                    ParseErrorKind::Custom(format!("Numeric suffix {suffix} not yet supported")),
-                )
-            }
-            Some("i64") => {
-                let (_, x) =
-                    ParseError::res(u64::from_str_radix(&digits, base.radix()), from, |e| {
-                        ParseErrorKind::ParseIntErr(e)
-                    })?;
-                let pos = Pos::from_upto(from, upto);
-                Ok((upto, Syntax::I64(pos, neg.is_some(), x)))
-            }
-            None | Some("u64") => {
-                let (_, x) =
-                    ParseError::res(u64::from_str_radix(&digits, base.radix()), from, |e| {
-                        ParseErrorKind::ParseIntErr(e)
-                    })?;
-                let pos = Pos::from_upto(from, upto);
-                if neg.is_some() {
-                    Ok((upto, Syntax::I64(pos, neg.is_some(), x)))
+            | Some("i32") | Some("i128") => ParseError::throw(
+                from,
+                ParseErrorKind::UnsupportedNumericSuffix(suffix.unwrap().to_string()),
+            ),
+            Some("i63") => {
+                let (_, x) = parse_from_radix!(i64::from_str_radix)?;
+                if !is_within_i63_range(x) {
+                    ParseError::throw(from, ParseErrorKind::IntOverflow)
                 } else {
-                    Ok((upto, Syntax::U64(pos, x)))
+                    let x = if neg.is_some() { -x } else { x };
+                    let pos = Pos::from_upto(from, upto);
+                    Ok((upto, Syntax::I63(pos, x.into())))
                 }
             }
-            _ => unreachable!("implementation error in parse_nat"),
+            Some("i64") => parse_i64!(),
+            Some("u64") => {
+                if neg.is_some() {
+                    ParseError::throw(from, ParseErrorKind::IllegalNegSign)
+                } else {
+                    parse_u64!()
+                }
+            }
+            None => {
+                if neg.is_some() {
+                    parse_i64!()
+                } else {
+                    parse_u64!()
+                }
+            }
+            _ => unreachable!("implementation error in parse_numeric"),
         }
     }
 }

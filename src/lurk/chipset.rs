@@ -14,14 +14,20 @@ use crate::{
 
 use crate::lurk::poseidon::PoseidonChipset;
 
-use super::{big_num::BigNum, u64::U64, zstore::Hasher};
+use super::{
+    big_num::BigNum,
+    integers::{i63::I63Gadgets, i64::I64Gadgets, u64::U64Gadgets},
+    zstore::Hasher,
+};
 
 #[derive(Clone)]
 pub enum LurkChip {
     Hasher3(PoseidonChipset<BabyBearConfig24, 24>),
     Hasher4(PoseidonChipset<BabyBearConfig32, 32>),
     Hasher5(PoseidonChipset<BabyBearConfig40, 40>),
-    U64(U64),
+    U64(U64Gadgets),
+    I64(I64Gadgets),
+    I63(I63Gadgets),
     BigNum(BigNum),
 }
 
@@ -31,33 +37,50 @@ pub fn lurk_chip_map<C2: Chipset<BabyBear>>(
     let hasher3 = LurkChip::Hasher3(PoseidonChipset::default());
     let hasher4 = LurkChip::Hasher4(PoseidonChipset::default());
     let hasher5 = LurkChip::Hasher5(PoseidonChipset::default());
-    let u64_add = LurkChip::U64(U64::Add);
-    let u64_sub = LurkChip::U64(U64::Sub);
-    let u64_mul = LurkChip::U64(U64::Mul);
-    let u64_divrem = LurkChip::U64(U64::DivRem);
-    let u64_lessthan = LurkChip::U64(U64::LessThan);
-    let u64_iszero = LurkChip::U64(U64::IsZero);
+    let u64_add = LurkChip::U64(U64Gadgets::Add);
+    let u64_sub = LurkChip::U64(U64Gadgets::Sub);
+    let u64_mul = LurkChip::U64(U64Gadgets::Mul);
+    let u64_divrem = LurkChip::U64(U64Gadgets::DivRem);
+    let u64_lessthan = LurkChip::U64(U64Gadgets::LessThan);
+    let u64_iszero = LurkChip::U64(U64Gadgets::IsZero);
+    let i64_into_sign_abs = LurkChip::I64(I64Gadgets::IntoSignAbs);
+    let i64_from_sign_abs = LurkChip::I64(I64Gadgets::FromSignAbs);
+    let i63_add = LurkChip::I63(I63Gadgets::Add);
+    let i63_sub = LurkChip::I63(I63Gadgets::Sub);
+    let i63_mul = LurkChip::I63(I63Gadgets::Mul);
+    let i63_into_sign_abs = LurkChip::I63(I63Gadgets::IntoSignAbs);
+    let i63_from_sign_abs = LurkChip::I63(I63Gadgets::FromSignAbs);
     let big_num_lessthan = LurkChip::BigNum(BigNum::LessThan);
     let mut chips: FxIndexMap<_, _> = [
         (Name("hasher3"), Either::Left(hasher3)),
         (Name("hasher4"), Either::Left(hasher4)),
         (Name("hasher5"), Either::Left(hasher5)),
+        // u64
         (Name("u64_add"), Either::Left(u64_add)),
         (Name("u64_sub"), Either::Left(u64_sub)),
         (Name("u64_mul"), Either::Left(u64_mul)),
         (Name("u64_divrem"), Either::Left(u64_divrem)),
         (Name("u64_lessthan"), Either::Left(u64_lessthan)),
         (Name("u64_iszero"), Either::Left(u64_iszero)),
+        // i64
+        (Name("i64_into_sign_abs"), Either::Left(i64_into_sign_abs)),
+        (Name("i64_from_sign_abs"), Either::Left(i64_from_sign_abs)),
+        // i63
+        (Name("i63_add"), Either::Left(i63_add)),
+        (Name("i63_sub"), Either::Left(i63_sub)),
+        (Name("i63_mul"), Either::Left(i63_mul)),
+        (Name("i63_into_sign_abs"), Either::Left(i63_into_sign_abs)),
+        (Name("i63_from_sign_abs"), Either::Left(i63_from_sign_abs)),
+        // big num
         (Name("big_num_lessthan"), Either::Left(big_num_lessthan)),
     ]
     .into_iter()
     .collect();
     for (name, chip) in lang_chips {
         assert!(
-            !chips.contains_key(&name),
+            chips.insert(name, Either::Right(chip)).is_none(),
             "Name conflict with native chip {name}"
         );
-        chips.insert(name, Either::Right(chip));
     }
     chips
 }
@@ -74,7 +97,9 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher3(op) => op.input_size(),
             LurkChip::Hasher4(op) => op.input_size(),
             LurkChip::Hasher5(op) => op.input_size(),
-            LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::input_size(op),
+            LurkChip::U64(op) => <U64Gadgets as Chipset<BabyBear>>::input_size(op),
+            LurkChip::I64(op) => <I64Gadgets as Chipset<BabyBear>>::input_size(op),
+            LurkChip::I63(op) => <I63Gadgets as Chipset<BabyBear>>::input_size(op),
             LurkChip::BigNum(op) => <BigNum as Chipset<BabyBear>>::input_size(op),
         }
     }
@@ -85,7 +110,9 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher3(op) => op.output_size(),
             LurkChip::Hasher4(op) => op.output_size(),
             LurkChip::Hasher5(op) => op.output_size(),
-            LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::output_size(op),
+            LurkChip::U64(op) => <U64Gadgets as Chipset<BabyBear>>::output_size(op),
+            LurkChip::I64(op) => <I64Gadgets as Chipset<BabyBear>>::output_size(op),
+            LurkChip::I63(op) => <I63Gadgets as Chipset<BabyBear>>::output_size(op),
             LurkChip::BigNum(op) => <BigNum as Chipset<BabyBear>>::output_size(op),
         }
     }
@@ -95,7 +122,9 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher3(op) => op.witness_size(),
             LurkChip::Hasher4(op) => op.witness_size(),
             LurkChip::Hasher5(op) => op.witness_size(),
-            LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::witness_size(op),
+            LurkChip::U64(op) => <U64Gadgets as Chipset<BabyBear>>::witness_size(op),
+            LurkChip::I64(op) => <I64Gadgets as Chipset<BabyBear>>::witness_size(op),
+            LurkChip::I63(op) => <I63Gadgets as Chipset<BabyBear>>::witness_size(op),
             LurkChip::BigNum(op) => <BigNum as Chipset<BabyBear>>::witness_size(op),
         }
     }
@@ -105,7 +134,9 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher3(op) => op.require_size(),
             LurkChip::Hasher4(op) => op.require_size(),
             LurkChip::Hasher5(op) => op.require_size(),
-            LurkChip::U64(op) => <U64 as Chipset<BabyBear>>::require_size(op),
+            LurkChip::U64(op) => <U64Gadgets as Chipset<BabyBear>>::require_size(op),
+            LurkChip::I64(op) => <I64Gadgets as Chipset<BabyBear>>::require_size(op),
+            LurkChip::I63(op) => <I63Gadgets as Chipset<BabyBear>>::require_size(op),
             LurkChip::BigNum(op) => <BigNum as Chipset<BabyBear>>::require_size(op),
         }
     }
@@ -115,7 +146,9 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher3(hasher) => hasher.execute_simple(input),
             LurkChip::Hasher4(hasher) => hasher.execute_simple(input),
             LurkChip::Hasher5(hasher) => hasher.execute_simple(input),
-            LurkChip::U64(..) | LurkChip::BigNum(..) => panic!("use `execute`"),
+            LurkChip::U64(_) | LurkChip::I64(_) | LurkChip::I63(_) | LurkChip::BigNum(_) => {
+                panic!("use `execute`")
+            }
         }
     }
 
@@ -131,6 +164,8 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher4(hasher) => hasher.execute(input, nonce, queries, requires),
             LurkChip::Hasher5(hasher) => hasher.execute(input, nonce, queries, requires),
             LurkChip::U64(op) => op.execute(input, nonce, queries, requires),
+            LurkChip::I64(op) => op.execute(input, nonce, queries, requires),
+            LurkChip::I63(op) => op.execute(input, nonce, queries, requires),
             LurkChip::BigNum(op) => op.execute(input, nonce, queries, requires),
         }
     }
@@ -141,6 +176,8 @@ impl Chipset<BabyBear> for LurkChip {
             LurkChip::Hasher4(hasher) => hasher.populate_witness(input, witness),
             LurkChip::Hasher5(hasher) => hasher.populate_witness(input, witness),
             LurkChip::U64(op) => op.populate_witness(input, witness),
+            LurkChip::I64(op) => op.populate_witness(input, witness),
+            LurkChip::I63(op) => op.populate_witness(input, witness),
             LurkChip::BigNum(op) => op.populate_witness(input, witness),
         }
     }
@@ -165,6 +202,8 @@ impl Chipset<BabyBear> for LurkChip {
                 hasher.eval(builder, is_real, preimg, witness, nonce, requires)
             }
             LurkChip::U64(op) => op.eval(builder, is_real, preimg, witness, nonce, requires),
+            LurkChip::I64(op) => op.eval(builder, is_real, preimg, witness, nonce, requires),
+            LurkChip::I63(op) => op.eval(builder, is_real, preimg, witness, nonce, requires),
             LurkChip::BigNum(op) => op.eval(builder, is_real, preimg, witness, nonce, requires),
         }
     }

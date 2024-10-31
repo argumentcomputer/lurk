@@ -14,14 +14,15 @@ use crate::lurk::parser::{base, Span};
 pub enum ParseErrorKind {
     InvalidBase16EscapeSequence(String, Option<ParseIntError>),
     InvalidBaseEncoding(base::LitBase),
-    NumError(String),
     DigestLiteralTooBig(BigUint),
     UnknownBaseCode,
     ParseIntErr(ParseIntError),
+    IntOverflow,
+    IllegalNegSign,
     InvalidChar(String),
+    UnsupportedNumericSuffix(String),
     Nom(ErrorKind),
     InterningError(String),
-    Custom(String),
     OCaml(String),
 }
 
@@ -34,10 +35,8 @@ impl fmt::Display for ParseErrorKind {
             Self::ParseIntErr(e) => {
                 write!(f, "Error parsing number: {e}")
             }
-            Self::Custom(e) => {
-                write!(f, "Error: {e}")
-            }
-            e => write!(f, "internal parser error {e:?}"),
+            // TODO: better error messages
+            e => write!(f, "Parser error {e:?}"),
         }
     }
 }

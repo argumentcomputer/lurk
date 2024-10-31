@@ -4,7 +4,6 @@ use std::borrow::{Borrow, BorrowMut};
 use p3_air::AirBuilder;
 use p3_field::PrimeField32;
 
-use crate::gadgets::unsigned::is_zero::IsZero;
 use crate::{
     air::builder::{LookupBuilder, Record, RequireRecord},
     gadgets::{
@@ -13,6 +12,7 @@ use crate::{
             add::{Diff, Sum},
             cmp::CompareWitness,
             div_rem::DivRem,
+            is_zero::IsZero,
             mul::Product,
             Word64,
         },
@@ -20,15 +20,15 @@ use crate::{
     lair::{chipset::Chipset, execute::QueryRecord},
 };
 
-pub type Sum64<T> = Sum<T, 8>;
-pub type Diff64<T> = Diff<T, 8>;
-pub type DivRem64<T> = DivRem<T, 8>;
-pub type Compare64<T> = CompareWitness<T, 8>;
-pub type IsZero64<T> = IsZero<T, 8>;
-pub type Product64<T> = Product<T, 8>;
+type Sum64<T> = Sum<T, 8, 255>;
+type Diff64<T> = Diff<T, 8, 255>;
+type Product64<T> = Product<T, 8, 255>;
+type DivRem64<T> = DivRem<T, 8, 255>;
+type Compare64<T> = CompareWitness<T, 8>;
+type IsZero64<T> = IsZero<T, 8>;
 
 #[derive(Clone)]
-pub enum U64 {
+pub enum U64Gadgets {
     Add,
     Sub,
     Mul,
@@ -43,41 +43,41 @@ fn into_u64<F: PrimeField32>(slice: &[F]) -> u64 {
     u64::from_le_bytes(buf)
 }
 
-impl<F: PrimeField32> Chipset<F> for U64 {
+impl<F: PrimeField32> Chipset<F> for U64Gadgets {
     fn input_size(&self) -> usize {
         match self {
-            U64::IsZero => 8,
+            U64Gadgets::IsZero => 8,
             _ => 16,
         }
     }
 
     fn output_size(&self) -> usize {
         match self {
-            U64::DivRem => 16,                // returns (quot, rem)
-            U64::LessThan | U64::IsZero => 1, // returns one bool
-            _ => 8,
+            U64Gadgets::DivRem => 16,                       // returns (quot, rem)
+            U64Gadgets::LessThan | U64Gadgets::IsZero => 1, // returns one bool
+            U64Gadgets::Add | U64Gadgets::Sub | U64Gadgets::Mul => 8,
         }
     }
 
     fn witness_size(&self) -> usize {
         match self {
-            U64::Add => Sum64::<F>::witness_size(),
-            U64::Sub => Diff64::<F>::witness_size(),
-            U64::Mul => Product64::<F>::witness_size(),
-            U64::DivRem => DivRem64::<F>::witness_size(),
-            U64::LessThan => Compare64::<F>::witness_size(),
-            U64::IsZero => IsZero64::<F>::witness_size(),
+            U64Gadgets::Add => Sum64::<F>::witness_size(),
+            U64Gadgets::Sub => Diff64::<F>::witness_size(),
+            U64Gadgets::Mul => Product64::<F>::witness_size(),
+            U64Gadgets::DivRem => DivRem64::<F>::witness_size(),
+            U64Gadgets::LessThan => Compare64::<F>::witness_size(),
+            U64Gadgets::IsZero => IsZero64::<F>::witness_size(),
         }
     }
 
     fn require_size(&self) -> usize {
         match self {
-            U64::Add => Sum64::<F>::num_requires(),
-            U64::Sub => Diff64::<F>::num_requires(),
-            U64::Mul => Product64::<F>::num_requires(),
-            U64::DivRem => DivRem64::<F>::num_requires(),
-            U64::LessThan => Compare64::<F>::num_requires(),
-            U64::IsZero => IsZero64::<F>::num_requires(),
+            U64Gadgets::Add => Sum64::<F>::num_requires(),
+            U64Gadgets::Sub => Diff64::<F>::num_requires(),
+            U64Gadgets::Mul => Product64::<F>::num_requires(),
+            U64Gadgets::DivRem => DivRem64::<F>::num_requires(),
+            U64Gadgets::LessThan => Compare64::<F>::num_requires(),
+            U64Gadgets::IsZero => IsZero64::<F>::num_requires(),
         }
     }
 
@@ -90,37 +90,37 @@ impl<F: PrimeField32> Chipset<F> for U64 {
     ) -> Vec<F> {
         let in1 = into_u64(&input[0..8]);
         let in2 = match self {
-            U64::IsZero => 0, // unused
+            U64Gadgets::IsZero => 0, // unused
             _ => into_u64(&input[8..16]),
         };
         let bytes = &mut queries.bytes.context(nonce, requires);
         match self {
-            U64::Add => {
+            U64Gadgets::Add => {
                 let mut witness = Sum64::<F>::default();
                 witness.populate(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
-            U64::Sub => {
+            U64Gadgets::Sub => {
                 let mut witness = Diff64::<F>::default();
                 witness.populate(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
-            U64::Mul => {
+            U64Gadgets::Mul => {
                 let mut witness = Product64::<F>::default();
                 witness.populate(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
-            U64::DivRem => {
+            U64Gadgets::DivRem => {
                 let mut witness = DivRem64::<F>::default();
                 witness.populate(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
-            U64::LessThan => {
+            U64Gadgets::LessThan => {
                 let mut witness = Compare64::<F>::default();
                 witness.populate(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
-            U64::IsZero => {
+            U64Gadgets::IsZero => {
                 let mut witness = IsZero64::<F>::default();
                 witness.populate_is_zero(&in1);
                 witness.iter_result().into_iter().collect()
@@ -131,37 +131,37 @@ impl<F: PrimeField32> Chipset<F> for U64 {
     fn populate_witness(&self, input: &[F], witness: &mut [F]) -> Vec<F> {
         let in1 = into_u64(&input[0..8]);
         let in2 = match self {
-            U64::IsZero => 0, // unused
+            U64Gadgets::IsZero => 0, // unused
             _ => into_u64(&input[8..16]),
         };
         let bytes = &mut DummyBytesRecord;
         match self {
-            U64::Add => {
+            U64Gadgets::Add => {
                 let witness: &mut Sum64<F> = witness.borrow_mut();
                 witness.populate(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
-            U64::Sub => {
+            U64Gadgets::Sub => {
                 let witness: &mut Diff64<F> = witness.borrow_mut();
                 witness.populate(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
-            U64::Mul => {
+            U64Gadgets::Mul => {
                 let witness: &mut Product64<F> = witness.borrow_mut();
                 witness.populate(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
-            U64::DivRem => {
+            U64Gadgets::DivRem => {
                 let witness: &mut DivRem64<F> = witness.borrow_mut();
                 witness.populate(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
-            U64::LessThan => {
+            U64Gadgets::LessThan => {
                 let witness: &mut Compare64<F> = witness.borrow_mut();
                 witness.populate(&in1, &in2, bytes);
                 witness.iter_result().into_iter().collect()
             }
-            U64::IsZero => {
+            U64Gadgets::IsZero => {
                 let witness: &mut IsZero64<F> = witness.borrow_mut();
                 witness.populate_is_zero(&in1);
                 witness.iter_result().into_iter().collect()
@@ -180,37 +180,37 @@ impl<F: PrimeField32> Chipset<F> for U64 {
     ) -> Vec<AB::Expr> {
         let in1 = ins[0..8].iter().cloned().collect::<Word64<_>>();
         let in2 = match self {
-            U64::IsZero => Word64::default(), // unused
+            U64Gadgets::IsZero => Word64::default(), // unused
             _ => ins[8..16].iter().cloned().collect::<Word64<_>>(),
         };
         let mut air_record = BytesAirRecordWithContext::default();
         let out = match self {
-            U64::Add => {
+            U64Gadgets::Add => {
                 let witness: &Sum64<AB::Var> = witness.borrow();
                 let out = witness.eval(builder, in1, in2, &mut air_record, is_real.clone());
                 out.map(Into::into).into_iter().collect()
             }
-            U64::Sub => {
+            U64Gadgets::Sub => {
                 let witness: &Diff64<AB::Var> = witness.borrow();
                 let out = witness.eval(builder, in1, in2, &mut air_record, is_real.clone());
                 out.map(Into::into).into_iter().collect()
             }
-            U64::Mul => {
+            U64Gadgets::Mul => {
                 let witness: &Product64<AB::Var> = witness.borrow();
                 let out = witness.eval(builder, &in1, &in2, &mut air_record, is_real.clone());
                 out.map(Into::into).into_iter().collect()
             }
-            U64::DivRem => {
+            U64Gadgets::DivRem => {
                 let witness: &DivRem64<AB::Var> = witness.borrow();
                 let (q, r) = witness.eval(builder, &in1, &in2, &mut air_record, is_real.clone());
                 [q, r].into_iter().flatten().map(Into::into).collect()
             }
-            U64::LessThan => {
+            U64Gadgets::LessThan => {
                 let witness: &Compare64<AB::Var> = witness.borrow();
                 let cmp = witness.eval(builder, &in1, &in2, &mut air_record, is_real.clone());
                 vec![cmp.is_less_than()]
             }
-            U64::IsZero => {
+            U64Gadgets::IsZero => {
                 let witness: &IsZero64<AB::Var> = witness.borrow();
                 let out = witness.eval_is_zero(builder, in1, is_real.clone());
                 vec![out.into()]

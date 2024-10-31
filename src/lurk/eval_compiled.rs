@@ -27,8 +27,9 @@ use super::{
     ingress::{egress, ingress, preallocate_symbols, SymbolsDigests},
     lang::{Coroutine, Lang},
     misc::{
-        big_num_lessthan, digest_equal, hash3, hash4, hash5, u64_add, u64_divrem, u64_iszero,
-        u64_lessthan, u64_mul, u64_sub,
+        big_num_lessthan, digest_equal, hash3, hash4, hash5, i63_add, i63_divrem, i63_lessthan,
+        i63_mul, i63_sub, i64_divrem, i64_lessthan, u64_add, u64_divrem, u64_iszero, u64_lessthan,
+        u64_mul, u64_sub,
     },
     symbol::Symbol,
     tag::Tag,
@@ -38,7 +39,7 @@ use super::{
 fn native_lurk_funcs<F: PrimeField32>(
     digests: &SymbolsDigests<F>,
     _coroutines: &FxIndexMap<Symbol, Coroutine<F>>,
-) -> [FuncE<F>; 35] {
+) -> [FuncE<F>; 42] {
     [
         // Entrypoint
         lurk_main(),
@@ -54,6 +55,13 @@ fn native_lurk_funcs<F: PrimeField32>(
         u64_divrem(),
         u64_lessthan(),
         u64_iszero(),
+        i64_divrem(),
+        i64_lessthan(),
+        i63_add(),
+        i63_sub(),
+        i63_mul(),
+        i63_divrem(),
+        i63_lessthan(),
         digest_equal(),
         big_num_lessthan(),
         // Ingress/Egress
@@ -548,6 +556,8 @@ pub fn eval_binop_num<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> 
                     let err_tag = Tag::Err;
                     let num_tag = Tag::Num;
                     let u64_tag = Tag::U64;
+                    let i64_tag = Tag::I64;
+                    let i63_tag = Tag::I63;
                     let err_div_zero = EvalErr::DivByZero;
                     let nil = digests.lurk_symbol_ptr("nil");
                     let nil_tag = InternalTag::Nil;
@@ -637,6 +647,142 @@ pub fn eval_binop_num<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> 
                                 }
                             }
                         }
+                        [Tag::I64, Tag::I64] => {
+                            match expr_tag {
+                                // for addition, subtraction and multiplication we can use the
+                                // `u64` functions/gadgets because of two's complement
+                                Op::Add => {
+                                    let res = call(u64_add, val1, val2);
+                                    return (i64_tag, res)
+                                }
+                                Op::Sub => {
+                                    let res = call(u64_sub, val1, val2);
+                                    return (i64_tag, res)
+                                }
+                                Op::Mul => {
+                                    let res = call(u64_mul, val1, val2);
+                                    return (i64_tag, res)
+                                }
+                                Op::Div, Op::Mod => {
+                                    let is_zero = call(u64_iszero, val2);
+                                    if is_zero {
+                                        return (err_tag, err_div_zero)
+                                    }
+                                    let (quot, rem) = call(i64_divrem, val1, val2);
+                                    match expr_tag {
+                                        Op::Div => {
+                                            return (i64_tag, quot)
+                                        }
+                                        Op::Mod => {
+                                            return (i64_tag, rem)
+                                        }
+                                    }
+                                }
+                                Op::Less => {
+                                    let res = call(i64_lessthan, val1, val2);
+                                    if res {
+                                        return (t_tag, t)
+                                    }
+                                    return (nil_tag, nil)
+                                }
+                                Op::GreatEq => {
+                                    let res = call(i64_lessthan, val1, val2);
+                                    if res {
+                                        return (nil_tag, nil)
+                                    }
+                                    return (t_tag, t)
+
+                                }
+                                Op::Great => {
+                                    let res = call(i64_lessthan, val2, val1);
+                                    if res {
+                                        return (t_tag, t)
+                                    }
+                                    return (nil_tag, nil)
+                                }
+                                Op::LessEq => {
+                                    let res = call(i64_lessthan, val2, val1);
+                                    if res {
+                                        return (nil_tag, nil)
+                                    }
+                                    return (t_tag, t)
+                                }
+                                Op::NumEq => {
+                                    let res = call(digest_equal, val1, val2);
+                                    if res {
+                                        return (t_tag, t)
+                                    }
+                                    return (nil_tag, nil)
+                                }
+                            }
+                        }
+                        [Tag::I63, Tag::I63] => {
+                            match expr_tag {
+                                Op::Add => {
+                                    let res = call(i63_add, val1, val2);
+                                    return (i63_tag, res)
+                                }
+                                Op::Sub => {
+                                    let res = call(i63_sub, val1, val2);
+                                    return (i63_tag, res)
+                                }
+                                Op::Mul => {
+                                    let res = call(i63_mul, val1, val2);
+                                    return (i63_tag, res)
+                                }
+                                Op::Div, Op::Mod => {
+                                    let is_zero = call(u64_iszero, val2);
+                                    if is_zero {
+                                        return (err_tag, err_div_zero)
+                                    }
+                                    let (quot, rem) = call(i63_divrem, val1, val2);
+                                    match expr_tag {
+                                        Op::Div => {
+                                            return (i63_tag, quot)
+                                        }
+                                        Op::Mod => {
+                                            return (i63_tag, rem)
+                                        }
+                                    }
+                                }
+                                Op::Less => {
+                                    let res = call(i63_lessthan, val1, val2);
+                                    if res {
+                                        return (t_tag, t)
+                                    }
+                                    return (nil_tag, nil)
+                                }
+                                Op::GreatEq => {
+                                    let res = call(i63_lessthan, val1, val2);
+                                    if res {
+                                        return (nil_tag, nil)
+                                    }
+                                    return (t_tag, t)
+
+                                }
+                                Op::Great => {
+                                    let res = call(i63_lessthan, val2, val1);
+                                    if res {
+                                        return (t_tag, t)
+                                    }
+                                    return (nil_tag, nil)
+                                }
+                                Op::LessEq => {
+                                    let res = call(i63_lessthan, val2, val1);
+                                    if res {
+                                        return (nil_tag, nil)
+                                    }
+                                    return (t_tag, t)
+                                }
+                                Op::NumEq => {
+                                    let res = call(digest_equal, val1, val2);
+                                    if res {
+                                        return (t_tag, t)
+                                    }
+                                    return (nil_tag, nil)
+                                }
+                            }
+                        }
                         [Tag::Num, Tag::Num] => {
                             match expr_tag {
                                 Op::Add => {
@@ -666,7 +812,7 @@ pub fn eval_binop_num<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> 
                                     return (t_tag, t)
                                 }
                                 Op::Mod, Op::Less, Op::Great, Op::LessEq, Op::GreatEq => {
-                                    let err = EvalErr::NotU64;
+                                    let err = EvalErr::NotInt;
                                     return (err_tag, err)
                                 }
                             }

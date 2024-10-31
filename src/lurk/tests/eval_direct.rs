@@ -18,7 +18,7 @@ use crate::{
     },
 };
 
-use super::run_tests;
+use super::{int63, int64, run_tests, trivial_a_1_env, trivial_id_fun, uint};
 
 #[allow(clippy::type_complexity)]
 static TEST_SETUP_DATA: OnceCell<(
@@ -115,24 +115,6 @@ macro_rules! test_env {
             test_case_env($input_code, $env_cloj, $expected_cloj)
         }
     };
-}
-
-fn trivial_id_fun(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
-    let x = zstore.intern_symbol_no_lang(&user_sym("x"));
-    let list_x = zstore.intern_list([x]);
-    let env = zstore.intern_empty_env();
-    zstore.intern_fun(list_x, list_x, env)
-}
-
-fn trivial_a_1_env(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
-    let empty_env = zstore.intern_empty_env();
-    let a = zstore.intern_symbol_no_lang(&user_sym("a"));
-    let one = uint(1);
-    zstore.intern_env(a, one, empty_env)
-}
-
-fn uint(u: u64) -> ZPtr<F> {
-    ZPtr::u64(u)
 }
 
 // self-evaluating
@@ -237,6 +219,170 @@ test!(
     "(<= 3844955657946763191 3844955657946763191)",
     |z| *z.t()
 );
+
+// i64
+test!(test_i64_add_simple, "(+ 2i64 1i64)", |_| int64(3));
+test!(test_i64_add_simple2, "(+ 2i64 -1i64)", |_| int64(1));
+test!(
+    test_i64_add_wrap,
+    "(+ -9223372036854775808i64 -9223372036854775808i64)",
+    |_| int64(0)
+);
+test!(
+    test_i64_add_wrap2,
+    "(+ 9223372036854775807i64 9223372036854775807i64)",
+    |_| int64(2)
+);
+test!(
+    test_i64_add_wrap3,
+    "(+ -9223372036854775808i64 9223372036854775807i64)",
+    |_| int64(-1)
+);
+test!(
+    test_i64_add_wrap4,
+    "(+ 9223372036854775807i64 -9223372036854775808i64)",
+    |_| int64(-1)
+);
+test!(test_i64_mul_simple, "(* 2i64 3i64)", |_| int64(6));
+test!(test_i64_mul_simple2, "(* 2i64 -31i64)", |_| int64(-6));
+test!(test_i64_mul_simple3, "(* -2i64 31i64)", |_| int64(-6));
+test!(test_i64_mul_simple4, "(* -2i64 -31i64)", |_| int64(6));
+test!(
+    test_i64_mul_wrap,
+    "(* -9223372036854775808i64 -9223372036854775808i64)",
+    |_| int64(0)
+);
+test!(
+    test_i64_mul_wrap2,
+    "(* 9223372036854775807i64 9223372036854775807i64)",
+    |_| int64(1)
+);
+test!(
+    test_i64_mul_wrap3,
+    "(* -9223372036854775808i64 9223372036854775807i64)",
+    |_| int64(-9223372036854775808)
+);
+test!(
+    test_i64_mul_wrap4,
+    "(* 9223372036854775807i64 -9223372036854775808i64)",
+    |_| int64(-9223372036854775808)
+);
+test!(test_i64_sub, "(- 2i64 1i64)", |_| int64(1));
+test!(test_i64_sub2, "(- 2i64 -1i64)", |_| int64(3));
+test!(test_i64_div, "(/ 5i64 2i64)", |_| int64(2));
+test!(test_i64_div2, "(/ 5i64 -2i64)", |_| int64(-2));
+test!(test_i64_div3, "(/ -5i64 2i64)", |_| int64(-2));
+test!(test_i64_div4, "(/ -5i64 -2i64)", |_| int64(2));
+test!(test_i64_mod, "(% 5i64 2i64)", |_| int64(1));
+test!(test_i64_mod2, "(% 5i64 -2i64)", |_| int64(1));
+test!(test_i64_mod3, "(% -5i64 2i64)", |_| int64(-1));
+test!(test_i64_mod4, "(% -5i64 -2i64)", |_| int64(-1));
+// <
+test!(test_i64_cmp, "(< 0i64 1i64)", |z| *z.t());
+test!(test_i64_cmp2, "(< -1i64 0i64)", |z| *z.t());
+test!(test_i64_cmp3, "(< 1i64 0i64)", |z| *z.nil());
+test!(test_i64_cmp4, "(< 0i64 -1i64)", |z| *z.nil());
+test!(test_i64_cmp5, "(< 0i64 0i64)", |z| *z.nil());
+// >
+test!(test_i64_cmp6, "(> 1i64 0i64)", |z| *z.t());
+test!(test_i64_cmp7, "(> 0i64 -1i64)", |z| *z.t());
+test!(test_i64_cmp8, "(> 0i64 1i64)", |z| *z.nil());
+test!(test_i64_cmp9, "(> -1i64 0i64)", |z| *z.nil());
+test!(test_i64_cmp10, "(> 0i64 0i64)", |z| *z.nil());
+// <=
+test!(test_i64_cmp11, "(<= 0i64 1i64)", |z| *z.t());
+test!(test_i64_cmp12, "(<= -1i64 0i64)", |z| *z.t());
+test!(test_i64_cmp13, "(<= 1i64 0i64)", |z| *z.nil());
+test!(test_i64_cmp14, "(<= 0i64 -1i64)", |z| *z.nil());
+test!(test_i64_cmp15, "(<= 0i64 0i64)", |z| *z.t());
+// >=
+test!(test_i64_cmp16, "(>= 1i64 0i64)", |z| *z.t());
+test!(test_i64_cmp17, "(>= 0i64 -1i64)", |z| *z.t());
+test!(test_i64_cmp18, "(>= 0i64 1i64)", |z| *z.nil());
+test!(test_i64_cmp19, "(>= -1i64 0i64)", |z| *z.nil());
+test!(test_i64_cmp20, "(>= 0i64 0i64)", |z| *z.t());
+
+// i63
+test!(test_i63_add_simple, "(+ 2i63 1i63)", |_| int63(3));
+test!(
+    test_i63_add_wrap,
+    "(+ -4611686018427387904i63 -4611686018427387904i63)",
+    |_| int63(0)
+);
+test!(
+    test_i63_add_wrap2,
+    "(+ 4611686018427387903i63 4611686018427387903i63)",
+    |_| int63(2)
+);
+test!(
+    test_i63_add_wrap3,
+    "(+ -4611686018427387904i63 4611686018427387903i63)",
+    |_| int63(-1)
+);
+test!(
+    test_i63_add_wrap4,
+    "(+ 4611686018427387903i63 -4611686018427387904i63)",
+    |_| int63(-1)
+);
+test!(test_i63_mul_simple, "(* 2i63 3i63)", |_| int63(6));
+test!(test_i63_mul_simple2, "(* 2i63 -31i63)", |_| int63(-6));
+test!(test_i63_mul_simple3, "(* -2i63 31i63)", |_| int63(-6));
+test!(test_i63_mul_simple4, "(* -2i63 -31i63)", |_| int63(6));
+test!(
+    test_i63_mul_wrap,
+    "(+ -4611686018427387904i63 -4611686018427387904i63)",
+    |_| int63(0)
+);
+test!(
+    test_i63_mul_wrap2,
+    "(+ 4611686018427387903i63 4611686018427387903i63)",
+    |_| int63(-1)
+);
+test!(
+    test_i63_mul_wrap3,
+    "(+ -4611686018427387904i63 4611686018427387903i63)",
+    |_| int63(-4611686018427387904)
+);
+test!(
+    test_i63_mul_wrap4,
+    "(+ 4611686018427387903i63 -4611686018427387904i63)",
+    |_| int63(-4611686018427387904)
+);
+test!(test_i63_sub, "(- 2i63 1i63)", |_| int63(1));
+test!(test_i63_sub2, "(- 2i63 -1i63)", |_| int63(3));
+test!(test_i63_div, "(/ 5i63 2i63)", |_| int63(2));
+test!(test_i63_div2, "(/ 5i63 -2i63)", |_| int63(-2));
+test!(test_i63_div3, "(/ -5i63 2i63)", |_| int63(-2));
+test!(test_i63_div4, "(/ -5i63 -2i63)", |_| int63(2));
+test!(test_i63_mod, "(% 5i63 2i63)", |_| int63(1));
+test!(test_i63_mod2, "(% 5i63 -2i63)", |_| int63(1));
+test!(test_i63_mod3, "(% -5i63 2i63)", |_| int63(-1));
+test!(test_i63_mod4, "(% -5i63 -2i63)", |_| int63(-1));
+// <
+test!(test_i63_cmp, "(< 0i63 1i63)", |z| *z.t());
+test!(test_i63_cmp2, "(< -1i63 0i63)", |z| *z.t());
+test!(test_i63_cmp3, "(< 1i63 0i63)", |z| *z.nil());
+test!(test_i63_cmp4, "(< 0i63 -1i63)", |z| *z.nil());
+test!(test_i63_cmp5, "(< 0i63 0i63)", |z| *z.nil());
+// >
+test!(test_i63_cmp6, "(> 1i63 0i63)", |z| *z.t());
+test!(test_i63_cmp7, "(> 0i63 -1i63)", |z| *z.t());
+test!(test_i63_cmp8, "(> 0i63 1i63)", |z| *z.nil());
+test!(test_i63_cmp9, "(> -1i63 0i63)", |z| *z.nil());
+test!(test_i63_cmp10, "(> 0i63 0i63)", |z| *z.nil());
+// <=
+test!(test_i63_cmp11, "(<= 0i63 1i63)", |z| *z.t());
+test!(test_i63_cmp12, "(<= -1i63 0i63)", |z| *z.t());
+test!(test_i63_cmp13, "(<= 1i63 0i63)", |z| *z.nil());
+test!(test_i63_cmp14, "(<= 0i63 -1i63)", |z| *z.nil());
+test!(test_i63_cmp15, "(<= 0i63 0i63)", |z| *z.t());
+// >=
+test!(test_i63_cmp16, "(>= 1i63 0i63)", |z| *z.t());
+test!(test_i63_cmp17, "(>= 0i63 -1i63)", |z| *z.t());
+test!(test_i63_cmp18, "(>= 0i63 1i63)", |z| *z.nil());
+test!(test_i63_cmp19, "(>= -1i63 0i63)", |z| *z.nil());
+test!(test_i63_cmp20, "(>= 0i63 0i63)", |z| *z.t());
+
 test!(test_begin_empty, "(begin)", |z| *z.nil());
 test!(test_begin, "(begin 1 2 3)", |_| uint(3));
 test!(test_list, "(list)", |z| *z.nil());

@@ -19,7 +19,7 @@ pub enum EvalErr {
     NotChar,
     NotCons,
     NotString,
-    NotU64,
+    NotInt,
     NotBigNum,
     CantOpen,
     CantCastToChar,

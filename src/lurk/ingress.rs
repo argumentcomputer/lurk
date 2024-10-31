@@ -158,8 +158,27 @@ pub fn ingress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     let ptr = store(bytes);
                     return (tag, ptr)
                 }
-                Tag::U64 => {
+                Tag::U64, Tag::I64 => {
                     range_u8!(digest);
+                    let ptr = store(digest);
+                    return (tag, ptr)
+                }
+                Tag::I63 => {
+                    // Besides ensuring that all limbs of `digest` are within
+                    // byte range, the MSByte `b` needs special treatment to ensure
+                    // it's <128. That is, the MSBit must be zero.
+                    // In principle, it would suffice to call `range_u7!(b)`. But
+                    // since Lair doesn't have that primitive, for now it's okay
+                    // to (additionally) assert that `b + 128` is within byte range.
+                    //
+                    // TODO: evaluate the possibility of actually supporting
+                    // `range_u7` or generalizing the range upperbound to make
+                    // this cheaper and clearer.
+                    range_u8!(digest);
+                    let (_bs: [7], b) = digest;
+                    let _128 = 128;
+                    let b_plus_128 = add(b, _128);
+                    range_u8!(b_plus_128);
                     let ptr = store(digest);
                     return (tag, ptr)
                 }
@@ -259,7 +278,7 @@ pub fn egress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     let digest = Array(digests.lurk_symbol_digest("t").clone());
                     return (sym_tag, digest)
                 }
-                Tag::Sym, Tag::Builtin, Tag::Coroutine, Tag::Key, Tag::U64, Tag::BigNum, Tag::Comm => {
+                Tag::Sym, Tag::Builtin, Tag::Coroutine, Tag::Key, Tag::U64, Tag::I64, Tag::I63, Tag::BigNum, Tag::Comm => {
                     let digest: [8] = load(val);
                     return (tag, digest)
                 }

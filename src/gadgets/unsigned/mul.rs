@@ -120,14 +120,15 @@ impl<T: Default, const W: usize> Default for MulWitness<T, W> {
     }
 }
 
-/// Wrapper type for multiplication, which contains the witness and output of the computation.
+/// Wrapper type for multiplication over words of length `W` such that the MSByte of
+/// the `result` is masked with `M`.
 #[derive(Clone, Debug, Default, AlignedBorrow)]
-pub struct Product<T, const W: usize> {
+pub struct Product<T, const W: usize, const M: u8> {
     witness: MulWitness<T, W>,
     result: UncheckedWord<T, W>,
 }
 
-impl<F: AbstractField, const W: usize> Product<F, W> {
+impl<F: AbstractField, const W: usize, const M: u8> Product<F, W, M> {
     pub fn populate<U>(&mut self, lhs: &U, rhs: &U, byte_record: &mut impl ByteRecord) -> U
     where
         U: ToBytes<Bytes = [u8; W]> + FromBytes<Bytes = [u8; W]> + Unsigned,
@@ -138,7 +139,7 @@ impl<F: AbstractField, const W: usize> Product<F, W> {
     }
 }
 
-impl<Var, const W: usize> Product<Var, W> {
+impl<Var, const W: usize, const M: u8> Product<Var, W, M> {
     pub fn eval<AB: AirBuilder<Var = Var>>(
         &self,
         builder: &mut AB,
@@ -159,17 +160,22 @@ impl<Var, const W: usize> Product<Var, W> {
             record,
             is_real.clone(),
         );
+
+        if M != 255 {
+            todo!()
+        }
+
         self.result.into_checked(record, is_real.clone())
     }
 }
 
-impl<T, const W: usize> Product<T, W> {
+impl<T, const W: usize, const M: u8> Product<T, W, M> {
     pub const fn num_requires() -> usize {
         MulWitness::<T, W>::num_requires() + W / 2
     }
 
     pub const fn witness_size() -> usize {
-        size_of::<Product<u8, W>>()
+        size_of::<Product<u8, W, M>>()
     }
 
     pub fn iter_result(&self) -> impl IntoIterator<Item = T>
@@ -196,14 +202,14 @@ mod tests {
 
     #[test]
     fn test_witness_size() {
-        expect!["8"].assert_eq(&Product::<u8, 4>::witness_size().to_string());
-        expect!["16"].assert_eq(&Product::<u8, 8>::witness_size().to_string());
+        expect!["8"].assert_eq(&Product::<u8, 4, 255>::witness_size().to_string());
+        expect!["16"].assert_eq(&Product::<u8, 8, 255>::witness_size().to_string());
     }
 
     #[test]
     fn test_num_requires() {
-        expect!["6"].assert_eq(&Product::<u8, 4>::num_requires().to_string());
-        expect!["12"].assert_eq(&Product::<u8, 8>::num_requires().to_string());
+        expect!["6"].assert_eq(&Product::<u8, 4, 255>::num_requires().to_string());
+        expect!["12"].assert_eq(&Product::<u8, 8, 255>::num_requires().to_string());
     }
 
     fn test_mul<
@@ -245,6 +251,7 @@ mod tests {
 
     fn test_product<
         const W: usize,
+        const M: u8,
         U: ToBytes<Bytes = [u8; W]> + FromBytes<Bytes = [u8; W]> + Unsigned + OverflowingMul + Debug,
     >(
         lhs: &U,
@@ -253,7 +260,7 @@ mod tests {
         let record = &mut ByteRecordTester::default();
         let builder = &mut GadgetTester::<F>::passing();
 
-        let mut witness = Product::<F, W>::default();
+        let mut witness = Product::<F, W, M>::default();
 
         let result: U = witness.populate(lhs, rhs, record);
 
@@ -263,7 +270,7 @@ mod tests {
             builder,
             &lhs_f,
             &rhs_f,
-            &mut record.passing(Product::<F, W>::num_requires()),
+            &mut record.passing(Product::<F, W, M>::num_requires()),
             F::one(),
         );
 
@@ -290,8 +297,8 @@ mod tests {
         // u64 x u32 -> u32
         test_mul::<8, 4, 4, u64, u32, u32>(a_u64, b_u32);
 
-        test_product::<8, u64>(&a_u64, &b_u64);
-        test_product::<4, u32>(&a_u32, &b_u32);
+        test_product::<8, 255, u64>(&a_u64, &b_u64);
+        test_product::<4, 255, u32>(&a_u32, &b_u32);
     }
     }
 
@@ -319,12 +326,12 @@ mod tests {
             &mut record.passing(MulWitness::<F, 8>::num_requires()),
             F::zero(),
         );
-        let product = Product::<F, 8>::default();
+        let product = Product::<F, 8, 255>::default();
         product.eval(
             builder,
             &zero,
             &one,
-            &mut record.passing(Product::<F, 8>::num_requires()),
+            &mut record.passing(Product::<F, 8, 255>::num_requires()),
             F::zero(),
         );
     }

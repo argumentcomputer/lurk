@@ -37,12 +37,12 @@ pub trait Chipset<F>: Sync {
     #[allow(clippy::too_many_arguments)]
     fn eval<AB: AirBuilder<F = F> + LookupBuilder>(
         &self,
-        builder: &mut AB,
-        is_real: AB::Expr,
-        input: Vec<AB::Expr>,
-        witness: &[AB::Var],
-        nonce: AB::Expr,
-        requires: &[RequireRecord<AB::Var>],
+        _builder: &mut AB,
+        _is_real: AB::Expr,
+        _input: Vec<AB::Expr>,
+        _witness: &[AB::Var],
+        _nonce: AB::Expr,
+        _requires: &[RequireRecord<AB::Var>],
     ) -> Vec<AB::Expr>;
 }
 

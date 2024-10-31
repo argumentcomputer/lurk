@@ -2,6 +2,7 @@ use p3_field::PrimeField;
 use std::fmt;
 
 use super::big_num::field_elts_to_biguint;
+use super::integers::i63::I63;
 use super::package::SymbolRef;
 use super::parser::position::Pos;
 use super::zstore::DIGEST_SIZE;
@@ -9,12 +10,14 @@ use super::zstore::DIGEST_SIZE;
 /// Lurk's syntax for parsing
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Syntax<F> {
-    /// An element of the finite field `F`: 1n, 0xffn
-    Num(Pos, F),
+    /// A i64 integer: -1, -0xff, 1i64, 0xffi64, -1i64, -0xffi64
+    I64(Pos, i64),
+    /// A i64 integer: -1, -0xff, 1i64, 0xffi64, -1i64, -0xffi64
+    I63(Pos, I63),
     /// A u64 integer: 1, 0xff, 1u64, 0xffu64
     U64(Pos, u64),
-    /// A i64 integer: -1, -0xff, 1i64, 0xffi64, -1i64, -0xffi64
-    I64(Pos, bool, u64),
+    /// An element of the finite field `F`: 1n, 0xffn
+    Num(Pos, F),
     /// A big numeric type stored in little-endian
     BigNum(Pos, [F; DIGEST_SIZE]),
     /// A commitment hash digest stored in little-endian
@@ -39,9 +42,10 @@ impl<F> Syntax<F> {
     /// Retrieves the `Pos` attribute
     pub fn get_pos(&self) -> &Pos {
         match self {
-            Self::Num(pos, _)
+            Self::I64(pos, _)
+            | Self::I63(pos, _)
             | Self::U64(pos, _)
-            | Self::I64(pos, ..)
+            | Self::Num(pos, _)
             | Self::BigNum(pos, _)
             | Self::Comm(pos, _)
             | Self::Symbol(pos, _)
@@ -58,9 +62,11 @@ impl<F> Syntax<F> {
 impl<F: fmt::Display + PrimeField> fmt::Display for Syntax<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Num(_, x) => write!(f, "{x}"),
+            // Always print the numerical suffix for stability modulo default settings
+            Self::I64(_, x) => write!(f, "{x}i64"),
+            Self::I63(_, x) => write!(f, "{x}i63"),
             Self::U64(_, x) => write!(f, "{x}u64"),
-            Self::I64(_, sign, x) => write!(f, "{}{x}i64", if *sign { "-" } else { "" }),
+            Self::Num(_, x) => write!(f, "{x}n"),
             Self::BigNum(_, c) => write!(f, "#{:#x}", field_elts_to_biguint(c)),
             Self::Comm(_, c) => write!(f, "#c{:#x}", field_elts_to_biguint(c)),
             Self::Symbol(_, x) => write!(f, "{x}"),

@@ -60,14 +60,15 @@ impl<Var, const W: usize> AddWitness<Var, W> {
     }
 }
 
-/// Wrapper type for addition, which contains the witness and output of the computation.
+/// Wrapper type for addition over words of length `W` such that the MSByte of
+/// the `result` is masked with `M`.
 #[derive(Clone, Debug, Default, AlignedBorrow)]
 #[repr(C)]
-pub struct Sum<T, const W: usize> {
+pub struct Sum<T, const W: usize, const M: u8> {
     result: UncheckedWord<T, W>,
 }
 
-impl<F: AbstractField, const W: usize> Sum<F, W> {
+impl<F: AbstractField, const W: usize, const M: u8> Sum<F, W, M> {
     pub fn populate<U>(&mut self, lhs: &U, rhs: &U, byte_record: &mut impl ByteRecord) -> U
     where
         U: ToBytes<Bytes = [u8; W]> + Unsigned + OverflowingAdd,
@@ -78,7 +79,7 @@ impl<F: AbstractField, const W: usize> Sum<F, W> {
     }
 }
 
-impl<Var, const W: usize> Sum<Var, W> {
+impl<Var, const W: usize, const M: u8> Sum<Var, W, M> {
     pub fn eval<AB>(
         &self,
         builder: &mut AB,
@@ -95,17 +96,22 @@ impl<Var, const W: usize> Sum<Var, W> {
         let result = self.result.into_checked(record, is_real.clone());
 
         AddWitness::<Var, W>::assert_add(builder, lhs, rhs, result.into(), is_real.clone());
+
+        if M != 255 {
+            todo!()
+        }
+
         result
     }
 }
 
-impl<T, const W: usize> Sum<T, W> {
+impl<T, const W: usize, const M: u8> Sum<T, W, M> {
     pub const fn num_requires() -> usize {
         W / 2
     }
 
     pub const fn witness_size() -> usize {
-        size_of::<Sum<u8, W>>()
+        size_of::<Sum<u8, W, M>>()
     }
 
     pub fn iter_result(&self) -> impl IntoIterator<Item = T>
@@ -116,14 +122,15 @@ impl<T, const W: usize> Sum<T, W> {
     }
 }
 
-/// Wrapper type for subtraction, which contains the witness and output of the computation.
+/// Wrapper type for subtraction over words of length `W` such that the MSByte of
+/// the `result` is masked with `M`.
 #[derive(Clone, Debug, Default, AlignedBorrow)]
 #[repr(C)]
-pub struct Diff<T, const W: usize> {
+pub struct Diff<T, const W: usize, const M: u8> {
     result: UncheckedWord<T, W>,
 }
 
-impl<F: AbstractField, const W: usize> Diff<F, W> {
+impl<F: AbstractField, const W: usize, const M: u8> Diff<F, W, M> {
     pub fn populate<U>(&mut self, lhs: &U, rhs: &U, byte_record: &mut impl ByteRecord) -> U
     where
         U: ToBytes<Bytes = [u8; W]> + Unsigned + OverflowingSub,
@@ -134,7 +141,7 @@ impl<F: AbstractField, const W: usize> Diff<F, W> {
     }
 }
 
-impl<Var, const W: usize> Diff<Var, W> {
+impl<Var, const W: usize, const M: u8> Diff<Var, W, M> {
     pub fn eval<AB>(
         &self,
         builder: &mut AB,
@@ -151,17 +158,22 @@ impl<Var, const W: usize> Diff<Var, W> {
         let result = self.result.into_checked(record, is_real.clone());
         // result + rhs = lhs => lhs - rhs = result
         AddWitness::<Var, W>::assert_add(builder, result.into(), rhs, lhs, is_real.clone());
+
+        if M != 255 {
+            todo!()
+        }
+
         result
     }
 }
 
-impl<T, const W: usize> Diff<T, W> {
+impl<T, const W: usize, const M: u8> Diff<T, W, M> {
     pub const fn num_requires() -> usize {
         W / 2
     }
 
     pub const fn witness_size() -> usize {
-        size_of::<Diff<u8, W>>()
+        size_of::<Diff<u8, W, M>>()
     }
 
     pub fn iter_result(&self) -> impl IntoIterator<Item = T>
@@ -304,22 +316,22 @@ mod tests {
 
     #[test]
     fn test_witness_size() {
-        expect!["4"].assert_eq(&Sum::<u8, 4>::witness_size().to_string());
-        expect!["8"].assert_eq(&Sum::<u8, 8>::witness_size().to_string());
+        expect!["4"].assert_eq(&Sum::<u8, 4, 255>::witness_size().to_string());
+        expect!["8"].assert_eq(&Sum::<u8, 8, 255>::witness_size().to_string());
 
-        expect!["4"].assert_eq(&Diff::<u8, 4>::witness_size().to_string());
-        expect!["8"].assert_eq(&Diff::<u8, 8>::witness_size().to_string());
+        expect!["4"].assert_eq(&Diff::<u8, 4, 255>::witness_size().to_string());
+        expect!["8"].assert_eq(&Diff::<u8, 8, 255>::witness_size().to_string());
 
         expect!["8"].assert_eq(&AddOne::<u8, 4>::witness_size().to_string());
         expect!["16"].assert_eq(&AddOne::<u8, 8>::witness_size().to_string());
     }
     #[test]
     fn test_num_requires() {
-        expect!["2"].assert_eq(&Sum::<u8, 4>::num_requires().to_string());
-        expect!["4"].assert_eq(&Sum::<u8, 8>::num_requires().to_string());
+        expect!["2"].assert_eq(&Sum::<u8, 4, 255>::num_requires().to_string());
+        expect!["4"].assert_eq(&Sum::<u8, 8, 255>::num_requires().to_string());
 
-        expect!["2"].assert_eq(&Diff::<u8, 4>::num_requires().to_string());
-        expect!["4"].assert_eq(&Diff::<u8, 8>::num_requires().to_string());
+        expect!["2"].assert_eq(&Diff::<u8, 4, 255>::num_requires().to_string());
+        expect!["4"].assert_eq(&Diff::<u8, 8, 255>::num_requires().to_string());
 
         expect!["0"].assert_eq(&AddOne::<u8, 4>::num_requires().to_string());
         expect!["0"].assert_eq(&AddOne::<u8, 8>::num_requires().to_string());
@@ -327,6 +339,7 @@ mod tests {
 
     fn test_add_sub<
         const W: usize,
+        const M: u8,
         U: ToBytes<Bytes = [u8; W]> + Unsigned + OverflowingAdd + OverflowingSub + Debug,
     >(
         lhs: &U,
@@ -334,7 +347,7 @@ mod tests {
     ) {
         let record = &mut ByteRecordTester::default();
 
-        let mut add_witness = Sum::<F, W>::default();
+        let mut add_witness = Sum::<F, W, M>::default();
         let add = add_witness.populate(lhs, rhs, record);
         let (add_expected, _) = lhs.overflowing_add(rhs);
         assert_eq!(add, add_expected);
@@ -342,12 +355,12 @@ mod tests {
             &mut GadgetTester::passing(),
             Word::<F, W>::from_unsigned(lhs),
             Word::<F, W>::from_unsigned(rhs),
-            &mut record.passing(Sum::<F, W>::num_requires()),
+            &mut record.passing(Sum::<F, W, M>::num_requires()),
             F::one(),
         );
         assert_eq!(add_f, Word::from_unsigned(&add));
 
-        let mut sub_witness = Diff::<F, W>::default();
+        let mut sub_witness = Diff::<F, W, M>::default();
         let sub = sub_witness.populate(lhs, rhs, record);
         let (sub_expected, _) = lhs.overflowing_sub(rhs);
         assert_eq!(sub, sub_expected);
@@ -355,7 +368,7 @@ mod tests {
             &mut GadgetTester::passing(),
             Word::<F, W>::from_unsigned(lhs),
             Word::<F, W>::from_unsigned(rhs),
-            &mut record.passing(Diff::<F, W>::num_requires()),
+            &mut record.passing(Diff::<F, W, M>::num_requires()),
             F::one(),
         );
         assert_eq!(sub_f, Word::from_unsigned(&sub));
@@ -382,12 +395,12 @@ mod tests {
 
     #[test]
     fn test_add_sub_32(a: u32, b: u32) {
-        test_add_sub(&a, &b)
+        test_add_sub::<4, 255, _>(&a, &b)
     }
 
     #[test]
     fn test_add_sub_64(a: u64, b: u64) {
-        test_add_sub(&a, &b)
+        test_add_sub::<8, 255, _>(&a, &b)
     }
 
     #[test]

@@ -25,6 +25,8 @@ use crate::{
     },
 };
 
+use super::state::user_sym;
+
 fn run_tests<C2: Chipset<F>>(
     zptr: &ZPtr<F>,
     env: &ZPtr<F>,
@@ -71,4 +73,30 @@ fn run_tests<C2: Chipset<F>>(
     );
     let (pk, _) = machine.setup(&LairMachineProgram);
     machine.debug_constraints(&pk, full_shard);
+}
+
+fn trivial_id_fun(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
+    let x = zstore.intern_symbol_no_lang(&user_sym("x"));
+    let list_x = zstore.intern_list([x]);
+    let env = zstore.intern_empty_env();
+    zstore.intern_fun(list_x, list_x, env)
+}
+
+fn trivial_a_1_env(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
+    let empty_env = zstore.intern_empty_env();
+    let a = zstore.intern_symbol_no_lang(&user_sym("a"));
+    let one = uint(1);
+    zstore.intern_env(a, one, empty_env)
+}
+
+fn uint(u: u64) -> ZPtr<F> {
+    ZPtr::u64(u)
+}
+
+fn int64(i: i64) -> ZPtr<F> {
+    ZPtr::i64(i)
+}
+
+fn int63(i: i64) -> ZPtr<F> {
+    ZPtr::i63(i.into())
 }

@@ -522,11 +522,12 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
                 } else {
                     bail!("Invalid meta command: {sym}")
                 }
-            },
+            }
             Syntax::Num(_, f) => self.zstore.intern_num(*f),
             Syntax::Char(_, c) => self.zstore.intern_char(*c),
+            Syntax::I64(_, i) => self.zstore.intern_i64(*i),
+            Syntax::I63(_, i) => self.zstore.intern_i63(*i),
             Syntax::U64(_, u) => self.zstore.intern_u64(*u),
-            Syntax::I64(..) => bail!("Transient error: Signed integers are not yet supported. Using `(- 0 x)` instead of `-x` might work as a temporary workaround."),
             Syntax::BigNum(_, c) => self.zstore.intern_big_num(*c),
             Syntax::Comm(_, c) => self.zstore.intern_comm(*c),
             Syntax::String(_, s) => self.zstore.intern_string(s),
