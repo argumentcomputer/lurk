@@ -14,7 +14,7 @@ use crate::{
     lurk::{
         chipset::LurkChip,
         cli::rdg::rand_digest,
-        eval::build_lurk_toplevel,
+        eval_direct::build_lurk_toplevel,
         lang::Lang,
         stark_machine::new_machine,
         zstore::{ZPtr, ZStore, DIGEST_SIZE},

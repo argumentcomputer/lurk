@@ -9,7 +9,7 @@ use crate::{
     loam::{allocation::Allocator, LEWrap, Num, Ptr, PtrEq, Wide, WidePtr, LE},
     lurk::{
         chipset::LurkChip,
-        eval::EvalErr,
+        error::EvalErr,
         state::{StateRcCell, BUILTIN_SYMBOLS},
         tag::Tag,
         zstore::{self, builtin_set, lurk_zstore, ZPtr, ZStore},
@@ -34,7 +34,7 @@ impl Memory {
     fn report_sizes(&self, summary: &mut DistillationSummary) {
         summary.set_distilled_size(Tag::Cons, self.cons_mem.len());
         summary.set_distilled_size(Tag::Fun, self.fun_mem.len());
-        summary.set_distilled_size(Tag::Thunk, self.thunk_mem.len());
+        summary.set_distilled_size(Tag::Fix, self.thunk_mem.len());
     }
 }
 
@@ -147,7 +147,7 @@ impl VirtualMemory {
     fn report_sizes(&self, summary: &mut DistillationSummary) {
         summary.set_original_size(Tag::Cons, self.cons_mem.len());
         summary.set_original_size(Tag::Fun, self.fun_mem.len());
-        summary.set_original_size(Tag::Thunk, self.thunk_mem.len());
+        summary.set_original_size(Tag::Fix, self.thunk_mem.len());
     }
 
     pub fn distill(&self, options: &DistillationOptions) -> Memory {
@@ -341,7 +341,7 @@ impl Store {
                 // println!("v->p: {:?} -> {:?}", vptr, ptr);
                 ptr
             }
-            Tag::Thunk => {
+            Tag::Fix => {
                 let (vbody, vclosed_env) = memory
                     .thunk_mem
                     .get(&vptr)
@@ -349,7 +349,7 @@ impl Store {
 
                 let body = self.intern_ptr(*vbody, memory);
                 let closed_env = self.intern_ptr(*vclosed_env, memory);
-                let ptr = self.intern_tuple2(Tag::Thunk, body, closed_env);
+                let ptr = self.intern_tuple2(Tag::Fix, body, closed_env);
                 self.vptr_pptr.insert(vptr, ptr);
                 // println!("v->p: {:?} -> {:?}", vptr, ptr);
                 ptr
@@ -427,7 +427,7 @@ impl Store {
                         memory.fun_digest_mem.push((digest, ptr.addr()));
                     }
                 }
-                Tag::Thunk => {
+                Tag::Fix => {
                     let (body, closed_env) = ptr_type.get2();
                     memory.thunk_mem.push((body.0, closed_env.0, ptr.addr()));
                     if let Some(digest) = maybe_digest {
@@ -522,7 +522,7 @@ impl Store {
                     )
                 }
             }
-            Tag::Thunk => {
+            Tag::Fix => {
                 let (body, ..) = self.fetch_tuple3(ptr);
                 format!("<Thunk {}>", self.fmt(zstore, body))
             }

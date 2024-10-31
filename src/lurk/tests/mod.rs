@@ -1,5 +1,7 @@
-mod eval;
-mod lang;
+mod eval_compiled;
+mod eval_direct;
+mod lang_compiled;
+mod lang_direct;
 
 use p3_baby_bear::BabyBear as F;
 use p3_field::AbstractField;

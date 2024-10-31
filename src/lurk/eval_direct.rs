@@ -1,9 +1,6 @@
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::FxHashSet;
-use strum::{EnumCount, EnumIter};
 
 use crate::{
     func,
@@ -11,97 +8,23 @@ use crate::{
         chipset::{Chipset, NoChip},
         expr::{BlockE, CaseType, CasesE, CtrlE, FuncE, OpE, Var},
         toplevel::Toplevel,
-        FxIndexMap, List, Name,
+        FxIndexMap, Name,
     },
-    lurk::big_num::field_elts_to_biguint,
+    lurk::{big_num::field_elts_to_biguint, error::EvalErr},
 };
 
 use super::{
     chipset::{lurk_chip_map, LurkChip},
+    ingress::{egress, ingress, preallocate_symbols, InternalTag, SymbolsDigests},
     lang::{Coroutine, Lang},
-    state::{builtin_sym, lurk_sym, BUILTIN_SYMBOLS, LURK_SYMBOLS},
+    misc::{
+        big_num_lessthan, digest_equal, hash3, hash4, hash5, u64_add, u64_divrem, u64_iszero,
+        u64_lessthan, u64_mul, u64_sub,
+    },
     symbol::Symbol,
     tag::Tag,
-    zstore::{lurk_zstore, ZStore, DIGEST_SIZE},
+    zstore::{lurk_zstore, ZStore},
 };
-
-/// `usize` wrapper in order to implement `to_field`
-pub struct DigestIndex(usize);
-
-impl DigestIndex {
-    fn to_field<F: AbstractField>(&self) -> F {
-        F::from_canonical_usize(self.0)
-    }
-}
-
-/// Tags that are internal to the VM
-#[repr(usize)]
-#[derive(Clone, Copy, EnumIter)]
-pub enum InternalTag {
-    Nil = 0,
-    T,
-}
-
-impl InternalTag {
-    /// Starts from where `Tag` ends
-    pub fn to_field<F: AbstractField>(self) -> F {
-        F::from_canonical_usize(Tag::COUNT + self as usize)
-    }
-}
-
-/// Keeps track of symbols digests to be allocated in memory, following the same
-/// order of insertion (hence an `IndexMap`)
-pub struct SymbolsDigests<F>(FxIndexMap<Symbol, List<F>>);
-
-impl SymbolsDigests<BabyBear> {
-    fn new(lang_symbols: &FxHashSet<Symbol>, zstore: &mut ZStore<BabyBear, LurkChip>) -> Self {
-        let mut map = FxIndexMap::default();
-        for name in LURK_SYMBOLS {
-            let symbol = lurk_sym(name);
-            let zptr = zstore.intern_symbol(&symbol, lang_symbols);
-            assert_eq!(zptr.tag, Tag::Sym);
-            map.insert(symbol, zptr.digest.into());
-        }
-        for name in BUILTIN_SYMBOLS {
-            let symbol = builtin_sym(name);
-            let zptr = zstore.intern_symbol(&symbol, lang_symbols);
-            assert_eq!(zptr.tag, Tag::Builtin);
-            map.insert(symbol, zptr.digest.into());
-        }
-        for symbol in lang_symbols {
-            let zptr = zstore.intern_symbol(symbol, lang_symbols);
-            assert_eq!(zptr.tag, Tag::Coroutine);
-            assert!(
-                map.insert(symbol.clone(), zptr.digest.into()).is_none(),
-                "{symbol} conflicts with Lurk's native symbols"
-            );
-        }
-        Self(map)
-    }
-}
-
-impl<F> SymbolsDigests<F> {
-    fn symbol_ptr(&self, symbol: &Symbol) -> DigestIndex {
-        // + 1 because available memory starts from 1 (0 is reserved)
-        DigestIndex(self.0.get_index_of(symbol).expect("Unknown symbol name") + 1)
-    }
-
-    fn lurk_symbol_ptr(&self, name: &str) -> DigestIndex {
-        self.symbol_ptr(&lurk_sym(name))
-    }
-
-    fn builtin_symbol_ptr(&self, name: &str) -> DigestIndex {
-        self.symbol_ptr(&builtin_sym(name))
-    }
-
-    fn symbol_digest(&self, symbol: &Symbol) -> &List<F> {
-        self.0.get(symbol).expect("Unknown symbol name")
-    }
-
-    fn lurk_symbol_digest(&self, name: &str) -> &List<F> {
-        self.symbol_digest(&lurk_sym(name))
-    }
-}
 
 fn native_lurk_funcs<F: PrimeField32>(
     digests: &SymbolsDigests<F>,
@@ -191,42 +114,6 @@ pub fn build_lurk_toplevel_native() -> (
     build_lurk_toplevel(Lang::empty())
 }
 
-#[derive(Clone, Copy, FromPrimitive, Debug)]
-#[repr(u32)]
-pub enum EvalErr {
-    UnboundVar = 0,
-    InvalidForm,
-    IllegalBindingVar,
-    ApplyNonFunc,
-    ParamsNotList,
-    ParamNotSymbol,
-    ParamInvalidRest,
-    ArgsNotList,
-    InvalidArg,
-    DivByZero,
-    NotEnv,
-    NotChar,
-    NotCons,
-    NotString,
-    NotU64,
-    NotBigNum,
-    CantOpen,
-    CantCastToChar,
-    CantCastToU64,
-    CantCastToBigNum,
-    CantCastToComm,
-}
-
-impl EvalErr {
-    pub(crate) fn to_field<F: AbstractField>(self) -> F {
-        F::from_canonical_u32(self as u32)
-    }
-
-    pub(crate) fn from_field<F: PrimeField32>(f: &F) -> Self {
-        Self::from_u32(f.as_canonical_u32()).expect("Field element doesn't map to a EvalErr")
-    }
-}
-
 pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn lurk_main(full_expr_tag: [8], expr_digest: [8], env_digest: [8]): [16] {
@@ -246,47 +133,6 @@ pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
             return (full_val_tag, val_digest)
         }
     )
-}
-
-/// ```ignore
-/// fn preallocate_symbols(): [0] {
-///     let arr: [8] = Array(<symbol 0 digest>);
-///     let ptr = store(arr);
-///     let addr = <symbol 0 address>;
-///     assert_eq!(ptr, addr);
-///     let arr: [8] = Array(<symbol 1 digest>);
-///     let ptr = store(arr);
-///     let addr = <symbol 1 address>;
-///     assert_eq!(ptr, addr);
-///     ...
-///     return
-/// }
-/// ```
-pub fn preallocate_symbols<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
-    let mut ops = Vec::with_capacity(2 * digests.0.len());
-    let arr_var = Var {
-        name: "arr",
-        size: DIGEST_SIZE,
-    };
-    let ptr_var = Var::atom("ptr");
-    let addr_var = Var::atom("addr");
-    for (symbol, digest) in &digests.0 {
-        let addr = digests.symbol_ptr(symbol).to_field();
-        ops.push(OpE::Array(arr_var, digest.clone()));
-        ops.push(OpE::Store(ptr_var, [arr_var].into()));
-        ops.push(OpE::Const(addr_var, addr));
-        ops.push(OpE::AssertEq(ptr_var, addr_var, None));
-    }
-    let ops = ops.into();
-    let ctrl = CtrlE::return_vars([]);
-    FuncE {
-        name: Name("preallocate_symbols"),
-        invertible: false,
-        partial: false,
-        input_params: [].into(),
-        output_size: 0,
-        body: BlockE { ops, ctrl },
-    }
 }
 
 /// When `coroutines` is empty, `eval_coroutine_expr` shouldn't be called.
@@ -530,316 +376,6 @@ pub fn eval_coroutine_expr<F: AbstractField>(
     }
 }
 
-pub fn ingress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
-    func!(
-        fn ingress(tag_full: [8], digest: [8]): [2] {
-            let zeros = [0; 7];
-            let (tag, rest: [7]) = tag_full;
-            assert_eq!(rest, zeros);
-            match tag {
-                Tag::Num => {
-                    let (x, rest: [7]) = digest;
-                    assert_eq!(rest, zeros);
-                    return (tag, x)
-                }
-                Tag::Char => {
-                    let (bytes: [4], rest: [4]) = digest;
-                    range_u8!(bytes);
-                    let zeros = [0; 4];
-                    assert_eq!(rest, zeros);
-                    let ptr = store(bytes);
-                    return (tag, ptr)
-                }
-                Tag::U64 => {
-                    range_u8!(digest);
-                    let ptr = store(digest);
-                    return (tag, ptr)
-                }
-                Tag::Sym => {
-                    let nil_digest = Array(digests.lurk_symbol_digest("nil").clone());
-                    let not_nil = sub(digest, nil_digest);
-                    if !not_nil {
-                        let nil_tag = InternalTag::Nil;
-                        let ptr = digests.lurk_symbol_ptr("nil");
-                        return (nil_tag, ptr)
-                    }
-                    let t_digest = Array(digests.lurk_symbol_digest("t").clone());
-                    let not_t = sub(digest, t_digest);
-                    if !not_t {
-                        let t_tag = InternalTag::T;
-                        let ptr = digests.lurk_symbol_ptr("t");
-                        return (t_tag, ptr)
-                    }
-                    let ptr = store(digest);
-                    return (tag, ptr)
-                }
-                Tag::Builtin, Tag::Coroutine, Tag::Key, Tag::BigNum, Tag::Comm => {
-                    let ptr = store(digest);
-                    return (tag, ptr)
-                }
-                Tag::Str => {
-                    if !digest {
-                        let zero = 0;
-                        return (tag, zero)
-                    }
-                    let (fst_tag_full: [8], fst_digest: [8],
-                         snd_tag_full: [8], snd_digest: [8]) = preimg(hash4, digest);
-                    let (fst_tag, fst_ptr) = call(ingress, fst_tag_full, fst_digest);
-                    let (snd_tag, snd_ptr) = call(ingress, snd_tag_full, snd_digest);
-                    let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr);
-                    return (tag, ptr)
-                }
-                Tag::Cons => {
-                    let (fst_tag_full: [8], fst_digest: [8],
-                         snd_tag_full: [8], snd_digest: [8]) = preimg(hash4, digest);
-                    let (fst_tag, fst_ptr) = call(ingress, fst_tag_full, fst_digest);
-                    let (snd_tag, snd_ptr) = call(ingress, snd_tag_full, snd_digest);
-                    let ptr = store(fst_tag, fst_ptr, snd_tag, snd_ptr);
-                    return (tag, ptr)
-                }
-                Tag::Fun, Tag::Thunk => {
-                    let (args_tag_full: [8], args_digest: [8],
-                         body_tag_full: [8], body_digest: [8],
-                                             env_digest:  [8]) = preimg(hash5, digest);
-                    let env_tag = Tag::Env;
-                    let (args_tag, args_ptr) = call(ingress, args_tag_full, args_digest);
-                    let (body_tag, body_ptr) = call(ingress, body_tag_full, body_digest);
-                    let (_env_tag, env_ptr) = call(ingress, env_tag, zeros, env_digest);
-                    let ptr = store(args_tag, args_ptr, body_tag, body_ptr, env_ptr);
-                    return (tag, ptr)
-                }
-                Tag::Env => {
-                    if !digest {
-                        let zero = 0;
-                        return (tag, zero)
-                    }
-                    let (var_tag_full: [8], var_digest: [8],
-                         val_tag_full: [8], val_digest: [8],
-                                            env_digest: [8]) = preimg(hash5, digest);
-                    let (var_tag, var_ptr) = call(ingress, var_tag_full, var_digest);
-                    let (val_tag, val_ptr) = call(ingress, val_tag_full, val_digest);
-                    let (_tag, env_ptr) = call(ingress, tag, zeros, env_digest); // `tag` is `Tag::Env`
-                    let ptr = store(var_tag, var_ptr, val_tag, val_ptr, env_ptr);
-                    return (tag, ptr)
-                }
-            }
-        }
-    )
-}
-
-pub fn egress<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
-    func!(
-        fn egress(tag, val): [9] {
-            match tag {
-                Tag::Num, Tag::Err => {
-                    let padding = [0; 7];
-                    let digest: [8] = (val, padding);
-                    return (tag, digest)
-                }
-                Tag::Char => {
-                    let padding = [0; 4];
-                    let bytes: [4] = load(val);
-                    return (tag, bytes, padding)
-                }
-                InternalTag::Nil => {
-                    let sym_tag = Tag::Sym;
-                    let digest = Array(digests.lurk_symbol_digest("nil").clone());
-                    return (sym_tag, digest)
-                }
-                InternalTag::T => {
-                    let sym_tag = Tag::Sym;
-                    let digest = Array(digests.lurk_symbol_digest("t").clone());
-                    return (sym_tag, digest)
-                }
-                Tag::Sym, Tag::Builtin, Tag::Coroutine, Tag::Key, Tag::U64, Tag::BigNum, Tag::Comm => {
-                    let digest: [8] = load(val);
-                    return (tag, digest)
-                }
-                Tag::Str => {
-                    if !val {
-                        let digest = [0; 8];
-                        return (tag, digest)
-                    }
-                    let (fst_tag, fst_ptr, snd_tag, snd_ptr) = load(val);
-                    let (fst_tag, fst_digest: [8]) = call(egress, fst_tag, fst_ptr);
-                    let (snd_tag, snd_digest: [8]) = call(egress, snd_tag, snd_ptr);
-
-                    let padding = [0; 7];
-                    let fst_tag_full: [8] = (fst_tag, padding);
-                    let snd_tag_full: [8] = (snd_tag, padding);
-                    let digest: [8] = call(hash4, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
-                    return (tag, digest)
-                }
-                Tag::Cons => {
-                    let (fst_tag, fst_ptr, snd_tag, snd_ptr) = load(val);
-                    let (fst_tag, fst_digest: [8]) = call(egress, fst_tag, fst_ptr);
-                    let (snd_tag, snd_digest: [8]) = call(egress, snd_tag, snd_ptr);
-
-                    let padding = [0; 7];
-                    let fst_tag_full: [8] = (fst_tag, padding);
-                    let snd_tag_full: [8] = (snd_tag, padding);
-                    let digest: [8] = call(hash4, fst_tag_full, fst_digest, snd_tag_full, snd_digest);
-                    return (tag, digest)
-                }
-                Tag::Fun, Tag::Thunk => {
-                    let (args_tag, args_ptr, body_tag, body_ptr, env_ptr) = load(val);
-                    let (args_tag, args_digest: [8]) = call(egress, args_tag, args_ptr);
-                    let (body_tag, body_digest: [8]) = call(egress, body_tag, body_ptr);
-                    let env_tag = Tag::Env;
-                    let (_env_tag, env_digest: [8]) = call(egress, env_tag, env_ptr);
-
-                    let padding = [0; 7];
-                    let args_tag_full: [8] = (args_tag, padding);
-                    let body_tag_full: [8] = (body_tag, padding);
-                    let digest: [8] = call(hash5, args_tag_full, args_digest, body_tag_full, body_digest, env_digest);
-                    return (tag, digest)
-                }
-                Tag::Env => {
-                    if !val {
-                        let digest = [0; 8];
-                        return (tag, digest)
-                    }
-                    let (var_tag, var_ptr, val_tag, val_ptr, env_ptr) = load(val);
-                    let (var_tag, var_digest: [8]) = call(egress, var_tag, var_ptr);
-                    let (val_tag, val_digest: [8]) = call(egress, val_tag, val_ptr);
-                    let (_tag, env_digest: [8]) = call(egress, tag, env_ptr); // `tag` is `Tag::Env`
-
-                    let padding = [0; 7];
-                    let var_tag_full: [8] = (var_tag, padding);
-                    let val_tag_full: [8] = (val_tag, padding);
-                    let digest: [8] = call(hash5, var_tag_full, var_digest, val_tag_full, val_digest, env_digest);
-                    return (tag, digest)
-                }
-            }
-        }
-    )
-}
-
-pub fn hash3<F>() -> FuncE<F> {
-    func!(
-        invertible fn hash3(preimg: [24]): [8] {
-            let img: [8] = extern_call(hasher3, preimg);
-            return img
-        }
-    )
-}
-
-pub fn hash4<F>() -> FuncE<F> {
-    func!(
-        invertible fn hash4(preimg: [32]): [8] {
-            let img: [8] = extern_call(hasher4, preimg);
-            return img
-        }
-    )
-}
-
-pub fn hash5<F>() -> FuncE<F> {
-    func!(
-        invertible fn hash5(preimg: [40]): [8] {
-            let img: [8] = extern_call(hasher5, preimg);
-            return img
-        }
-    )
-}
-
-pub fn u64_add<F>() -> FuncE<F> {
-    func!(
-        fn u64_add(a, b): [1] {
-            let a: [8] = load(a);
-            let b: [8] = load(b);
-            let c: [8] = extern_call(u64_add, a, b);
-            let c = store(c);
-            return c
-        }
-    )
-}
-
-pub fn u64_sub<F>() -> FuncE<F> {
-    func!(
-        fn u64_sub(a, b): [1] {
-            let a: [8] = load(a);
-            let b: [8] = load(b);
-            let c: [8] = extern_call(u64_sub, a, b);
-            let c = store(c);
-            return c
-        }
-    )
-}
-
-pub fn u64_mul<F>() -> FuncE<F> {
-    func!(
-        fn u64_mul(a, b): [1] {
-            let a: [8] = load(a);
-            let b: [8] = load(b);
-            let c: [8] = extern_call(u64_mul, a, b);
-            let c = store(c);
-            return c
-        }
-    )
-}
-
-pub fn u64_divrem<F>() -> FuncE<F> {
-    func!(
-        fn u64_divrem(a, b): [2] {
-            let a: [8] = load(a);
-            let b: [8] = load(b);
-            let (q: [8], r: [8]) = extern_call(u64_divrem, a, b);
-            let q = store(q);
-            let r = store(r);
-            return (q, r)
-        }
-    )
-}
-
-pub fn u64_lessthan<F>() -> FuncE<F> {
-    func!(
-        fn u64_lessthan(a, b): [1] {
-            let a: [8] = load(a);
-            let b: [8] = load(b);
-            let c = extern_call(u64_lessthan, a, b);
-            return c
-        }
-    )
-}
-
-pub fn u64_iszero<F>() -> FuncE<F> {
-    func!(
-        fn u64_iszero(a): [1] {
-            let a: [8] = load(a);
-            // this is slightly cheaper than doing it in Lair itself
-            let b = extern_call(u64_iszero, a);
-            return b
-        }
-    )
-}
-
-pub fn digest_equal<F: AbstractField>() -> FuncE<F> {
-    func!(
-        fn digest_equal(a, b): [1] {
-            let a: [8] = load(a);
-            let b: [8] = load(b);
-            let diff = sub(a, b);
-            if diff {
-                let zero = 0;
-                return zero
-            }
-            let one = 1;
-            return one
-        }
-    )
-}
-
-pub fn big_num_lessthan<F>() -> FuncE<F> {
-    func!(
-        fn big_num_lessthan(a, b): [1] {
-            let a: [8] = load(a);
-            let b: [8] = load(b);
-            let c = extern_call(big_num_lessthan, a, b);
-            return c
-        }
-    )
-}
-
 pub fn eval<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval(expr_tag, expr, env): [2] {
@@ -848,8 +384,8 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                     let expr_digest: [8] = load(expr);
                     let (res_tag, res) = call(env_lookup, expr_tag, expr_digest, env);
                     match res_tag {
-                        Tag::Thunk => {
-                            // Thunks are closed expressions, so we can choose an empty environment
+                        Tag::Fix => {
+                            // Fixed points are closed expressions, so we can choose an empty environment
                             let nil_env = 0;
                             let (res_tag, res) = call(eval, res_tag, res, nil_env);
                             return (res_tag, res)
@@ -883,10 +419,9 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                     let (res_tag, res) = call(apply, head_tag, head, rest_tag, rest, env);
                     return (res_tag, res)
                 }
-                Tag::Thunk => {
+                Tag::Fix => {
                     let (body_tag, body, binds_tag, binds, mutual_env) = load(expr);
-                    // creates an environment with the bindings from `binds` extended with the bindings
-                    // from `mutual_env`, with thunked values
+                    // extend `mutual_env` with the fixed points from the `letrec` bindings
                     // IMPORTANT: at this point this operation cannot return an error
                     let (_tag, ext_env) = call(extend_env_with_mutuals, binds_tag, binds, binds, mutual_env);
                     let (res_tag, res) = call(eval, body_tag, body, ext_env);
@@ -1425,7 +960,7 @@ pub fn equal_inner<F: AbstractField>() -> FuncE<F> {
                     let eq = mul(fst_eq, snd_eq);
                     return eq
                 }
-                Tag::Fun, Tag::Thunk => {
+                Tag::Fun, Tag::Fix => {
                     let trd_tag = Tag::Env;
                     let (a_fst: [2], a_snd: [2], a_trd) = load(a);
                     let (b_fst: [2], b_snd: [2], b_trd) = load(b);
@@ -2010,7 +1545,7 @@ pub fn eval_let<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-/// Extends the original environment of a `letrec` with thunk values from its list of mutual bindings
+/// Extends the original environment of a `letrec` with fixed points from its list of mutual bindings
 pub fn extend_env_with_mutuals<F: AbstractField>() -> FuncE<F> {
     func!(
         fn extend_env_with_mutuals(binds_tag, binds, mutual_binds, mutual_env): [2] {
@@ -2047,10 +1582,10 @@ pub fn extend_env_with_mutuals<F: AbstractField>() -> FuncE<F> {
                                     return (ext_env_tag, ext_env)
                                 }
                             };
-                            let thunk_tag = Tag::Thunk;
+                            let fix_tag = Tag::Fix;
                             // IMPORTANT: At this point, `mutual_binds` must be a cons
-                            let thunk = store(expr_tag, expr, cons_tag, mutual_binds, mutual_env);
-                            let res_env = store(var_tag, var, thunk_tag, thunk, ext_env);
+                            let fix = store(expr_tag, expr, cons_tag, mutual_binds, mutual_env);
+                            let res_env = store(var_tag, var, fix_tag, fix, ext_env);
                             return (env_tag, res_env)
                         }
                     };
@@ -2063,7 +1598,7 @@ pub fn extend_env_with_mutuals<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-/// Evaluates the mutual thunks in an environment extended by `letrec` bindings
+/// Evaluates the mutual fixed points in an environment extended by `letrec` bindings
 pub fn eval_letrec_bindings<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_letrec_bindings(init_env, ext_env): [2] {
@@ -2073,11 +1608,11 @@ pub fn eval_letrec_bindings<F: AbstractField>() -> FuncE<F> {
                 return (env_tag, init_env)
             }
             let (_var_tag, _var, val_tag, val, ext_env) = load(ext_env);
-            let thunk_tag = Tag::Thunk;
-            // Safety check: letrec bindings must be thunks
-            assert_eq!(thunk_tag, val_tag);
+            let fix_tag = Tag::Fix;
+            // Safety check: letrec bindings must be fixed points
+            assert_eq!(fix_tag, val_tag);
             let nil_env = 0;
-            // Thunks are closed expressions, so we can choose an empty environment
+            // Fixed points are closed expressions, so we can choose an empty environment
             let (res_tag, res) = call(eval, val_tag, val, nil_env);
             match res_tag {
                 Tag::Err => {
@@ -2093,7 +1628,7 @@ pub fn eval_letrec_bindings<F: AbstractField>() -> FuncE<F> {
 pub fn eval_letrec<F: AbstractField>() -> FuncE<F> {
     func!(
         partial fn eval_letrec(binds_tag, binds, body_tag, body, env): [2] {
-            // extend `env` with the bindings from the mutual env, but with thunked values
+            // extend `env` with the bindings from the mutual env
             let (ext_env_tag, ext_env) = call(extend_env_with_mutuals, binds_tag, binds, binds, env);
             match ext_env_tag {
                 Tag::Err => {

@@ -14,7 +14,7 @@ use crate::{
     lurk::{
         big_num::field_elts_to_biguint,
         chipset::{lurk_hasher, LurkChip},
-        eval::EvalErr,
+        error::EvalErr,
         parser::{syntax::parse, Span},
         state::{builtin_sym, lurk_sym, State, StateRcCell, BUILTIN_SYMBOLS},
         symbol::Symbol,
@@ -492,13 +492,8 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
     }
 
     #[inline]
-    pub fn intern_thunk(
-        &mut self,
-        body: ZPtr<F>,
-        mutual_env: ZPtr<F>,
-        body_env: ZPtr<F>,
-    ) -> ZPtr<F> {
-        self.intern_tuple110(Tag::Thunk, body, mutual_env, body_env)
+    pub fn intern_fix(&mut self, body: ZPtr<F>, mutual_env: ZPtr<F>, body_env: ZPtr<F>) -> ZPtr<F> {
+        self.intern_tuple110(Tag::Fix, body, mutual_env, body_env)
     }
 
     #[inline]
@@ -672,7 +667,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                     digest: into_sized(env_digest),
                 };
             },
-            Tag::Fun | Tag::Thunk => {
+            Tag::Fun | Tag::Fix => {
                 let preimg = hashes5_inv.get(digest).expect("Hash5 preimg not found");
                 let (args, rest) = preimg.split_at(ZPTR_SIZE);
                 let (body, env_digest) = rest.split_at(ZPTR_SIZE);
@@ -881,9 +876,9 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                     .join(" ");
                 format!("<Env ({})>", pairs_str)
             }
-            Tag::Thunk => {
+            Tag::Fix => {
                 let (body, ..) = self.fetch_tuple110(zptr);
-                format!("<Thunk {}>", self.fmt_with_state(state, body))
+                format!("<Fix {}>", self.fmt_with_state(state, body))
             }
             Tag::Err => format!("<Err {:?}>", EvalErr::from_field(&zptr.digest[0])),
         }
@@ -913,7 +908,7 @@ mod test {
         lair::execute::QueryRecord,
         lurk::{
             chipset::lurk_hasher,
-            eval::build_lurk_toplevel_native,
+            eval_direct::build_lurk_toplevel_native,
             state::{builtin_sym, user_sym, State},
             symbol::Symbol,
             tag::Tag,
