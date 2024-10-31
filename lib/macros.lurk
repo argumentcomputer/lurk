@@ -44,3 +44,14 @@
                                                         (cons (list (list 'type-eqq (caar clauses) var) (cadar clauses))
                                                               (aux (cdr clauses))))))))
                                   (cons 'cond (aux (cddr whole))))))))
+
+!(def macro-env (bind-macro 'case macro-env
+                            (lambda (whole)
+                              (let ((var (cadr whole)))
+                                (letrec ((aux (lambda (clauses)
+                                                (if clauses
+                                                    (if (cddar clauses)
+                                                        (error (cons "malformed case clause" (cddar clauses)))
+                                                        (cons (list (list 'eqq (caar clauses) var) (cadar clauses))
+                                                              (aux (cdr clauses))))))))
+                                  (cons 'cond (aux (cddr whole))))))))

@@ -22,3 +22,12 @@
             (macroexpand-1 macro-env '(typecase x
                                        (0 123)
                                        ('x' 321))))
+
+;; case
+
+!(assert-eq '(cond
+              ((eqq 0 x) 123)
+              ((eqq 'x' x) 321))
+            (macroexpand-1 macro-env '(case x
+                                       (0 123)
+                                       ('x' 321))))
