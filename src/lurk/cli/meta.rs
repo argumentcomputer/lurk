@@ -590,7 +590,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         summary: "Chains a callable object and binds the next state to a variable",
         info: &["It has the same side effects of the `chain` meta command."],
         format: "!(transition <state_expr> <call_args>)",
-        example: &["!(transition new-state old-state input0)"],
+        example: &["!(defq new-state !(transition old-state input))"],
         returns: "The chained result",
         run: |repl, args, _dir| {
             let (&current_state_expr, &call_args) = repl.car_cdr(args);
