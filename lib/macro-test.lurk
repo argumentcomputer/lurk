@@ -83,3 +83,7 @@
 !(assert-eq :b (qux :a :b :c))
 !(assert-eq :c (qux :a nil :c))
 !(assert-eq 123 (qux nil nil nil))
+
+!(assert-eq '(type-eqq (foo :x) (baz 123)) (macroexpand-all macro-env '(type-eqq (foo :x) (foo 123))))
+!(assert-eq '(eqq (foo :x) (baz 123)) (macroexpand-all macro-env '(eqq (foo :x) (foo 123))))
+

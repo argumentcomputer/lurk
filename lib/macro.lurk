@@ -45,15 +45,15 @@
                                                                    (list (car binding) (macroexpand-all macro-env (cadr binding))))
                                                                  (cadr expanded))
                                                             (macroexpand-all macro-env (cddr expanded))))
-                                           (if (member? head '(lambda type-eqq 'eqq))
-                                               (cons 'lambda
+                                           (if (member? head '(eqq type-eqq lambda))
+                                               (cons head
                                                      (cons (cadr expanded)
                                                            (map (macroexpand-all macro-env) (cddr expanded))))
                                                (map (macroexpand-all macro-env) expanded)))))
                                  expanded))))
 
 !(def evl (lambda (macro-env env src)
-                            (eval (macroexpand-all macro-env src) env)))
+            (eval (macroexpand-all macro-env src) env)))
 
 !(def evl1 (lambda (macro-env src)
-                            (eval (macroexpand-all macro-env src))))
+             (eval (macroexpand-all macro-env src))))

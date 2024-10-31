@@ -104,6 +104,21 @@
                                                           (cdr (cdr found))))) ; memoized
                          (cons indicator (cons value plist))))))
 
+!(def fold-properties (lambda (f acc plist)
+                       (letrec ((aux (lambda (acc plist)
+                                       (if (cdr plist)
+                                           (aux (f acc (cadr plist))
+                                                (cddr plist))
+                                           acc))))
+                         (aux acc plist))))
+
+!(def map-properties (lambda (f plist)
+                       (letrec ((aux (lambda (plist)
+                                       (if (cdr plist)
+                                           (cons (f (cadr plist))
+                                                 (aux (cddr plist)))))))
+                         (aux plist))))
+
 !(def assoc (lambda (item alist)
               (letrec ((aux (lambda (alist)
                               (if alist
@@ -162,3 +177,22 @@
 ;; todo: make variadic when possible
 !(def compose (lambda (a b)
                 (lambda (x) (a (b x)))))
+
+;; FIXME: Remove this once #358 is fixed. This is just a workaround. The renaming is because builtin apply cannot be
+;; shadowed.
+!(defrec applyx (lambda (f args)
+                  (if args
+                      (if (cdr args)
+                          (apply (f (car args)) (cdr args))
+                          (f (car args))))))
+
+!(def not (lambda (x) (if x nil t)))
+
+!(def fold (lambda (f acc list)
+             (letrec ((aux (lambda (acc list)
+                             (if list
+                                 (aux (f acc (car list))
+                                      (cdr list))
+                                 acc))))
+               (aux acc list))))
+
