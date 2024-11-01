@@ -18,6 +18,7 @@ use crate::{
         tag::Tag,
         zstore::{ZPtr, DIGEST_SIZE},
     },
+    ocaml::compile::compile_and_transform_single_file,
 };
 
 use super::{
@@ -1416,6 +1417,61 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             Ok(*repl.zstore.t())
         },
     };
+
+    const LOAD_OCAML: Self = Self {
+        name: "load-ocaml",
+        summary: "(Experimental) Load OCaml expressions from a file, and runs the resulting Lurk program, printing the result.",
+        info: &[],
+        format: "!(load-ocaml <string>)",
+        example: &[
+            "!(load-ocaml \"my_file.ml\") !(prove)",
+        ],
+        returns: "t",
+        run: |repl, args, path| {
+            let [file_name_zptr] = repl.take(args)?;
+            if file_name_zptr.tag != Tag::Str {
+                bail!("Path must be a string");
+            }
+            let file_name = repl.zstore.fetch_string(file_name_zptr);
+
+            let zptr = compile_and_transform_single_file(&mut repl.zstore, &repl.state, &path.join(file_name))?;
+
+            let result = repl.handle_non_meta(&zptr, None)?;
+            if result.tag == Tag::Err {
+                // error out when loading a file
+                bail!("Reduction error: {}", repl.fmt(&result));
+            }
+
+            Ok(*repl.zstore.t())
+        },
+    };
+
+    const LOAD_OCAML_EXPR: Self = Self {
+        name: "load-ocaml-expr",
+        summary: "(Experimental) Load OCaml expressions from a file.",
+        info: &[],
+        format: "!(load-ocaml-expr <string>)",
+        example: &[
+            "!(load-ocaml-expr \"my_file.ml\")",
+            "!(defq ocaml-program !(load-ocaml-expr \"my_file.ml\")) (eval ocaml-program)",
+            "(eval (quote !(load-ocaml-expr \"my_file.ml\")))",
+            "!(prove !(load-ocaml-expr \"my_file.ml\"))",
+        ],
+        returns: "The Lurk program corresponding to the OCaml expressions in the file",
+        run: |repl, args, path| {
+            let [file_name_zptr] = repl.take(args)?;
+            if file_name_zptr.tag != Tag::Str {
+                bail!("Path must be a string");
+            }
+            let file_name = repl.zstore.fetch_string(file_name_zptr);
+            let zptr = compile_and_transform_single_file(
+                &mut repl.zstore,
+                &repl.state,
+                &path.join(file_name),
+            )?;
+            Ok(zptr)
+        },
+    };
 }
 
 fn copy_inner<'a, T: Copy + 'a, I: IntoIterator<Item = &'a T>>(xs: I) -> Vec<T> {
@@ -1462,6 +1518,8 @@ pub(crate) fn meta_cmds<C1: Chipset<F>, C2: Chipset<F>>() -> MetaCmdsMap<F, C1, 
         MetaCmd::MICROCHAIN_GET_STATE,
         MetaCmd::MICROCHAIN_TRANSITION,
         MetaCmd::MICROCHAIN_VERIFY,
+        MetaCmd::LOAD_OCAML,
+        MetaCmd::LOAD_OCAML_EXPR,
         MetaCmd::HELP,
     ] {
         assert!(meta_cmds.insert(meta_sym(mc.name), mc).is_none());

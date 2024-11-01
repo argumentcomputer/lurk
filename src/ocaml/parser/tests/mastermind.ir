@@ -1,0 +1,260 @@
+(setglobal Mastermind!
+  (let
+    (valid_input/289 =
+       (function code/291 num_pegs/292[int] max_color/293 : int
+         (if
+           (!= (apply (field 0 (global Stdlib__List!)) code/291)
+             num_pegs/292)
+           0
+           (apply (field 31 (global Stdlib__List!))
+             (function peg_color/357 : int
+               (caml_lessequal peg_color/357 max_color/293))
+             code/291)))
+     score/358 =
+       (function guess/360 code/361
+         (let
+           (*match*/419 =
+              (apply (field 29 (global Stdlib__List!))
+                (function param/370 g/368 c/369
+                  (let
+                    (acc_filtered_code/367 =a (field 2 param/370)
+                     acc_filtered_guess/366 =a (field 1 param/370)
+                     acc_exact_matches/365 =a (field 0 param/370))
+                    (if (caml_equal g/368 c/369)
+                      (makeblock 0 (int,*,*) (+ acc_exact_matches/365 1)
+                        acc_filtered_guess/366 acc_filtered_code/367)
+                      (makeblock 0 (int,*,*) acc_exact_matches/365
+                        (makeblock 0 g/368 acc_filtered_guess/366)
+                        (makeblock 0 c/369 acc_filtered_code/367)))))
+                [0: 0 0 0] guess/360 code/361))
+           (letrec
+             (count_color_only/371
+                (function g/372 c/373 acc/374[int] : int
+                  (if g/372
+                    (let
+                      (g_tl/376 =a (field 1 g/372)
+                       g_hd/375 =a (field 0 g/372))
+                      (if
+                        (apply (field 35 (global Stdlib__List!)) g_hd/375
+                          c/373)
+                        (let
+                          (c_removed/377 =
+                             (apply (field 40 (global Stdlib__List!))
+                               (function x/378 : int
+                                 (caml_notequal x/378 g_hd/375))
+                               c/373))
+                          (apply count_color_only/371 g_tl/376 c_removed/377
+                            (+ acc/374 1)))
+                        (apply count_color_only/371 g_tl/376 c/373 acc/374)))
+                    acc/374)))
+             (let
+               (color_only_matches/379 =[int]
+                  (apply count_color_only/371 (field 1 *match*/419)
+                    (field 2 *match*/419) 0))
+               (makeblock 0 (int,int) (field 0 *match*/419)
+                 color_only_matches/379)))))
+     transition/380 =
+       (function config/382 state/383 input/384
+         (let (*match*/433 = (field 0 state/383))
+           (catch
+             (switch* *match*/433
+              case int 0:
+               (seq
+                 (if
+                   (apply valid_input/289 input/384 (field 0 config/382)
+                     (field 1 config/382))
+                   0
+                   (raise
+                     (makeblock 0 (global Assert_failure/28!)
+                       [0: "../caml/mastermind.ml" 60 4])))
+                 (makeblock 0 (int,*,*,*,*,*,*,int) 1 input/384
+                   (field 2 state/383) (field 3 state/383)
+                   (field 4 state/383) (field 5 state/383)
+                   (field 6 state/383) (field 7 state/383)))
+              case int 1:
+               (seq
+                 (if
+                   (apply valid_input/289 input/384 (field 0 config/382)
+                     (field 1 config/382))
+                   0
+                   (raise
+                     (makeblock 0 (global Assert_failure/28!)
+                       [0: "../caml/mastermind.ml" 63 4])))
+                 (makeblock 0 (int,*,*,*,*,*,*,int) 2 (field 1 state/383)
+                   input/384 (field 3 state/383) (field 4 state/383)
+                   (field 5 state/383) (field 6 state/383)
+                   (field 7 state/383)))
+              case int 2:
+               (seq
+                 (if
+                   (apply valid_input/289 input/384 (field 0 config/382)
+                     (field 1 config/382))
+                   0
+                   (raise
+                     (makeblock 0 (global Assert_failure/28!)
+                       [0: "../caml/mastermind.ml" 66 4])))
+                 (let
+                   (state/385 =
+                      (makeblock 0 (int,*,*,*,*,*,*,int) 3
+                        (field 1 state/383) (field 2 state/383)
+                        (makeblock 0 input/384) (field 4 state/383)
+                        (field 5 state/383) (field 6 state/383)
+                        (field 7 state/383))
+                    *match*/423 = (field 4 state/385))
+                   (if *match*/423
+                     (makeblock 0 (int,*,*,*,*,*,*,int) (field 0 state/385)
+                       (field 1 state/385) (field 2 state/385)
+                       (field 3 state/385) (field 4 state/385)
+                       (field 5 state/385)
+                       (makeblock 0
+                         (apply score/358 (field 0 *match*/423)
+                           (field 1 state/385)))
+                       (field 7 state/385))
+                     state/385)))
+              case int 3:
+               (seq
+                 (if
+                   (apply valid_input/289 input/384 (field 0 config/382)
+                     (field 1 config/382))
+                   0
+                   (raise
+                     (makeblock 0 (global Assert_failure/28!)
+                       [0: "../caml/mastermind.ml" 78 4])))
+                 (let
+                   (state/387 =
+                      (makeblock 0 (int,*,*,*,*,*,*,int) (field 0 state/383)
+                        (field 1 state/383) (field 2 state/383)
+                        (field 3 state/383) (makeblock 0 input/384)
+                        (field 5 state/383) (field 6 state/383)
+                        (field 7 state/383))
+                    state/388 =
+                      (let (*match*/431 = (field 3 state/387))
+                        (if *match*/431
+                          (makeblock 0 (int,*,*,*,*,*,*,int)
+                            (field 0 state/387) (field 1 state/387)
+                            (field 2 state/387) (field 3 state/387)
+                            (field 4 state/387)
+                            (makeblock 0
+                              (apply score/358 (field 0 *match*/431)
+                                (field 2 state/387)))
+                            (field 6 state/387) (field 7 state/387))
+                          state/387))
+                    player1_finished/390 =[int]
+                      (caml_equal (field 5 state/388)
+                        (makeblock 0
+                          (makeblock 0 (int,int) (field 0 config/382) 0)))
+                    player2_finished/391 =[int]
+                      (caml_equal (field 6 state/388)
+                        (makeblock 0
+                          (makeblock 0 (int,int) (field 0 config/382) 0))))
+                   (if player1_finished/390
+                     (if player2_finished/391
+                       (makeblock 0 (int,*,*,*,*,*,*,int) 6
+                         (field 1 state/388) (field 2 state/388)
+                         (field 3 state/388) (field 4 state/388)
+                         (field 5 state/388) (field 6 state/388)
+                         (field 7 state/388))
+                       (makeblock 0 (int,*,*,*,*,*,*,int) 4
+                         (field 1 state/388) (field 2 state/388)
+                         (field 3 state/388) (field 4 state/388)
+                         (field 5 state/388) (field 6 state/388)
+                         (field 7 state/388)))
+                     (if player2_finished/391
+                       (makeblock 0 (int,*,*,*,*,*,*,int) 5
+                         (field 1 state/388) (field 2 state/388)
+                         (field 3 state/388) (field 4 state/388)
+                         (field 5 state/388) (field 6 state/388)
+                         (field 7 state/388))
+                       (if (== (field 7 state/388) (field 2 config/382))
+                         (makeblock 0 (int,*,*,*,*,*,*,int) 7
+                           (field 1 state/388) (field 2 state/388)
+                           (field 3 state/388) (field 4 state/388)
+                           (field 5 state/388) (field 6 state/388)
+                           (field 7 state/388))
+                         (makeblock 0 (int,*,*,*,*,*,*,int) 2
+                           (field 1 state/388) (field 2 state/388)
+                           (field 3 state/388) (field 4 state/388)
+                           (field 5 state/388) (field 6 state/388)
+                           (+ (field 7 state/388) 1)))))))
+              case int 4: (exit 4)
+              case int 5: (exit 4)
+              case int 6: (exit 4)
+              case int 7: (exit 4))
+            with (4) state/383)))
+     run_game/392 =
+       (function config/394 state/395 inputs/396
+         (apply (field 24 (global Stdlib__List!))
+           (function acc_state/397 guess/398
+             (apply transition/380 config/394 acc_state/397 guess/398))
+           state/395 inputs/396))
+     init_state/399 = [0: 0 0 0 0 0 0 0 0]
+     *match*/437 =
+       (let
+         (config/400 = [0: 4 5 10]
+          inputs/401 =
+            [0:
+             [0: 0 [0: 1 [0: 2 [0: 3 0]]]]
+             [0: [0: 2 [0: 3 [0: 4 [0: 5 0]]]] 0]]
+          state/402 =
+            (apply run_game/392 config/400 init_state/399 inputs/401))
+         (seq
+           (if (== (field 3 state/402) 0) 0
+             (raise
+               (makeblock 0 (global Assert_failure/28!)
+                 [0: "../caml/mastermind.ml" 123 2])))
+           (if (== (field 4 state/402) 0) 0
+             (raise
+               (makeblock 0 (global Assert_failure/28!)
+                 [0: "../caml/mastermind.ml" 124 2])))
+           (if (== (field 0 state/402) 2) 0
+             (raise
+               (makeblock 0 (global Assert_failure/28!)
+                 [0: "../caml/mastermind.ml" 125 2])))
+           (let
+             (inputs/403 =
+                [0:
+                 [0: 5 [0: 3 [0: 4 [0: 5 0]]]]
+                 [0: [0: 4 [0: 4 [0: 4 [0: 3 0]]]] 0]]
+              state/404 =
+                (apply run_game/392 config/400 state/402 inputs/403))
+             (seq
+               (if (caml_equal (field 5 state/404) [0: [0: 3 0]]) 0
+                 (raise
+                   (makeblock 0 (global Assert_failure/28!)
+                     [0: "../caml/mastermind.ml" 135 2])))
+               (if (== (field 6 state/404) 0) 0
+                 (raise
+                   (makeblock 0 (global Assert_failure/28!)
+                     [0: "../caml/mastermind.ml" 136 2])))
+               (if (== (field 0 state/404) 2) 0
+                 (raise
+                   (makeblock 0 (global Assert_failure/28!)
+                     [0: "../caml/mastermind.ml" 137 2])))
+               (let
+                 (state/405 =
+                    (apply transition/380 config/400 state/404
+                      [0: 2 [0: 3 [0: 4 [0: 5 0]]]]))
+                 (seq
+                   (if (caml_equal (field 6 state/405) [0: [0: 1 0]]) 0
+                     (raise
+                       (makeblock 0 (global Assert_failure/28!)
+                         [0: "../caml/mastermind.ml" 140 2])))
+                   (let
+                     (state/406 =
+                        (apply transition/380 config/400 state/405
+                          [0: 4 [0: 1 [0: 4 [0: 3 0]]]]))
+                     (seq
+                       (if (caml_equal (field 5 state/406) [0: [0: 4 0]]) 0
+                         (raise
+                           (makeblock 0 (global Assert_failure/28!)
+                             [0: "../caml/mastermind.ml" 143 2])))
+                       (if (caml_equal (field 6 state/406) [0: [0: 1 0]]) 0
+                         (raise
+                           (makeblock 0 (global Assert_failure/28!)
+                             [0: "../caml/mastermind.ml" 144 2])))
+                       (if (== (field 0 state/406) 4) 0
+                         (raise
+                           (makeblock 0 (global Assert_failure/28!)
+                             [0: "../caml/mastermind.ml" 145 2]))))))))))))
+    (makeblock 0 valid_input/289 score/358 transition/380 run_game/392
+      init_state/399)))
