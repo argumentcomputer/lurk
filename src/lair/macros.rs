@@ -277,12 +277,12 @@ macro_rules! block {
     // Control statements
     ({ return ($($src:ident),*) }, $ops:expr) => {{
         let ops = $ops.into();
-        let ctrl = $crate::lair::expr::CtrlE::Return([$($src),*].into());
+        let ctrl = $crate::lair::expr::CtrlE::Return([$($src),*].into(), 0);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
     ({ return $src:ident }, $ops:expr) => {{
         let ops = $ops.into();
-        let ctrl = $crate::lair::expr::CtrlE::Return([$src].into());
+        let ctrl = $crate::lair::expr::CtrlE::Return([$src].into(), 0);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
     ({ if $x:ident { $($true_block:tt)+ } $($false_block:tt)+ }, $ops:expr) => {{

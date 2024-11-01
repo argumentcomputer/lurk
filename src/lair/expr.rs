@@ -172,6 +172,8 @@ impl<F> BlockE<F> {
     }
 }
 
+type ReturnGroup = u8;
+
 /// Encodes the logical flow of a Lair program
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CtrlE<F> {
@@ -188,13 +190,13 @@ pub enum CtrlE<F> {
     If(Var, Box<BlockE<F>>, Box<BlockE<F>>),
     /// Contains the variables whose bindings will construct the output of the
     /// block
-    Return(VarList),
+    Return(VarList, ReturnGroup),
 }
 
 impl<F> CtrlE<F> {
     #[inline]
-    pub fn return_vars<const N: usize>(vars: [Var; N]) -> Self {
-        Self::Return(vars.into())
+    pub fn return_vars<const N: usize>(vars: [Var; N], ident: ReturnGroup) -> Self {
+        Self::Return(vars.into(), ident)
     }
 }
 
