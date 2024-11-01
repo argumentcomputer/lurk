@@ -23,6 +23,9 @@ jobs:
         with:
           repository: argumentcomputer/ci-workflows
       - uses: ./.github/actions/ci-env
+      - uses: ./.github/actions/install-deps
+        with:
+          packages: opam
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@nextest
