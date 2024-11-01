@@ -325,7 +325,7 @@ impl<F: Field + Ord> BlockE<F> {
 impl<F: Field + Ord> CtrlE<F> {
     fn check<C1: Chipset<F>, C2: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, C1, C2>) {
         match &self {
-            CtrlE::Return(return_vars) => {
+            CtrlE::Return(return_vars, _) => {
                 let total_size = return_vars.total_size();
                 assert_eq!(
                     total_size, ctx.return_size,
@@ -528,7 +528,7 @@ impl<F: Field + Ord> CtrlE<F> {
 
     fn compile<C1: Chipset<F>, C2: Chipset<F>>(&self, ctx: &mut LinkCtx<'_, C1, C2>) -> Ctrl<F> {
         match &self {
-            CtrlE::Return(return_vars) => {
+            CtrlE::Return(return_vars, _) => {
                 let return_vec = return_vars
                     .iter()
                     .flat_map(|arg| get_var(arg, ctx).to_vec())

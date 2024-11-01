@@ -212,7 +212,7 @@ pub fn eval_coroutine_expr<F: AbstractField>(
             [head, args_tag, args, env].into(),
             BlockE {
                 ops: [declare_zero, declare_one, assert_eq_zero_one].into(),
-                ctrl: CtrlE::return_vars([zero, zero]),
+                ctrl: CtrlE::return_vars([zero, zero], 0),
             },
         )
     } else {
@@ -256,7 +256,7 @@ pub fn eval_coroutine_expr<F: AbstractField>(
                     if *uses_env {
                         call_args.push(env);
                     }
-                    let return_res = CtrlE::return_vars([res_tag, res]);
+                    let return_res = CtrlE::return_vars([res_tag, res], 0);
                     let block = if *lurk_arity == 0 {
                         // no argument to pop
                         let call_op = OpE::Call([res_tag, res].into(), func_name, call_args.into());
@@ -290,7 +290,7 @@ pub fn eval_coroutine_expr<F: AbstractField>(
                                 )],
                                 default: Some(
                                     (
-                                        BlockE::no_op(CtrlE::return_vars([err_tag, err])),
+                                        BlockE::no_op(CtrlE::return_vars([err_tag, err], 0)),
                                         CaseType::Constrained,
                                     )
                                         .into(),
@@ -322,7 +322,10 @@ pub fn eval_coroutine_expr<F: AbstractField>(
                                         branches: vec![(
                                             [InternalTag::Nil.to_field()].into(),
                                             (
-                                                BlockE::no_op(CtrlE::return_vars([err_tag, err])),
+                                                BlockE::no_op(CtrlE::return_vars(
+                                                    [err_tag, err],
+                                                    0,
+                                                )),
                                                 CaseType::Constrained,
                                             ),
                                         )],
@@ -346,7 +349,7 @@ pub fn eval_coroutine_expr<F: AbstractField>(
             let case = (
                 [Tag::Err.to_field()].into(),
                 (
-                    BlockE::no_op(CtrlE::return_vars([args_tag, args])),
+                    BlockE::no_op(CtrlE::return_vars([args_tag, args], 0)),
                     CaseType::Constrained,
                 ),
             );

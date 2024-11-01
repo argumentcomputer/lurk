@@ -128,7 +128,7 @@ pub fn preallocate_symbols<F: AbstractField>(digests: &SymbolsDigests<F>) -> Fun
         ops.push(OpE::AssertEq(ptr_var, addr_var, None));
     }
     let ops = ops.into();
-    let ctrl = CtrlE::return_vars([]);
+    let ctrl = CtrlE::return_vars([], 0);
     FuncE {
         name: Name("preallocate_symbols"),
         invertible: false,
