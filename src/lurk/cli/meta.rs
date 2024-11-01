@@ -1,7 +1,6 @@
 use anyhow::{bail, Result};
 use camino::Utf8Path;
 use itertools::Itertools;
-use nom::Parser;
 use p3_baby_bear::BabyBear;
 use p3_field::PrimeField32;
 use rustc_hash::FxHashMap;
@@ -13,14 +12,13 @@ use crate::{
     lurk::{
         big_num::field_elts_to_biguint,
         package::{Package, SymbolRef},
-        parser::Span,
         stark_machine::new_machine,
         state::{builtin_sym, meta_sym, META_SYMBOLS},
         symbol::Symbol,
         tag::Tag,
         zstore::{ZPtr, DIGEST_SIZE},
     },
-    ocaml,
+    ocaml::compile::compile_and_transform_single_file,
 };
 
 use super::{
@@ -1436,13 +1434,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             }
             let file_name = repl.zstore.fetch_string(file_name_zptr);
 
-            // CLEANUP: better import paths, factor out
-            let lambda_ir = ocaml::compile::compile_single_file(&path.join(file_name))?;
-            let (rest, lambda) = ocaml::parser::syntax::parse_syntax
-                .parse(Span::new(&lambda_ir))
-                .expect("Lambda IR failed to parse");
-            assert!(rest.is_empty(), "Lambda parsing failure");
-            let zptr = ocaml::compile::transform_lambda_program(&mut repl.zstore, &repl.state, &lambda)?;
+            let zptr = compile_and_transform_single_file(&mut repl.zstore, &repl.state, &path.join(file_name))?;
 
             let result = repl.handle_non_meta(&zptr, None)?;
             if result.tag == Tag::Err {
@@ -1472,16 +1464,11 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 bail!("Path must be a string");
             }
             let file_name = repl.zstore.fetch_string(file_name_zptr);
-
-            // CLEANUP: better import paths, factor out
-            let lambda_ir = ocaml::compile::compile_single_file(&path.join(file_name))?;
-            let (rest, lambda) = ocaml::parser::syntax::parse_syntax
-                .parse(Span::new(&lambda_ir))
-                .expect("Lambda IR failed to parse");
-            assert!(rest.is_empty(), "Lambda parsing failure");
-            let zptr =
-                ocaml::compile::transform_lambda_program(&mut repl.zstore, &repl.state, &lambda)?;
-
+            let zptr = compile_and_transform_single_file(
+                &mut repl.zstore,
+                &repl.state,
+                &path.join(file_name),
+            )?;
             Ok(zptr)
         },
     };

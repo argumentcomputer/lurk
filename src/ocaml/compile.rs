@@ -2,18 +2,36 @@ use std::{fs, process::Command};
 
 use anyhow::{anyhow, bail, Result};
 use camino::Utf8Path;
+use nom::Parser;
 use p3_field::Field;
 use tempfile::tempdir;
 
 use crate::{
     lair::chipset::Chipset,
     lurk::{
+        parser::Span,
         state::{builtin_sym, user_sym, StateRcCell, BUILTIN_SYMBOLS},
         zstore::{ZPtr, ZStore},
     },
+    ocaml::parser::syntax::parse_syntax,
 };
 
 use super::syntax::LambdaSyntax;
+
+/// Compiles and transforms a file into its corresponding Lurk program.
+pub fn compile_and_transform_single_file<F: Field, C1: Chipset<F>>(
+    zstore: &mut ZStore<F, C1>,
+    state: &StateRcCell,
+    file_path: &Utf8Path,
+) -> Result<ZPtr<F>> {
+    let lambda_ir = compile_single_file(file_path)?;
+    let (rest, lambda) = parse_syntax
+        .parse(Span::new(&lambda_ir))
+        .expect("Lambda IR failed to parse");
+    assert!(rest.is_empty(), "Lambda parsing failure");
+    let zptr = transform_lambda_program(zstore, state, &lambda)?;
+    Ok(zptr)
+}
 
 /// Compiles a single file with `ocamlc` and returns the resulting lambda IR.
 pub fn compile_single_file(orig_path: &Utf8Path) -> Result<String> {
@@ -27,7 +45,10 @@ pub fn compile_single_file(orig_path: &Utf8Path) -> Result<String> {
 /// Compiles a single file with `ocamlc` and returns the resulting lambda IR.
 ///
 /// This writes the data to a temporary file in a temporary directory, runs
-/// `ocamlc -dlambda -o /dev/null <file>` and captures the stderr.
+/// `ocamlc -dlambda -dno-unique-ids -warn-error +a -c <file>` and captures the stderr.
+/// The flags ensure that the code compiles with no warnings, since the lambda IR is
+/// output to stderr alongside any warnings/errors. `-c` inhibits the final link step,
+/// and `-dno-unique-ids` removes the unique suffix added to identifiers.
 pub fn compile_single_file_contents(source: &str, file_name: &str) -> Result<String> {
     // create a temporary directory because ocamlc generates .cmi and .cmo files
     let file_dir = tempdir()?;
