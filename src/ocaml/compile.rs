@@ -44,8 +44,9 @@ pub fn compile_single_file_contents(source: &str, file_name: &str) -> Result<Str
     // silence all warnings with ``-w -a``
     let output = Command::new("ocamlc")
         .args([
-            "-dlambda",    // output lambda IR
-            "-warn-error", // set all warnings as errors
+            "-dlambda",        // output lambda IR
+            "-dno-unique-ids", // this disables the unique suffixes
+            "-warn-error",     // set all warnings as errors
             "+a",
             "-c", // compile only (don't generate executable)
             file_path.as_str(),
