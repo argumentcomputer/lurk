@@ -78,18 +78,19 @@ impl<F, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
 
 /// A map from `Var` to its compiled indices and block identifier
 type BindMap = FxHashMap<Var, (List<usize>, usize)>;
+type BindMap2 = FxHashMap<Var, usize>;
 
 /// A map that tells whether a `Var`, from a certain block, has been used or not
 type UsedMap = FxHashMap<(Var, usize), bool>;
 
 #[inline]
-fn bind_new<C1, C2>(var: &Var, ctx: &mut CheckCtx<'_, C1, C2>) {
+fn bind_new<C1, C2>(var: &Var, ctx: &mut CheckAndLinkCtx<'_, C1, C2>) {
     let idxs = (0..var.size).map(|_| ctx.new_var()).collect();
     bind(var, idxs, ctx);
 }
 
 #[inline]
-fn bind<C1, C2>(var: &Var, idxs: List<usize>, ctx: &mut CheckCtx<'_, C1, C2>) {
+fn bind<C1, C2>(var: &Var, idxs: List<usize>, ctx: &mut CheckAndLinkCtx<'_, C1, C2>) {
     ctx.bind_map.insert(*var, (idxs, ctx.block_ident));
     if let Some(used) = ctx.used_map.insert((*var, ctx.block_ident), false) {
         let Ident::User(name) = var.name else {
@@ -104,7 +105,7 @@ fn bind<C1, C2>(var: &Var, idxs: List<usize>, ctx: &mut CheckCtx<'_, C1, C2>) {
 }
 
 #[inline]
-fn use_var<'a, C1, C2>(var: &Var, ctx: &'a mut CheckCtx<'_, C1, C2>) -> &'a [usize] {
+fn use_var<'a, C1, C2>(var: &Var, ctx: &'a mut CheckAndLinkCtx<'_, C1, C2>) -> &'a [usize] {
     let (idxs, block_idx) = ctx
         .bind_map
         .get(var)
@@ -117,7 +118,45 @@ fn use_var<'a, C1, C2>(var: &Var, ctx: &'a mut CheckCtx<'_, C1, C2>) -> &'a [usi
     idxs
 }
 
+#[inline]
+fn bind_var2<C1, C2>(var: &Var, ctx: &mut CheckCtx<'_, C1, C2>) {
+    ctx.bind_map.insert(*var, ctx.block_ident);
+    if let Some(used) = ctx.used_map.insert((*var, ctx.block_ident), false) {
+        let Ident::User(name) = var.name else {
+            unreachable!()
+        };
+        let ch = name.chars().next().expect("Empty var name");
+        assert!(
+            used || ch == '_',
+            "Variable {var} not used. If intended, please prefix it with \"_\""
+        );
+    }
+}
+
+#[inline]
+fn use_var2<C1, C2>(var: &Var, ctx: &mut CheckCtx<'_, C1, C2>) {
+    let block_idx = ctx
+        .bind_map
+        .get(var)
+        .unwrap_or_else(|| panic!("Variable {var} is unbound."));
+    let used = ctx
+        .used_map
+        .get_mut(&(*var, *block_idx))
+        .expect("Data should have been inserted when binding");
+    *used = true;
+}
+
 struct CheckCtx<'a, C1, C2> {
+    block_ident: usize,
+    return_size: usize,
+    partial: bool,
+    bind_map: BindMap2,
+    used_map: UsedMap,
+    info_map: &'a FxIndexMap<Name, FuncInfo>,
+    chip_map: &'a FxIndexMap<Name, Either<C1, C2>>,
+}
+
+struct CheckAndLinkCtx<'a, C1, C2> {
     var_index: usize,
     block_ident: usize,
     return_ident: usize,
@@ -131,6 +170,16 @@ struct CheckCtx<'a, C1, C2> {
 }
 
 impl<'a, C1, C2> CheckCtx<'a, C1, C2> {
+    fn save_bind_state(&mut self) -> BindMap2 {
+        self.bind_map.clone()
+    }
+
+    fn restore_bind_state(&mut self, bind_map: BindMap2) {
+        self.bind_map = bind_map;
+    }
+}
+
+impl<'a, C1, C2> CheckAndLinkCtx<'a, C1, C2> {
     fn save_bind_state(&mut self) -> (usize, BindMap) {
         (self.var_index, self.bind_map.clone())
     }
@@ -148,6 +197,37 @@ impl<'a, C1, C2> CheckCtx<'a, C1, C2> {
 }
 
 impl<F: Field + Ord> FuncE<F> {
+    #[allow(dead_code)]
+    fn check<C1: Chipset<F>, C2: Chipset<F>>(
+        &self,
+        info_map: &FxIndexMap<Name, FuncInfo>,
+        chip_map: &FxIndexMap<Name, Either<C1, C2>>,
+    ) {
+        let ctx = &mut CheckCtx {
+            block_ident: 0,
+            return_size: self.output_size,
+            partial: self.partial,
+            bind_map: FxHashMap::default(),
+            used_map: FxHashMap::default(),
+            info_map,
+            chip_map,
+        };
+        self.input_params.iter().for_each(|var| {
+            bind_var2(var, ctx);
+        });
+        self.body.check(ctx);
+        for ((var, _), used) in ctx.used_map.iter() {
+            let Ident::User(name) = var.name else {
+                unreachable!()
+            };
+            let ch = name.chars().next().expect("Empty var name");
+            assert!(
+                *used || ch == '_',
+                "Variable {var} not used. If intended, please prefix it with \"_\""
+            );
+        }
+    }
+
     /// Checks if a named `Func` is correct, and produces an index-based `Func`
     /// by replacing names with indices
     fn check_and_link<C1: Chipset<F>, C2: Chipset<F>>(
@@ -156,7 +236,7 @@ impl<F: Field + Ord> FuncE<F> {
         info_map: &FxIndexMap<Name, FuncInfo>,
         chip_map: &FxIndexMap<Name, Either<C1, C2>>,
     ) -> Func<F> {
-        let ctx = &mut CheckCtx {
+        let ctx = &mut CheckAndLinkCtx {
             var_index: 0,
             block_ident: 0,
             return_ident: 0,
@@ -195,10 +275,15 @@ impl<F: Field + Ord> FuncE<F> {
 }
 
 impl<F: Field + Ord> BlockE<F> {
+    fn check<C1: Chipset<F>, C2: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, C1, C2>) {
+        self.ops.iter().for_each(|op| op.check(ctx));
+        self.ctrl.check(ctx);
+    }
+
     fn check_and_link_with_ops<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         mut ops: Vec<Op<F>>,
-        ctx: &mut CheckCtx<'_, C1, C2>,
+        ctx: &mut CheckAndLinkCtx<'_, C1, C2>,
     ) -> Block<F> {
         self.ops
             .iter()
@@ -222,16 +307,78 @@ impl<F: Field + Ord> BlockE<F> {
 
     fn check_and_link<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
-        ctx: &mut CheckCtx<'_, C1, C2>,
+        ctx: &mut CheckAndLinkCtx<'_, C1, C2>,
     ) -> Block<F> {
         self.check_and_link_with_ops(Vec::new(), ctx)
     }
 }
 
 impl<F: Field + Ord> CtrlE<F> {
+    fn check<C1: Chipset<F>, C2: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, C1, C2>) {
+        match &self {
+            CtrlE::Return(return_vars) => {
+                let total_size = return_vars.total_size();
+                assert_eq!(
+                    total_size, ctx.return_size,
+                    "Return size {} different from expected size of return {}",
+                    total_size, ctx.return_size
+                );
+                return_vars.iter().for_each(|arg| use_var2(arg, ctx));
+            }
+            CtrlE::Match(t, cases) => {
+                assert_eq!(t.size, 1);
+                use_var2(t, ctx);
+                // TODO check for repetitive branches
+                for (_, block, _) in cases.branches.iter() {
+                    let state = ctx.save_bind_state();
+                    ctx.block_ident += 1;
+                    block.check(ctx);
+                    ctx.restore_bind_state(state);
+                }
+                if let Some((def, _)) = &cases.default {
+                    let state = ctx.save_bind_state();
+                    ctx.block_ident += 1;
+                    def.check(ctx);
+                    ctx.restore_bind_state(state);
+                }
+            }
+            CtrlE::MatchMany(t, cases) => {
+                let size = t.size;
+                use_var2(t, ctx);
+                // TODO check for repetitive branches
+                for (fs, block, ..) in cases.branches.iter() {
+                    assert_eq!(fs.len(), size, "Pattern must have size {size}");
+                    let state = ctx.save_bind_state();
+                    ctx.block_ident += 1;
+                    block.check(ctx);
+                    ctx.restore_bind_state(state);
+                }
+                if let Some((def, _)) = &cases.default {
+                    let state = ctx.save_bind_state();
+                    ctx.block_ident += 1;
+                    def.check(ctx);
+                    ctx.restore_bind_state(state);
+                }
+            }
+            CtrlE::If(b, true_block, false_block) => {
+                use_var2(b, ctx);
+
+                let state = ctx.save_bind_state();
+                ctx.block_ident += 1;
+                true_block.check(ctx);
+                ctx.restore_bind_state(state);
+
+                let state = ctx.save_bind_state();
+                ctx.block_ident += 1;
+                false_block.check(ctx);
+                ctx.restore_bind_state(state);
+            }
+        }
+    }
+
     fn check_and_link<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
-        ctx: &mut CheckCtx<'_, C1, C2>,
+        ctx: &mut CheckAndLinkCtx<'_, C1, C2>,
     ) -> Ctrl<F> {
         match &self {
             CtrlE::Return(return_vars) => {
@@ -370,10 +517,172 @@ impl<F: Field + Ord> CtrlE<F> {
 }
 
 impl<F: Field + Ord> OpE<F> {
+    fn check<C1: Chipset<F>, C2: Chipset<F>>(&self, ctx: &mut CheckCtx<'_, C1, C2>) {
+        match self {
+            OpE::AssertNe(a, b) | OpE::AssertEq(a, b, _) => {
+                assert_eq!(a.size, b.size, "Var mismatch on `{}`", self.pretty());
+                use_var2(a, ctx);
+                use_var2(b, ctx);
+            }
+            OpE::Contains(a, b) => {
+                assert_eq!(b.size, 1, "Var mismatch on `{}`", self.pretty());
+                use_var2(a, ctx);
+                use_var2(b, ctx);
+            }
+            OpE::Const(tgt, _) => {
+                assert_eq!(tgt.size, 1, "Var mismatch on `{}`", self.pretty());
+                bind_var2(tgt, ctx);
+            }
+            OpE::Array(tgt, fs) => {
+                assert_eq!(tgt.size, fs.len(), "Var mismatch on `{}`", self.pretty());
+                bind_var2(tgt, ctx);
+            }
+            OpE::Add(tgt, a, b) | OpE::Mul(tgt, a, b) | OpE::Sub(tgt, a, b) => {
+                assert_eq!(a.size, b.size, "Var mismatch on `{}`", self.pretty());
+                assert_eq!(a.size, tgt.size, "Var mismatch on `{}`", self.pretty());
+                use_var2(a, ctx);
+                use_var2(b, ctx);
+                bind_var2(tgt, ctx);
+            }
+            OpE::Div(tgt, a, b) => {
+                assert_eq!(a.size, b.size, "Var mismatch on `{}`", self.pretty());
+                assert_eq!(a.size, tgt.size, "Var mismatch on `{}`", self.pretty());
+                use_var2(b, ctx);
+                use_var2(a, ctx);
+                bind_var2(tgt, ctx);
+            }
+            OpE::Inv(tgt, a) => {
+                assert_eq!(a.size, tgt.size, "Var mismatch on `{}`", self.pretty());
+                use_var2(a, ctx);
+                bind_var2(tgt, ctx);
+            }
+            OpE::Not(tgt, a) => {
+                assert_eq!(tgt.size, 1, "Var mismatch on `{}`", self.pretty());
+                assert_eq!(a.size, 1, "Var mismatch on `{}`", self.pretty());
+                use_var2(a, ctx);
+                bind_var2(tgt, ctx);
+            }
+            OpE::Eq(tgt, a, b) => {
+                assert_eq!(tgt.size, 1, "Var mismatch on `{}`", self.pretty());
+                assert_eq!(a.size, 1, "Var mismatch on `{}`", self.pretty());
+                assert_eq!(b.size, 1, "Var mismatch on `{}`", self.pretty());
+                use_var2(a, ctx);
+                use_var2(b, ctx);
+                bind_var2(tgt, ctx);
+            }
+            OpE::Call(out, name, inp) => {
+                let name_idx = ctx
+                    .info_map
+                    .get_index_of(name)
+                    .unwrap_or_else(|| panic!("Unknown function {name}"));
+                let FuncInfo {
+                    input_size,
+                    output_size,
+                    partial,
+                } = *ctx.info_map.get_index(name_idx).unwrap().1;
+                if partial {
+                    assert!(ctx.partial);
+                }
+                assert_eq!(
+                    inp.total_size(),
+                    input_size,
+                    "Input mismatch on `{}`",
+                    self.pretty()
+                );
+                assert_eq!(
+                    out.total_size(),
+                    output_size,
+                    "Output mismatch on `{}`",
+                    self.pretty()
+                );
+                inp.iter().for_each(|a| use_var2(a, ctx));
+                out.iter().for_each(|t| bind_var2(t, ctx));
+            }
+            OpE::PreImg(out, name, inp, _) => {
+                let name_idx = ctx
+                    .info_map
+                    .get_index_of(name)
+                    .unwrap_or_else(|| panic!("Unknown function {name}"));
+                let FuncInfo {
+                    input_size,
+                    output_size,
+                    partial,
+                } = *ctx.info_map.get_index(name_idx).unwrap().1;
+                if partial {
+                    assert!(ctx.partial);
+                }
+                assert_eq!(
+                    out.total_size(),
+                    input_size,
+                    "Input mismatch on `{}`",
+                    self.pretty()
+                );
+                assert_eq!(
+                    inp.total_size(),
+                    output_size,
+                    "Output mismatch on `{}`",
+                    self.pretty()
+                );
+                inp.iter().for_each(|a| use_var2(a, ctx));
+                out.iter().for_each(|t| bind_var2(t, ctx));
+            }
+            OpE::Store(ptr, vals) => {
+                assert_eq!(ptr.size, 1, "Var mismatch on `{}`", self.pretty());
+                vals.iter().for_each(|a| use_var2(a, ctx));
+                bind_var2(ptr, ctx);
+            }
+            OpE::Load(vals, ptr) => {
+                assert_eq!(ptr.size, 1, "Var mismatch on `{}`", self.pretty());
+                use_var2(ptr, ctx);
+                vals.iter().for_each(|val| bind_var2(val, ctx));
+            }
+            OpE::Slice(pats, args) => {
+                assert_eq!(
+                    pats.total_size(),
+                    args.total_size(),
+                    "Var mismatch on `{}`",
+                    self.pretty()
+                );
+                args.iter().for_each(|a| use_var2(a, ctx));
+                for pat in pats.as_slice() {
+                    bind_var2(pat, ctx);
+                }
+            }
+            OpE::ExternCall(out, name, inp) => {
+                let name_idx = ctx
+                    .chip_map
+                    .get_index_of(name)
+                    .unwrap_or_else(|| panic!("Unknown extern chip {name}"));
+                let (_, chip) = ctx.chip_map.get_index(name_idx).unwrap();
+                assert_eq!(
+                    inp.total_size(),
+                    chip.input_size(),
+                    "Input mismatch on `{}`",
+                    self.pretty()
+                );
+                assert_eq!(
+                    out.total_size(),
+                    chip.output_size(),
+                    "Output mismatch on `{}`",
+                    self.pretty()
+                );
+                inp.iter().for_each(|a| use_var2(a, ctx));
+                out.iter().for_each(|t| bind_var2(t, ctx));
+            }
+            OpE::Emit(vars) => {
+                vars.iter().for_each(|a| use_var2(a, ctx));
+            }
+            OpE::RangeU8(xs) => {
+                xs.iter().for_each(|x| use_var2(x, ctx));
+            }
+            OpE::Breakpoint | OpE::Debug(..) => (),
+        }
+    }
+
     fn check_and_link<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         ops: &mut Vec<Op<F>>,
-        ctx: &mut CheckCtx<'_, C1, C2>,
+        ctx: &mut CheckAndLinkCtx<'_, C1, C2>,
     ) {
         match self {
             OpE::AssertNe(a, b) => {
@@ -598,7 +907,7 @@ impl<F: Field + Ord> OpE<F> {
 fn push_const_array<F: Field + Ord, C1, C2>(
     fs: &[F],
     ops: &mut Vec<Op<F>>,
-    ctx: &mut CheckCtx<'_, C1, C2>,
+    ctx: &mut CheckAndLinkCtx<'_, C1, C2>,
 ) -> List<usize> {
     fs.iter()
         .map(|f| {
