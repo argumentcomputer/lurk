@@ -329,16 +329,16 @@ impl<F: Field + Ord> CtrlE<F> {
                 assert_eq!(t.size, 1);
                 use_var2(t, ctx);
                 // TODO check for repetitive branches
-                for (_, block, _) in cases.branches.iter() {
+                for (_, (block, _)) in cases.branches.iter() {
                     let state = ctx.save_bind_state();
                     ctx.block_ident += 1;
                     block.check(ctx);
                     ctx.restore_bind_state(state);
                 }
-                if let Some((def, _)) = &cases.default {
+                if let Some(def) = cases.default.as_ref() {
                     let state = ctx.save_bind_state();
                     ctx.block_ident += 1;
-                    def.check(ctx);
+                    def.0.check(ctx);
                     ctx.restore_bind_state(state);
                 }
             }
@@ -346,17 +346,17 @@ impl<F: Field + Ord> CtrlE<F> {
                 let size = t.size;
                 use_var2(t, ctx);
                 // TODO check for repetitive branches
-                for (fs, block, ..) in cases.branches.iter() {
+                for (fs, (block, _)) in cases.branches.iter() {
                     assert_eq!(fs.len(), size, "Pattern must have size {size}");
                     let state = ctx.save_bind_state();
                     ctx.block_ident += 1;
                     block.check(ctx);
                     ctx.restore_bind_state(state);
                 }
-                if let Some((def, _)) = &cases.default {
+                if let Some(def) = &cases.default {
                     let state = ctx.save_bind_state();
                     ctx.block_ident += 1;
-                    def.check(ctx);
+                    def.0.check(ctx);
                     ctx.restore_bind_state(state);
                 }
             }
@@ -402,7 +402,7 @@ impl<F: Field + Ord> CtrlE<F> {
                 let var = use_var(t, ctx)[0];
                 let mut vec = Vec::with_capacity(cases.branches.len());
                 let mut unique_branches = Vec::new();
-                for (fs, block, constrained) in cases.branches.iter() {
+                for (fs, (block, constrained)) in cases.branches.iter() {
                     ctx.block_ident += 1;
                     let state = ctx.save_bind_state();
                     let mut ops = Vec::new();
@@ -418,11 +418,12 @@ impl<F: Field + Ord> CtrlE<F> {
                     unique_branches.push(block);
                 }
                 let branches = Map::from_vec(vec);
-                let default = cases.default.as_ref().map(|(def, constrained)| {
+                let default = cases.default.as_ref().map(|b| {
+                    let (def, constrained) = &**b;
                     ctx.block_ident += 1;
                     let mut ops = Vec::new();
                     if let CaseType::Constrained = constrained {
-                        for (fs, _, _) in cases.branches.iter() {
+                        for (fs, (_, _)) in cases.branches.iter() {
                             for f in fs.iter() {
                                 // Collect constant as var
                                 ops.push(Op::Const(*f));
@@ -441,7 +442,7 @@ impl<F: Field + Ord> CtrlE<F> {
                 let size = t.size;
                 let vars: List<_> = use_var(t, ctx).into();
                 let mut vec = Vec::with_capacity(cases.branches.len());
-                for (fs, block, constrained) in cases.branches.iter() {
+                for (fs, (block, constrained)) in cases.branches.iter() {
                     assert_eq!(fs.len(), size, "Pattern must have size {size}");
                     ctx.block_ident += 1;
                     let state = ctx.save_bind_state();
@@ -457,11 +458,12 @@ impl<F: Field + Ord> CtrlE<F> {
                     vec.push((fs.clone(), block))
                 }
                 let branches = Map::from_vec(vec);
-                let default = cases.default.as_ref().map(|(def, constrained)| {
+                let default = cases.default.as_ref().map(|b| {
+                    let (def, constrained) = &**b;
                     ctx.block_ident += 1;
                     let mut ops = Vec::new();
                     if let CaseType::Constrained = constrained {
-                        for (fs, _, _) in cases.branches.iter() {
+                        for (fs, (_, _)) in cases.branches.iter() {
                             // Collect all constants as vars
                             let fs_vars = push_const_array(fs, &mut ops, ctx);
                             // Assert inequality of matched vars

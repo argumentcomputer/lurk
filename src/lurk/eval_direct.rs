@@ -286,13 +286,15 @@ pub fn eval_coroutine_expr<F: AbstractField>(
                             let cases = CasesE {
                                 branches: vec![(
                                     [InternalTag::Nil.to_field()].into(),
-                                    coroutine_call_block,
-                                    CaseType::Constrained,
+                                    (coroutine_call_block, CaseType::Constrained),
                                 )],
-                                default: Some((
-                                    BlockE::no_op(CtrlE::return_vars([err_tag, err])).into(),
-                                    CaseType::Constrained,
-                                )),
+                                default: Some(
+                                    (
+                                        BlockE::no_op(CtrlE::return_vars([err_tag, err])),
+                                        CaseType::Constrained,
+                                    )
+                                        .into(),
+                                ),
                             };
                             BlockE {
                                 ops: [load_op].into(),
@@ -319,10 +321,12 @@ pub fn eval_coroutine_expr<F: AbstractField>(
                                     CasesE {
                                         branches: vec![(
                                             [InternalTag::Nil.to_field()].into(),
-                                            BlockE::no_op(CtrlE::return_vars([err_tag, err])),
-                                            CaseType::Constrained,
+                                            (
+                                                BlockE::no_op(CtrlE::return_vars([err_tag, err])),
+                                                CaseType::Constrained,
+                                            ),
                                         )],
-                                        default: Some((block.into(), CaseType::Constrained)),
+                                        default: Some((block, CaseType::Constrained).into()),
                                     },
                                 ),
                             };
@@ -331,8 +335,7 @@ pub fn eval_coroutine_expr<F: AbstractField>(
                     };
                     (
                         [digests.symbol_ptr(symbol).to_field()].into(),
-                        block,
-                        CaseType::Constrained,
+                        (block, CaseType::Constrained),
                     )
                 })
                 .collect();
@@ -342,12 +345,14 @@ pub fn eval_coroutine_expr<F: AbstractField>(
         let match_args_tag = {
             let case = (
                 [Tag::Err.to_field()].into(),
-                BlockE::no_op(CtrlE::return_vars([args_tag, args])),
-                CaseType::Constrained,
+                (
+                    BlockE::no_op(CtrlE::return_vars([args_tag, args])),
+                    CaseType::Constrained,
+                ),
             );
             let cases = CasesE {
                 branches: vec![case],
-                default: Some((BlockE::no_op(match_head).into(), CaseType::Constrained)),
+                default: Some((BlockE::no_op(match_head), CaseType::Constrained).into()),
             };
             CtrlE::Match(args_tag, cases)
         };
