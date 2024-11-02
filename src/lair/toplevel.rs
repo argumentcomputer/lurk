@@ -156,6 +156,10 @@ struct CheckCtx<'a, C1, C2> {
     chip_map: &'a FxIndexMap<Name, Either<C1, C2>>,
 }
 
+struct ExpandCtx {
+    uniq_ident: usize,
+}
+
 struct CheckAndLinkCtx<'a, C1, C2> {
     var_index: usize,
     block_ident: usize,
@@ -176,6 +180,14 @@ impl<'a, C1, C2> CheckCtx<'a, C1, C2> {
 
     fn restore_bind_state(&mut self, bind_map: BindMap2) {
         self.bind_map = bind_map;
+    }
+}
+
+impl ExpandCtx {
+    fn new_var(&mut self, size: usize) -> Var {
+        let name = Ident::Internal(self.uniq_ident);
+        self.uniq_ident += 1;
+        Var { name, size }
     }
 }
 
@@ -225,6 +237,20 @@ impl<F: Field + Ord> FuncE<F> {
                 *used || ch == '_',
                 "Variable {var} not used. If intended, please prefix it with \"_\""
             );
+        }
+    }
+
+    #[allow(dead_code)]
+    fn expand(&self) -> FuncE<F> {
+        let ctx = &mut ExpandCtx { uniq_ident: 0 };
+        let body = self.body.expand(ctx);
+        FuncE {
+            name: self.name,
+            invertible: self.invertible,
+            partial: self.partial,
+            body,
+            input_params: self.input_params.clone(),
+            output_size: self.output_size,
         }
     }
 
@@ -280,6 +306,17 @@ impl<F: Field + Ord> BlockE<F> {
         self.ctrl.check(ctx);
     }
 
+    fn expand(&self, ctx: &mut ExpandCtx) -> BlockE<F> {
+        self.expand_with_ops(vec![], ctx)
+    }
+
+    fn expand_with_ops(&self, mut ops: Vec<OpE<F>>, ctx: &mut ExpandCtx) -> BlockE<F> {
+        self.ops.iter().for_each(|op| op.expand(&mut ops, ctx));
+        let ops = ops.into();
+        let ctrl = self.ctrl.expand(ctx);
+        BlockE { ops, ctrl }
+    }
+
     fn check_and_link_with_ops<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         mut ops: Vec<Op<F>>,
@@ -325,6 +362,19 @@ impl<F: Field + Ord> CtrlE<F> {
                 );
                 return_vars.iter().for_each(|arg| use_var2(arg, ctx));
             }
+            CtrlE::If(b, true_block, false_block) => {
+                use_var2(b, ctx);
+
+                let state = ctx.save_bind_state();
+                ctx.block_ident += 1;
+                true_block.check(ctx);
+                ctx.restore_bind_state(state);
+
+                let state = ctx.save_bind_state();
+                ctx.block_ident += 1;
+                false_block.check(ctx);
+                ctx.restore_bind_state(state);
+            }
             CtrlE::Match(t, cases) => {
                 assert_eq!(t.size, 1);
                 use_var2(t, ctx);
@@ -360,18 +410,146 @@ impl<F: Field + Ord> CtrlE<F> {
                     ctx.restore_bind_state(state);
                 }
             }
-            CtrlE::If(b, true_block, false_block) => {
-                use_var2(b, ctx);
+            CtrlE::Choose(t, cases) => {
+                assert_eq!(t.size, 1);
+                use_var2(t, ctx);
+                // TODO check for repetitive branches
+                for (_, block) in cases.branches.iter() {
+                    let state = ctx.save_bind_state();
+                    ctx.block_ident += 1;
+                    block.check(ctx);
+                    ctx.restore_bind_state(state);
+                }
+                if let Some(def) = cases.default.as_ref() {
+                    let state = ctx.save_bind_state();
+                    ctx.block_ident += 1;
+                    def.check(ctx);
+                    ctx.restore_bind_state(state);
+                }
+            }
+            CtrlE::ChooseMany(t, cases) => {
+                let size = t.size;
+                use_var2(t, ctx);
+                // TODO check for repetitive branches
+                for (fs, block) in cases.branches.iter() {
+                    assert_eq!(fs.len(), size, "Pattern must have size {size}");
+                    let state = ctx.save_bind_state();
+                    ctx.block_ident += 1;
+                    block.check(ctx);
+                    ctx.restore_bind_state(state);
+                }
+                if let Some(def) = &cases.default {
+                    let state = ctx.save_bind_state();
+                    ctx.block_ident += 1;
+                    def.check(ctx);
+                    ctx.restore_bind_state(state);
+                }
+            }
+        }
+    }
 
-                let state = ctx.save_bind_state();
-                ctx.block_ident += 1;
-                true_block.check(ctx);
-                ctx.restore_bind_state(state);
-
-                let state = ctx.save_bind_state();
-                ctx.block_ident += 1;
-                false_block.check(ctx);
-                ctx.restore_bind_state(state);
+    fn expand(&self, ctx: &mut ExpandCtx) -> CtrlE<F> {
+        match self {
+            CtrlE::Return(..) => self.clone(),
+            CtrlE::If(x, t, f) => {
+                let zero = ctx.new_var(x.size);
+                let arr: List<_> = vec![F::zero(); x.size].into();
+                let ops = vec![OpE::Array(zero, arr.clone()), OpE::AssertNe(*x, zero)];
+                let t = t.expand_with_ops(ops, ctx).into();
+                let ops = vec![OpE::Array(zero, arr.clone()), OpE::AssertEq(*x, zero, None)];
+                let f = f.expand_with_ops(ops, ctx);
+                let branches = vec![(arr, f)];
+                let default = Some(t);
+                let cases = CasesE { branches, default };
+                if x.size == 1 {
+                    CtrlE::Choose(*x, cases)
+                } else {
+                    CtrlE::ChooseMany(*x, cases)
+                }
+            }
+            CtrlE::Match(v, cases) => {
+                let branches = cases
+                    .branches
+                    .iter()
+                    .map(|(fs, (block, constrained))| {
+                        let mut ops = Vec::new();
+                        if let CaseType::Constrained = constrained {
+                            let arr = ctx.new_var(fs.len());
+                            ops.push(OpE::Array(arr, fs.clone()));
+                            ops.push(OpE::Contains(arr, *v));
+                        }
+                        (fs.clone(), block.expand_with_ops(ops, ctx))
+                    })
+                    .collect();
+                let default = cases.default.as_ref().map(|b| {
+                    let (block, constrained) = &**b;
+                    let mut ops = Vec::new();
+                    if let CaseType::Constrained = constrained {
+                        for (fs, (_, _)) in cases.branches.iter() {
+                            for f in fs.iter() {
+                                // Collect constant as var
+                                let f_var = ctx.new_var(1);
+                                ops.push(OpE::Const(f_var, *f));
+                                // Assert inequality of matched var
+                                ops.push(OpE::AssertNe(*v, f_var));
+                            }
+                        }
+                    }
+                    block.expand_with_ops(ops, ctx).into()
+                });
+                let cases = CasesE { branches, default };
+                CtrlE::Choose(*v, cases)
+            }
+            CtrlE::MatchMany(vs, cases) => {
+                let branches = cases
+                    .branches
+                    .iter()
+                    .map(|(fs, (block, constrained))| {
+                        let mut ops = Vec::new();
+                        if let CaseType::Constrained = constrained {
+                            let arr = ctx.new_var(fs.len());
+                            ops.push(OpE::Array(arr, fs.clone()));
+                            ops.push(OpE::AssertEq(*vs, arr, None));
+                        }
+                        (fs.clone(), block.expand_with_ops(ops, ctx))
+                    })
+                    .collect();
+                let default = cases.default.as_ref().map(|b| {
+                    let (block, constrained) = &**b;
+                    let mut ops = Vec::new();
+                    if let CaseType::Constrained = constrained {
+                        for (fs, (_, _)) in cases.branches.iter() {
+                            // Collect all constants as vars
+                            let arr = ctx.new_var(fs.len());
+                            ops.push(OpE::Array(arr, fs.clone()));
+                            // Assert inequality of matched vars
+                            ops.push(OpE::AssertNe(*vs, arr));
+                        }
+                    }
+                    block.expand_with_ops(ops, ctx).into()
+                });
+                let cases = CasesE { branches, default };
+                CtrlE::ChooseMany(*vs, cases)
+            }
+            CtrlE::Choose(v, cases) => {
+                let branches = cases
+                    .branches
+                    .iter()
+                    .map(|(fs, block)| (fs.clone(), block.expand(ctx)))
+                    .collect();
+                let default = cases.default.as_ref().map(|block| block.expand(ctx).into());
+                let cases = CasesE { branches, default };
+                CtrlE::Choose(*v, cases)
+            }
+            CtrlE::ChooseMany(vs, cases) => {
+                let branches = cases
+                    .branches
+                    .iter()
+                    .map(|(fs, block)| (fs.clone(), block.expand(ctx)))
+                    .collect();
+                let default = cases.default.as_ref().map(|block| block.expand(ctx).into());
+                let cases = CasesE { branches, default };
+                CtrlE::ChooseMany(*vs, cases)
             }
         }
     }
@@ -514,6 +692,7 @@ impl<F: Field + Ord> CtrlE<F> {
                     Ctrl::ChooseMany(vars, cases)
                 }
             }
+            _ => todo!(),
         }
     }
 }
@@ -678,6 +857,22 @@ impl<F: Field + Ord> OpE<F> {
                 xs.iter().for_each(|x| use_var2(x, ctx));
             }
             OpE::Breakpoint | OpE::Debug(..) => (),
+        }
+    }
+
+    fn expand(&self, ops: &mut Vec<Self>, ctx: &mut ExpandCtx) {
+        match self {
+            OpE::Div(tgt, a, b) => {
+                let inv = ctx.new_var(b.size);
+                ops.push(OpE::Inv(inv, *b));
+                ops.push(OpE::Mul(*tgt, *a, inv));
+            }
+            OpE::Eq(tgt, a, b) => {
+                let not_eq = ctx.new_var(a.size);
+                ops.push(OpE::Sub(not_eq, *a, *b));
+                ops.push(OpE::Not(*tgt, not_eq));
+            }
+            _ => ops.push(self.clone()),
         }
     }
 

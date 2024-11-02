@@ -180,6 +180,10 @@ pub enum CtrlE<F> {
     Match(Var, CasesE<List<F>, (BlockE<F>, CaseType)>),
     /// `MatchMany(x, cases)` matches on array `x` in order to decide which case to execute
     MatchMany(Var, CasesE<List<F>, (BlockE<F>, CaseType)>),
+    /// Nondeterministic version of `Match`
+    Choose(Var, CasesE<List<F>, BlockE<F>>),
+    /// Nondeterministic version of `MatchMany`
+    ChooseMany(Var, CasesE<List<F>, BlockE<F>>),
     /// `If(b, t, f)` executes block `f` if `b` is zero and `t` otherwise
     If(Var, Box<BlockE<F>>, Box<BlockE<F>>),
     /// Contains the variables whose bindings will construct the output of the
