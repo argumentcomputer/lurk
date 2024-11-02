@@ -92,7 +92,10 @@ fn bind_new<C1, C2>(var: &Var, ctx: &mut CheckCtx<'_, C1, C2>) {
 fn bind<C1, C2>(var: &Var, idxs: List<usize>, ctx: &mut CheckCtx<'_, C1, C2>) {
     ctx.bind_map.insert(*var, (idxs, ctx.block_ident));
     if let Some(used) = ctx.used_map.insert((*var, ctx.block_ident), false) {
-        let ch = var.name.chars().next().expect("Empty var name");
+        let Ident::User(name) = var.name else {
+            unreachable!()
+        };
+        let ch = name.chars().next().expect("Empty var name");
         assert!(
             used || ch == '_',
             "Variable {var} not used. If intended, please prefix it with \"_\""
@@ -170,7 +173,10 @@ impl<F: Field + Ord> FuncE<F> {
         });
         let body = self.body.check_and_link(ctx);
         for ((var, _), used) in ctx.used_map.iter() {
-            let ch = var.name.chars().next().expect("Empty var name");
+            let Ident::User(name) = var.name else {
+                unreachable!()
+            };
+            let ch = name.chars().next().expect("Empty var name");
             assert!(
                 *used || ch == '_',
                 "Variable {var} not used. If intended, please prefix it with \"_\""

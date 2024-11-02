@@ -9,13 +9,22 @@ use super::{List, Name};
 /// The type for variable references
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct Var {
-    pub name: &'static str,
+    pub name: Ident,
     pub size: usize,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
+pub enum Ident {
+    User(&'static str),
+    Internal(usize),
 }
 
 impl Var {
     pub fn atom(name: &'static str) -> Self {
-        Self { name, size: 1 }
+        Self {
+            name: Ident::User(name),
+            size: 1,
+        }
     }
 }
 
@@ -25,6 +34,15 @@ impl std::fmt::Display for Var {
             write!(f, "{}", self.name)
         } else {
             write!(f, "{}: [{}]", self.name, self.size)
+        }
+    }
+}
+
+impl std::fmt::Display for Ident {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Ident::User(n) => write!(f, "{}", n),
+            Ident::Internal(n) => write!(f, "${}", n),
         }
     }
 }

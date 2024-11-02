@@ -48,18 +48,14 @@ macro_rules! func {
 
 #[macro_export]
 macro_rules! var {
-    ($variable:ident) => {
-        $crate::lair::expr::Var {
-            name: stringify!($variable),
-            size: 1,
-        }
-    };
-    ($variable:ident, $size:expr) => {
-        $crate::lair::expr::Var {
-            name: stringify!($variable),
-            size: $size,
-        }
-    };
+    ($variable:ident) => {{
+        let name = $crate::lair::expr::Ident::User(stringify!($variable));
+        $crate::lair::expr::Var { name, size: 1 }
+    }};
+    ($variable:ident, $size:expr) => {{
+        let name = $crate::lair::expr::Ident::User(stringify!($variable));
+        $crate::lair::expr::Var { name, size: $size }
+    }};
 }
 
 #[macro_export]
