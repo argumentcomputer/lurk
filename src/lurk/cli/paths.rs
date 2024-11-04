@@ -32,6 +32,11 @@ pub(crate) fn commits_dir() -> Result<Utf8PathBuf> {
 }
 
 #[inline]
+pub(crate) fn microchains_dir() -> Result<Utf8PathBuf> {
+    create_dir_all_and_return(get_config().lurk_dir.join("microchains"))
+}
+
+#[inline]
 pub(crate) fn repl_history() -> Result<Utf8PathBuf> {
     Ok(lurk_dir()?.join("repl-history"))
 }

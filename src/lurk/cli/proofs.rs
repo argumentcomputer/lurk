@@ -19,7 +19,7 @@ use crate::{
 
 use super::{lurk_data::LurkData, microchain::CallableData, zdag::ZDag};
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize)]
 struct CryptoShardProof {
     commitment: ShardCommitment<Com<BabyBearPoseidon2>>,
     opened_values: ShardOpenedValues<Challenge<BabyBearPoseidon2>>,
@@ -27,7 +27,7 @@ struct CryptoShardProof {
     chip_ordering: HashMap<String, usize>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct CryptoProof {
     shard_proofs: Vec<CryptoShardProof>,
     verifier_version: String,
@@ -133,7 +133,7 @@ impl From<MachineProof<BabyBearPoseidon2>> for CryptoProof {
 /// Carries a cryptographic proof and the Lurk data for its public values. This
 /// proof format is meant for local caching through filesystem persistence. The
 /// Lurk data for its public values is fully specified to support inspection.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct CachedProof {
     pub(crate) crypto_proof: CryptoProof,
     pub(crate) expr: ZPtr<F>,
@@ -210,7 +210,7 @@ pub(crate) struct ChainProof {
 
 /// A slightly smaller version of `ChainProof` meant to be kept as transition
 /// record and shared for verification purposes.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct OpaqueChainProof {
     pub(crate) crypto_proof: CryptoProof,
     pub(crate) call_args: ZPtr<F>,
