@@ -4,7 +4,9 @@
 //! References are index-based, thought of as positions in a stack from a stack
 //! machine.
 
-use super::{map::Map, List, Name};
+use rustc_hash::FxHashSet;
+
+use super::{expr::ReturnGroup, map::Map, List, Name};
 
 /// The type for Lair operations
 #[allow(clippy::type_complexity)]
@@ -143,6 +145,7 @@ pub struct Func<F> {
     pub(crate) input_size: usize,
     pub(crate) output_size: usize,
     pub(crate) body: Block<F>,
+    pub(crate) return_groups: FxHashSet<ReturnGroup>,
 }
 
 impl<F> Func<F> {

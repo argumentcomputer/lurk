@@ -3,7 +3,7 @@
 
 use either::Either;
 use p3_field::Field;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{bytecode::*, chipset::Chipset, expr::*, map::Map, FxIndexMap, List, Name};
 
@@ -85,7 +85,7 @@ impl<F, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
     }
 }
 
-/// A map from `Var` its block identifier. Variables in this map are always bound
+/// A map from `Var` to its block identifier. Variables in this map are always bound
 type BindMap = FxHashMap<Var, usize>;
 
 /// A map that tells whether a `Var`, from a certain block, has been used or not
@@ -173,6 +173,7 @@ struct LinkCtx<'a, C1, C2> {
     var_index: usize,
     return_ident: usize,
     return_idents: Vec<usize>,
+    return_groups: FxHashSet<ReturnGroup>,
     link_map: LinkMap,
     info_map: &'a FxIndexMap<Name, FuncInfo>,
     chip_map: &'a FxIndexMap<Name, Either<C1, C2>>,
@@ -259,18 +260,19 @@ impl<F: Field + Ord> FuncE<F> {
         info_map: &FxIndexMap<Name, FuncInfo>,
         chip_map: &FxIndexMap<Name, Either<C1, C2>>,
     ) -> Func<F> {
-        let ctx = &mut LinkCtx {
+        let mut ctx = LinkCtx {
             var_index: 0,
             return_ident: 0,
             return_idents: vec![],
+            return_groups: FxHashSet::default(),
             link_map: FxHashMap::default(),
             info_map,
             chip_map,
         };
         self.input_params.iter().for_each(|var| {
-            link_new(var, ctx);
+            link_new(var, &mut ctx);
         });
-        let body = self.body.compile(ctx);
+        let body = self.body.compile(&mut ctx);
         Func {
             name: self.name,
             invertible: self.invertible,
@@ -279,6 +281,7 @@ impl<F: Field + Ord> FuncE<F> {
             body,
             input_size: self.input_params.total_size(),
             output_size: self.output_size,
+            return_groups: ctx.return_groups,
         }
     }
 }
@@ -528,7 +531,7 @@ impl<F: Field + Ord> CtrlE<F> {
 
     fn compile<C1: Chipset<F>, C2: Chipset<F>>(&self, ctx: &mut LinkCtx<'_, C1, C2>) -> Ctrl<F> {
         match &self {
-            CtrlE::Return(return_vars, _) => {
+            CtrlE::Return(return_vars, group) => {
                 let return_vec = return_vars
                     .iter()
                     .flat_map(|arg| get_var(arg, ctx).to_vec())
@@ -536,6 +539,7 @@ impl<F: Field + Ord> CtrlE<F> {
                 let ctrl = Ctrl::Return(ctx.return_ident, return_vec);
                 ctx.return_idents.push(ctx.return_ident);
                 ctx.return_ident += 1;
+                ctx.return_groups.insert(*group);
                 ctrl
             }
             CtrlE::Choose(v, cases) => {
