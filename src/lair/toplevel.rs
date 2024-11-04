@@ -1,3 +1,6 @@
+//! The toplevel is the collection of all compiled Lair functions and external chips
+//! of a Lair program. It is the core structure behind Lair.
+
 use either::Either;
 use p3_field::Field;
 use rustc_hash::FxHashMap;
@@ -20,6 +23,8 @@ pub(crate) struct FuncInfo {
 }
 
 impl<F: Field + Ord, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
+    /// Given a list of Lair functions and a chip map, create a new toplevel by checking and
+    /// compiling all functions and collecting them in a name->definition map
     pub fn new(funcs_exprs: &[FuncE<F>], chip_map: FxIndexMap<Name, Either<C1, C2>>) -> Self {
         let info_map = funcs_exprs
             .iter()
@@ -80,30 +85,40 @@ impl<F, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
     }
 }
 
-/// A map from `Var` to its compiled indices and block identifier
+/// A map from `Var` its block identifier. Variables in this map are always bound
 type BindMap = FxHashMap<Var, usize>;
-
-type LinkMap = FxHashMap<Var, List<usize>>;
 
 /// A map that tells whether a `Var`, from a certain block, has been used or not
 type UsedMap = FxHashMap<(Var, usize), bool>;
 
-#[inline]
-fn bind_var<C1, C2>(var: &Var, ctx: &mut CheckCtx<'_, C1, C2>) {
-    ctx.bind_map.insert(*var, ctx.block_ident);
-    if let Some(used) = ctx.used_map.insert((*var, ctx.block_ident), false) {
-        let Ident::User(name) = var.name else {
+/// A map from `Var` to its compiled indices
+type LinkMap = FxHashMap<Var, List<usize>>;
+
+impl Var {
+    fn check_unused_var(&self, used: bool) {
+        let Ident::User(name) = self.name else {
             unreachable!()
         };
         let ch = name.chars().next().expect("Empty var name");
         assert!(
             used || ch == '_',
-            "Variable {var} not used. If intended, please prefix it with \"_\""
+            "Variable {self} not used. If intended, please prefix it with \"_\""
         );
     }
 }
 
 #[inline]
+/// Binds a new variable. If a variable of the same name, in the same block, is shadowed,
+/// then it ensures the variable has been used at least once or starts with '_'
+fn bind_var<C1, C2>(var: &Var, ctx: &mut CheckCtx<'_, C1, C2>) {
+    ctx.bind_map.insert(*var, ctx.block_ident);
+    if let Some(used) = ctx.used_map.insert((*var, ctx.block_ident), false) {
+        var.check_unused_var(used)
+    }
+}
+
+#[inline]
+/// Marks a variable as used
 fn use_var<C1, C2>(var: &Var, ctx: &mut CheckCtx<'_, C1, C2>) {
     let block_idx = ctx
         .bind_map
@@ -117,23 +132,27 @@ fn use_var<C1, C2>(var: &Var, ctx: &mut CheckCtx<'_, C1, C2>) {
 }
 
 #[inline]
+/// Links a variable name to a list of fresh indices
 fn link_new<C1, C2>(var: &Var, ctx: &mut LinkCtx<'_, C1, C2>) {
     let idxs = (0..var.size).map(|_| ctx.new_var()).collect();
     link(var, idxs, ctx);
 }
 
 #[inline]
+/// Links a variable name to a given list of indices
 fn link<C1, C2>(var: &Var, idxs: List<usize>, ctx: &mut LinkCtx<'_, C1, C2>) {
     ctx.link_map.insert(*var, idxs);
 }
 
 #[inline]
+/// Retrieves the indices of a given variable
 fn get_var<'a, C1, C2>(var: &Var, ctx: &'a mut LinkCtx<'_, C1, C2>) -> &'a [usize] {
     ctx.link_map
         .get(var)
         .unwrap_or_else(|| panic!("Variable {var} is unbound."))
 }
 
+/// Context struct of `check`
 struct CheckCtx<'a, C1, C2> {
     block_ident: usize,
     return_size: usize,
@@ -144,10 +163,12 @@ struct CheckCtx<'a, C1, C2> {
     chip_map: &'a FxIndexMap<Name, Either<C1, C2>>,
 }
 
+/// Context struct of `expand`
 struct ExpandCtx {
     uniq_ident: usize,
 }
 
+/// Context struct of `compile`
 struct LinkCtx<'a, C1, C2> {
     var_index: usize,
     return_ident: usize,
@@ -158,11 +179,11 @@ struct LinkCtx<'a, C1, C2> {
 }
 
 impl<'a, C1, C2> CheckCtx<'a, C1, C2> {
-    fn save_bind_state(&mut self) -> BindMap {
+    fn save_state(&mut self) -> BindMap {
         self.bind_map.clone()
     }
 
-    fn restore_bind_state(&mut self, bind_map: BindMap) {
+    fn restore_state(&mut self, bind_map: BindMap) {
         self.bind_map = bind_map;
     }
 }
@@ -176,11 +197,11 @@ impl ExpandCtx {
 }
 
 impl<'a, C1, C2> LinkCtx<'a, C1, C2> {
-    fn save_bind_state(&mut self) -> (usize, LinkMap) {
+    fn save_state(&mut self) -> (usize, LinkMap) {
         (self.var_index, self.link_map.clone())
     }
 
-    fn restore_bind_state(&mut self, (index, link_map): (usize, LinkMap)) {
+    fn restore_state(&mut self, (index, link_map): (usize, LinkMap)) {
         self.var_index = index;
         self.link_map = link_map;
     }
@@ -193,6 +214,7 @@ impl<'a, C1, C2> LinkCtx<'a, C1, C2> {
 }
 
 impl<F: Field + Ord> FuncE<F> {
+    /// Checks that a Lair function is well formed
     fn check<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         info_map: &FxIndexMap<Name, FuncInfo>,
@@ -212,17 +234,11 @@ impl<F: Field + Ord> FuncE<F> {
         });
         self.body.check(ctx);
         for ((var, _), used) in ctx.used_map.iter() {
-            let Ident::User(name) = var.name else {
-                unreachable!()
-            };
-            let ch = name.chars().next().expect("Empty var name");
-            assert!(
-                *used || ch == '_',
-                "Variable {var} not used. If intended, please prefix it with \"_\""
-            );
+            var.check_unused_var(*used)
         }
     }
 
+    /// Expands complex operations into simpler ones
     fn expand(&self) -> FuncE<F> {
         let ctx = &mut ExpandCtx { uniq_ident: 0 };
         let body = self.body.expand(ctx);
@@ -236,6 +252,7 @@ impl<F: Field + Ord> FuncE<F> {
         }
     }
 
+    /// Compile a Lair function into bytecode
     fn compile<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
         func_index: usize,
@@ -320,31 +337,31 @@ impl<F: Field + Ord> CtrlE<F> {
             CtrlE::If(b, true_block, false_block) => {
                 use_var(b, ctx);
 
-                let state = ctx.save_bind_state();
+                let state = ctx.save_state();
                 ctx.block_ident += 1;
                 true_block.check(ctx);
-                ctx.restore_bind_state(state);
+                ctx.restore_state(state);
 
-                let state = ctx.save_bind_state();
+                let state = ctx.save_state();
                 ctx.block_ident += 1;
                 false_block.check(ctx);
-                ctx.restore_bind_state(state);
+                ctx.restore_state(state);
             }
             CtrlE::Match(t, cases) => {
                 assert_eq!(t.size, 1);
                 use_var(t, ctx);
                 // TODO check for repetitive branches
                 for (_, (block, _)) in cases.branches.iter() {
-                    let state = ctx.save_bind_state();
+                    let state = ctx.save_state();
                     ctx.block_ident += 1;
                     block.check(ctx);
-                    ctx.restore_bind_state(state);
+                    ctx.restore_state(state);
                 }
                 if let Some(def) = cases.default.as_ref() {
-                    let state = ctx.save_bind_state();
+                    let state = ctx.save_state();
                     ctx.block_ident += 1;
                     def.0.check(ctx);
-                    ctx.restore_bind_state(state);
+                    ctx.restore_state(state);
                 }
             }
             CtrlE::MatchMany(t, cases) => {
@@ -353,16 +370,16 @@ impl<F: Field + Ord> CtrlE<F> {
                 // TODO check for repetitive branches
                 for (fs, (block, _)) in cases.branches.iter() {
                     assert_eq!(fs.len(), size, "Pattern must have size {size}");
-                    let state = ctx.save_bind_state();
+                    let state = ctx.save_state();
                     ctx.block_ident += 1;
                     block.check(ctx);
-                    ctx.restore_bind_state(state);
+                    ctx.restore_state(state);
                 }
                 if let Some(def) = &cases.default {
-                    let state = ctx.save_bind_state();
+                    let state = ctx.save_state();
                     ctx.block_ident += 1;
                     def.0.check(ctx);
-                    ctx.restore_bind_state(state);
+                    ctx.restore_state(state);
                 }
             }
             CtrlE::Choose(t, cases) => {
@@ -370,16 +387,16 @@ impl<F: Field + Ord> CtrlE<F> {
                 use_var(t, ctx);
                 // TODO check for repetitive branches
                 for (_, block) in cases.branches.iter() {
-                    let state = ctx.save_bind_state();
+                    let state = ctx.save_state();
                     ctx.block_ident += 1;
                     block.check(ctx);
-                    ctx.restore_bind_state(state);
+                    ctx.restore_state(state);
                 }
                 if let Some(def) = cases.default.as_ref() {
-                    let state = ctx.save_bind_state();
+                    let state = ctx.save_state();
                     ctx.block_ident += 1;
                     def.check(ctx);
-                    ctx.restore_bind_state(state);
+                    ctx.restore_state(state);
                 }
             }
             CtrlE::ChooseMany(t, cases) => {
@@ -388,16 +405,16 @@ impl<F: Field + Ord> CtrlE<F> {
                 // TODO check for repetitive branches
                 for (fs, block) in cases.branches.iter() {
                     assert_eq!(fs.len(), size, "Pattern must have size {size}");
-                    let state = ctx.save_bind_state();
+                    let state = ctx.save_state();
                     ctx.block_ident += 1;
                     block.check(ctx);
-                    ctx.restore_bind_state(state);
+                    ctx.restore_state(state);
                 }
                 if let Some(def) = &cases.default {
-                    let state = ctx.save_bind_state();
+                    let state = ctx.save_state();
                     ctx.block_ident += 1;
                     def.check(ctx);
-                    ctx.restore_bind_state(state);
+                    ctx.restore_state(state);
                 }
             }
         }
@@ -526,9 +543,9 @@ impl<F: Field + Ord> CtrlE<F> {
                 let mut vec = Vec::with_capacity(cases.branches.len());
                 let mut unique_branches = Vec::new();
                 for (fs, block) in cases.branches.iter() {
-                    let state = ctx.save_bind_state();
+                    let state = ctx.save_state();
                     let block = block.compile(ctx);
-                    ctx.restore_bind_state(state);
+                    ctx.restore_state(state);
                     fs.iter().for_each(|f| vec.push((*f, block.clone())));
                     unique_branches.push(block);
                 }
@@ -541,9 +558,9 @@ impl<F: Field + Ord> CtrlE<F> {
                 let vars: List<_> = get_var(vs, ctx).into();
                 let mut vec = Vec::with_capacity(cases.branches.len());
                 for (fs, block) in cases.branches.iter() {
-                    let state = ctx.save_bind_state();
+                    let state = ctx.save_state();
                     let block = block.compile(ctx);
-                    ctx.restore_bind_state(state);
+                    ctx.restore_state(state);
                     vec.push((fs.clone(), block))
                 }
                 let branches = Map::from_vec(vec);
