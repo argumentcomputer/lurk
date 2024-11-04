@@ -79,6 +79,7 @@ impl<F, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
 /// A map from `Var` to its compiled indices and block identifier
 type BindMap = FxHashMap<Var, (List<usize>, usize)>;
 type BindMap2 = FxHashMap<Var, usize>;
+type LinkMap = FxHashMap<Var, List<usize>>;
 
 /// A map that tells whether a `Var`, from a certain block, has been used or not
 type UsedMap = FxHashMap<(Var, usize), bool>;
@@ -116,6 +117,24 @@ fn use_var<'a, C1, C2>(var: &Var, ctx: &'a mut CheckAndLinkCtx<'_, C1, C2>) -> &
         .expect("Data should have been inserted when binding");
     *used = true;
     idxs
+}
+
+#[inline]
+fn link_new<C1, C2>(var: &Var, ctx: &mut LinkCtx<'_, C1, C2>) {
+    let idxs = (0..var.size).map(|_| ctx.new_var()).collect();
+    link(var, idxs, ctx);
+}
+
+#[inline]
+fn link<C1, C2>(var: &Var, idxs: List<usize>, ctx: &mut LinkCtx<'_, C1, C2>) {
+    ctx.link_map.insert(*var, idxs);
+}
+
+#[inline]
+fn get_var<'a, C1, C2>(var: &Var, ctx: &'a mut LinkCtx<'_, C1, C2>) -> &'a [usize] {
+    ctx.link_map
+        .get(var)
+        .unwrap_or_else(|| panic!("Variable {var} is unbound."))
 }
 
 #[inline]
@@ -160,6 +179,15 @@ struct ExpandCtx {
     uniq_ident: usize,
 }
 
+struct LinkCtx<'a, C1, C2> {
+    var_index: usize,
+    return_ident: usize,
+    return_idents: Vec<usize>,
+    link_map: LinkMap,
+    info_map: &'a FxIndexMap<Name, FuncInfo>,
+    chip_map: &'a FxIndexMap<Name, Either<C1, C2>>,
+}
+
 struct CheckAndLinkCtx<'a, C1, C2> {
     var_index: usize,
     block_ident: usize,
@@ -188,6 +216,23 @@ impl ExpandCtx {
         let name = Ident::Internal(self.uniq_ident);
         self.uniq_ident += 1;
         Var { name, size }
+    }
+}
+
+impl<'a, C1, C2> LinkCtx<'a, C1, C2> {
+    fn save_bind_state(&mut self) -> (usize, LinkMap) {
+        (self.var_index, self.link_map.clone())
+    }
+
+    fn restore_bind_state(&mut self, (index, link_map): (usize, LinkMap)) {
+        self.var_index = index;
+        self.link_map = link_map;
+    }
+
+    fn new_var(&mut self) -> usize {
+        let var = self.var_index;
+        self.var_index += 1;
+        var
     }
 }
 
@@ -254,6 +299,36 @@ impl<F: Field + Ord> FuncE<F> {
         }
     }
 
+    #[allow(dead_code)]
+    fn compile<C1: Chipset<F>, C2: Chipset<F>>(
+        &self,
+        func_index: usize,
+        info_map: &FxIndexMap<Name, FuncInfo>,
+        chip_map: &FxIndexMap<Name, Either<C1, C2>>,
+    ) -> Func<F> {
+        let ctx = &mut LinkCtx {
+            var_index: 0,
+            return_ident: 0,
+            return_idents: vec![],
+            link_map: FxHashMap::default(),
+            info_map,
+            chip_map,
+        };
+        self.input_params.iter().for_each(|var| {
+            link_new(var, ctx);
+        });
+        let body = self.body.compile(ctx);
+        Func {
+            name: self.name,
+            invertible: self.invertible,
+            partial: self.partial,
+            index: func_index,
+            body,
+            input_size: self.input_params.total_size(),
+            output_size: self.output_size,
+        }
+    }
+
     /// Checks if a named `Func` is correct, and produces an index-based `Func`
     /// by replacing names with indices
     fn check_and_link<C1: Chipset<F>, C2: Chipset<F>>(
@@ -315,6 +390,27 @@ impl<F: Field + Ord> BlockE<F> {
         let ops = ops.into();
         let ctrl = self.ctrl.expand(ctx);
         BlockE { ops, ctrl }
+    }
+
+    fn compile<C1: Chipset<F>, C2: Chipset<F>>(&self, ctx: &mut LinkCtx<'_, C1, C2>) -> Block<F> {
+        let mut ops = vec![];
+        self.ops.iter().for_each(|op| op.compile(&mut ops, ctx));
+        let ops = ops.into();
+        let saved_return_idents = std::mem::take(&mut ctx.return_idents);
+        let ctrl = self.ctrl.compile(ctx);
+        let block_return_idents = std::mem::take(&mut ctx.return_idents);
+        // sanity check
+        assert!(
+            !block_return_idents.is_empty(),
+            "A block must have at least one return ident"
+        );
+        ctx.return_idents = saved_return_idents;
+        ctx.return_idents.extend(&block_return_idents);
+        Block {
+            ops,
+            ctrl,
+            return_idents: block_return_idents.into(),
+        }
     }
 
     fn check_and_link_with_ops<C1: Chipset<F>, C2: Chipset<F>>(
@@ -551,6 +647,52 @@ impl<F: Field + Ord> CtrlE<F> {
                 let cases = CasesE { branches, default };
                 CtrlE::ChooseMany(*vs, cases)
             }
+        }
+    }
+
+    fn compile<C1: Chipset<F>, C2: Chipset<F>>(&self, ctx: &mut LinkCtx<'_, C1, C2>) -> Ctrl<F> {
+        match &self {
+            CtrlE::Return(return_vars) => {
+                let return_vec = return_vars
+                    .iter()
+                    .flat_map(|arg| get_var(arg, ctx).to_vec())
+                    .collect();
+                let ctrl = Ctrl::Return(ctx.return_ident, return_vec);
+                ctx.return_idents.push(ctx.return_ident);
+                ctx.return_ident += 1;
+                ctrl
+            }
+            CtrlE::Choose(v, cases) => {
+                let var = get_var(v, ctx)[0];
+                let mut vec = Vec::with_capacity(cases.branches.len());
+                let mut unique_branches = Vec::new();
+                for (fs, block) in cases.branches.iter() {
+                    let state = ctx.save_bind_state();
+                    let block = block.compile(ctx);
+                    ctx.restore_bind_state(state);
+                    fs.iter().for_each(|f| vec.push((*f, block.clone())));
+                    unique_branches.push(block);
+                }
+                let branches = Map::from_vec(vec);
+                let default = cases.default.as_ref().map(|def| def.compile(ctx).into());
+                let cases = Cases { branches, default };
+                Ctrl::Choose(var, cases, unique_branches.into())
+            }
+            CtrlE::ChooseMany(vs, cases) => {
+                let vars: List<_> = get_var(vs, ctx).into();
+                let mut vec = Vec::with_capacity(cases.branches.len());
+                for (fs, block) in cases.branches.iter() {
+                    let state = ctx.save_bind_state();
+                    let block = block.compile(ctx);
+                    ctx.restore_bind_state(state);
+                    vec.push((fs.clone(), block))
+                }
+                let branches = Map::from_vec(vec);
+                let default = cases.default.as_ref().map(|def| def.compile(ctx).into());
+                let cases = Cases { branches, default };
+                Ctrl::ChooseMany(vars, cases)
+            }
+            CtrlE::If(..) | CtrlE::Match(..) | CtrlE::MatchMany(..) => panic!("Expand first"),
         }
     }
 
@@ -873,6 +1015,133 @@ impl<F: Field + Ord> OpE<F> {
                 ops.push(OpE::Not(*tgt, not_eq));
             }
             _ => ops.push(self.clone()),
+        }
+    }
+
+    fn compile<C1: Chipset<F>, C2: Chipset<F>>(
+        &self,
+        ops: &mut Vec<Op<F>>,
+        ctx: &mut LinkCtx<'_, C1, C2>,
+    ) {
+        match self {
+            OpE::AssertNe(a, b) => {
+                let a = get_var(a, ctx).into();
+                let b = get_var(b, ctx).into();
+                ops.push(Op::AssertNe(a, b));
+            }
+            OpE::AssertEq(a, b, fmt) => {
+                let a = get_var(a, ctx).into();
+                let b = get_var(b, ctx).into();
+                ops.push(Op::AssertEq(a, b, *fmt));
+            }
+            OpE::Contains(a, b) => {
+                let a = get_var(a, ctx).into();
+                let b = get_var(b, ctx)[0];
+                ops.push(Op::Contains(a, b));
+            }
+            OpE::Const(tgt, f) => {
+                ops.push(Op::Const(*f));
+                link_new(tgt, ctx);
+            }
+            OpE::Array(tgt, fs) => {
+                for f in fs.iter() {
+                    ops.push(Op::Const(*f));
+                }
+                link_new(tgt, ctx);
+            }
+            OpE::Add(tgt, a, b) => {
+                let a = get_var(a, ctx).to_vec();
+                let b = get_var(b, ctx);
+                for (a, b) in a.iter().zip(b.iter()) {
+                    ops.push(Op::Add(*a, *b));
+                }
+                link_new(tgt, ctx);
+            }
+            OpE::Mul(tgt, a, b) => {
+                let a = get_var(a, ctx).to_vec();
+                let b = get_var(b, ctx);
+                for (a, b) in a.iter().zip(b.iter()) {
+                    ops.push(Op::Mul(*a, *b));
+                }
+                link_new(tgt, ctx);
+            }
+            OpE::Sub(tgt, a, b) => {
+                let a = get_var(a, ctx).to_vec();
+                let b = get_var(b, ctx);
+                for (a, b) in a.iter().zip(b.iter()) {
+                    ops.push(Op::Sub(*a, *b));
+                }
+                link_new(tgt, ctx);
+            }
+            OpE::Inv(tgt, a) => {
+                let a = get_var(a, ctx);
+                for a in a.iter() {
+                    ops.push(Op::Inv(*a));
+                }
+                link_new(tgt, ctx);
+            }
+            OpE::Not(tgt, a) => {
+                let a = get_var(a, ctx)[0];
+                ops.push(Op::Not(a));
+                link_new(tgt, ctx);
+            }
+            OpE::Call(out, name, inp) => {
+                let name_idx = ctx
+                    .info_map
+                    .get_index_of(name)
+                    .unwrap_or_else(|| panic!("Unknown function {name}"));
+                let inp = inp.iter().flat_map(|a| get_var(a, ctx).to_vec()).collect();
+                ops.push(Op::Call(name_idx, inp));
+                out.iter().for_each(|t| link_new(t, ctx));
+            }
+            OpE::PreImg(out, name, inp, fmt) => {
+                let name_idx = ctx
+                    .info_map
+                    .get_index_of(name)
+                    .unwrap_or_else(|| panic!("Unknown function {name}"));
+                let inp = inp.iter().flat_map(|a| get_var(a, ctx).to_vec()).collect();
+                ops.push(Op::PreImg(name_idx, inp, *fmt));
+                out.iter().for_each(|t| link_new(t, ctx));
+            }
+            OpE::Store(ptr, vals) => {
+                let vals = vals.iter().flat_map(|a| get_var(a, ctx).to_vec()).collect();
+                ops.push(Op::Store(vals));
+                link_new(ptr, ctx);
+            }
+            OpE::Load(vals, ptr) => {
+                let ptr = get_var(ptr, ctx)[0];
+                ops.push(Op::Load(vals.total_size(), ptr));
+                vals.iter().for_each(|val| link_new(val, ctx));
+            }
+            OpE::Slice(pats, args) => {
+                let args: List<_> = args.iter().flat_map(|a| get_var(a, ctx).to_vec()).collect();
+                let mut i = 0;
+                for pat in pats.as_slice() {
+                    let idxs = args[i..i + pat.size].into();
+                    link(pat, idxs, ctx);
+                    i += pat.size;
+                }
+            }
+            OpE::ExternCall(out, name, inp) => {
+                let name_idx = ctx
+                    .chip_map
+                    .get_index_of(name)
+                    .unwrap_or_else(|| panic!("Unknown extern chip {name}"));
+                let inp = inp.iter().flat_map(|a| get_var(a, ctx).to_vec()).collect();
+                ops.push(Op::ExternCall(name_idx, inp));
+                out.iter().for_each(|t| link_new(t, ctx));
+            }
+            OpE::Emit(vars) => {
+                let vars = vars.iter().flat_map(|a| get_var(a, ctx).to_vec()).collect();
+                ops.push(Op::Emit(vars));
+            }
+            OpE::RangeU8(xs) => {
+                let xs = xs.iter().flat_map(|x| get_var(x, ctx).to_vec()).collect();
+                ops.push(Op::RangeU8(xs));
+            }
+            OpE::Breakpoint => ops.push(Op::Breakpoint),
+            OpE::Debug(s) => ops.push(Op::Debug(s)),
+            OpE::Eq(..) | OpE::Div(..) => panic!("Expand first"),
         }
     }
 
