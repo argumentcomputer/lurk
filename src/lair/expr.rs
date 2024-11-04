@@ -9,13 +9,22 @@ use super::{List, Name};
 /// The type for variable references
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct Var {
-    pub name: &'static str,
+    pub name: Ident,
     pub size: usize,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
+pub enum Ident {
+    User(&'static str),
+    Internal(usize),
 }
 
 impl Var {
     pub fn atom(name: &'static str) -> Self {
-        Self { name, size: 1 }
+        Self {
+            name: Ident::User(name),
+            size: 1,
+        }
     }
 }
 
@@ -25,6 +34,15 @@ impl std::fmt::Display for Var {
             write!(f, "{}", self.name)
         } else {
             write!(f, "{}: [{}]", self.name, self.size)
+        }
+    }
+}
+
+impl std::fmt::Display for Ident {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Ident::User(n) => write!(f, "{}", n),
+            Ident::Internal(n) => write!(f, "${}", n),
         }
     }
 }
@@ -159,9 +177,13 @@ impl<F> BlockE<F> {
 pub enum CtrlE<F> {
     /// `Match(x, cases)` matches on `x` in order to decide which case to execute.
     /// The list collects all the values that map to the same branch
-    Match(Var, CasesE<List<F>, F>),
+    Match(Var, CasesE<List<F>, (BlockE<F>, CaseType)>),
     /// `MatchMany(x, cases)` matches on array `x` in order to decide which case to execute
-    MatchMany(Var, CasesE<List<F>, F>),
+    MatchMany(Var, CasesE<List<F>, (BlockE<F>, CaseType)>),
+    /// Nondeterministic version of `Match`
+    Choose(Var, CasesE<List<F>, BlockE<F>>),
+    /// Nondeterministic version of `MatchMany`
+    ChooseMany(Var, CasesE<List<F>, BlockE<F>>),
     /// `If(b, t, f)` executes block `f` if `b` is zero and `t` otherwise
     If(Var, Box<BlockE<F>>, Box<BlockE<F>>),
     /// Contains the variables whose bindings will construct the output of the
@@ -186,14 +208,14 @@ pub enum CaseType {
 /// matches and an optional default case in case there's no match. Each code path
 /// is encoded as its own block
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CasesE<K, F> {
-    pub branches: Vec<(K, BlockE<F>, CaseType)>,
-    pub default: Option<(Box<BlockE<F>>, CaseType)>,
+pub struct CasesE<K, B> {
+    pub branches: Vec<(K, B)>,
+    pub default: Option<Box<B>>,
 }
 
-impl<K, F> CasesE<K, F> {
+impl<K, B> CasesE<K, B> {
     #[inline]
-    pub fn no_default(branches: Vec<(K, BlockE<F>, CaseType)>) -> Self {
+    pub fn no_default(branches: Vec<(K, B)>) -> Self {
         Self {
             branches,
             default: None,

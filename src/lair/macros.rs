@@ -48,18 +48,14 @@ macro_rules! func {
 
 #[macro_export]
 macro_rules! var {
-    ($variable:ident) => {
-        $crate::lair::expr::Var {
-            name: stringify!($variable),
-            size: 1,
-        }
-    };
-    ($variable:ident, $size:expr) => {
-        $crate::lair::expr::Var {
-            name: stringify!($variable),
-            size: $size,
-        }
-    };
+    ($variable:ident) => {{
+        let name = $crate::lair::expr::Ident::User(stringify!($variable));
+        $crate::lair::expr::Var { name, size: 1 }
+    }};
+    ($variable:ident, $size:expr) => {{
+        let name = $crate::lair::expr::Ident::User(stringify!($variable));
+        $crate::lair::expr::Var { name, size: $size }
+    }};
 }
 
 #[macro_export]
@@ -312,14 +308,13 @@ macro_rules! block {
                 let f = $crate::lair::field_from_i32;
                 branches.push((
                     [f($num), $(f($other_num), )*].into(),
-                    $crate::block_init!( $branch ),
-                    constrained,
+                    ($crate::block_init!( $branch ), constrained)
                 ));
             )*
         }
         let default = None $( .or ({
             let constrained = $crate::constrained!({ $($def)* });
-            Some((Box::new($crate::block_init!({ $($def)* })), constrained))
+            Some(Box::new(($crate::block_init!({ $($def)* }), constrained)))
         }) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
@@ -334,8 +329,7 @@ macro_rules! block {
                 let arr = $arr.map(|x| $crate::lair::field_from_i32(x.into())).into_iter().collect();
                 branches.push((
                     arr,
-                    $crate::block_init!( $branch ),
-                    constrained,
+                    ($crate::block_init!( $branch ), constrained)
                 ));
                 $({
                     let other_arr = $other_arr.map($crate::lair::field_from_i32).into_iter().collect();
@@ -349,7 +343,7 @@ macro_rules! block {
         }
         let default = None $( .or ({
             let constrained = $crate::constrained!({ $($def)* });
-            Some((Box::new($crate::block_init!({ $($def)* })), constrained))
+            Some(Box::new(($crate::block_init!({ $($def)* }), constrained)))
         }) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::MatchMany($var, cases);
@@ -364,14 +358,13 @@ macro_rules! block {
                 let constrained = $crate::constrained!($branch);
                 branches.push((
                     [$raw.to_field(), $($other_raw.to_field(),)*].into(),
-                    $crate::block_init!( $branch ),
-                    constrained,
+                    ($crate::block_init!( $branch ), constrained)
                 ));
             )*
         }
         let default = None $( .or ({
             let constrained = $crate::constrained!({ $($def)* });
-            Some((Box::new($crate::block_init!({ $($def)* })), constrained))
+            Some(Box::new(($crate::block_init!({ $($def)* }), constrained)))
         }) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
@@ -386,14 +379,13 @@ macro_rules! block {
                 let constrained = $crate::constrained!($branch);
                 branches.push((
                     [$cloj($raw), $($cloj($other_raw),)*].into(),
-                    $crate::block_init!( $branch ),
-                    constrained,
+                    ($crate::block_init!( $branch ), constrained)
                 ));
             )*
         }
         let default = None $( .or ({
             let constrained = $crate::constrained!({ $($def)* });
-            Some((Box::new($crate::block_init!({ $($def)* })), constrained))
+            Some(Box::new(($crate::block_init!({ $($def)* }), constrained)))
         }) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);

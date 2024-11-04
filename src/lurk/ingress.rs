@@ -6,7 +6,7 @@ use strum::{EnumCount, EnumIter};
 use crate::{
     func,
     lair::{
-        expr::{BlockE, CtrlE, FuncE, OpE, Var},
+        expr::{BlockE, CtrlE, FuncE, Ident, OpE, Var},
         FxIndexMap, List, Name,
     },
 };
@@ -113,8 +113,9 @@ impl InternalTag {
 /// ```
 pub fn preallocate_symbols<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     let mut ops = Vec::with_capacity(2 * digests.0.len());
+    let name = Ident::User("arr");
     let arr_var = Var {
-        name: "arr",
+        name,
         size: DIGEST_SIZE,
     };
     let ptr_var = Var::atom("ptr");
