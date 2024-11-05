@@ -87,7 +87,7 @@ impl<I: AsBytes> ParseError<I> {
     }
 }
 
-impl<'a> fmt::Display for ParseError<Span<'a>> {
+impl fmt::Display for ParseError<Span<'_>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut res = String::new();
 

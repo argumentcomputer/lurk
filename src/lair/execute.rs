@@ -123,13 +123,13 @@ impl<'a, F: PrimeField32> Shard<'a, F> {
     }
 }
 
-impl<'a, F: PrimeField32> Indexed for Shard<'a, F> {
+impl<F: PrimeField32> Indexed for Shard<'_, F> {
     fn index(&self) -> u32 {
         self.index
     }
 }
 
-impl<'a, F: PrimeField32> MachineRecord for Shard<'a, F> {
+impl<F: PrimeField32> MachineRecord for Shard<'_, F> {
     type Config = ShardingConfig;
 
     fn set_index(&mut self, index: u32) {

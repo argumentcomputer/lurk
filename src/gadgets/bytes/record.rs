@@ -109,7 +109,7 @@ impl BytesRecord {
 /// - Get the records for the index of the byte operation in the ByteChip, or default initialize it.
 /// - Populate the next available `RequireRecord` using the record we have stored.
 /// - Update the stored record with the nonce for this access.
-impl<'a> ByteRecord for ByteRecordWithContext<'a> {
+impl ByteRecord for ByteRecordWithContext<'_> {
     fn range_check_u8_pair(&mut self, i1: u8, i2: u8) {
         let input = ByteInput::from_u8_pair(i1, i2);
         let range_u8 = &mut self.record.get_mut(input).range_u8;

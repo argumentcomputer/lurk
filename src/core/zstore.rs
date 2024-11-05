@@ -744,7 +744,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         Symbol::new_from_vec(self.fetch_symbol_path(zptr), zptr.tag == Tag::Key)
     }
 
-    pub fn fetch_list<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> (Vec<&ZPtr<F>>, Option<&'a ZPtr<F>>) {
+    pub fn fetch_list<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> (Vec<&'a ZPtr<F>>, Option<&'a ZPtr<F>>) {
         assert!(zptr.tag == Tag::Cons || zptr == &self.nil);
         let mut elts = vec![];
         while zptr.tag == Tag::Cons {
@@ -759,7 +759,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         }
     }
 
-    pub fn fetch_env<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> Vec<(&ZPtr<F>, &ZPtr<F>)>
+    pub fn fetch_env<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> Vec<(&'a ZPtr<F>, &'a ZPtr<F>)>
     where
         F: PrimeField32,
     {

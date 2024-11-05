@@ -215,13 +215,13 @@ pub struct DebugConstraintBuilder<'a, F> {
     queries: &'a mut TraceQueries<F>,
 }
 
-impl<'a, F: PrimeField32> PairBuilder for DebugConstraintBuilder<'a, F> {
+impl<F: PrimeField32> PairBuilder for DebugConstraintBuilder<'_, F> {
     fn preprocessed(&self) -> Self::M {
         self.preprocessed
     }
 }
 
-impl<'a, F: PrimeField32> LookupBuilder for DebugConstraintBuilder<'a, F> {
+impl<F: PrimeField32> LookupBuilder for DebugConstraintBuilder<'_, F> {
     fn receive(
         &mut self,
         relation: impl Relation<Self::Expr>,
@@ -318,7 +318,7 @@ impl<'a, F: PrimeField32> AirBuilderWithPublicValues for DebugConstraintBuilder<
     }
 }
 
-impl<'a, F: PrimeField32> LairBuilder for DebugConstraintBuilder<'a, F> {}
+impl<F: PrimeField32> LairBuilder for DebugConstraintBuilder<'_, F> {}
 
 impl<'a, F: PrimeField32> DebugConstraintBuilder<'a, F> {
     #[inline]

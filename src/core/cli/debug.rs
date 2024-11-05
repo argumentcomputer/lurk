@@ -20,7 +20,7 @@ pub(crate) struct FormattedDebugData<'a> {
     pub(crate) breakpoints: &'a [usize],
 }
 
-impl<'a> FormattedDebugData<'a> {
+impl FormattedDebugData<'_> {
     fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
