@@ -1,0 +1,218 @@
+!(load "../lib/lib.lurk")
+
+!(def help-message '(:help :about :options :state :id :supply :audit (:create-account pub-key) (:balance pub-key) (:grant amount to) (:transfer amount from to)))
+
+!(def make-pub-key (lambda (name secret) (hide secret name)))
+
+!(def derive-account (lambda (bank-id pub-key)
+                       ;; Derive new secret to compartmentalize account from pub-key. Now user does not need access to
+                       ;; his priv-key (i.e. (secret pub-key)) when authenticating to the bank. Rather, it suffices to
+                       ;; prove knowledge of the derived account-secret. The account-secret must be protected, but it
+                       ;; need not be persisted carefully, since it can always be derived again (from the priv-key).
+                       (let ((account-secret (bignum (hide (secret pub-key) bank-id))))
+                         (hide (bignum (hide account-secret bank-id)) pub-key))))
+
+;; Only the account owner can authenticate it.
+!(def authenticate (lambda (account) (open account)))
+
+;; Add account for pub-key, unless account already exists.
+!(def maybe-add-account (lambda (account accounts)
+                          ;; TODO: Create and use efficient util for this.
+                          (if (getf accounts account)
+                              accounts
+                              (set-property accounts account 0))))
+
+!(def create-account (lambda (state pub-key)
+                       (let ((account (derive-account (getf state :id) pub-key))
+                             (new-state (update-property state :accounts (maybe-add-account account))))
+                         (if (eq state new-state)
+                             (cons (list :error :account-exists))
+                             (cons (list :ok account) new-state)))))
+
+!(def balance (lambda (state pub-key)
+                (getf (getf state :accounts) pub-key)))
+
+!(def authenticate-account (lambda (account) (authenticate account)))
+
+!(def authenticate-owner (lambda (state) (authenticate (getf state :owner))))
+
+!(def check-balance (lambda (state pub-key)
+                      (cons (balance state pub-key) state)))
+
+!(def grant
+     (evl macro-env (current-env)
+          '(lambda (state amount to)
+            (authenticate-owner state)
+            (cond ((< (getf state :supply) amount) (cons :insufficient-supply state))
+                  ((not (balance state to)) (cons (list :error :non-existent-recipient to) state))
+                  (t (let ((state (update-property state :supply (lambda (n) (- n amount))))
+                           (state (update-property state
+                                                   :accounts (lambda (accounts)
+                                                               (update-property accounts to
+                                                                                (lambda (n) (+ n amount)))))))
+                       (cons :ok state)))))))
+
+!(def transfer
+     (evl macro-env (current-env)
+          '(lambda (state amount from to)
+            (authenticate-account from)
+            (cond
+              ((not (balance state from)) (cons (list :error :non-existent-sender from) state))
+              ((not (balance state to)) (cons (list :error :non-existent-recipient to) state))
+              ((< (balance state from) amount) (cons (list :error :insufficient-funds) state))
+              (t (let ((state (update-property state
+                                               :accounts (lambda (accounts)
+                                                           (let ((accounts (update-property accounts to
+                                                                                            (lambda (n) (+ n amount)))))
+                                                             (update-property accounts from (lambda (n) (- n amount))))))))
+                   (cons :ok state)))))))
+
+!(def audit (lambda (state)
+              (let ((total-supply (+ (getf state :supply)
+                                     (fold-properties (lambda (a b) (+ a b))
+                                                      0
+                                                      (getf state :accounts)))))
+                (if (= total-supply (getf state :initial-supply))
+                    (cons :pass state)
+                    (cons :fail state)))))
+
+!(def invoke (lambda (fn state args)
+               ;; FIXME: Use builtin apply once #358 is fixed.
+               (applyx fn (cons state args))))
+
+!(def handle-input
+     (evl macro-env (current-env)
+          '(lambda (state input)
+            (letrec
+                ((aux
+                  (lambda (state input)
+                    (let ((reply (lambda (output) (cons output (aux state))))
+                          (reply-with-state (lambda (output state) (cons output (aux state))))
+                          (unpack-reply (lambda (result) (reply-with-state (car result) (cdr result))))
+                          (delegate-reply (lambda (fn expected-args)
+                                            (let ((args (cdr input)))
+                                              (if (= expected-args (length args))
+                                                  (unpack-reply (invoke fn state args))
+                                                  (reply (list :error :wrong-number-of-args)))))))
+                      (or (typecase input
+                            (:keyword
+                             (or (case input
+                                   (:help (reply help-message))
+                                   (:about (reply (getf state :about)))
+                                   (:options (reply (getf state :options)))
+                                   (:state (reply state))
+                                   (:id (reply (getf state :id)))
+                                   (:supply (reply (getf state :supply)))
+                                   (:audit (unpack-reply (audit state))))
+                                 (reply :unknown-command)))
+                            ((cons . case)
+                             (or (case (car input)
+                                   (:create-account (delegate-reply create-account 1))
+                                   (:balance (delegate-reply check-balance 1))
+                                   (:grant (delegate-reply grant 2))
+                                   (:transfer (delegate-reply transfer 3)))
+                                 (reply :unknown-command))))
+                          (reply :unknown-command))))))
+              (aux state input)))))
+
+!(defrec process-option
+     (evl macro-env (current-env)
+          '(lambda (state key value)
+            (or (case key
+                  ;; TODO: implement -> (thread-first) macro to make this nicer.
+                  (:initial-supply (set-property (set-property state :initial-supply value) :supply value))
+                  (:owner (set-property state :owner value))
+                  (:id (set-property state :id value))
+                  (:about (set-property state :about value)))
+             state))))
+
+!(defrec process-options (lambda (state options)
+                           (if options
+                               (process-options (process-option state (car options) (cadr options))
+                                                (cddr options))
+                               state)))
+
+;; Put the options in the initial state for transparency.
+!(def initial-state (lambda (options)
+                      (let ((state (process-options (list :options options :accounts ()) options))
+                            (id (getf state :id)))
+                        (if id
+                            (update-property state :owner (derive-account id))
+                            state))))
+
+!(assert-eq '(:options (:foo 123) :accounts ()) (initial-state '(:foo 123)))
+
+!(def make-bank (lambda (options) (handle-input (initial-state options))))
+
+!(def genesis (lambda (options)
+                (cons nil (make-bank options))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Tests
+
+!(def bank-id !(rand))
+!(def owner (make-pub-key "Owner" !(rand)))
+!(def about "This is my bank. There are many like it, but this one is mine.")
+!(def options (list :initial-supply 10000 :owner owner :id bank-id :about about))
+
+!(def no-account (make-pub-key "No Account" !(rand)))
+
+!(def s0 (genesis options))
+
+!(defq s1 !(transition s0 :foo))
+!(assert-eq :unknown-command (car s1))
+
+;; TODO: tests for non-keyword and cons-shaped unknown commands.
+
+!(defq s2 !(transition s1 :help))
+!(assert-eq help-message (car s2))
+
+!(defq s3 !(transition s2 :options))
+!(assert-eq options (car s3))
+
+!(defq s4 !(transition s3 :state))
+!(assert-eq (list :about about :id bank-id :owner (derive-account bank-id owner) :supply 10000 :initial-supply 10000 :options options :accounts ()) (car s4))
+
+!(assert-eq bank-id (car '!(transition s4 :id)))
+!(assert-eq about (car '!(transition s4 :about)))
+
+!(def bob-key (make-pub-key "Bob" !(rand)))
+!(defq s5 !(transition s4 (list :create-account bob-key)))
+!(assert-eq :ok (caar s5))
+!(def bob (cadar s5))
+
+!(def alice-key (make-pub-key "Alice" !(rand)))
+!(defq s6 !(transition s5 (list :create-account alice-key)))
+!(assert-eq :ok (caar s6))
+!(def alice (cadar s6))
+
+;; TODO: test create-account with existing account
+
+!(defq s7 !(transition s6 (list :grant 1000 alice)))
+!(assert-eq :ok (car s7))
+
+!(assert-eq (cons :insufficient-supply (cdr s7)) '!(transition s7 (list :grant 9999999 alice)))
+!(assert-eq (list :error :non-existent-recipient no-account) (car '!(transition s7 (list :grant 1000 no-account))))
+
+!(defq s8 !(transition s7 (list :balance alice)))
+!(assert-eq 1000 (car s8))
+
+!(defq s9 !(transition s8 :supply))
+!(assert-eq 9000 (car s9))
+
+!(defq s10 !(transition s9 (list :transfer 100 alice bob)))
+!(assert-eq :ok (car s10))
+
+!(assert-eq 900 (car '!(transition s10 (list :balance alice))))
+!(assert-eq 100 (car '!(transition s10 (list :balance bob))))
+
+!(defq s11 !(transition s10 (list :transfer 100 alice no-account)))
+!(assert-eq (list :error :non-existent-recipient no-account) (car s11))
+!(assert-eq (cdr s10) (cdr s11))
+
+!(defq s12 !(transition s11 (list :transfer 100 no-account bob)))
+!(assert-eq (list :error :non-existent-sender no-account) (car s12))
+!(assert-eq (cdr s11) (cdr s12))
+
+!(defq s13 !(transition s7 :audit))
+!(assert-eq  :pass (car s13))

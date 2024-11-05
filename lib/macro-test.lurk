@@ -74,12 +74,16 @@
                                 (or (and a b c)
                                  (if (foo x) (bar y) (and (bar x) (foo y))))))))
 
-!(def qux (evl macro-env '(lambda (a b c)
+!(def qux (evl1 macro-env '(lambda (a b c)
                             (or (and a b)
-                                (and a c)
-                                123))))
+                             (and a c)
+                             123))))
 
 !(assert-eq 123 (qux nil :b :c))
 !(assert-eq :b (qux :a :b :c))
 !(assert-eq :c (qux :a nil :c))
 !(assert-eq 123 (qux nil nil nil))
+
+!(assert-eq '(type-eqq (foo :x) (baz 123)) (macroexpand-all macro-env '(type-eqq (foo :x) (foo 123))))
+!(assert-eq '(eqq (foo :x) (baz 123)) (macroexpand-all macro-env '(eqq (foo :x) (foo 123))))
+
