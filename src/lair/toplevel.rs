@@ -536,7 +536,7 @@ impl<F: Field + Ord> CtrlE<F> {
                     .iter()
                     .flat_map(|arg| get_var(arg, ctx).to_vec())
                     .collect();
-                let ctrl = Ctrl::Return(ctx.return_ident, return_vec);
+                let ctrl = Ctrl::Return(ctx.return_ident, return_vec, *group);
                 ctx.return_idents.push(ctx.return_ident);
                 ctx.return_ident += 1;
                 ctx.return_groups.insert(*group);
