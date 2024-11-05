@@ -2,8 +2,8 @@ use p3_field::AbstractField;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    lair::chipset::Chipset,
     core::zstore::{ZPtr, ZStore},
+    lair::chipset::Chipset,
 };
 
 use super::zdag::ZDag;

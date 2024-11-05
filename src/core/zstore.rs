@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
 use crate::{
-    lair::{chipset::Chipset, List},
     core::{
         big_num::field_elts_to_biguint,
         chipset::{lurk_hasher, LurkChip},
@@ -21,6 +20,7 @@ use crate::{
         syntax::Syntax,
         tag::Tag,
     },
+    lair::{chipset::Chipset, List},
 };
 
 pub(crate) const DIGEST_SIZE: usize = 8;
@@ -744,7 +744,10 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         Symbol::new_from_vec(self.fetch_symbol_path(zptr), zptr.tag == Tag::Key)
     }
 
-    pub fn fetch_list<'a>(&'a self, mut zptr: &'a ZPtr<F>) -> (Vec<&'a ZPtr<F>>, Option<&'a ZPtr<F>>) {
+    pub fn fetch_list<'a>(
+        &'a self,
+        mut zptr: &'a ZPtr<F>,
+    ) -> (Vec<&'a ZPtr<F>>, Option<&'a ZPtr<F>>) {
         assert!(zptr.tag == Tag::Cons || zptr == &self.nil);
         let mut elts = vec![];
         while zptr.tag == Tag::Cons {
@@ -888,7 +891,6 @@ mod test {
     use p3_field::AbstractField;
 
     use crate::{
-        lair::execute::QueryRecord,
         core::{
             chipset::lurk_hasher,
             eval_direct::build_lurk_toplevel_native,
@@ -897,6 +899,7 @@ mod test {
             tag::Tag,
             zstore::lurk_zstore,
         },
+        lair::execute::QueryRecord,
     };
 
     use super::{into_sized, ZPtr};

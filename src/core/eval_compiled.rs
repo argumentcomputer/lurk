@@ -3,18 +3,18 @@ use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::FxHashSet;
 
 use crate::{
+    core::{
+        big_num::field_elts_to_biguint,
+        compile::{Op, Val},
+        error::EvalErr,
+        ingress::InternalTag,
+    },
     func,
     lair::{
         chipset::{Chipset, NoChip},
         expr::FuncE,
         toplevel::Toplevel,
         FxIndexMap,
-    },
-    core::{
-        big_num::field_elts_to_biguint,
-        compile::{Op, Val},
-        error::EvalErr,
-        ingress::InternalTag,
     },
 };
 

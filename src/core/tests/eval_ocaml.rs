@@ -3,7 +3,6 @@ use once_cell::sync::OnceCell;
 use sphinx_core::utils::BabyBearPoseidon2;
 
 use crate::{
-    lair::{chipset::NoChip, toplevel::Toplevel},
     core::{
         chipset::LurkChip,
         eval_direct::build_lurk_toplevel_native,
@@ -12,6 +11,7 @@ use crate::{
         tag::Tag,
         zstore::{ZPtr, ZStore},
     },
+    lair::{chipset::NoChip, toplevel::Toplevel},
     ocaml::{
         compile::{compile_single_file_contents, transform_lambda_program},
         parser::syntax::parse_syntax,

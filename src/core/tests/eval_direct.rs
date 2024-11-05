@@ -6,7 +6,6 @@ use p3_field::AbstractField;
 use sphinx_core::utils::BabyBearPoseidon2;
 
 use crate::{
-    lair::{chipset::NoChip, toplevel::Toplevel},
     core::{
         chipset::{lurk_hasher, LurkChip},
         error::EvalErr,
@@ -16,6 +15,7 @@ use crate::{
         tag::Tag,
         zstore::{ZPtr, ZStore},
     },
+    lair::{chipset::NoChip, toplevel::Toplevel},
 };
 
 use super::run_tests;

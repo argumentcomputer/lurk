@@ -9,7 +9,6 @@ use std::{
 };
 
 use crate::{
-    lair::{chipset::Chipset, lair_chip::LairMachineProgram},
     core::{
         big_num::field_elts_to_biguint,
         chipset::LurkChip,
@@ -19,6 +18,7 @@ use crate::{
         stark_machine::new_machine,
         zstore::{ZPtr, ZStore, DIGEST_SIZE},
     },
+    lair::{chipset::Chipset, lair_chip::LairMachineProgram},
 };
 
 use super::{

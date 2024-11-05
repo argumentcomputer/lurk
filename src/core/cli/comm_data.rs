@@ -3,11 +3,11 @@ use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 
 use crate::{
-    lair::chipset::Chipset,
     core::{
         tag::Tag,
         zstore::{ZPtr, ZStore, DIGEST_SIZE, HASH3_SIZE},
     },
+    lair::chipset::Chipset,
 };
 
 use super::zdag::ZDag;

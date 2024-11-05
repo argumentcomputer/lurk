@@ -10,11 +10,11 @@ use sphinx_core::{
 };
 
 use crate::{
-    lair::{chipset::Chipset, provenance::DEPTH_W},
     core::{
         tag::Tag,
         zstore::{ZPtr, ZStore, DIGEST_SIZE, ZPTR_SIZE},
     },
+    lair::{chipset::Chipset, provenance::DEPTH_W},
 };
 
 use super::{lurk_data::LurkData, microchain::CallableData, zdag::ZDag};

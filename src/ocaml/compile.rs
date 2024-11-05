@@ -7,12 +7,12 @@ use p3_field::Field;
 use tempfile::tempdir;
 
 use crate::{
-    lair::chipset::Chipset,
     core::{
         parser::Span,
         state::{builtin_sym, user_sym, StateRcCell, BUILTIN_SYMBOLS},
         zstore::{ZPtr, ZStore},
     },
+    lair::chipset::Chipset,
     ocaml::parser::syntax::parse_syntax,
 };
 

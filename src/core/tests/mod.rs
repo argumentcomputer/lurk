@@ -10,6 +10,10 @@ use sphinx_core::{stark::StarkMachine, utils::BabyBearPoseidon2};
 
 use crate::{
     air::debug::debug_chip_constraints_and_queries_with_sharding,
+    core::{
+        chipset::LurkChip,
+        zstore::{ZPtr, ZStore},
+    },
     lair::{
         chipset::Chipset,
         execute::{QueryRecord, Shard, ShardingConfig},
@@ -18,10 +22,6 @@ use crate::{
             build_chip_vector_from_lair_chips, build_lair_chip_vector, LairMachineProgram,
         },
         toplevel::Toplevel,
-    },
-    core::{
-        chipset::LurkChip,
-        zstore::{ZPtr, ZStore},
     },
 };
 

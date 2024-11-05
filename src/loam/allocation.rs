@@ -561,11 +561,11 @@ mod test {
     use p3_baby_bear::BabyBear;
 
     use crate::{
-        loam::memory::{DistillationOptions, PPtr, Store},
         core::{
             chipset::LurkChip,
             zstore::{lurk_zstore, ZPtr, ZStore},
         },
+        loam::memory::{DistillationOptions, PPtr, Store},
     };
 
     use super::*;
