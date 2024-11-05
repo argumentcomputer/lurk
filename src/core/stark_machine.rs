@@ -21,7 +21,7 @@ pub(crate) fn new_machine<C1: Chipset<BabyBear>, C2: Chipset<BabyBear>>(
     lurk_toplevel: &Toplevel<BabyBear, C1, C2>,
 ) -> StarkMachine<BabyBearPoseidon2, LairChip<'_, BabyBear, C1, C2>> {
     let lurk_main_idx = lurk_toplevel.func_by_name("lurk_main").index;
-    let lurk_main_chip = FuncChip::from_index(lurk_main_idx, lurk_toplevel);
+    let lurk_main_chip = FuncChip::from_index(lurk_main_idx, 0, lurk_toplevel);
     StarkMachine::new(
         BabyBearPoseidon2::new(),
         build_chip_vector(&lurk_main_chip),

@@ -45,7 +45,7 @@ fn run_tests<C2: Chipset<F>>(
     input[..16].copy_from_slice(&zptr.flatten());
     input[16..].copy_from_slice(&env.digest);
 
-    let lurk_main = FuncChip::from_name("lurk_main", toplevel);
+    let lurk_main = FuncChip::from_name_main("lurk_main", toplevel);
     let result = toplevel
         .execute(lurk_main.func, &input, &mut record, None)
         .unwrap();

@@ -251,7 +251,7 @@ mod test {
         let lurk_chip_map = lurk_chip_map_native();
         let toplevel = Toplevel::new(&[add_func], lurk_chip_map);
 
-        let add_chip = FuncChip::from_name("add", &toplevel);
+        let add_chip = FuncChip::from_name_main("add", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         let f = F::from_canonical_usize;
         // Little endian
@@ -309,7 +309,7 @@ mod test {
         let lurk_chip_map = lurk_chip_map_native();
         let toplevel = Toplevel::new(&[sub_func], lurk_chip_map);
 
-        let sub_chip = FuncChip::from_name("sub", &toplevel);
+        let sub_chip = FuncChip::from_name_main("sub", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         let f = F::from_canonical_usize;
         // Little endian
@@ -371,7 +371,7 @@ mod test {
         let lurk_chip_map = lurk_chip_map_native();
         let toplevel = Toplevel::new(&[mul_func], lurk_chip_map);
 
-        let mul_chip = FuncChip::from_name("mul", &toplevel);
+        let mul_chip = FuncChip::from_name_main("mul", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         let f = F::from_canonical_usize;
         // Little endian
@@ -429,7 +429,7 @@ mod test {
         let lurk_chip_map = lurk_chip_map_native();
         let toplevel = Toplevel::new(&[divrem_func], lurk_chip_map);
 
-        let divrem_chip = FuncChip::from_name("divrem", &toplevel);
+        let divrem_chip = FuncChip::from_name_main("divrem", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         let f = F::from_canonical_usize;
         // Little endian
@@ -505,7 +505,7 @@ mod test {
         let lurk_chip_map = lurk_chip_map_native();
         let toplevel = Toplevel::new(&[lessthan_func], lurk_chip_map);
 
-        let lessthan_chip = FuncChip::from_name("lessthan", &toplevel);
+        let lessthan_chip = FuncChip::from_name_main("lessthan", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         let f = F::from_canonical_usize;
         // Little endian
@@ -560,7 +560,7 @@ mod test {
         let lurk_chip_map = lurk_chip_map_native();
         let toplevel = Toplevel::new(&[iszero_func], lurk_chip_map);
 
-        let iszero_chip = FuncChip::from_name("iszero", &toplevel);
+        let iszero_chip = FuncChip::from_name_main("iszero", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         let f = F::from_canonical_usize;
         // Little endian

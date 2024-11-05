@@ -248,7 +248,7 @@ mod tests {
         sphinx_core::utils::setup_logger();
         type F = BabyBear;
         let toplevel = demo_toplevel::<F>();
-        let chip = FuncChip::from_name("factorial", &toplevel);
+        let chip = FuncChip::from_name_main("factorial", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
 
         toplevel

@@ -962,16 +962,16 @@ mod test {
     fn test_eval_widths() {
         let (toplevel, ..) = &build_lurk_toplevel_native();
 
-        let lurk_main = FuncChip::from_name("lurk_main", toplevel);
-        let eval = FuncChip::from_name("eval", toplevel);
-        let apply = FuncChip::from_name("apply", toplevel);
-        let eval_unop = FuncChip::from_name("eval_unop", toplevel);
-        let eval_binop = FuncChip::from_name("eval_binop", toplevel);
-        let eval_binop_num = FuncChip::from_name("eval_binop_num", toplevel);
-        let eval_op_misc = FuncChip::from_name("eval_op_misc", toplevel);
-        let extend_env_with_mutuals = FuncChip::from_name("extend_env_with_mutuals", toplevel);
-        let eval_mutual_bindings = FuncChip::from_name("eval_mutual_bindings", toplevel);
-        let equal_inner = FuncChip::from_name("equal_inner", toplevel);
+        let lurk_main = FuncChip::from_name_main("lurk_main", toplevel);
+        let eval = FuncChip::from_name_main("eval", toplevel);
+        let apply = FuncChip::from_name_main("apply", toplevel);
+        let eval_unop = FuncChip::from_name_main("eval_unop", toplevel);
+        let eval_binop = FuncChip::from_name_main("eval_binop", toplevel);
+        let eval_binop_num = FuncChip::from_name_main("eval_binop_num", toplevel);
+        let eval_op_misc = FuncChip::from_name_main("eval_op_misc", toplevel);
+        let extend_env_with_mutuals = FuncChip::from_name_main("extend_env_with_mutuals", toplevel);
+        let eval_mutual_bindings = FuncChip::from_name_main("eval_mutual_bindings", toplevel);
+        let equal_inner = FuncChip::from_name_main("equal_inner", toplevel);
 
         let expect_eq = |computed: usize, expected: Expect| {
             expected.assert_eq(&computed.to_string());

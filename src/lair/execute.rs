@@ -967,8 +967,8 @@ mod tests {
 
         let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[half_e, double_e]);
         let half = toplevel.func_by_name("half");
-        let half_chip = FuncChip::from_name("half", &toplevel);
-        let double_chip = FuncChip::from_name("double", &toplevel);
+        let half_chip = FuncChip::from_name_main("half", &toplevel);
+        let double_chip = FuncChip::from_name_main("double", &toplevel);
 
         let mut queries = QueryRecord::new(&toplevel);
         let f = F::from_canonical_u32;
