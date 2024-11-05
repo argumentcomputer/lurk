@@ -56,8 +56,9 @@ jobs:
         run: cargo xclippy -D warnings
       - name: Doctests
         run: cargo test --doc --workspace
-      - name: Cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@v1
+      # TODO: Uncomment once https://github.com/EmbarkStudios/cargo-deny-action/issues/67 is released
+      # - name: Cargo-deny
+      #   uses: EmbarkStudios/cargo-deny-action@v1
   
   bench-regression:
     runs-on: warp-ubuntu-latest-x64-32x
