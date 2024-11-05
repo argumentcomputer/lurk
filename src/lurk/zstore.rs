@@ -195,14 +195,6 @@ impl<F: AbstractField + Copy> ZPtr<F> {
         buffer.extract()
     }
 
-    pub fn flatten_as_tuple100(a: &ZPtr<F>, b: &ZPtr<F>, c: &ZPtr<F>) -> [F; HASH4_SIZE] {
-        let mut buffer = SizedBuffer::default();
-        buffer.write_slice(&a.flatten());
-        buffer.write_slice(&b.digest);
-        buffer.write_slice(&c.digest);
-        buffer.extract()
-    }
-
     pub fn flatten_as_tuple110(a: &ZPtr<F>, b: &ZPtr<F>, c: &ZPtr<F>) -> [F; HASH5_SIZE] {
         let mut buffer = SizedBuffer::default();
         buffer.write_slice(&a.flatten());
@@ -222,7 +214,6 @@ pub enum ZPtrType<F> {
     /// A leaf node without children
     Atom,
     Tuple11(ZPtr<F>, ZPtr<F>),
-    Tuple100(ZPtr<F>, ZPtr<F>, ZPtr<F>),
     Tuple110(ZPtr<F>, ZPtr<F>, ZPtr<F>),
 }
 
@@ -401,8 +392,8 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
     }
 
     pub fn intern_string(&mut self, s: &str) -> ZPtr<F> {
-        if let Some(zptr) = self.str_cache.get(s).copied() {
-            return zptr;
+        if let Some(zptr) = self.str_cache.get(s) {
+            return *zptr;
         }
         let zptr = s.chars().rev().fold(self.intern_null(Tag::Str), |acc, c| {
             let char_zptr = self.intern_char(c);
@@ -413,8 +404,8 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
     }
 
     pub fn intern_symbol(&mut self, sym: &Symbol, lang_symbols: &FxHashSet<Symbol>) -> ZPtr<F> {
-        if let Some(zptr) = self.sym_cache.get(sym).copied() {
-            return zptr;
+        if let Some(zptr) = self.sym_cache.get(sym) {
+            return *zptr;
         }
         let is_keyword = sym.is_keyword();
         let zptr = {
@@ -492,8 +483,8 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
     }
 
     #[inline]
-    pub fn intern_fix(&mut self, body: ZPtr<F>, mutual_env: ZPtr<F>, body_env: ZPtr<F>) -> ZPtr<F> {
-        self.intern_tuple110(Tag::Fix, body, mutual_env, body_env)
+    pub fn intern_fix(&mut self, body: ZPtr<F>, binds: ZPtr<F>, mutual_env: ZPtr<F>) -> ZPtr<F> {
+        self.intern_tuple110(Tag::Fix, body, binds, mutual_env)
     }
 
     #[inline]
@@ -704,14 +695,6 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
             panic!("Tuple11 data not found on DAG: {:?}", zptr)
         };
         (a, b)
-    }
-
-    #[inline]
-    pub fn fetch_tuple100(&self, zptr: &ZPtr<F>) -> (&ZPtr<F>, &ZPtr<F>, &ZPtr<F>) {
-        let Some(ZPtrType::Tuple100(a, b, c)) = self.dag.get(zptr) else {
-            panic!("Tuple100 data not found on DAG: {:?}", zptr)
-        };
-        (a, b, c)
     }
 
     #[inline]
