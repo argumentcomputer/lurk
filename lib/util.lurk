@@ -183,7 +183,7 @@
 !(defrec applyx (lambda (f args)
                   (if args
                       (if (cdr args)
-                          (apply (f (car args)) (cdr args))
+                          (applyx (f (car args)) (cdr args))
                           (f (car args))))))
 
 !(def not (lambda (x) (if x nil t)))
