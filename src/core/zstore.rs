@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 
 use crate::{
     lair::{chipset::Chipset, List},
-    lurk::{
+    core::{
         big_num::field_elts_to_biguint,
         chipset::{lurk_hasher, LurkChip},
         error::EvalErr,
@@ -889,7 +889,7 @@ mod test {
 
     use crate::{
         lair::execute::QueryRecord,
-        lurk::{
+        core::{
             chipset::lurk_hasher,
             eval_direct::build_lurk_toplevel_native,
             state::{builtin_sym, user_sym, State},

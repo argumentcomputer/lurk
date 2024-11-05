@@ -11,7 +11,7 @@ use sphinx_core::{
 
 use crate::{
     lair::{chipset::Chipset, provenance::DEPTH_W},
-    lurk::{
+    core::{
         tag::Tag,
         zstore::{ZPtr, ZStore, DIGEST_SIZE, ZPTR_SIZE},
     },

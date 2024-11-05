@@ -4,7 +4,7 @@ use std::hash::Hash;
 
 use crate::{
     lair::chipset::Chipset,
-    lurk::{
+    core::{
         tag::Tag,
         zstore::{ZPtr, ZStore, DIGEST_SIZE, HASH3_SIZE},
     },

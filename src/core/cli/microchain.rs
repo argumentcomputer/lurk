@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     lair::{chipset::Chipset, lair_chip::LairMachineProgram},
-    lurk::{
+    core::{
         big_num::field_elts_to_biguint,
         chipset::LurkChip,
         cli::{paths::microchains_dir, rdg::rand_digest},

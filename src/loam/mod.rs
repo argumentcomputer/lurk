@@ -10,10 +10,10 @@ use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::FxHashMap;
 
-use crate::lurk::chipset::LurkChip;
-use crate::lurk::state::BUILTIN_SYMBOLS;
-use crate::lurk::tag::Tag;
-use crate::lurk::zstore::{self, lurk_zstore, ZPtr, ZStore};
+use crate::core::chipset::LurkChip;
+use crate::core::state::BUILTIN_SYMBOLS;
+use crate::core::tag::Tag;
+use crate::core::zstore::{self, lurk_zstore, ZPtr, ZStore};
 
 mod allocation;
 mod distilled_evaluation;

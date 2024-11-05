@@ -1,4 +1,4 @@
-use loam::air::builder::{LookupBuilder, ProvideRecord, RequireRecord};
+use lurk::air::builder::{LookupBuilder, ProvideRecord, RequireRecord};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{AbstractField, Field, PrimeField32};
 use p3_matrix::dense::RowMajorMatrix;

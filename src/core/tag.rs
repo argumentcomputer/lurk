@@ -58,7 +58,7 @@ impl From<Tag> for i32 {
 
 #[cfg(test)]
 mod test {
-    use crate::lurk::tag::Tag;
+    use crate::core::tag::Tag;
     use num_traits::FromPrimitive;
     use p3_baby_bear::BabyBear;
     use p3_field::PrimeField32;

@@ -19,7 +19,7 @@ use crate::{
         },
         toplevel::Toplevel,
     },
-    lurk::{
+    core::{
         chipset::LurkChip,
         zstore::{ZPtr, ZStore},
     },

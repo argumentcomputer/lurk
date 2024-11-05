@@ -1,4 +1,4 @@
-use crate::lurk::cli::{
+use crate::core::cli::{
     config::{set_config_if_unset, Config},
     repl::Repl,
 };

@@ -12,7 +12,7 @@ use crate::{
     poseidon::config::{BabyBearConfig24, BabyBearConfig32, BabyBearConfig40},
 };
 
-use crate::lurk::poseidon::PoseidonChipset;
+use crate::core::poseidon::PoseidonChipset;
 
 use super::{big_num::BigNum, u64::U64, zstore::Hasher};
 

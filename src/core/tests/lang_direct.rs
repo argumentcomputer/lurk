@@ -10,7 +10,7 @@ use sphinx_core::utils::BabyBearPoseidon2;
 use crate::{
     func,
     lair::{chipset::Chipset, toplevel::Toplevel, Name},
-    lurk::{
+    core::{
         chipset::LurkChip,
         error::EvalErr,
         eval_direct::build_lurk_toplevel,

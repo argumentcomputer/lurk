@@ -10,7 +10,7 @@ use crate::{
         toplevel::Toplevel,
         FxIndexMap, Name,
     },
-    lurk::{big_num::field_elts_to_biguint, error::EvalErr},
+    core::{big_num::field_elts_to_biguint, error::EvalErr},
 };
 
 use super::{
@@ -1850,7 +1850,7 @@ mod test {
             func_chip::FuncChip,
             List,
         },
-        lurk::{state::State, zstore::ZPtr},
+        core::{state::State, zstore::ZPtr},
     };
 
     use super::*;

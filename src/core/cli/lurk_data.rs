@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     lair::chipset::Chipset,
-    lurk::zstore::{ZPtr, ZStore},
+    core::zstore::{ZPtr, ZStore},
 };
 
 use super::zdag::ZDag;

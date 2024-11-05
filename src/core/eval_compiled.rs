@@ -10,7 +10,7 @@ use crate::{
         toplevel::Toplevel,
         FxIndexMap,
     },
-    lurk::{
+    core::{
         big_num::field_elts_to_biguint,
         compile::{Op, Val},
         error::EvalErr,

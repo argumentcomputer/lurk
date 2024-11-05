@@ -1,6 +1,6 @@
 use std::hash::Hash;
 
-use crate::lurk::parser::Span;
+use crate::core::parser::Span;
 
 /// Source code position of an expression in a file
 #[derive(Clone, Copy, Debug)]

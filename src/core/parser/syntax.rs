@@ -12,7 +12,7 @@ use nom_locate::LocatedSpan;
 use num_bigint::BigUint;
 use p3_field::Field;
 
-use crate::lurk::{
+use crate::core::{
     package::SymbolRef,
     parser::{
         base,
@@ -503,7 +503,7 @@ pub fn parse<F: Field>(
 mod test {
     use p3_baby_bear::BabyBear;
 
-    use crate::lurk::{parser::syntax::parse_syntax, state::State};
+    use crate::core::{parser::syntax::parse_syntax, state::State};
 
     #[test]
     fn test_digest() {

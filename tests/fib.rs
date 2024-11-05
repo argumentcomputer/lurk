@@ -11,7 +11,7 @@ use sphinx_core::{
 };
 use std::time::Instant;
 
-use loam::{
+use lurk::{
     lair::{
         chipset::{Chipset, NoChip},
         execute::{QueryRecord, Shard},
@@ -20,7 +20,7 @@ use loam::{
         toplevel::Toplevel,
         List,
     },
-    lurk::{
+    core::{
         eval_direct::build_lurk_toplevel_native,
         zstore::{lurk_zstore, ZPtr},
     },

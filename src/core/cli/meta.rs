@@ -9,7 +9,7 @@ use std::net::TcpStream;
 
 use crate::{
     lair::{chipset::Chipset, lair_chip::LairMachineProgram},
-    lurk::{
+    core::{
         big_num::field_elts_to_biguint,
         package::{Package, SymbolRef},
         stark_machine::new_machine,

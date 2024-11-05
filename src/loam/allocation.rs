@@ -11,11 +11,11 @@ use rustc_hash::FxHashMap;
 use crate::loam::memory::{Memory, VPtr, VirtualMemory};
 use crate::loam::{LEWrap, Ptr, Wide, WidePtr, LE};
 
-use crate::lurk::chipset::{lurk_hasher, LurkHasher};
-use crate::lurk::tag::Tag;
-use crate::lurk::zstore::{DIGEST_SIZE, HASH3_SIZE, HASH4_SIZE, HASH5_SIZE};
+use crate::core::chipset::{lurk_hasher, LurkHasher};
+use crate::core::tag::Tag;
+use crate::core::zstore::{DIGEST_SIZE, HASH3_SIZE, HASH4_SIZE, HASH5_SIZE};
 
-use crate::lurk::{
+use crate::core::{
     chipset::LurkChip,
     zstore::{ZPtr, ZStore},
 };
@@ -562,7 +562,7 @@ mod test {
 
     use crate::{
         loam::memory::{DistillationOptions, PPtr, Store},
-        lurk::{
+        core::{
             chipset::LurkChip,
             zstore::{lurk_zstore, ZPtr, ZStore},
         },

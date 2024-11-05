@@ -8,7 +8,7 @@ use std::{
 use nom::{error::ErrorKind, AsBytes, Err, IResult, InputLength};
 use num_bigint::BigUint;
 
-use crate::lurk::parser::{base, Span};
+use crate::core::parser::{base, Span};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum ParseErrorKind {

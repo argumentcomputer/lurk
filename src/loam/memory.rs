@@ -7,7 +7,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     loam::{allocation::Allocator, LEWrap, Num, Ptr, PtrEq, Wide, WidePtr, LE},
-    lurk::{
+    core::{
         chipset::LurkChip,
         error::EvalErr,
         state::{StateRcCell, BUILTIN_SYMBOLS},

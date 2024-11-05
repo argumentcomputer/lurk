@@ -24,7 +24,7 @@ use crate::{
         lair_chip::LairMachineProgram,
         toplevel::Toplevel,
     },
-    lurk::{
+    core::{
         big_num::field_elts_to_biguint,
         chipset::LurkChip,
         cli::{

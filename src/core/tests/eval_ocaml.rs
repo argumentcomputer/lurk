@@ -4,7 +4,7 @@ use sphinx_core::utils::BabyBearPoseidon2;
 
 use crate::{
     lair::{chipset::NoChip, toplevel::Toplevel},
-    lurk::{
+    core::{
         chipset::LurkChip,
         eval_direct::build_lurk_toplevel_native,
         parser::Span,

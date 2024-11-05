@@ -8,7 +8,7 @@ use tempfile::tempdir;
 
 use crate::{
     lair::chipset::Chipset,
-    lurk::{
+    core::{
         parser::Span,
         state::{builtin_sym, user_sym, StateRcCell, BUILTIN_SYMBOLS},
         zstore::{ZPtr, ZStore},

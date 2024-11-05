@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     lair::chipset::Chipset,
-    lurk::zstore::{ZPtr, ZPtrType, ZStore},
+    core::zstore::{ZPtr, ZPtrType, ZStore},
 };
 
 /// Holds Lurk data meant to be persisted and/or shared

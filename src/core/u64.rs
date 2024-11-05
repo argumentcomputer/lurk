@@ -236,7 +236,7 @@ mod test {
             lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
             toplevel::Toplevel,
         },
-        lurk::chipset::lurk_chip_map_native,
+        core::chipset::lurk_chip_map_native,
     };
 
     #[test]
