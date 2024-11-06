@@ -447,7 +447,8 @@ mod tests {
         let toplevel = demo_toplevel::<F>();
 
         let factorial = toplevel.func_by_name("factorial");
-        let out = factorial.compute_layout_sizes(&toplevel);
+        let main_group = 0;
+        let out = factorial.compute_layout_sizes(main_group, &toplevel);
         let expected_layout_sizes = LayoutSizes {
             nonce: 1,
             input: 1,

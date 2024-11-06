@@ -52,7 +52,7 @@ impl<'a, F, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
         return_group: ReturnGroup,
         toplevel: &'a Toplevel<F, C1, C2>,
     ) -> Self {
-        let layout_sizes = func.compute_layout_sizes(toplevel);
+        let layout_sizes = func.compute_layout_sizes(return_group, toplevel);
         Self {
             func,
             toplevel,
@@ -101,10 +101,14 @@ pub type Degree = u8;
 impl<F> Func<F> {
     pub fn compute_layout_sizes<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
+        group: ReturnGroup,
         toplevel: &Toplevel<F, C1, C2>,
     ) -> LayoutSizes {
         let degrees = &mut vec![1; self.input_size];
-        let mut layout = self.body.compute_layout_sizes(degrees, toplevel);
+        let mut layout = self
+            .body
+            .compute_layout_sizes(group, degrees, toplevel)
+            .expect("Group {group} doesn't exist");
         layout.nonce = 1;
         layout.input = self.input_size;
         layout.output = self.output_size;
@@ -122,59 +126,68 @@ impl<F> Func<F> {
 impl<F> Block<F> {
     fn compute_layout_sizes<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
+        group: ReturnGroup,
         degrees: &mut Vec<Degree>,
         toplevel: &Toplevel<F, C1, C2>,
-    ) -> LayoutSizes {
+    ) -> Option<LayoutSizes> {
         let mut aux = 0;
         self.ops
             .iter()
             .for_each(|op| op.compute_layout_sizes(degrees, toplevel, &mut aux));
-        let mut layout = self.ctrl.compute_layout_sizes(degrees, toplevel);
+        let mut layout = self.ctrl.compute_layout_sizes(group, degrees, toplevel)?;
         layout.aux += aux;
-        layout
+        Some(layout)
     }
 }
 
 impl<F> Ctrl<F> {
     fn compute_layout_sizes<C1: Chipset<F>, C2: Chipset<F>>(
         &self,
+        group: ReturnGroup,
         degrees: &mut Vec<Degree>,
         toplevel: &Toplevel<F, C1, C2>,
-    ) -> LayoutSizes {
+    ) -> Option<LayoutSizes> {
         let mut layout = LayoutSizes::default();
         match self {
-            Ctrl::Return(..) => {
+            Ctrl::Return(_, _, return_group) => {
                 // exactly one selector per return
+                if group != *return_group {
+                    return None;
+                }
                 layout.sel += 1;
             }
             Ctrl::Choose(_, cases, branches) => {
                 let degrees_len = degrees.len();
                 let mut process = |block: &Block<_>| {
-                    let block_layout = block.compute_layout_sizes(degrees, toplevel);
-                    degrees.truncate(degrees_len);
-                    layout.sel += block_layout.sel;
-                    layout.aux = layout.aux.max(block_layout.aux);
+                    if let Some(block_layout) = block.compute_layout_sizes(group, degrees, toplevel)
+                    {
+                        degrees.truncate(degrees_len);
+                        layout.sel += block_layout.sel;
+                        layout.aux = layout.aux.max(block_layout.aux);
+                    }
                 };
                 branches.iter().for_each(&mut process);
                 if let Some(block) = cases.default.as_ref() {
-                    process(block)
+                    process(block);
                 };
             }
             Ctrl::ChooseMany(_, cases) => {
                 let degrees_len = degrees.len();
                 let mut process = |block: &Block<_>| {
-                    let block_layout = block.compute_layout_sizes(degrees, toplevel);
-                    degrees.truncate(degrees_len);
-                    layout.sel += block_layout.sel;
-                    layout.aux = layout.aux.max(block_layout.aux);
+                    if let Some(block_layout) = block.compute_layout_sizes(group, degrees, toplevel)
+                    {
+                        degrees.truncate(degrees_len);
+                        layout.sel += block_layout.sel;
+                        layout.aux = layout.aux.max(block_layout.aux);
+                    }
                 };
                 cases.branches.iter().for_each(|(_, block)| process(block));
                 if let Some(block) = cases.default.as_ref() {
-                    process(block)
+                    process(block);
                 };
             }
         };
-        layout
+        Some(layout)
     }
 }
 
