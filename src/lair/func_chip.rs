@@ -103,26 +103,19 @@ impl<F> Func<F> {
         &self,
         toplevel: &Toplevel<F, C1, C2>,
     ) -> LayoutSizes {
-        let input = self.input_size;
+        let degrees = &mut vec![1; self.input_size];
+        let mut layout = self.body.compute_layout_sizes(degrees, toplevel);
+        layout.nonce = 1;
+        layout.input = self.input_size;
+        layout.output = self.output_size;
         // last nonce, last count
-        let mut aux = 2;
+        layout.aux += 2;
         // provenance and range check
         if self.partial {
             let num_requires = (DEPTH_W / 2) + (DEPTH_W % 2);
-            aux += DEPTH_W + 3 * num_requires;
+            layout.aux += DEPTH_W + 3 * num_requires;
         }
-        let mut sel = 0;
-        let output = self.output_size;
-        let degrees = &mut vec![1; input];
-        self.body
-            .compute_layout_sizes(degrees, toplevel, &mut aux, &mut sel);
-        LayoutSizes {
-            nonce: 1,
-            input,
-            aux,
-            sel,
-            output,
-        }
+        layout
     }
 }
 
@@ -131,13 +124,14 @@ impl<F> Block<F> {
         &self,
         degrees: &mut Vec<Degree>,
         toplevel: &Toplevel<F, C1, C2>,
-        aux: &mut usize,
-        sel: &mut usize,
-    ) {
+    ) -> LayoutSizes {
+        let mut aux = 0;
         self.ops
             .iter()
-            .for_each(|op| op.compute_layout_sizes(degrees, toplevel, aux));
-        self.ctrl.compute_layout_sizes(degrees, toplevel, aux, sel);
+            .for_each(|op| op.compute_layout_sizes(degrees, toplevel, &mut aux));
+        let mut layout = self.ctrl.compute_layout_sizes(degrees, toplevel);
+        layout.aux += aux;
+        layout
     }
 }
 
@@ -146,45 +140,41 @@ impl<F> Ctrl<F> {
         &self,
         degrees: &mut Vec<Degree>,
         toplevel: &Toplevel<F, C1, C2>,
-        aux: &mut usize,
-        sel: &mut usize,
-    ) {
+    ) -> LayoutSizes {
+        let mut layout = LayoutSizes::default();
         match self {
             Ctrl::Return(..) => {
                 // exactly one selector per return
-                *sel += 1;
+                layout.sel += 1;
             }
             Ctrl::Choose(_, cases, branches) => {
                 let degrees_len = degrees.len();
-                let mut max_aux = *aux;
                 let mut process = |block: &Block<_>| {
-                    let block_aux = &mut aux.clone();
-                    block.compute_layout_sizes(degrees, toplevel, block_aux, sel);
+                    let block_layout = block.compute_layout_sizes(degrees, toplevel);
                     degrees.truncate(degrees_len);
-                    max_aux = max_aux.max(*block_aux);
+                    layout.sel += block_layout.sel;
+                    layout.aux = layout.aux.max(block_layout.aux);
                 };
                 branches.iter().for_each(&mut process);
                 if let Some(block) = cases.default.as_ref() {
                     process(block)
                 };
-                *aux = max_aux;
             }
             Ctrl::ChooseMany(_, cases) => {
                 let degrees_len = degrees.len();
-                let mut max_aux = *aux;
                 let mut process = |block: &Block<_>| {
-                    let block_aux = &mut aux.clone();
-                    block.compute_layout_sizes(degrees, toplevel, block_aux, sel);
+                    let block_layout = block.compute_layout_sizes(degrees, toplevel);
                     degrees.truncate(degrees_len);
-                    max_aux = max_aux.max(*block_aux);
+                    layout.sel += block_layout.sel;
+                    layout.aux = layout.aux.max(block_layout.aux);
                 };
                 cases.branches.iter().for_each(|(_, block)| process(block));
                 if let Some(block) = cases.default.as_ref() {
                     process(block)
                 };
-                *aux = max_aux;
             }
-        }
+        };
+        layout
     }
 }
 
