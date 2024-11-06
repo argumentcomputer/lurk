@@ -12,7 +12,7 @@ use crate::{
 
 use super::zdag::ZDag;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct CommData<F: Hash + Eq> {
     pub(crate) secret: [F; DIGEST_SIZE],
     pub(crate) payload: ZPtr<F>,

@@ -1,7 +1,6 @@
 use anyhow::Result;
 use clap::Args;
 use p3_baby_bear::BabyBear;
-use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use sphinx_core::stark::StarkGenericConfig;
 use std::{
@@ -12,8 +11,9 @@ use std::{
 use crate::{
     lair::{chipset::Chipset, lair_chip::LairMachineProgram},
     lurk::{
+        big_num::field_elts_to_biguint,
         chipset::LurkChip,
-        cli::rdg::rand_digest,
+        cli::{paths::microchains_dir, rdg::rand_digest},
         eval_direct::build_lurk_toplevel,
         lang::Lang,
         stark_machine::new_machine,
@@ -37,7 +37,7 @@ pub(crate) struct MicrochainArgs {
 
 type F = BabyBear;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize)]
 pub(crate) enum CallableData {
     Comm(CommData<F>),
     Fun(LurkData<F>),
@@ -62,7 +62,7 @@ impl CallableData {
 /// Encodes a `(chain-result . callable)` pair, the result of chaining a callable.
 /// The pair components carry the corresponding `ZDag`s in order to be fully
 /// transferable between clients (through the server)
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct ChainState {
     pub(crate) chain_result: LurkData<F>,
     pub(crate) callable_data: CallableData,
@@ -110,16 +110,9 @@ pub(crate) enum Response {
     Proofs(Vec<OpaqueChainProof>),
 }
 
-/// Holds the data for a microchain, mapped from an ID
-struct ChainData {
-    /// The data for the genesis state also contains the secret used to generate
-    /// the microchain ID
-    genesis: ([F; DIGEST_SIZE], ChainState),
-    /// Sequence of chain proofs, from the first transition to the latest
-    proofs: Vec<OpaqueChainProof>,
-    /// Current state of a microchain
-    state: ChainState,
-}
+/// The data for the genesis state also contains the secret used to generate
+/// the microchain ID
+type Genesis = ([F; DIGEST_SIZE], ChainState);
 
 impl MicrochainArgs {
     pub(crate) fn run(self) -> Result<()> {
@@ -129,9 +122,6 @@ impl MicrochainArgs {
 
         let (toplevel, mut zstore, _) = build_lurk_toplevel(Lang::empty());
         let empty_env = zstore.intern_empty_env();
-
-        // chain id -> chain data
-        let mut chains = FxHashMap::default();
 
         for stream in listener.incoming() {
             match stream {
@@ -160,32 +150,26 @@ impl MicrochainArgs {
                                 zstore.intern_cons(chain_state.chain_result.zptr, callable_zptr);
                             let id = CommData::hash(&id_secret, &state_cons, &mut zstore);
 
-                            let chain_data = ChainData {
-                                genesis: (id_secret, chain_state.clone()),
-                                proofs: vec![],
-                                state: chain_state,
-                            };
-                            assert!(chains.insert(id, chain_data).is_none());
+                            dump_state(&id, &chain_state)?;
+                            dump_genesis(&id, &(id_secret, chain_state))?;
+                            dump_proofs(&id, &[])?;
                             return_msg!(Response::IdSecret(id_secret));
                         }
                         Request::GetGenesis(id) => {
-                            let Some(ChainData {
-                                genesis: (id_secret, state),
-                                ..
-                            }) = chains.get(&id)
-                            else {
+                            let Ok((id_secret, genesis)) = load_genesis(&id) else {
                                 return_msg!(Response::NoDataForId);
                             };
-                            return_msg!(Response::Genesis(*id_secret, state.clone()))
+                            return_msg!(Response::Genesis(id_secret, genesis))
                         }
                         Request::GetState(id) => {
-                            let Some(ChainData { state, .. }) = chains.get(&id) else {
+                            let Ok(state) = load_state(&id) else {
                                 return_msg!(Response::NoDataForId);
                             };
-                            return_msg!(Response::State(state.clone()));
+                            return_msg!(Response::State(state));
                         }
                         Request::Transition(id, chain_proof) => {
-                            let Some(ChainData { proofs, state, .. }) = chains.get_mut(&id) else {
+                            let (Ok(mut proofs), Ok(state)) = (load_proofs(&id), load_state(&id))
+                            else {
                                 return_msg!(Response::NoDataForId);
                             };
 
@@ -249,20 +233,24 @@ impl MicrochainArgs {
                                 next_chain_result: next_chain_result_zptr,
                                 next_callable: next_callable_zptr,
                             });
+                            dump_proofs(&id, &proofs)?;
 
                             // update the state
-                            *state = ChainState {
-                                chain_result: next_chain_result,
-                                callable_data: next_callable,
-                            };
+                            dump_state(
+                                &id,
+                                &ChainState {
+                                    chain_result: next_chain_result,
+                                    callable_data: next_callable,
+                                },
+                            )?;
 
                             return_msg!(Response::ProofAccepted);
                         }
                         Request::GetProofs(id) => {
-                            let Some(ChainData { proofs, .. }) = chains.get(&id) else {
+                            let Ok(proofs) = load_proofs(&id) else {
                                 return_msg!(Response::NoDataForId);
                             };
-                            return_msg!(Response::Proofs(proofs.clone()));
+                            return_msg!(Response::Proofs(proofs));
                         }
                     }
                 }
@@ -272,6 +260,45 @@ impl MicrochainArgs {
 
         Ok(())
     }
+}
+
+fn dump_microchain_data<T: Serialize + ?Sized>(id: &[F], name: &str, data: &T) -> Result<()> {
+    let hash = format!("{:x}", field_elts_to_biguint(id));
+    let dir = microchains_dir()?.join(hash);
+    std::fs::create_dir_all(&dir)?;
+    std::fs::write(dir.join(name), bincode::serialize(data)?)?;
+    Ok(())
+}
+
+fn dump_genesis(id: &[F], genesis: &Genesis) -> Result<()> {
+    dump_microchain_data(id, "genesis", genesis)
+}
+
+fn dump_proofs(id: &[F], proofs: &[OpaqueChainProof]) -> Result<()> {
+    dump_microchain_data(id, "proofs", proofs)
+}
+
+fn dump_state(id: &[F], state: &ChainState) -> Result<()> {
+    dump_microchain_data(id, "state", state)
+}
+
+fn load_microchain_data<T: for<'a> Deserialize<'a>>(id: &[F], name: &str) -> Result<T> {
+    let hash = format!("{:x}", field_elts_to_biguint(id));
+    let bytes = std::fs::read(microchains_dir()?.join(hash).join(name))?;
+    let data = bincode::deserialize(&bytes)?;
+    Ok(data)
+}
+
+fn load_genesis(id: &[F]) -> Result<Genesis> {
+    load_microchain_data(id, "genesis")
+}
+
+fn load_proofs(id: &[F]) -> Result<Vec<OpaqueChainProof>> {
+    load_microchain_data(id, "proofs")
+}
+
+fn load_state(id: &[F]) -> Result<ChainState> {
+    load_microchain_data(id, "state")
 }
 
 pub(crate) fn read_data<T: for<'a> Deserialize<'a>>(stream: &mut TcpStream) -> Result<T> {
