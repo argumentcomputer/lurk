@@ -275,6 +275,16 @@ macro_rules! block {
         $crate::block!({ $($tail)* }, $ops)
     }};
     // Control statements
+    ({ #[group=$num:literal] return ($($src:ident),*) }, $ops:expr) => {{
+        let ops = $ops.into();
+        let ctrl = $crate::lair::expr::CtrlE::Return([$($src),*].into(), $num);
+        $crate::lair::expr::BlockE { ops, ctrl }
+    }};
+    ({ #[group=$num:literal] return $src:ident }, $ops:expr) => {{
+        let ops = $ops.into();
+        let ctrl = $crate::lair::expr::CtrlE::Return([$src].into(), $num);
+        $crate::lair::expr::BlockE { ops, ctrl }
+    }};
     ({ return ($($src:ident),*) }, $ops:expr) => {{
         let ops = $ops.into();
         let ctrl = $crate::lair::expr::CtrlE::Return([$($src),*].into(), 0);
