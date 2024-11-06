@@ -5,13 +5,13 @@
 use num_traits::FromPrimitive;
 use p3_baby_bear::BabyBear;
 
+use crate::core::chipset::LurkChip;
+use crate::core::state::BUILTIN_SYMBOLS;
+use crate::core::tag::Tag;
+use crate::core::zstore::{builtin_set, lurk_zstore, ZPtr};
 use crate::loam::lurk_sym_index;
 use crate::loam::memory::{initial_tag_relation, Memory};
 use crate::loam::{LEWrap, LoamProgram, Num, Ptr, PtrEq, Wide, WidePtr, LE};
-use crate::lurk::chipset::LurkChip;
-use crate::lurk::state::BUILTIN_SYMBOLS;
-use crate::lurk::tag::Tag;
-use crate::lurk::zstore::{builtin_set, lurk_zstore, ZPtr};
 
 use p3_field::{AbstractField, Field, PrimeField32};
 
@@ -1018,14 +1018,14 @@ mod test {
     use p3_baby_bear::BabyBear;
 
     use crate::{
+        core::{
+            chipset::LurkChip,
+            zstore::{lurk_zstore, ZPtr, ZStore},
+        },
         loam::{
             evaluation::EvaluationProgram,
             memory::{generate_lisp_program, DistillationOptions},
             LoamProgram,
-        },
-        lurk::{
-            chipset::LurkChip,
-            zstore::{lurk_zstore, ZPtr, ZStore},
         },
     };
 

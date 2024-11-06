@@ -9,8 +9,7 @@ use std::{
 };
 
 use crate::{
-    lair::{chipset::Chipset, lair_chip::LairMachineProgram},
-    lurk::{
+    core::{
         big_num::field_elts_to_biguint,
         chipset::LurkChip,
         cli::{paths::microchains_dir, rdg::rand_digest},
@@ -19,6 +18,7 @@ use crate::{
         stark_machine::new_machine,
         zstore::{ZPtr, ZStore, DIGEST_SIZE},
     },
+    lair::{chipset::Chipset, lair_chip::LairMachineProgram},
 };
 
 use super::{

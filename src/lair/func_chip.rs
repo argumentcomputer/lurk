@@ -79,7 +79,7 @@ impl<'a, F, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
     }
 }
 
-impl<'a, F: Sync, C1: Chipset<F>, C2: Chipset<F>> BaseAir<F> for FuncChip<'a, F, C1, C2> {
+impl<F: Sync, C1: Chipset<F>, C2: Chipset<F>> BaseAir<F> for FuncChip<'_, F, C1, C2> {
     fn width(&self) -> usize {
         self.width()
     }

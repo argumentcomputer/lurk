@@ -8,7 +8,7 @@ use std::{
 use nom::{error::ErrorKind, AsBytes, Err, IResult, InputLength};
 use num_bigint::BigUint;
 
-use crate::lurk::parser::{base, Span};
+use crate::core::parser::{base, Span};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum ParseErrorKind {
@@ -87,7 +87,7 @@ impl<I: AsBytes> ParseError<I> {
     }
 }
 
-impl<'a> fmt::Display for ParseError<Span<'a>> {
+impl fmt::Display for ParseError<Span<'_>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut res = String::new();
 

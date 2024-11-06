@@ -4,9 +4,9 @@ use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, PrimeField32};
 
 use crate::{
+    core::{error::EvalErr, ingress::InternalTag},
     func,
     lair::{chipset::NoChip, expr::FuncE, toplevel::Toplevel},
-    lurk::{error::EvalErr, ingress::InternalTag},
 };
 
 use super::{ingress::SymbolsDigests, tag::Tag};

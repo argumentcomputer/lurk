@@ -29,7 +29,7 @@ pub enum LairChip<'a, F, C1: Chipset<F>, C2: Chipset<F>> {
     },
 }
 
-impl<'a, F, C1: Chipset<F>, C2: Chipset<F>> LairChip<'a, F, C1, C2> {
+impl<F, C1: Chipset<F>, C2: Chipset<F>> LairChip<'_, F, C1, C2> {
     #[inline]
     pub fn entrypoint(func: &Func<F>) -> Self {
         let partial = if func.partial { DEPTH_W } else { 0 };
@@ -55,7 +55,7 @@ impl<'a, F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> EventLens<LairChip<'a,
     }
 }
 
-impl<'a, F: Field + Sync, C1: Chipset<F>, C2: Chipset<F>> BaseAir<F> for LairChip<'a, F, C1, C2> {
+impl<F: Field + Sync, C1: Chipset<F>, C2: Chipset<F>> BaseAir<F> for LairChip<'_, F, C1, C2> {
     fn width(&self) -> usize {
         match self {
             Self::Func(func_chip) => func_chip.width(),
@@ -153,7 +153,7 @@ impl<'a, F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MachineAir<F>
     }
 }
 
-impl<'a, AB, C1: Chipset<AB::F>, C2: Chipset<AB::F>> Air<AB> for LairChip<'a, AB::F, C1, C2>
+impl<AB, C1: Chipset<AB::F>, C2: Chipset<AB::F>> Air<AB> for LairChip<'_, AB::F, C1, C2>
 where
     AB: AirBuilderWithPublicValues + LookupBuilder + PairBuilder,
     <AB as AirBuilder>::Var: std::fmt::Debug,

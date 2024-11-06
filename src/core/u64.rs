@@ -229,6 +229,7 @@ mod test {
 
     use crate::{
         air::debug::debug_chip_constraints_and_queries_with_sharding,
+        core::chipset::lurk_chip_map_native,
         func,
         lair::{
             execute::{QueryRecord, Shard},
@@ -236,7 +237,6 @@ mod test {
             lair_chip::{build_chip_vector, build_lair_chip_vector, LairMachineProgram},
             toplevel::Toplevel,
         },
-        lurk::chipset::lurk_chip_map_native,
     };
 
     #[test]

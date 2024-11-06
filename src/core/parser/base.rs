@@ -10,7 +10,7 @@ use nom::{
     InputTakeAtPosition,
 };
 
-use crate::lurk::parser::{
+use crate::core::parser::{
     error::{map_parse_err, ParseError, ParseErrorKind},
     ParseResult, Span,
 };

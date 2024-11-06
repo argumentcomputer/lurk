@@ -1,4 +1,4 @@
-use crate::lurk::parser::position::Pos;
+use crate::core::parser::position::Pos;
 
 /// OCaml's Lambda IR after parsing
 #[derive(Clone, Debug, PartialEq)]

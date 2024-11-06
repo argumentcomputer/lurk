@@ -8,9 +8,7 @@ use rustc_hash::FxHashSet;
 use sphinx_core::utils::BabyBearPoseidon2;
 
 use crate::{
-    func,
-    lair::{chipset::Chipset, toplevel::Toplevel, Name},
-    lurk::{
+    core::{
         chipset::LurkChip,
         error::EvalErr,
         eval_direct::build_lurk_toplevel,
@@ -20,6 +18,8 @@ use crate::{
         tag::Tag,
         zstore::{ZPtr, ZStore},
     },
+    func,
+    lair::{chipset::Chipset, toplevel::Toplevel, Name},
 };
 
 use super::run_tests;

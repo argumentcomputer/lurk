@@ -9,7 +9,7 @@ use nom::{
 };
 
 use crate::{
-    lurk::parser::{
+    core::parser::{
         base,
         error::{ParseError, ParseErrorKind},
         position::Pos,

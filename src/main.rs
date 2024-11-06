@@ -6,5 +6,5 @@ fn main() -> Result<()> {
         env!("VERGEN_GIT_COMMIT_DATE"),
         env!("VERGEN_GIT_SHA")
     );
-    loam::lurk::cli::run()
+    lurk::core::cli::run()
 }

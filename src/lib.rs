@@ -5,8 +5,8 @@ pub mod lair;
 // #[allow(dead_code)]
 // pub mod logup;
 
+pub mod core;
 pub mod gadgets;
 pub mod loam;
-pub mod lurk;
 pub mod ocaml;
 pub mod poseidon;

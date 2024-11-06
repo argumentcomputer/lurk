@@ -1,4 +1,4 @@
-use crate::lurk::cli::{
+use crate::core::cli::{
     config::{set_config_if_unset, Config},
     repl::Repl,
 };
@@ -8,11 +8,11 @@ fn test_meta_commands() {
     set_config_if_unset(Config::default());
     let mut repl = Repl::new_native();
     assert!(repl
-        .load_file("src/lurk/cli/tests/first.lurk".into(), false)
+        .load_file("src/core/cli/tests/first.lurk".into(), false)
         .is_ok());
     let mut repl = Repl::new_native();
     assert!(repl
-        .load_file("src/lurk/cli/tests/second.lurk".into(), false)
+        .load_file("src/core/cli/tests/second.lurk".into(), false)
         .is_ok());
     std::fs::remove_file("repl-test-two").unwrap();
 }
@@ -23,11 +23,11 @@ fn test_meta_commands_with_proofs() {
     set_config_if_unset(Config::default());
     let mut repl = Repl::new_native();
     assert!(repl
-        .load_file("src/lurk/cli/tests/prove.lurk".into(), false)
+        .load_file("src/core/cli/tests/prove.lurk".into(), false)
         .is_ok());
     let mut repl = Repl::new_native();
     assert!(repl
-        .load_file("src/lurk/cli/tests/verify.lurk".into(), false)
+        .load_file("src/core/cli/tests/verify.lurk".into(), false)
         .is_ok());
     std::fs::remove_file("repl-test-protocol-proof").unwrap();
     std::fs::remove_file("repl-test-protocol").unwrap();

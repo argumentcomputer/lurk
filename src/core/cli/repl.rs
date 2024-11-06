@@ -18,13 +18,7 @@ use sphinx_core::{
 use std::{fmt::Debug, io::Write, marker::PhantomData};
 
 use crate::{
-    lair::{
-        chipset::{Chipset, NoChip},
-        execute::{DebugEntry, DebugEntryKind, QueryRecord, QueryResult, Shard},
-        lair_chip::LairMachineProgram,
-        toplevel::Toplevel,
-    },
-    lurk::{
+    core::{
         big_num::field_elts_to_biguint,
         chipset::LurkChip,
         cli::{
@@ -45,6 +39,12 @@ use crate::{
         syntax::Syntax,
         tag::Tag,
         zstore::{quote, ZPtr, ZStore, DIGEST_SIZE},
+    },
+    lair::{
+        chipset::{Chipset, NoChip},
+        execute::{DebugEntry, DebugEntryKind, QueryRecord, QueryResult, Shard},
+        lair_chip::LairMachineProgram,
+        toplevel::Toplevel,
     },
 };
 

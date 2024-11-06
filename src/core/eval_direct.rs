@@ -3,6 +3,7 @@ use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::FxHashSet;
 
 use crate::{
+    core::{big_num::field_elts_to_biguint, error::EvalErr},
     func,
     lair::{
         chipset::{Chipset, NoChip},
@@ -10,7 +11,6 @@ use crate::{
         toplevel::Toplevel,
         FxIndexMap, Name,
     },
-    lurk::{big_num::field_elts_to_biguint, error::EvalErr},
 };
 
 use super::{
@@ -1845,12 +1845,12 @@ mod test {
 
     use crate::{
         air::debug::debug_constraints_collecting_queries,
+        core::{state::State, zstore::ZPtr},
         lair::{
             execute::{QueryRecord, Shard},
             func_chip::FuncChip,
             List,
         },
-        lurk::{state::State, zstore::ZPtr},
     };
 
     use super::*;

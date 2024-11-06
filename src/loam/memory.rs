@@ -6,14 +6,14 @@ use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
-    loam::{allocation::Allocator, LEWrap, Num, Ptr, PtrEq, Wide, WidePtr, LE},
-    lurk::{
+    core::{
         chipset::LurkChip,
         error::EvalErr,
         state::{StateRcCell, BUILTIN_SYMBOLS},
         tag::Tag,
         zstore::{self, builtin_set, lurk_zstore, ZPtr, ZStore},
     },
+    loam::{allocation::Allocator, LEWrap, Num, Ptr, PtrEq, Wide, WidePtr, LE},
 };
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

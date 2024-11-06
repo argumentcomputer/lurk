@@ -2,8 +2,8 @@
 pub mod memoset;
 
 use crate::memoset::DemoChip;
-use loam::air::builder::{LookupBuilder, ProvideRecord, RequireRecord};
-use loam::air::debug::{debug_constraints_collecting_queries, TraceQueries};
+use lurk::air::builder::{LookupBuilder, ProvideRecord, RequireRecord};
+use lurk::air::debug::{debug_constraints_collecting_queries, TraceQueries};
 use p3_air::{Air, AirBuilder, BaseAir, PairBuilder};
 use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, Field, PrimeField32};

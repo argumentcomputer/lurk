@@ -3,8 +3,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    core::zstore::{ZPtr, ZPtrType, ZStore},
     lair::chipset::Chipset,
-    lurk::zstore::{ZPtr, ZPtrType, ZStore},
 };
 
 /// Holds Lurk data meant to be persisted and/or shared

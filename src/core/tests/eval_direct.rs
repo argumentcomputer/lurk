@@ -6,16 +6,16 @@ use p3_field::AbstractField;
 use sphinx_core::utils::BabyBearPoseidon2;
 
 use crate::{
-    lair::{chipset::NoChip, toplevel::Toplevel},
-    lurk::{
+    core::{
         chipset::{lurk_hasher, LurkChip},
         error::EvalErr,
-        eval_compiled::build_lurk_toplevel_native,
+        eval_direct::build_lurk_toplevel_native,
         state::{builtin_sym, user_sym},
         symbol::Symbol,
         tag::Tag,
         zstore::{ZPtr, ZStore},
     },
+    lair::{chipset::NoChip, toplevel::Toplevel},
 };
 
 use super::run_tests;
@@ -71,25 +71,24 @@ fn test_case(input_code: &'static str, expected_cloj: fn(&mut ZStore<F, LurkChip
     );
 }
 
-// TODO
-// fn test_case_env(
-//     input_code: &'static str,
-//     env_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>,
-//     expected_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>,
-// ) {
-//     let (toplevel, zstore, config) = test_setup_data();
-//     let mut zstore = zstore.clone();
-//     let zptr = zstore.read(input_code, &Default::default());
-//     let env = env_cloj(&mut zstore);
-//     run_tests(
-//         &zptr,
-//         &env,
-//         toplevel,
-//         &mut zstore,
-//         expected_cloj,
-//         config.clone(),
-//     );
-// }
+fn test_case_env(
+    input_code: &'static str,
+    env_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>,
+    expected_cloj: fn(&mut ZStore<F, LurkChip>) -> ZPtr<F>,
+) {
+    let (toplevel, zstore, config) = test_setup_data();
+    let mut zstore = zstore.clone();
+    let zptr = zstore.read(input_code, &Default::default());
+    let env = env_cloj(&mut zstore);
+    run_tests(
+        &zptr,
+        &env,
+        toplevel,
+        &mut zstore,
+        expected_cloj,
+        config.clone(),
+    );
+}
 
 macro_rules! test_raw {
     ($test_func:ident, $input_cloj:expr, $expected_cloj:expr) => {
@@ -109,15 +108,14 @@ macro_rules! test {
     };
 }
 
-// TODO
-// macro_rules! test_env {
-//     ($test_func:ident, $input_code:expr, $env_cloj:expr, $expected_cloj:expr) => {
-//         #[test]
-//         fn $test_func() {
-//             test_case_env($input_code, $env_cloj, $expected_cloj)
-//         }
-//     };
-// }
+macro_rules! test_env {
+    ($test_func:ident, $input_code:expr, $env_cloj:expr, $expected_cloj:expr) => {
+        #[test]
+        fn $test_func() {
+            test_case_env($input_code, $env_cloj, $expected_cloj)
+        }
+    };
+}
 
 fn trivial_id_fun(zstore: &mut ZStore<F, LurkChip>) -> ZPtr<F> {
     let x = zstore.intern_symbol_no_lang(&user_sym("x"));
@@ -153,25 +151,23 @@ test_raw!(test_comm, |_| ZPtr::null(Tag::Comm), |_| ZPtr::null(
 ));
 
 // functions & applications
-// TODO FIXME
-// test!(test_lambda, "(lambda (x) x)", trivial_id_fun);
+test!(test_lambda, "(lambda (x) x)", trivial_id_fun);
 test!(test_app1, "((lambda (x) x) 1)", |_| uint(1));
 test!(test_app2, "((lambda (x y z) y) 1 2 3)", |_| uint(2));
 test!(test_app3, "((lambda (x) (lambda (y) x)) 1 2)", |_| {
     uint(1)
 });
-// TODO FIXME
-// test!(test_app4, "(apply (lambda (x) x) '(1))", |_| uint(1));
-// test!(test_app5, "(apply (lambda (x y z) y) (list 1 2 3))", |_| {
-//     uint(2)
-// });
-// test!(
-//     test_app6,
-//     "(apply (lambda (x) (lambda (y) x)) '(1 2))",
-//     |_| { uint(1) }
-// );
-// test!(test_app7, "((lambda (x &rest y) (car (cdr y))) 1)", |z| *z
-//     .nil());
+test!(test_app4, "(apply (lambda (x) x) '(1))", |_| uint(1));
+test!(test_app5, "(apply (lambda (x y z) y) (list 1 2 3))", |_| {
+    uint(2)
+});
+test!(
+    test_app6,
+    "(apply (lambda (x) (lambda (y) x)) '(1 2))",
+    |_| { uint(1) }
+);
+test!(test_app7, "((lambda (x &rest y) (car (cdr y))) 1)", |z| *z
+    .nil());
 test!(test_app8, "((lambda (x &rest y) (car (cdr y))) 1 2)", |z| {
     *z.nil()
 });
@@ -189,10 +185,9 @@ test!(test_app_err, "(a)", |_| ZPtr::err(EvalErr::UnboundVar));
 test!(test_app_err2, "((lambda () a) 2)", |_| ZPtr::err(
     EvalErr::UnboundVar
 ));
-// TODO FIXME
-// test!(test_app_err3, "(apply (lambda (x) x) 1)", |_| ZPtr::err(
-//     EvalErr::ArgsNotList
-// ));
+test!(test_app_err3, "(apply (lambda (x) x) 1)", |_| ZPtr::err(
+    EvalErr::ArgsNotList
+));
 
 // builtins
 test!(test_if, "(if 1 1 0)", |_| uint(1));
@@ -256,12 +251,11 @@ test!(test_quote, "'(x 1 :foo)", |z| {
     let foo = z.intern_symbol_no_lang(&Symbol::key(&["foo"]));
     z.intern_list([x, one, foo])
 });
-// TODO FIXME
-// test!(test_eval, "(eval '(+ 1 2) (empty-env))", |_| uint(3));
-// test!(test_eval2, "(eval 'x (let ((x 1)) (current-env)))", |_| {
-//     uint(1)
-// });
-// test!(test_eval3, "(let ((a '(+ 1 1))) (eval a))", |_| uint(2));
+test!(test_eval, "(eval '(+ 1 2) (empty-env))", |_| uint(3));
+test!(test_eval2, "(eval 'x (let ((x 1)) (current-env)))", |_| {
+    uint(1)
+});
+test!(test_eval3, "(let ((a '(+ 1 1))) (eval a))", |_| uint(2));
 test!(test_cons, "(cons 0n 1n)", |z| {
     z.intern_cons(ZPtr::num(F::zero()), ZPtr::num(F::one()))
 });
@@ -297,34 +291,33 @@ test!(
     "(eq (let ((x 1)) (current-env)) (current-env))",
     |z| *z.nil()
 );
-// test_raw!(
-//     test_eq20,
-//     |z| {
-//         let eq = z.intern_symbol_no_lang(&builtin_sym("eq"));
-//         let env = z.intern_empty_env();
-//         let arg1 = z.intern_fix(*z.t(), *z.nil(), env);
-//         let arg2 = z.intern_fix(*z.t(), *z.nil(), env);
-//         z.intern_list([eq, arg1, arg2])
-//     },
-//     |z| *z.t()
-// );
-// test_raw!(
-//     test_eq21,
-//     |z| {
-//         let eq = z.intern_symbol_no_lang(&builtin_sym("eq"));
-//         let env = z.intern_empty_env();
-//         let arg1 = z.intern_fix(*z.nil(), env, env);
-//         let arg2 = z.intern_fix(*z.t(), env, env);
-//         z.intern_list([eq, arg1, arg2])
-//     },
-//     |z| *z.nil()
-// );
+test_raw!(
+    test_eq20,
+    |z| {
+        let eq = z.intern_symbol_no_lang(&builtin_sym("eq"));
+        let env = z.intern_empty_env();
+        let arg1 = z.intern_fix(*z.t(), *z.nil(), env);
+        let arg2 = z.intern_fix(*z.t(), *z.nil(), env);
+        z.intern_list([eq, arg1, arg2])
+    },
+    |z| *z.t()
+);
+test_raw!(
+    test_eq21,
+    |z| {
+        let eq = z.intern_symbol_no_lang(&builtin_sym("eq"));
+        let env = z.intern_empty_env();
+        let arg1 = z.intern_fix(*z.nil(), *z.nil(), env);
+        let arg2 = z.intern_fix(*z.t(), *z.nil(), env);
+        z.intern_list([eq, arg1, arg2])
+    },
+    |z| *z.nil()
+);
 test!(test_eq22, "(eq 1n 0n)", |z| *z.nil());
 test!(test_eq23, "(eq 1n 1n)", |z| *z.t());
 
-// TODO FIXME
-// test!(test_eqq, "(eqq (1 . 2) (cons 1 2))", |z| *z.t());
-// test!(test_eqq2, "(eqq (cons 1 2) (cons 1 2))", |z| *z.nil());
+test!(test_eqq, "(eqq (1 . 2) (cons 1 2))", |z| *z.t());
+test!(test_eqq2, "(eqq (cons 1 2) (cons 1 2))", |z| *z.nil());
 
 test!(
     test_misc1,
@@ -332,18 +325,16 @@ test!(
        (car ((cdr ones))))",
     |_| uint(1)
 );
-// TODO FIXME
-// test!(test_type_eq1, "(type-eq 1 (+ 1 2))", |z| *z.t());
-// test!(test_type_eq2, "(type-eq (+ 1 1) 'a')", |z| *z.nil());
+test!(test_type_eq1, "(type-eq 1 (+ 1 2))", |z| *z.t());
+test!(test_type_eq2, "(type-eq (+ 1 1) 'a')", |z| *z.nil());
 test!(test_type_eq3, "(type-eq nil t)", |z| *z.t());
 test!(test_type_eq4, "(type-eq 'a t)", |z| *z.t());
-// TODO FIXME
-// test!(test_type_eq5, "(type-eq 'cons t)", |z| *z.nil());
-// test!(test_type_eq6, "(type-eq 'cons 'let)", |z| *z.t());
-// test!(test_type_eqq1, "(type-eqq (nil) (cons 1 2))", |z| *z.t());
-// test!(test_type_eqq2, "(type-eqq 2 'a')", |z| *z.nil());
-// test!(test_breakpoint, "(breakpoint)", |z| *z.nil());
-// test!(test_breakpoint2, "(breakpoint (+ 1 1))", |_| uint(2));
+test!(test_type_eq5, "(type-eq 'cons t)", |z| *z.nil());
+test!(test_type_eq6, "(type-eq 'cons 'let)", |z| *z.t());
+test!(test_type_eqq1, "(type-eqq (nil) (cons 1 2))", |z| *z.t());
+test!(test_type_eqq2, "(type-eqq 2 'a')", |z| *z.nil());
+test!(test_breakpoint, "(breakpoint)", |z| *z.nil());
+test!(test_breakpoint2, "(breakpoint (+ 1 1))", |_| uint(2));
 
 // coercions
 test!(test_char1, "(char 'a')", |z| z.intern_char('a'));
@@ -357,8 +348,7 @@ test!(
     "(let ((a 1)) (current-env))",
     trivial_a_1_env
 );
-// TODO FIXME
-// test_env!(test_manual_env, "a", trivial_a_1_env, |_| uint(1));
+test_env!(test_manual_env, "a", trivial_a_1_env, |_| uint(1));
 
 // heavier computations
 test!(
@@ -412,15 +402,14 @@ test!(
        (fib 10))",
     |_| uint(55)
 );
-// TODO FIXME
-// test!(
-//     test_sum,
-//     "(letrec ((sum
-//           (lambda (x &rest y)
-//             (if y (+ x (apply sum y)) x))))
-//        (sum 1 2 3 4 5 6 7 8 9 10))",
-//     |_| uint(55)
-// );
+test!(
+    test_sum,
+    "(letrec ((sum
+          (lambda (x &rest y)
+            (if y (+ x (apply sum y)) x))))
+       (sum 1 2 3 4 5 6 7 8 9 10))",
+    |_| uint(55)
+);
 
 // commitments
 test!(test_commit, "(commit 123)", |_| {
@@ -429,17 +418,16 @@ test!(test_commit, "(commit 123)", |_| {
     preimg.extend(uint(123).flatten());
     ZPtr::comm(lurk_hasher().hash(&preimg).try_into().unwrap())
 });
-// TODO FIXME
-// test!(test_hide, "(hide (bignum (commit 321)) 123)", |_| {
-//     let mut secret_preimg = Vec::with_capacity(24);
-//     secret_preimg.extend([F::zero(); 8]);
-//     secret_preimg.extend(uint(321).flatten());
-//     let hasher = lurk_hasher();
-//     let mut preimg = Vec::with_capacity(24);
-//     preimg.extend(hasher.hash(&secret_preimg));
-//     preimg.extend(uint(123).flatten());
-//     ZPtr::comm(hasher.hash(&preimg).try_into().unwrap())
-// });
+test!(test_hide, "(hide (bignum (commit 321)) 123)", |_| {
+    let mut secret_preimg = Vec::with_capacity(24);
+    secret_preimg.extend([F::zero(); 8]);
+    secret_preimg.extend(uint(321).flatten());
+    let hasher = lurk_hasher();
+    let mut preimg = Vec::with_capacity(24);
+    preimg.extend(hasher.hash(&secret_preimg));
+    preimg.extend(uint(123).flatten());
+    ZPtr::comm(hasher.hash(&preimg).try_into().unwrap())
+});
 test!(test_hide2, "(hide (commit 321) 123)", |_| ZPtr::err(
     EvalErr::NotBigNum
 ));
@@ -449,53 +437,49 @@ test!(
     "(begin (commit 123n) (open #c0xaa8db8504fa55b480f3da7a75f3480174f28d683f4c3ac451b7cee488d2fe))",
     |_| ZPtr::num(F::from_canonical_u32(123))
 );
-// TODO FIXME
-// test!(test_secret, "(secret (commit 123))", |_| ZPtr::big_num(
-//     [F::zero(); 8]
-// ));
-// TODO FIXME
-// test!(
-//     test_func_big_num_app,
-//     "(begin (commit (lambda (x) x)) (#0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 42))",
-//     |_| uint(42)
-// );
-// test!(
-//     test_func_comm_app,
-//     "(begin (commit (lambda (x) x)) ((comm #0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808) 42))",
-//     |_| uint(42)
-// );
+test!(test_secret, "(secret (commit 123))", |_| ZPtr::big_num(
+    [F::zero(); 8]
+));
+test!(
+    test_func_big_num_app,
+    "(begin (commit (lambda (x) x)) (#0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 42))",
+    |_| uint(42)
+);
+test!(
+    test_func_comm_app,
+    "(begin (commit (lambda (x) x)) ((comm #0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808) 42))",
+    |_| uint(42)
+);
 
-// test!(
-//     test_implicit_begin_let,
-//     "(let () (commit (lambda (x) x)) (#0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 42))",
-//     |_| uint(42)
-// );
-// test!(
-//     test_implicit_begin_letrec,
-//     "(letrec () (commit (lambda (x) x)) (#0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 42))",
-//     |_| uint(42)
-// );
-// test!(
-//     test_implicit_begin_lambda,
-//     "((lambda () (commit (lambda (x) x)) (#0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 42)))",
-//     |_| uint(42)
-// );
+test!(
+    test_implicit_begin_let,
+    "(let () (commit (lambda (x) x)) (#0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 42))",
+    |_| uint(42)
+);
+test!(
+    test_implicit_begin_letrec,
+    "(letrec () (commit (lambda (x) x)) (#0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 42))",
+    |_| uint(42)
+);
+test!(
+    test_implicit_begin_lambda,
+    "((lambda () (commit (lambda (x) x)) (#0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 42)))",
+    |_| uint(42)
+);
 
 // big num
-// TODO FIXME
-// test!(test_raw_big_num, "#0x0", |_| ZPtr::big_num([F::zero(); 8]));
+test!(test_raw_big_num, "#0x0", |_| ZPtr::big_num([F::zero(); 8]));
 test!(test_raw_comm, "#c0x0", |_| ZPtr::comm([F::zero(); 8]));
-// TODO FIXME
-// test!(
-//     test_raw_big_num2,
-//     "#0xaa8db8504fa55b480f3da7a75f3480174f28d683f4c3ac451b7cee488d2fe",
-//     |_| {
-//         let mut preimg = Vec::with_capacity(24);
-//         preimg.extend([F::zero(); 8]);
-//         preimg.extend(ZPtr::num(F::from_canonical_u32(123)).flatten());
-//         ZPtr::big_num(lurk_hasher().hash(&preimg).try_into().unwrap())
-//     }
-// );
+test!(
+    test_raw_big_num2,
+    "#0xaa8db8504fa55b480f3da7a75f3480174f28d683f4c3ac451b7cee488d2fe",
+    |_| {
+        let mut preimg = Vec::with_capacity(24);
+        preimg.extend([F::zero(); 8]);
+        preimg.extend(ZPtr::num(F::from_canonical_u32(123)).flatten());
+        ZPtr::big_num(lurk_hasher().hash(&preimg).try_into().unwrap())
+    }
+);
 test!(
     test_raw_comm2,
     "#c0xaa8db8504fa55b480f3da7a75f3480174f28d683f4c3ac451b7cee488d2fe",
@@ -509,20 +493,19 @@ test!(
 test!(test_big_num_to_comm, "(comm #0x0)", |_| ZPtr::comm(
     [F::zero(); 8]
 ));
-// TODO FIXME
-// test!(test_comm_to_big_num, "(bignum #c0x0)", |_| ZPtr::big_num(
-//     [F::zero(); 8]
-// ));
-// test!(
-//     test_big_num_to_comm_to_big_num,
-//     "(bignum (comm #0x0))",
-//     |_| ZPtr::big_num([F::zero(); 8])
-// );
-// test!(
-//     test_comm_to_big_num_to_comm,
-//     "(comm (bignum #c0x0))",
-//     |_| ZPtr::comm([F::zero(); 8])
-// );
+test!(test_comm_to_big_num, "(bignum #c0x0)", |_| ZPtr::big_num(
+    [F::zero(); 8]
+));
+test!(
+    test_big_num_to_comm_to_big_num,
+    "(bignum (comm #0x0))",
+    |_| ZPtr::big_num([F::zero(); 8])
+);
+test!(
+    test_comm_to_big_num_to_comm,
+    "(comm (bignum #c0x0))",
+    |_| ZPtr::comm([F::zero(); 8])
+);
 test!(test_big_num_equal1, "(= #0x0 #0x1)", |z| *z.nil());
 test!(test_big_num_equal2, "(= #0x0 #0x0)", |z| *z.t());
 test!(test_big_num_order1, "(>= #0x0 #0x1)", |z| *z.nil());
@@ -608,44 +591,43 @@ test!(test_equal_non_num, "(= 'a 'a)", |_| ZPtr::err(
 test!(test_equal_non_num2, "(= (comm #0x0) (comm #0x0))", |_| {
     ZPtr::err(EvalErr::InvalidArg)
 });
-// TODO FIXME
-// test!(
-//     test_shadow_err1,
-//     "(let ((nil 1)) (+ nil 1))",
-//     |_| ZPtr::err(EvalErr::IllegalBindingVar)
-// );
-// test!(test_shadow_err2, "(letrec ((nil 1)) (+ nil 1))", |_| {
-//     ZPtr::err(EvalErr::IllegalBindingVar)
-// });
-// test!(test_shadow_err3, "((lambda (nil) (+ nil 1)) 1)", |_| {
-//     ZPtr::err(EvalErr::IllegalBindingVar)
-// });
-// test!(test_shadow_err4, "(let ((t 1)) (+ t 1))", |_| ZPtr::err(
-//     EvalErr::IllegalBindingVar
-// ));
-// test!(test_shadow_err5, "(letrec ((t 1)) (+ t 1))", |_| ZPtr::err(
-//     EvalErr::IllegalBindingVar
-// ));
-// test!(test_shadow_err6, "((lambda (t) (+ t 1)) 1)", |_| ZPtr::err(
-//     EvalErr::IllegalBindingVar
-// ));
-// test!(test_shadow_err7, "((lambda (x &rest t) (+ x 1)) 1)", |_| {
-//     ZPtr::err(EvalErr::IllegalBindingVar)
-// });
-// test!(
-//     test_shadow_err8,
-//     "((lambda (x &rest nil) (+ x 1)) 1)",
-//     |_| ZPtr::err(EvalErr::IllegalBindingVar)
-// );
-// test!(test_rest_err1, "((lambda (x &rest) x) 1)", |_| ZPtr::err(
-//     EvalErr::ParamInvalidRest
-// ));
-// test!(test_rest_err2, "((lambda (x &rest y z) x) 1)", |_| {
-//     ZPtr::err(EvalErr::ParamInvalidRest)
-// });
-// test!(test_rest_err3, "((lambda (&rest y z) z) 1)", |_| ZPtr::err(
-//     EvalErr::ParamInvalidRest
-// ));
-// test!(test_rest_err4, "((lambda (&rest) &rest) 1)", |_| {
-//     ZPtr::err(EvalErr::ParamInvalidRest)
-// });
+test!(
+    test_shadow_err1,
+    "(let ((nil 1)) (+ nil 1))",
+    |_| ZPtr::err(EvalErr::IllegalBindingVar)
+);
+test!(test_shadow_err2, "(letrec ((nil 1)) (+ nil 1))", |_| {
+    ZPtr::err(EvalErr::IllegalBindingVar)
+});
+test!(test_shadow_err3, "((lambda (nil) (+ nil 1)) 1)", |_| {
+    ZPtr::err(EvalErr::IllegalBindingVar)
+});
+test!(test_shadow_err4, "(let ((t 1)) (+ t 1))", |_| ZPtr::err(
+    EvalErr::IllegalBindingVar
+));
+test!(test_shadow_err5, "(letrec ((t 1)) (+ t 1))", |_| ZPtr::err(
+    EvalErr::IllegalBindingVar
+));
+test!(test_shadow_err6, "((lambda (t) (+ t 1)) 1)", |_| ZPtr::err(
+    EvalErr::IllegalBindingVar
+));
+test!(test_shadow_err7, "((lambda (x &rest t) (+ x 1)) 1)", |_| {
+    ZPtr::err(EvalErr::IllegalBindingVar)
+});
+test!(
+    test_shadow_err8,
+    "((lambda (x &rest nil) (+ x 1)) 1)",
+    |_| ZPtr::err(EvalErr::IllegalBindingVar)
+);
+test!(test_rest_err1, "((lambda (x &rest) x) 1)", |_| ZPtr::err(
+    EvalErr::ParamInvalidRest
+));
+test!(test_rest_err2, "((lambda (x &rest y z) x) 1)", |_| {
+    ZPtr::err(EvalErr::ParamInvalidRest)
+});
+test!(test_rest_err3, "((lambda (&rest y z) z) 1)", |_| ZPtr::err(
+    EvalErr::ParamInvalidRest
+));
+test!(test_rest_err4, "((lambda (&rest) &rest) 1)", |_| {
+    ZPtr::err(EvalErr::ParamInvalidRest)
+});

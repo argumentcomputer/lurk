@@ -144,13 +144,13 @@ pub struct ByteAirRecordPassingTester<'a, F: Field> {
     record: &'a mut ByteRecordTester<F>,
 }
 
-impl<'a, F: Field> Drop for ByteAirRecordPassingTester<'a, F> {
+impl<F: Field> Drop for ByteAirRecordPassingTester<'_, F> {
     fn drop(&mut self) {
         assert_eq!(self.num_requires, 0);
     }
 }
 
-impl<'a, F: Field> ByteAirRecordPassingTester<'a, F> {
+impl<F: Field> ByteAirRecordPassingTester<'_, F> {
     fn push_air_event(&mut self, relation: ByteRelation<F>, is_real: impl Into<F>) {
         self.num_requires -= 1;
         let is_real = is_real.into();
@@ -167,7 +167,7 @@ impl<'a, F: Field> ByteAirRecordPassingTester<'a, F> {
     }
 }
 
-impl<'a, F: Field> ByteAirRecord<F> for ByteAirRecordPassingTester<'a, F> {
+impl<F: Field> ByteAirRecord<F> for ByteAirRecordPassingTester<'_, F> {
     fn range_check_u8_pair(&mut self, i1: impl Into<F>, i2: impl Into<F>, is_real: impl Into<F>) {
         self.push_air_event(ByteRelation::range_u8_pair(i1, i2), is_real);
     }

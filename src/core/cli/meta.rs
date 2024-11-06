@@ -8,8 +8,7 @@ use sphinx_core::stark::StarkGenericConfig;
 use std::net::TcpStream;
 
 use crate::{
-    lair::{chipset::Chipset, lair_chip::LairMachineProgram},
-    lurk::{
+    core::{
         big_num::field_elts_to_biguint,
         package::{Package, SymbolRef},
         stark_machine::new_machine,
@@ -18,6 +17,7 @@ use crate::{
         tag::Tag,
         zstore::{ZPtr, DIGEST_SIZE},
     },
+    lair::{chipset::Chipset, lair_chip::LairMachineProgram},
     ocaml::compile::compile_and_transform_single_file,
 };
 

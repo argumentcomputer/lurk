@@ -1,9 +1,7 @@
 name: Tests
 
 on:
-  push:
-    branches:
-      - main
+  merge_group:
   pull_request:
 
 concurrency:
@@ -151,9 +149,9 @@ jobs:
 
             ${{ steps.regression-check.outputs.slow-tests }}
 
-            ${{ env.WORKFLOW_URL }}
+            [Workflow URL](${{ env.WORKFLOW_URL }})
       - uses: JasonEtco/create-an-issue@v2
-        if: steps.regression-check.outputs.regression == 'true' && github.event_name == 'push'
+        if: steps.regression-check.outputs.regression == 'true' && github.event_name == 'merge_group'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WORKFLOW_URL: ${{ env.WORKFLOW_URL }}

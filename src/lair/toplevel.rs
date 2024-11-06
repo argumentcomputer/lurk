@@ -178,7 +178,7 @@ struct LinkCtx<'a, C1, C2> {
     chip_map: &'a FxIndexMap<Name, Either<C1, C2>>,
 }
 
-impl<'a, C1, C2> CheckCtx<'a, C1, C2> {
+impl<C1, C2> CheckCtx<'_, C1, C2> {
     fn save_state(&mut self) -> BindMap {
         self.bind_map.clone()
     }
@@ -196,7 +196,7 @@ impl ExpandCtx {
     }
 }
 
-impl<'a, C1, C2> LinkCtx<'a, C1, C2> {
+impl<C1, C2> LinkCtx<'_, C1, C2> {
     fn save_state(&mut self) -> (usize, LinkMap) {
         (self.var_index, self.link_map.clone())
     }
