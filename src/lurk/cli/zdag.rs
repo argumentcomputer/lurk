@@ -33,7 +33,7 @@ impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
                 self.populate_with(a, zstore, cache);
                 self.populate_with(b, zstore, cache);
             }
-            ZPtrType::Tuple100(a, b, c) | ZPtrType::Tuple110(a, b, c) => {
+            ZPtrType::Tuple110(a, b, c) => {
                 self.populate_with(a, zstore, cache);
                 self.populate_with(b, zstore, cache);
                 self.populate_with(c, zstore, cache);
@@ -70,11 +70,6 @@ impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
                     zstore.hashes4.insert(preimg, zptr.digest);
                     zstore.hashes4_diff.insert(preimg, zptr.digest);
                 }
-                ZPtrType::Tuple100(a, b, c) => {
-                    let preimg = ZPtr::flatten_as_tuple100(a, b, c);
-                    zstore.hashes4.insert(preimg, zptr.digest);
-                    zstore.hashes4_diff.insert(preimg, zptr.digest);
-                }
                 ZPtrType::Tuple110(a, b, c) => {
                     let preimg = ZPtr::flatten_as_tuple110(a, b, c);
                     zstore.hashes5.insert(preimg, zptr.digest);
@@ -91,7 +86,7 @@ impl<F: std::hash::Hash + Eq + Copy> ZDag<F> {
             None => true,
             Some(ZPtrType::Atom) => false,
             Some(ZPtrType::Tuple11(a, b)) => self.has_opaque_data(a) || self.has_opaque_data(b),
-            Some(ZPtrType::Tuple100(a, b, c) | ZPtrType::Tuple110(a, b, c)) => {
+            Some(ZPtrType::Tuple110(a, b, c)) => {
                 self.has_opaque_data(a) || self.has_opaque_data(b) || self.has_opaque_data(c)
             }
         }
