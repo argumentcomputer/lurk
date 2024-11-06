@@ -73,7 +73,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'_, F, C1, C2> {
     /// Per-row parallel trace generation
     pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
         let func_queries = &shard.queries().func_queries()[self.func.index];
-        let range = shard.get_func_range(self.func.index);
+        let range = shard.get_func_range(func_queries.len());
         let width = self.width();
         let non_dummy_height = range.len();
         let height = non_dummy_height.next_power_of_two();
@@ -92,13 +92,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'_, F, C1, C2> {
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 let requires = result.requires.iter();
                 let mut depth_requires = result.depth_requires.iter();
-                let queries = shard.queries();
-                let query_map = &queries.func_queries()[self.func.index];
-                let lookup = query_map
-                    .get(args)
-                    .expect("Cannot find query result")
-                    .provide;
-                let provide = lookup.into_provide();
+                let provide = result.provide.into_provide();
                 result
                     .output
                     .as_ref()
@@ -123,7 +117,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'_, F, C1, C2> {
                     args,
                     index,
                     slice,
-                    queries,
+                    shard.queries(),
                     requires,
                     self.toplevel,
                     result.depth,
