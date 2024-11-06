@@ -105,8 +105,7 @@ impl<'a, F: PrimeField32> Shard<'a, F> {
         self.queries.expect("Missing query record reference")
     }
 
-    pub fn get_func_range(&self, func_index: usize) -> Range<usize> {
-        let num_func_queries = self.queries().func_queries[func_index].len();
+    pub fn get_func_range(&self, num_func_queries: usize) -> Range<usize> {
         let shard_idx = self.index as usize;
         let max_shard_size = self.shard_config.max_shard_size as usize;
         shard_idx * max_shard_size..((shard_idx + 1) * max_shard_size).min(num_func_queries)
