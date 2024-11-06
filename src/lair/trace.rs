@@ -81,7 +81,10 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'_, F, C1, C2> {
     /// Per-row parallel trace generation
     pub fn generate_trace(&self, shard: &Shard<'_, F>) -> RowMajorMatrix<F> {
         assert!(self.func.split);
-        let func_queries = &shard.queries().func_queries()[self.func.index];
+        let func_queries = &shard.queries().func_queries()[self.func.index]
+            .iter()
+            .filter(|(_, result)| result.return_group == self.return_group)
+            .collect::<Vec<_>>();
         let range = shard.get_func_range(func_queries.len());
         let width = self.width();
         let non_dummy_height = range.len();
@@ -96,7 +99,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'_, F, C1, C2> {
             .par_chunks_mut(width)
             .enumerate()
             .for_each(|(i, row)| {
-                let (args, result) = func_queries.get_index(range.start + i).unwrap();
+                let (args, result) = func_queries[range.start + i];
                 let index = &mut ColumnIndex::default();
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 let requires = result.requires.iter();

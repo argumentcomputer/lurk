@@ -30,6 +30,7 @@ pub struct FuncChip<'a, F, C1: Chipset<F>, C2: Chipset<F>> {
     pub(crate) func: &'a Func<F>,
     pub(crate) toplevel: &'a Toplevel<F, C1, C2>,
     pub(crate) layout_sizes: LayoutSizes,
+    pub(crate) return_group: ReturnGroup,
 }
 
 impl<'a, F, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
@@ -40,7 +41,7 @@ impl<'a, F, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
         toplevel: &'a Toplevel<F, C1, C2>,
     ) -> Self {
         let func = toplevel.split_func_by_name(name, group);
-        Self::from_func(func, toplevel)
+        Self::from_func(func, group, toplevel)
     }
 
     #[inline]
@@ -52,7 +53,7 @@ impl<'a, F, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
     #[inline]
     pub fn from_index(idx: usize, group: ReturnGroup, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
         let func = toplevel.split_func_by_index(idx, group);
-        Self::from_func(func, toplevel)
+        Self::from_func(func, group, toplevel)
     }
 
     #[inline]
@@ -62,12 +63,17 @@ impl<'a, F, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
     }
 
     #[inline]
-    pub fn from_func(func: &'a Func<F>, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
+    pub fn from_func(
+        func: &'a Func<F>,
+        return_group: ReturnGroup,
+        toplevel: &'a Toplevel<F, C1, C2>,
+    ) -> Self {
         let layout_sizes = func.compute_layout_sizes(toplevel);
         Self {
             func,
             toplevel,
             layout_sizes,
+            return_group,
         }
     }
 
@@ -79,8 +85,8 @@ impl<'a, F, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
             .flat_map(|funcs| {
                 funcs
                     .split_funcs
-                    .values()
-                    .map(|func| FuncChip::from_func(func, toplevel))
+                    .iter()
+                    .map(|(group, func)| FuncChip::from_func(func, *group, toplevel))
             })
             .collect()
     }
