@@ -6,6 +6,7 @@ pub mod lair;
 // pub mod logup;
 
 pub mod gadgets;
+pub mod light_data;
 pub mod loam;
 pub mod lurk;
 pub mod ocaml;
