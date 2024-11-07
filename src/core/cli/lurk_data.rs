@@ -1,4 +1,4 @@
-use p3_field::AbstractField;
+use p3_field::{AbstractField, Field};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -31,9 +31,11 @@ impl<F: std::hash::Hash + Eq + Default + Copy> LurkData<F> {
         zdag.populate_zstore(zstore);
         zptr
     }
+}
 
+impl<F: Field> LurkData<F> {
     #[inline]
-    pub(crate) fn has_opaque_data(&self) -> bool {
-        self.zdag.has_opaque_data(&self.zptr)
+    pub(crate) fn is_flawed<C: Chipset<F>>(&self, zstore: &mut ZStore<F, C>) -> bool {
+        self.zdag.is_flawed(&self.zptr, zstore)
     }
 }

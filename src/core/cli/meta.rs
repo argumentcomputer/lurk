@@ -1119,8 +1119,8 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
 
             let protocol_proof_bytes = std::fs::read(path_str)?;
             let ProtocolProof { crypto_proof, args } = bincode::deserialize(&protocol_proof_bytes)?;
-            if args.has_opaque_data() {
-                bail!("Arguments can't have opaque data");
+            if args.is_flawed(&mut repl.zstore) {
+                bail!("Arguments contain flawed data");
             }
             let args = args.populate_zstore(&mut repl.zstore);
             let (args_vec_reduced, None) = repl.zstore.fetch_list(&args) else {

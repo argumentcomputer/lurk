@@ -49,7 +49,7 @@ impl<F: Hash + Eq + Default + Copy> CommData<F> {
         }
     }
 
-    fn compute_digest<H: Chipset<F>>(&self, zstore: &mut ZStore<F, H>) -> [F; DIGEST_SIZE]
+    fn compute_digest<C: Chipset<F>>(&self, zstore: &mut ZStore<F, C>) -> [F; DIGEST_SIZE]
     where
         F: Field,
     {
@@ -73,9 +73,11 @@ impl<F: Hash + Eq + Default + Copy> CommData<F> {
         zstore.intern_comm(digest);
         self.zdag.populate_zstore(zstore);
     }
+}
 
+impl<F: Field> CommData<F> {
     #[inline]
-    pub(crate) fn payload_has_opaque_data(&self) -> bool {
-        self.zdag.has_opaque_data(&self.payload)
+    pub(crate) fn payload_is_flawed<C: Chipset<F>>(&self, zstore: &mut ZStore<F, C>) -> bool {
+        self.zdag.is_flawed(&self.payload, zstore)
     }
 }

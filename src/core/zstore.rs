@@ -7,7 +7,7 @@ use p3_baby_bear::BabyBear;
 use p3_field::{AbstractField, Field, PrimeField32};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
-use std::marker::PhantomData;
+use std::{hash::Hash, marker::PhantomData};
 
 use crate::{
     core::{
@@ -309,7 +309,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         digest
     }
 
-    fn hash4(&mut self, preimg: [F; HASH4_SIZE]) -> [F; DIGEST_SIZE] {
+    pub(crate) fn hash4(&mut self, preimg: [F; HASH4_SIZE]) -> [F; DIGEST_SIZE] {
         if let Some(img) = self.hashes4.get(&preimg) {
             return *img;
         }
@@ -319,7 +319,7 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         digest
     }
 
-    fn hash5(&mut self, preimg: [F; HASH5_SIZE]) -> [F; DIGEST_SIZE] {
+    pub(crate) fn hash5(&mut self, preimg: [F; HASH5_SIZE]) -> [F; DIGEST_SIZE] {
         if let Some(img) = self.hashes5.get(&preimg) {
             return *img;
         }

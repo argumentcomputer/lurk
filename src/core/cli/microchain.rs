@@ -44,10 +44,10 @@ pub(crate) enum CallableData {
 }
 
 impl CallableData {
-    fn has_opaque_data(&self) -> bool {
+    fn is_flawed(&self, zstore: &mut ZStore<F, LurkChip>) -> bool {
         match self {
-            Self::Comm(comm_data) => comm_data.payload_has_opaque_data(),
-            Self::Fun(lurk_data) => lurk_data.has_opaque_data(),
+            Self::Comm(comm_data) => comm_data.payload_is_flawed(zstore),
+            Self::Fun(lurk_data) => lurk_data.is_flawed(zstore),
         }
     }
 
@@ -103,8 +103,8 @@ pub(crate) enum Response {
     NoDataForId,
     Genesis([F; DIGEST_SIZE], ChainState),
     State(ChainState),
-    ChainResultIsOpaque,
-    NextCallableIsOpaque,
+    ChainResultIsFlawed,
+    NextCallableIsFlawed,
     ProofVerificationFailed(String),
     ProofAccepted,
     Proofs(Vec<OpaqueChainProof>),
@@ -137,11 +137,11 @@ impl MicrochainArgs {
                     };
                     match request {
                         Request::Start(chain_state) => {
-                            if chain_state.chain_result.has_opaque_data() {
-                                return_msg!(Response::ChainResultIsOpaque);
+                            if chain_state.chain_result.is_flawed(&mut zstore) {
+                                return_msg!(Response::ChainResultIsFlawed);
                             }
-                            if chain_state.callable_data.has_opaque_data() {
-                                return_msg!(Response::NextCallableIsOpaque);
+                            if chain_state.callable_data.is_flawed(&mut zstore) {
+                                return_msg!(Response::NextCallableIsFlawed);
                             }
 
                             let id_secret = rand_digest();
@@ -181,22 +181,22 @@ impl MicrochainArgs {
                             } = chain_proof;
 
                             let next_chain_result_zptr = {
-                                if next_chain_result.has_opaque_data() {
-                                    return_msg!(Response::ChainResultIsOpaque);
+                                if next_chain_result.is_flawed(&mut zstore) {
+                                    return_msg!(Response::ChainResultIsFlawed);
                                 }
                                 next_chain_result.zptr
                             };
 
                             let next_callable_zptr = match &next_callable {
                                 CallableData::Comm(comm_data) => {
-                                    if comm_data.payload_has_opaque_data() {
-                                        return_msg!(Response::NextCallableIsOpaque);
+                                    if comm_data.payload_is_flawed(&mut zstore) {
+                                        return_msg!(Response::NextCallableIsFlawed);
                                     }
                                     comm_data.commit(&mut zstore)
                                 }
                                 CallableData::Fun(lurk_data) => {
-                                    if lurk_data.has_opaque_data() {
-                                        return_msg!(Response::NextCallableIsOpaque);
+                                    if lurk_data.is_flawed(&mut zstore) {
+                                        return_msg!(Response::NextCallableIsFlawed);
                                     }
                                     lurk_data.zptr
                                 }
