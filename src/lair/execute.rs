@@ -15,6 +15,7 @@ use crate::{
 use super::{
     bytecode::{Ctrl, Func, Op},
     chipset::Chipset,
+    expr::ReturnGroup,
     toplevel::Toplevel,
     FxIndexMap, List,
 };
@@ -30,6 +31,7 @@ pub struct QueryResult<F> {
     pub(crate) requires: Vec<Record>,
     pub(crate) depth: u32,
     pub(crate) depth_requires: Vec<Record>,
+    pub(crate) return_group: ReturnGroup,
 }
 
 impl<F: PrimeField32> QueryResult<F> {
@@ -702,7 +704,7 @@ impl<F: PrimeField32> Func<F> {
                     }
                 }
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
-                ExecEntry::Ctrl(Ctrl::Return(_, out)) => {
+                ExecEntry::Ctrl(Ctrl::Return(_, out, group)) => {
                     let out = out.iter().map(|v| map[*v]).collect::<Vec<_>>();
                     let (inp, result) = queries.func_queries[func_index]
                         .get_index_mut(nonce)
@@ -728,6 +730,7 @@ impl<F: PrimeField32> Func<F> {
                     result.output = Some(out_list);
                     result.requires = requires;
                     result.depth_requires = depth_requires;
+                    result.return_group = *group;
                     if let Some(CallerState {
                         preimg,
                         func_index: caller_func_index,

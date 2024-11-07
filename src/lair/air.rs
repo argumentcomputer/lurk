@@ -535,7 +535,7 @@ impl<F: Field> Ctrl<F> {
                     process(block)
                 };
             }
-            Ctrl::Return(ident, vs) => {
+            Ctrl::Return(ident, vs, _) => {
                 let sel = local.sel[*ident];
                 let out = vs.iter().map(|v| map[*v].to_expr());
                 out.for_each(|o| {

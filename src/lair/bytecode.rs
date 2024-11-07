@@ -4,7 +4,7 @@
 //! References are index-based, thought of as positions in a stack from a stack
 //! machine.
 
-use super::{map::Map, List, Name};
+use super::{expr::ReturnGroup, map::Map, List, Name};
 
 /// The type for Lair operations
 #[allow(clippy::type_complexity)]
@@ -78,7 +78,7 @@ pub enum Ctrl<F> {
     /// Contains the variables whose bindings will construct the output of the
     /// block. The first `usize` is an unique identifier, representing the
     /// selector used for arithmetization
-    Return(usize, List<usize>),
+    Return(usize, List<usize>, ReturnGroup),
 }
 
 /// Represents the cases for `Ctrl::Match`, containing the branches for successful

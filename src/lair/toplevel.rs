@@ -528,12 +528,12 @@ impl<F: Field + Ord> CtrlE<F> {
 
     fn compile<C1: Chipset<F>, C2: Chipset<F>>(&self, ctx: &mut LinkCtx<'_, C1, C2>) -> Ctrl<F> {
         match &self {
-            CtrlE::Return(return_vars, _) => {
+            CtrlE::Return(return_vars, group) => {
                 let return_vec = return_vars
                     .iter()
                     .flat_map(|arg| get_var(arg, ctx).to_vec())
                     .collect();
-                let ctrl = Ctrl::Return(ctx.return_ident, return_vec);
+                let ctrl = Ctrl::Return(ctx.return_ident, return_vec, *group);
                 ctx.return_idents.push(ctx.return_ident);
                 ctx.return_ident += 1;
                 ctrl

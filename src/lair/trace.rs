@@ -198,7 +198,7 @@ impl<F: PrimeField32> Ctrl<F> {
         slice: &mut ColumnMutSlice<'_, F>,
     ) {
         match self {
-            Ctrl::Return(ident, _) => {
+            Ctrl::Return(ident, _, _) => {
                 assert!(ctx.requires.next().is_none());
                 assert!(ctx.depth_requires.next().is_none());
                 slice.sel[*ident] = F::one();

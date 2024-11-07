@@ -172,7 +172,7 @@ impl<F> BlockE<F> {
     }
 }
 
-type ReturnGroup = u8;
+pub type ReturnGroup = u8;
 
 /// Encodes the logical flow of a Lair program
 #[derive(Clone, Debug, Eq, PartialEq)]
