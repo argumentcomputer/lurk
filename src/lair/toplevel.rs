@@ -3,14 +3,32 @@
 
 use either::Either;
 use p3_field::Field;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{bytecode::*, chipset::Chipset, expr::*, map::Map, FxIndexMap, List, Name};
+
+/// This struct holds the full Lair function and the split functions, which contains
+/// only the paths belonging to the same group
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FuncStruct<F> {
+    pub(crate) full_func: Func<F>,
+    pub(crate) split_funcs: FxHashMap<ReturnGroup, Func<F>>,
+}
+
+impl<F: Field + Ord> FuncStruct<F> {
+    pub fn from_func(full_func: Func<F>, groups: &FxHashSet<ReturnGroup>) -> Self {
+        let split_funcs = full_func.split(groups);
+        Self {
+            full_func,
+            split_funcs,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Toplevel<F, C1: Chipset<F>, C2: Chipset<F>> {
     /// Lair functions reachable by the `Call` operator
-    pub(crate) func_map: FxIndexMap<Name, Func<F>>,
+    pub(crate) func_map: FxIndexMap<Name, FuncStruct<F>>,
     /// Extern chips reachable by the `ExternCall` operator. The two different
     /// chipset types can be used to encode native and custom chips.
     pub(crate) chip_map: FxIndexMap<Name, Either<C1, C2>>,
@@ -42,8 +60,9 @@ impl<F: Field + Ord, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
             .enumerate()
             .map(|(i, func)| {
                 func.check(&info_map, &chip_map);
-                let cfunc = func.expand().compile(i, &info_map, &chip_map);
-                (func.name, cfunc)
+                let (cfunc, groups) = func.expand().compile(i, &info_map, &chip_map);
+                let func_struct = FuncStruct::from_func(cfunc, &groups);
+                (func.name, func_struct)
             })
             .collect();
         Toplevel { func_map, chip_map }
@@ -58,17 +77,21 @@ impl<F: Field + Ord, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
 impl<F, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
     #[inline]
     pub fn func_by_index(&self, i: usize) -> &Func<F> {
-        self.func_map
+        &self
+            .func_map
             .get_index(i)
             .unwrap_or_else(|| panic!("Func index {i} out of bounds"))
             .1
+            .full_func
     }
 
     #[inline]
     pub fn func_by_name(&self, name: &'static str) -> &Func<F> {
-        self.func_map
+        &self
+            .func_map
             .get(&Name(name))
             .unwrap_or_else(|| panic!("Func {name} not found"))
+            .full_func
     }
 
     #[inline]
@@ -85,7 +108,7 @@ impl<F, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
     }
 }
 
-/// A map from `Var` its block identifier. Variables in this map are always bound
+/// A map from `Var` to its block identifier. Variables in this map are always bound
 type BindMap = FxHashMap<Var, usize>;
 
 /// A map that tells whether a `Var`, from a certain block, has been used or not
@@ -173,6 +196,7 @@ struct LinkCtx<'a, C1, C2> {
     var_index: usize,
     return_ident: usize,
     return_idents: Vec<usize>,
+    return_groups: FxHashSet<ReturnGroup>,
     link_map: LinkMap,
     info_map: &'a FxIndexMap<Name, FuncInfo>,
     chip_map: &'a FxIndexMap<Name, Either<C1, C2>>,
@@ -258,20 +282,21 @@ impl<F: Field + Ord> FuncE<F> {
         func_index: usize,
         info_map: &FxIndexMap<Name, FuncInfo>,
         chip_map: &FxIndexMap<Name, Either<C1, C2>>,
-    ) -> Func<F> {
-        let ctx = &mut LinkCtx {
+    ) -> (Func<F>, FxHashSet<ReturnGroup>) {
+        let mut ctx = LinkCtx {
             var_index: 0,
             return_ident: 0,
             return_idents: vec![],
+            return_groups: FxHashSet::default(),
             link_map: FxHashMap::default(),
             info_map,
             chip_map,
         };
         self.input_params.iter().for_each(|var| {
-            link_new(var, ctx);
+            link_new(var, &mut ctx);
         });
-        let body = self.body.compile(ctx);
-        Func {
+        let body = self.body.compile(&mut ctx);
+        let func = Func {
             name: self.name,
             invertible: self.invertible,
             partial: self.partial,
@@ -279,7 +304,9 @@ impl<F: Field + Ord> FuncE<F> {
             body,
             input_size: self.input_params.total_size(),
             output_size: self.output_size,
-        }
+            split: false,
+        };
+        (func, ctx.return_groups)
     }
 }
 
@@ -536,6 +563,7 @@ impl<F: Field + Ord> CtrlE<F> {
                 let ctrl = Ctrl::Return(ctx.return_ident, return_vec, *group);
                 ctx.return_idents.push(ctx.return_ident);
                 ctx.return_ident += 1;
+                ctx.return_groups.insert(*group);
                 ctrl
             }
             CtrlE::Choose(v, cases) => {
@@ -880,6 +908,117 @@ impl<F: Field + Ord> OpE<F> {
             OpE::Breakpoint => ops.push(Op::Breakpoint),
             OpE::Debug(s) => ops.push(Op::Debug(s)),
             OpE::Eq(..) | OpE::Div(..) => panic!("Expand first"),
+        }
+    }
+}
+
+impl<F: Field + Ord> Func<F> {
+    fn split(&self, groups: &FxHashSet<ReturnGroup>) -> FxHashMap<ReturnGroup, Func<F>> {
+        assert!(!self.split);
+        let mut map = FxHashMap::default();
+        for group in groups.iter() {
+            let body = self
+                .body
+                .split(*group, &mut 0)
+                .unwrap_or_else(|| panic!("Group {group} does not exist"));
+            let func = Func {
+                body,
+                split: true,
+                ..*self
+            };
+            map.insert(*group, func);
+        }
+        map
+    }
+}
+
+impl<F: Field + Ord> Block<F> {
+    fn split(&self, group: ReturnGroup, return_ident: &mut usize) -> Option<Self> {
+        let (ctrl, return_idents) = self.ctrl.split(group, return_ident)?;
+        let block = Block {
+            ctrl,
+            ops: self.ops.clone(),
+            return_idents: return_idents.into(),
+        };
+        Some(block)
+    }
+}
+
+impl<F: Field + Ord> Ctrl<F> {
+    fn split(&self, group: ReturnGroup, return_ident: &mut usize) -> Option<(Self, Vec<usize>)> {
+        match self {
+            Ctrl::Return(_, out, return_group) => {
+                if group != *return_group {
+                    return None;
+                }
+                let ctrl = Ctrl::Return(*return_ident, out.clone(), group);
+                let return_idents = vec![*return_ident];
+                *return_ident += 1;
+                Some((ctrl, return_idents))
+            }
+            Ctrl::Choose(var, cases, branches) => {
+                let mut return_idents = vec![];
+                // This map is used to convert indices from the `branches` vector into
+                // the new, potentially smaller, `branches` vector
+                let mut map = FxHashMap::default();
+                let mut i = 0;
+                let branches: Vec<_> = branches
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(j, branch)| {
+                        let branch = branch.split(group, return_ident)?;
+                        map.insert(j, i);
+                        i += 1;
+                        return_idents.extend_from_slice(&branch.return_idents);
+                        Some(branch)
+                    })
+                    .collect();
+                let cases_branches = Map::from_vec(
+                    cases
+                        .branches
+                        .iter()
+                        .filter_map(|(f, j)| {
+                            let i = map.get(j)?;
+                            Some((*f, *i))
+                        })
+                        .collect(),
+                );
+                let default: Option<_> = cases.default.as_ref().and_then(|i| {
+                    let idx = map.get(i)?;
+                    Some((*idx).into())
+                });
+                let cases = Cases {
+                    branches: cases_branches,
+                    default,
+                };
+                let ctrl = Ctrl::Choose(*var, cases, branches.into());
+                Some((ctrl, return_idents))
+            }
+            Ctrl::ChooseMany(vars, cases) => {
+                let mut return_idents = vec![];
+                let cases_branches = Map::from_vec(
+                    cases
+                        .branches
+                        .iter()
+                        .filter_map(|(fs, branch)| {
+                            let branch = branch.split(group, return_ident)?;
+                            return_idents.extend(&branch.return_idents);
+                            Some((fs.clone(), branch))
+                        })
+                        .collect(),
+                );
+                let default: Option<_> = cases.default.as_ref().and_then(|branch| {
+                    let branch = branch.split(group, return_ident)?;
+                    return_idents.extend(&branch.return_idents);
+                    Some(branch.into())
+                });
+                let cases = Cases {
+                    branches: cases_branches,
+                    default,
+                };
+                let ctrl = Ctrl::ChooseMany(vars.clone(), cases);
+                Some((ctrl, return_idents))
+            }
         }
     }
 }

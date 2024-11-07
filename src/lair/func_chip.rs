@@ -59,7 +59,7 @@ impl<'a, F, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
         toplevel
             .func_map
             .values()
-            .map(|func| FuncChip::from_func(func, toplevel))
+            .map(|funcs| FuncChip::from_func(&funcs.full_func, toplevel))
             .collect()
     }
 
@@ -92,6 +92,7 @@ impl<F> Func<F> {
         &self,
         toplevel: &Toplevel<F, C1, C2>,
     ) -> LayoutSizes {
+        assert!(self.split);
         let input = self.input_size;
         // last nonce, last count
         let mut aux = 2;

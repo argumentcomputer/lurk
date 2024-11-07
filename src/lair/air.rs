@@ -136,6 +136,7 @@ where
     <AB as AirBuilder>::Var: Debug,
 {
     fn eval(&self, builder: &mut AB) {
+        assert!(self.func.split);
         self.func.eval(builder, self.toplevel, self.layout_sizes)
     }
 }

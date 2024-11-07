@@ -269,8 +269,8 @@ impl<F: PrimeField32> QueryRecord<F> {
         let inv_func_queries = toplevel
             .func_map
             .iter()
-            .map(|(_, func)| {
-                if func.invertible {
+            .map(|(_, funcs)| {
+                if funcs.full_func.invertible {
                     Some(FxHashMap::default())
                 } else {
                     None
@@ -387,6 +387,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
         queries: &mut QueryRecord<F>,
         dbg_func_idx: Option<usize>,
     ) -> Result<List<F>> {
+        assert!(!func.split);
         let (out, depth) = func.execute(args, self, queries, dbg_func_idx)?;
         let mut public_values = Vec::with_capacity(args.len() + out.len());
         public_values.extend(args);

@@ -143,6 +143,8 @@ pub struct Func<F> {
     pub(crate) input_size: usize,
     pub(crate) output_size: usize,
     pub(crate) body: Block<F>,
+    // This last field is purely to catch potential bugs
+    pub(crate) split: bool,
 }
 
 impl<F> Func<F> {
