@@ -1330,7 +1330,7 @@ dependencies = [
  "criterion",
  "either",
  "expect-test",
- "hashbrown 0.14.5",
+ "hashbrown 0.15.1",
  "home",
  "hybrid-array",
  "indexmap 2.6.0",
