@@ -281,10 +281,10 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
     }
 
     #[inline]
-    pub(crate) fn memoize_dag(&mut self, tag: Tag, digest: &[F]) {
+    pub(crate) fn memoize_dag(&mut self, zptr: &ZPtr<F>) {
         self.zstore.memoize_dag(
-            tag,
-            digest,
+            zptr.tag,
+            &zptr.digest,
             self.queries.get_inv_queries("hash4", &self.toplevel),
             self.queries.get_inv_queries("hash5", &self.toplevel),
         )
@@ -292,7 +292,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
 
     #[inline]
     pub(crate) fn memoize_env_dag(&mut self) {
-        self.memoize_dag(Tag::Env, &self.env.digest.clone())
+        self.memoize_dag(&self.env.clone())
     }
 
     #[inline]
@@ -395,23 +395,23 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
             let ProcessedDebugEntry { dbg_depth, kind } = processed_debug_entry;
             match &kind {
                 ProcessedDebugEntryKind::Push(inp) => {
-                    self.memoize_dag(inp.tag, &inp.digest);
+                    self.memoize_dag(inp);
                     formatted_debug_entries.push(FormattedDebugEntry {
                         dbg_depth,
                         formatted: format!("?{dbg_depth}: {}", self.fmt(inp)),
                     });
                 }
                 ProcessedDebugEntryKind::Pop(inp, out) => {
-                    self.memoize_dag(inp.tag, &inp.digest);
-                    self.memoize_dag(out.tag, &out.digest);
+                    self.memoize_dag(inp);
+                    self.memoize_dag(out);
                     formatted_debug_entries.push(FormattedDebugEntry {
                         dbg_depth,
                         formatted: format!(" {dbg_depth}: {} ↦ {}", self.fmt(inp), self.fmt(out)),
                     });
                 }
                 ProcessedDebugEntryKind::Memoized(inp, out) => {
-                    self.memoize_dag(inp.tag, &inp.digest);
-                    self.memoize_dag(out.tag, &out.digest);
+                    self.memoize_dag(inp);
+                    self.memoize_dag(out);
                     formatted_debug_entries.push(FormattedDebugEntry {
                         dbg_depth,
                         formatted: format!("!{dbg_depth}: {} ↦ {}", self.fmt(inp), self.fmt(out)),
@@ -449,7 +449,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         }
         self.queries.inv_func_queries = queries_tmp.inv_func_queries;
         for zptr in &emitted {
-            self.memoize_dag(zptr.tag, &zptr.digest);
+            self.memoize_dag(zptr);
             println!("{}", self.fmt(zptr));
         }
         result_data.map(|data| (ZPtr::from_flat_data(&data), emitted))
@@ -477,7 +477,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
             }
             self.retrieve_inv_query_data_from_tmp_queries(queries_tmp);
             for zptr in &emitted {
-                self.memoize_dag(zptr.tag, &zptr.digest);
+                self.memoize_dag(zptr);
                 println!("{}", self.fmt(zptr));
             }
         }
@@ -489,7 +489,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
     pub(crate) fn handle_non_meta(&mut self, expr: &ZPtr<F>) -> Result<ZPtr<F>> {
         let env = self.env;
         let result = self.reduce_with_env(expr, &env)?;
-        self.memoize_dag(result.tag, &result.digest);
+        self.memoize_dag(&result);
         let iterations = self.queries.func_queries[self.func_indices.eval].len();
         println!(
             "[{}] => {}",

@@ -86,8 +86,8 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 bail!("RHS reduction error: {}", repl.fmt(&result2));
             }
             if result1 != result2 {
-                repl.memoize_dag(result1.tag, &result1.digest);
-                repl.memoize_dag(result2.tag, &result2.digest);
+                repl.memoize_dag(&result1);
+                repl.memoize_dag(&result2);
                 eprintln!(
                     "assert-eq failed. {} ≠ {}",
                     repl.fmt(&result1),
@@ -140,7 +140,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             }
             let emitted = repl.zstore.intern_list(emitted);
             if expected != emitted {
-                repl.memoize_dag(expected.tag, &expected.digest);
+                repl.memoize_dag(&expected);
                 // DAG for `emitted` has already been memoized
                 eprintln!(
                     "assert-emitted failed. Expected {} but got {}",
@@ -231,29 +231,16 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     const DEF: Self = Self {
         name: "def",
         summary: "Extends env with a non-recursive binding.",
-        info: &[
-            "Gets macroexpanded to (let ((<symbol> <expr>)) (current-env)).",
-            "The REPL's env is set to the result.",
-        ],
+        info: &[],
         format: "!(def <symbol> <expr>)",
         example: &["!(def foo (lambda () 123))"],
         returns: "The binding symbol",
         run: |repl, args, _dir| {
-            let [&sym, _] = repl.take(args)?;
-            let let_ = repl
-                .zstore
-                .intern_symbol(&builtin_sym("let"), &repl.lang_symbols);
-            let bindings = repl.zstore.intern_list([*args]);
-            let current_env = repl
-                .zstore
-                .intern_symbol(&builtin_sym("current-env"), &repl.lang_symbols);
-            let current_env_call = repl.zstore.intern_list([current_env]);
-            let expr = repl.zstore.intern_list([let_, bindings, current_env_call]);
-            let (output, _) = repl.reduce_aux(&expr)?;
-            if output.tag != Tag::Env {
-                bail!("Reduction resulted in {}", repl.fmt(&output));
-            }
-            repl.env = output;
+            let [&sym, &expr] = repl.take(args)?;
+            Self::validate_binding_symbol(repl, &sym)?;
+            let (val, _) = repl.reduce_aux(&expr)?;
+            repl.memoize_dag(&val);
+            repl.bind(sym, val);
             Ok(sym)
         },
     };
@@ -390,8 +377,8 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         payload: ZPtr<F>,
         repl: &mut Repl<F, C1, C2>,
     ) -> Result<ZPtr<F>> {
-        repl.memoize_dag(secret.tag, &secret.digest);
-        repl.memoize_dag(payload.tag, &payload.digest);
+        repl.memoize_dag(&secret);
+        repl.memoize_dag(&payload);
         let comm_data = CommData::new(secret, payload, &repl.zstore);
         let comm = comm_data.commit(&mut repl.zstore);
         let hash = format!("{:x}", field_elts_to_biguint(&comm.digest));
@@ -502,6 +489,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             if arg_reduced.tag == Tag::Err {
                 bail!("Error when evaluating argument {}", repl.fmt(arg));
             }
+            repl.memoize_dag(&arg_reduced);
             args_vec_reduced_quoted.push(repl.zstore.intern_quoted(arg_reduced));
         }
         Ok(repl.zstore.intern_list(args_vec_reduced_quoted))
@@ -516,7 +504,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             Tag::BigNum | Tag::Comm => {
                 let inv_hashes3 = repl.queries.get_inv_queries("hash3", &repl.toplevel);
                 if !inv_hashes3.contains_key(callable.digest.as_slice()) {
-                    // try to fetch a persisted commitment
+                    // Try to fetch a persisted commitment.
                     Self::fetch_comm_data(repl, &callable.digest)?;
                 }
             }
@@ -590,7 +578,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         if current_state.tag != Tag::Cons {
             bail!("Current state must reduce to a pair");
         }
-        repl.memoize_dag(current_state.tag, &current_state.digest);
+        repl.memoize_dag(&current_state);
         let (_, &callable) = repl.zstore.fetch_tuple11(&current_state);
         let call_expr = repl.zstore.intern_cons(callable, call_args);
         Self::call(repl, &call_expr)
@@ -715,7 +703,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 bail!("Reduction error: {}", repl.fmt(&result));
             }
             let path_str = repl.zstore.fetch_string(&path);
-            repl.memoize_dag(result.tag, &result.digest);
+            repl.memoize_dag(&result);
             let lurk_data = LurkData::new(result, &repl.zstore);
             let lurk_data_bytes = bincode::serialize(&lurk_data)?;
             std::fs::write(&path_str, lurk_data_bytes)?;
@@ -990,7 +978,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         if io_data.tag != Tag::Cons {
             bail!("Protocol body must return a pair");
         }
-        repl.memoize_dag(Tag::Cons, &io_data.digest);
+        repl.memoize_dag(&io_data);
         let (claim, post_verify_predicate) = repl.zstore.fetch_tuple11(&io_data);
         if claim == repl.zstore.nil() {
             bail!("Pre-verification predicate rejected the input");
@@ -1063,6 +1051,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 if arg_reduced.tag == Tag::Err {
                     bail!("Error when evaluating a protocol argument");
                 }
+                repl.memoize_dag(&arg_reduced);
                 args_vec_reduced.push(arg_reduced);
             }
 
@@ -1089,7 +1078,6 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let cached_proof = Self::load_cached_proof(&proof_key)?;
             let crypto_proof = cached_proof.crypto_proof;
             let args_reduced = repl.zstore.intern_list(args_vec_reduced);
-            repl.memoize_dag(args_reduced.tag, &args_reduced.digest);
             let protocol_proof = ProtocolProof::new(crypto_proof, args_reduced, &repl.zstore);
             std::fs::write(&path_str, bincode::serialize(&protocol_proof)?)?;
             println!("Protocol proof saved on file `{path_str}`");
@@ -1179,8 +1167,8 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             .expect("Missing commitment preimage");
         let secret = ZPtr::from_flat_digest(Tag::BigNum, &callable_preimg[..DIGEST_SIZE]);
         let payload = ZPtr::from_flat_data(&callable_preimg[DIGEST_SIZE..]);
-        repl.memoize_dag(secret.tag, &secret.digest);
-        repl.memoize_dag(payload.tag, &payload.digest);
+        repl.memoize_dag(&secret);
+        repl.memoize_dag(&payload);
         CommData::new(secret, payload, &repl.zstore)
     }
 
@@ -1210,7 +1198,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 bail!("State must be a pair");
             }
 
-            repl.memoize_dag(state.tag, &state.digest);
+            repl.memoize_dag(&state);
 
             let (&chain_result, &next_callable) = repl.zstore.fetch_tuple11(&state);
             let chain_result = LurkData::new(chain_result, &repl.zstore);
@@ -1389,7 +1377,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let Response::Proofs(proofs) = read_data(stream)? else {
                 bail!("Could not read proofs from server");
             };
-            repl.memoize_dag(genesis_state.tag, &genesis_state.digest);
+            repl.memoize_dag(&genesis_state);
             let (_, &(mut callable)) = repl.zstore.fetch_tuple11(&genesis_state);
             let mut state = genesis_state;
             let empty_env = repl.zstore.intern_empty_env();
