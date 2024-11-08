@@ -201,9 +201,10 @@ impl<F: PrimeField32> Ctrl<F> {
                 assert!(ctx.depth_requires.next().is_none());
                 slice.sel[*ident] = F::one();
             }
-            Ctrl::Choose(var, cases, _) => {
+            Ctrl::Choose(var, cases, branches) => {
                 let val = map[*var].0;
-                let branch = cases.match_case(&val).expect("No match");
+                let i = cases.match_case(&val).expect("No match");
+                let branch = &branches[*i];
                 branch.populate_row(ctx, map, index, slice);
             }
             Ctrl::ChooseMany(vars, cases) => {

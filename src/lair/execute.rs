@@ -766,9 +766,10 @@ impl<F: PrimeField32> Func<F> {
                         break;
                     }
                 }
-                ExecEntry::Ctrl(Ctrl::Choose(v, cases, _)) => {
+                ExecEntry::Ctrl(Ctrl::Choose(v, cases, branches)) => {
                     let v = map[*v];
-                    let block = cases.match_case(&v).expect("No match");
+                    let i = cases.match_case(&v).expect("No match");
+                    let block = &branches[*i];
                     push_block_exec_entries!(block);
                 }
                 ExecEntry::Ctrl(Ctrl::ChooseMany(vs, cases)) => {
