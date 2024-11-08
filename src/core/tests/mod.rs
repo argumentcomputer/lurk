@@ -46,9 +46,7 @@ fn run_tests<C2: Chipset<F>>(
     input[16..].copy_from_slice(&env.digest);
 
     let lurk_main = FuncChip::from_name("lurk_main", toplevel);
-    let result = toplevel
-        .execute(lurk_main.func, &input, &mut record, None)
-        .unwrap();
+    let result = lurk_main.execute(&input, &mut record, None).unwrap();
 
     assert_eq!(result.as_ref(), &expected_cloj(zstore).flatten());
 

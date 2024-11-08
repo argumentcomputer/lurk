@@ -16,6 +16,7 @@ use super::{
     bytecode::{Ctrl, Func, Op},
     chipset::Chipset,
     expr::ReturnGroup,
+    func_chip::FuncChip,
     toplevel::Toplevel,
     FxIndexMap, List,
 };
@@ -376,6 +377,20 @@ impl<F: PrimeField32> QueryRecord<F> {
     #[inline]
     pub fn expect_public_values(&self) -> &[F] {
         self.public_values.as_ref().expect("Public values not set")
+    }
+}
+
+impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'_, F, C1, C2> {
+    #[inline]
+    pub fn execute(
+        &self,
+        args: &[F],
+        queries: &mut QueryRecord<F>,
+        dbg_func_idx: Option<usize>,
+    ) -> Result<List<F>> {
+        let toplevel = self.toplevel;
+        let func = toplevel.func_by_index(self.func.index);
+        toplevel.execute(func, args, queries, dbg_func_idx)
     }
 }
 

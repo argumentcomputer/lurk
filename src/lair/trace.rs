@@ -450,8 +450,8 @@ mod tests {
     fn lair_layout_sizes_test() {
         let toplevel = demo_toplevel::<F>();
 
-        let factorial = toplevel.func_by_name("factorial");
-        let out = factorial.compute_layout_sizes(&toplevel);
+        let factorial_chip = FuncChip::from_name("factorial", &toplevel);
+        let out = factorial_chip.func.compute_layout_sizes(&toplevel);
         let expected_layout_sizes = LayoutSizes {
             nonce: 1,
             input: 1,

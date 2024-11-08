@@ -34,13 +34,15 @@ pub struct FuncChip<'a, F, C1: Chipset<F>, C2: Chipset<F>> {
 impl<'a, F, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
     #[inline]
     pub fn from_name(name: &'static str, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
-        let func = toplevel.func_by_name(name);
+        let main_group = 0;
+        let func = toplevel.split_func_by_name(name, main_group);
         Self::from_func(func, toplevel)
     }
 
     #[inline]
     pub fn from_index(idx: usize, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
-        let func = toplevel.func_by_index(idx);
+        let main_group = 0;
+        let func = toplevel.split_func_by_index(idx, main_group);
         Self::from_func(func, toplevel)
     }
 
@@ -59,7 +61,12 @@ impl<'a, F, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
         toplevel
             .func_map
             .values()
-            .map(|funcs| FuncChip::from_func(&funcs.full_func, toplevel))
+            .flat_map(|funcs| {
+                funcs
+                    .split_funcs
+                    .values()
+                    .map(|func| FuncChip::from_func(func, toplevel))
+            })
             .collect()
     }
 

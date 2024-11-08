@@ -86,12 +86,33 @@ impl<F, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
     }
 
     #[inline]
+    pub fn split_func_by_index(&self, i: usize, group: ReturnGroup) -> &Func<F> {
+        self.func_map
+            .get_index(i)
+            .unwrap_or_else(|| panic!("Func index {i} out of bounds"))
+            .1
+            .split_funcs
+            .get(&group)
+            .unwrap_or_else(|| panic!("Group {group} not found"))
+    }
+
+    #[inline]
     pub fn func_by_name(&self, name: &'static str) -> &Func<F> {
         &self
             .func_map
             .get(&Name(name))
             .unwrap_or_else(|| panic!("Func {name} not found"))
             .full_func
+    }
+
+    #[inline]
+    pub fn split_func_by_name(&self, name: &'static str, group: ReturnGroup) -> &Func<F> {
+        self.func_map
+            .get(&Name(name))
+            .unwrap_or_else(|| panic!("Func {name} not found"))
+            .split_funcs
+            .get(&group)
+            .unwrap_or_else(|| panic!("Group {group} not found"))
     }
 
     #[inline]
