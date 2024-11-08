@@ -1122,16 +1122,16 @@ mod test {
     fn test_widths() {
         let toplevel = &build_compile_toplevel_native();
 
-        let compile = FuncChip::from_name("compile", toplevel);
-        let symbol_to_op = FuncChip::from_name("symbol_to_op", toplevel);
-        let compile_lambda = FuncChip::from_name("compile_lambda", toplevel);
-        let compile_let = FuncChip::from_name("compile_let", toplevel);
-        let compile_mutual_binds = FuncChip::from_name("compile_mutual_binds", toplevel);
-        let compile_fold_right = FuncChip::from_name("compile_fold_right", toplevel);
-        let compile_fold_left = FuncChip::from_name("compile_fold_left", toplevel);
-        let compile_fold_rel = FuncChip::from_name("compile_fold_rel", toplevel);
-        let convert_data = FuncChip::from_name("convert_data", toplevel);
-        let deconvert_data = FuncChip::from_name("deconvert_data", toplevel);
+        let compile = FuncChip::from_name_main("compile", toplevel);
+        let symbol_to_op = FuncChip::from_name_main("symbol_to_op", toplevel);
+        let compile_lambda = FuncChip::from_name_main("compile_lambda", toplevel);
+        let compile_let = FuncChip::from_name_main("compile_let", toplevel);
+        let compile_mutual_binds = FuncChip::from_name_main("compile_mutual_binds", toplevel);
+        let compile_fold_right = FuncChip::from_name_main("compile_fold_right", toplevel);
+        let compile_fold_left = FuncChip::from_name_main("compile_fold_left", toplevel);
+        let compile_fold_rel = FuncChip::from_name_main("compile_fold_rel", toplevel);
+        let convert_data = FuncChip::from_name_main("convert_data", toplevel);
+        let deconvert_data = FuncChip::from_name_main("deconvert_data", toplevel);
 
         let expect_eq = |computed: usize, expected: Expect| {
             expected.assert_eq(&computed.to_string());

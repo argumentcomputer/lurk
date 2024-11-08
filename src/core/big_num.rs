@@ -138,7 +138,7 @@ mod test {
         let lurk_chip_map = lurk_chip_map_native();
         let toplevel = Toplevel::new(&[lessthan_func], lurk_chip_map);
 
-        let lessthan_chip = FuncChip::from_name("lessthan", &toplevel);
+        let lessthan_chip = FuncChip::from_name_main("lessthan", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         let f = F::from_canonical_usize;
         // Little endian

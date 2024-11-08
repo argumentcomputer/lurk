@@ -1862,43 +1862,43 @@ mod test {
     fn test_widths() {
         let (toplevel, ..) = &build_lurk_toplevel_native();
 
-        let lurk_main = FuncChip::from_name("lurk_main", toplevel);
-        let preallocate_symbols = FuncChip::from_name("preallocate_symbols", toplevel);
-        let eval_coroutine_expr = FuncChip::from_name("eval_coroutine_expr", toplevel);
-        let eval = FuncChip::from_name("eval", toplevel);
-        let eval_builtin_expr = FuncChip::from_name("eval_builtin_expr", toplevel);
-        let eval_apply_builtin = FuncChip::from_name("eval_apply_builtin", toplevel);
-        let eval_opening_unop = FuncChip::from_name("eval_opening_unop", toplevel);
-        let eval_hide = FuncChip::from_name("eval_hide", toplevel);
-        let eval_unop = FuncChip::from_name("eval_unop", toplevel);
-        let eval_binop_num = FuncChip::from_name("eval_binop_num", toplevel);
-        let eval_binop_misc = FuncChip::from_name("eval_binop_misc", toplevel);
-        let eval_begin = FuncChip::from_name("eval_begin", toplevel);
-        let eval_list = FuncChip::from_name("eval_list", toplevel);
-        let eval_let = FuncChip::from_name("eval_let", toplevel);
-        let eval_letrec = FuncChip::from_name("eval_letrec", toplevel);
-        let extend_env_with_mutuals = FuncChip::from_name("extend_env_with_mutuals", toplevel);
-        let eval_letrec_bindings = FuncChip::from_name("eval_letrec_bindings", toplevel);
-        let coerce_if_sym = FuncChip::from_name("coerce_if_sym", toplevel);
-        let open_comm = FuncChip::from_name("open_comm", toplevel);
-        let equal = FuncChip::from_name("equal", toplevel);
-        let equal_inner = FuncChip::from_name("equal_inner", toplevel);
-        let car_cdr = FuncChip::from_name("car_cdr", toplevel);
-        let apply = FuncChip::from_name("apply", toplevel);
-        let env_lookup = FuncChip::from_name("env_lookup", toplevel);
-        let ingress = FuncChip::from_name("ingress", toplevel);
-        let egress = FuncChip::from_name("egress", toplevel);
-        let hash3 = FuncChip::from_name("hash3", toplevel);
-        let hash4 = FuncChip::from_name("hash4", toplevel);
-        let hash5 = FuncChip::from_name("hash5", toplevel);
-        let u64_add = FuncChip::from_name("u64_add", toplevel);
-        let u64_sub = FuncChip::from_name("u64_sub", toplevel);
-        let u64_mul = FuncChip::from_name("u64_mul", toplevel);
-        let u64_divrem = FuncChip::from_name("u64_divrem", toplevel);
-        let u64_lessthan = FuncChip::from_name("u64_lessthan", toplevel);
-        let u64_iszero = FuncChip::from_name("u64_iszero", toplevel);
-        let digest_equal = FuncChip::from_name("digest_equal", toplevel);
-        let big_num_lessthan = FuncChip::from_name("big_num_lessthan", toplevel);
+        let lurk_main = FuncChip::from_name_main("lurk_main", toplevel);
+        let preallocate_symbols = FuncChip::from_name_main("preallocate_symbols", toplevel);
+        let eval_coroutine_expr = FuncChip::from_name_main("eval_coroutine_expr", toplevel);
+        let eval = FuncChip::from_name_main("eval", toplevel);
+        let eval_builtin_expr = FuncChip::from_name_main("eval_builtin_expr", toplevel);
+        let eval_apply_builtin = FuncChip::from_name_main("eval_apply_builtin", toplevel);
+        let eval_opening_unop = FuncChip::from_name_main("eval_opening_unop", toplevel);
+        let eval_hide = FuncChip::from_name_main("eval_hide", toplevel);
+        let eval_unop = FuncChip::from_name_main("eval_unop", toplevel);
+        let eval_binop_num = FuncChip::from_name_main("eval_binop_num", toplevel);
+        let eval_binop_misc = FuncChip::from_name_main("eval_binop_misc", toplevel);
+        let eval_begin = FuncChip::from_name_main("eval_begin", toplevel);
+        let eval_list = FuncChip::from_name_main("eval_list", toplevel);
+        let eval_let = FuncChip::from_name_main("eval_let", toplevel);
+        let eval_letrec = FuncChip::from_name_main("eval_letrec", toplevel);
+        let extend_env_with_mutuals = FuncChip::from_name_main("extend_env_with_mutuals", toplevel);
+        let eval_letrec_bindings = FuncChip::from_name_main("eval_letrec_bindings", toplevel);
+        let coerce_if_sym = FuncChip::from_name_main("coerce_if_sym", toplevel);
+        let open_comm = FuncChip::from_name_main("open_comm", toplevel);
+        let equal = FuncChip::from_name_main("equal", toplevel);
+        let equal_inner = FuncChip::from_name_main("equal_inner", toplevel);
+        let car_cdr = FuncChip::from_name_main("car_cdr", toplevel);
+        let apply = FuncChip::from_name_main("apply", toplevel);
+        let env_lookup = FuncChip::from_name_main("env_lookup", toplevel);
+        let ingress = FuncChip::from_name_main("ingress", toplevel);
+        let egress = FuncChip::from_name_main("egress", toplevel);
+        let hash3 = FuncChip::from_name_main("hash3", toplevel);
+        let hash4 = FuncChip::from_name_main("hash4", toplevel);
+        let hash5 = FuncChip::from_name_main("hash5", toplevel);
+        let u64_add = FuncChip::from_name_main("u64_add", toplevel);
+        let u64_sub = FuncChip::from_name_main("u64_sub", toplevel);
+        let u64_mul = FuncChip::from_name_main("u64_mul", toplevel);
+        let u64_divrem = FuncChip::from_name_main("u64_divrem", toplevel);
+        let u64_lessthan = FuncChip::from_name_main("u64_lessthan", toplevel);
+        let u64_iszero = FuncChip::from_name_main("u64_iszero", toplevel);
+        let digest_equal = FuncChip::from_name_main("digest_equal", toplevel);
+        let big_num_lessthan = FuncChip::from_name_main("big_num_lessthan", toplevel);
 
         let expect_eq = |computed: usize, expected: Expect| {
             expected.assert_eq(&computed.to_string());
@@ -1948,7 +1948,7 @@ mod test {
 
         let ingress = toplevel.func_by_name("ingress");
         let egress = toplevel.func_by_name("egress");
-        let hash4_chip = FuncChip::from_name("hash4", toplevel);
+        let hash4_chip = FuncChip::from_name_main("hash4", toplevel);
 
         let state = State::init_lurk_state().rccell();
 

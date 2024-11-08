@@ -450,7 +450,7 @@ mod tests {
     fn lair_layout_sizes_test() {
         let toplevel = demo_toplevel::<F>();
 
-        let factorial_chip = FuncChip::from_name("factorial", &toplevel);
+        let factorial_chip = FuncChip::from_name_main("factorial", &toplevel);
         let out = factorial_chip.func.compute_layout_sizes(&toplevel);
         let expected_layout_sizes = LayoutSizes {
             nonce: 1,
@@ -465,8 +465,8 @@ mod tests {
     #[test]
     fn lair_trace_test() {
         let toplevel = demo_toplevel::<F>();
-        let factorial_chip = FuncChip::from_name("factorial", &toplevel);
-        let fib_chip = FuncChip::from_name("fib", &toplevel);
+        let factorial_chip = FuncChip::from_name_main("factorial", &toplevel);
+        let fib_chip = FuncChip::from_name_main("fib", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
 
         let args = &[F::from_canonical_u32(5)];
@@ -544,7 +544,7 @@ mod tests {
             return res
         });
         let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[func_e]);
-        let test_chip = FuncChip::from_name("test", &toplevel);
+        let test_chip = FuncChip::from_name_main("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {
             nonce: 1,
@@ -611,7 +611,7 @@ mod tests {
             }
         });
         let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[func_e]);
-        let test_chip = FuncChip::from_name("test", &toplevel);
+        let test_chip = FuncChip::from_name_main("test", &toplevel);
 
         let expected_layout_sizes = LayoutSizes {
             nonce: 1,
@@ -682,7 +682,7 @@ mod tests {
             return ret
         });
         let toplevel = Toplevel::<F, C, C>::new_pure(&[func_ack]);
-        let ack_chip = FuncChip::from_name("ackermann", &toplevel);
+        let ack_chip = FuncChip::from_name_main("ackermann", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
 
         let f = F::from_canonical_usize;

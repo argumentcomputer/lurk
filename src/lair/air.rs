@@ -584,7 +584,7 @@ mod tests {
         let toplevel = demo_toplevel::<_>();
 
         let mut queries = QueryRecord::new(&toplevel);
-        let factorial_chip = FuncChip::from_name("factorial", &toplevel);
+        let factorial_chip = FuncChip::from_name_main("factorial", &toplevel);
         toplevel
             .execute_by_name(
                 "factorial",
@@ -596,7 +596,7 @@ mod tests {
         let factorial_trace = factorial_chip.generate_trace(&Shard::new(&queries));
         let _ = debug_constraints_collecting_queries(&factorial_chip, &[], None, &factorial_trace);
 
-        let fib_chip = FuncChip::from_name("fib", &toplevel);
+        let fib_chip = FuncChip::from_name_main("fib", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         toplevel
             .execute_by_name("fib", &[F::from_canonical_usize(7)], &mut queries, None)
@@ -608,7 +608,7 @@ mod tests {
     #[test]
     fn lair_long_constraint_test() {
         let toplevel = demo_toplevel::<F>();
-        let fib_chip = FuncChip::from_name("fib", &toplevel);
+        let fib_chip = FuncChip::from_name_main("fib", &toplevel);
         let args = &[field_from_u32(20000)];
         let mut queries = QueryRecord::new(&toplevel);
         toplevel
@@ -632,8 +632,8 @@ mod tests {
             return x
         });
         let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[eq_func, not_func]);
-        let eq_chip = FuncChip::from_name("eq", &toplevel);
-        let not_chip = FuncChip::from_name("not", &toplevel);
+        let eq_chip = FuncChip::from_name_main("eq", &toplevel);
+        let not_chip = FuncChip::from_name_main("not", &toplevel);
 
         let mut queries = QueryRecord::new(&toplevel);
         let args = &[field_from_u32(4)];
@@ -721,7 +721,7 @@ mod tests {
             return zero
         });
         let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[if_many_func]);
-        let if_many_chip = FuncChip::from_name("if_many", &toplevel);
+        let if_many_chip = FuncChip::from_name_main("if_many", &toplevel);
 
         let mut queries = QueryRecord::new(&toplevel);
         let f = field_from_u32;
@@ -790,7 +790,7 @@ mod tests {
             return fail
         });
         let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[match_many_func]);
-        let match_many_chip = FuncChip::from_name("match_many", &toplevel);
+        let match_many_chip = FuncChip::from_name_main("match_many", &toplevel);
 
         let mut queries = QueryRecord::new(&toplevel);
         let f = field_from_u32;
@@ -863,7 +863,7 @@ mod tests {
         toplevel
             .execute_by_name("assert", args, &mut queries, None)
             .unwrap();
-        let chip = FuncChip::from_name("assert", &toplevel);
+        let chip = FuncChip::from_name_main("assert", &toplevel);
         let trace = chip.generate_trace(&Shard::new(&queries));
 
         #[rustfmt::skip]
@@ -912,7 +912,7 @@ mod tests {
         toplevel
             .execute_by_name("test", args, &mut queries, None)
             .unwrap();
-        let chip = FuncChip::from_name("test", &toplevel);
+        let chip = FuncChip::from_name_main("test", &toplevel);
         let trace = chip.generate_trace(&Shard::new(&queries));
 
         #[rustfmt::skip]
@@ -944,7 +944,7 @@ mod tests {
             return ()
         });
         let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[func_range]);
-        let range_chip = FuncChip::from_name("range_test", &toplevel);
+        let range_chip = FuncChip::from_name_main("range_test", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
 
         let f = F::from_canonical_usize;

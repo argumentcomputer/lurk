@@ -3,6 +3,7 @@ use p3_air::BaseAir;
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
     chipset::Chipset,
+    expr::ReturnGroup,
     provenance::{DepthLessThan, DEPTH_LESS_THAN_SIZE, DEPTH_W},
     toplevel::Toplevel,
 };
@@ -33,17 +34,31 @@ pub struct FuncChip<'a, F, C1: Chipset<F>, C2: Chipset<F>> {
 
 impl<'a, F, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
     #[inline]
-    pub fn from_name(name: &'static str, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
-        let main_group = 0;
-        let func = toplevel.split_func_by_name(name, main_group);
+    pub fn from_name(
+        name: &'static str,
+        group: ReturnGroup,
+        toplevel: &'a Toplevel<F, C1, C2>,
+    ) -> Self {
+        let func = toplevel.split_func_by_name(name, group);
         Self::from_func(func, toplevel)
     }
 
     #[inline]
-    pub fn from_index(idx: usize, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
+    pub fn from_name_main(name: &'static str, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
         let main_group = 0;
-        let func = toplevel.split_func_by_index(idx, main_group);
+        Self::from_name(name, main_group, toplevel)
+    }
+
+    #[inline]
+    pub fn from_index(idx: usize, group: ReturnGroup, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
+        let func = toplevel.split_func_by_index(idx, group);
         Self::from_func(func, toplevel)
+    }
+
+    #[inline]
+    pub fn from_index_main(idx: usize, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
+        let main_group = 0;
+        Self::from_index(idx, main_group, toplevel)
     }
 
     #[inline]
