@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use camino::Utf8Path;
 use itertools::Itertools;
 use p3_baby_bear::BabyBear;
-use p3_field::PrimeField32;
+use p3_field::{AbstractField, PrimeField32};
 use rustc_hash::FxHashMap;
 use sphinx_core::stark::StarkGenericConfig;
 use std::net::TcpStream;
@@ -373,11 +373,10 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
 
     /// Persists commitment data and returns the corresponding commitment
     fn persist_comm_data(
-        secret: ZPtr<F>,
+        secret: [F; DIGEST_SIZE],
         payload: ZPtr<F>,
         repl: &mut Repl<F, C1, C2>,
     ) -> Result<ZPtr<F>> {
-        repl.memoize_dag(&secret);
         repl.memoize_dag(&payload);
         let comm_data = CommData::new(secret, payload, &repl.zstore);
         let comm = comm_data.commit(&mut repl.zstore);
@@ -387,7 +386,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
     }
 
     fn hide(
-        secret: ZPtr<F>,
+        secret: [F; DIGEST_SIZE],
         payload_expr: &ZPtr<F>,
         repl: &mut Repl<F, C1, C2>,
     ) -> Result<ZPtr<F>> {
@@ -414,7 +413,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             if secret.tag != Tag::BigNum {
                 bail!("Secret must reduce to a bignum");
             }
-            Self::hide(secret, &payload_expr, repl)
+            Self::hide(secret.digest, &payload_expr, repl)
         },
     };
 
@@ -446,8 +445,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         returns: "The resulting commitment",
         run: |repl, args, _dir| {
             let [&payload_expr] = repl.take(args)?;
-            let secret = ZPtr::null(Tag::BigNum);
-            Self::hide(secret, &payload_expr, repl)
+            Self::hide([F::zero(); DIGEST_SIZE], &payload_expr, repl)
         },
     };
 
@@ -495,11 +493,21 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         Ok(repl.zstore.intern_list(args_vec_reduced_quoted))
     }
 
-    fn call(repl: &mut Repl<F, C1, C2>, call_expr: &ZPtr<F>) -> Result<ZPtr<F>> {
+    /// Performs a function call with the arguments evaluated and quoted. Returns
+    /// the call result and the final list of arguments.
+    ///
+    /// The callable and arguments are evaluated with the REPL's env and then the
+    /// resulting call expression is evaluated with a custom env.
+    fn call(
+        repl: &mut Repl<F, C1, C2>,
+        call_expr: &ZPtr<F>,
+        env: &ZPtr<F>,
+    ) -> Result<(ZPtr<F>, ZPtr<F>)> {
         if call_expr == repl.zstore.nil() {
             bail!("Missing callable object");
         }
         let (&callable, &call_args) = repl.zstore.fetch_tuple11(call_expr);
+        let (callable, _) = repl.reduce_aux(&callable)?;
         match callable.tag {
             Tag::BigNum | Tag::Comm => {
                 let inv_hashes3 = repl.queries.get_inv_queries("hash3", &repl.toplevel);
@@ -512,7 +520,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         }
         let call_args = Self::eval_then_quote(repl, &call_args)?;
         let call_expr = repl.zstore.intern_cons(callable, call_args);
-        repl.handle_non_meta(&call_expr)
+        Ok((repl.handle_non_meta_with_env(&call_expr, env)?, call_args))
     }
 
     const CALL: Self = Self {
@@ -525,7 +533,11 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             "!(call #c0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 0)",
         ],
         returns: "The call result",
-        run: |repl, args, _dir| Self::call(repl, args),
+        run: |repl, args, _dir| {
+            let env = repl.env;
+            let (res, _) = Self::call(repl, args, &env)?;
+            Ok(res)
+        },
     };
 
     fn persist_chain_comm(repl: &mut Repl<F, C1, C2>, cons: &ZPtr<F>) -> Result<()> {
@@ -538,9 +550,9 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let preimg = inv_hashes3
                 .get(next_callable.digest.as_slice())
                 .expect("Preimage must be known");
-            let (secret, payload) = preimg.split_at(DIGEST_SIZE);
-            let secret = ZPtr::from_flat_digest(Tag::BigNum, secret);
-            let payload = ZPtr::from_flat_data(payload);
+            let mut secret = [F::zero(); DIGEST_SIZE];
+            secret.copy_from_slice(&preimg[..DIGEST_SIZE]);
+            let payload = ZPtr::from_flat_data(&preimg[DIGEST_SIZE..]);
             Self::persist_comm_data(secret, payload, repl)?;
         }
         Ok(())
@@ -563,17 +575,22 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         ],
         returns: "The chained result",
         run: |repl, args, _dir| {
-            let cons = Self::call(repl, args)?;
+            let env = repl.zstore.intern_empty_env();
+            let (cons, _) = Self::call(repl, args, &env)?;
             Self::persist_chain_comm(repl, &cons)?;
             Ok(cons)
         },
     };
 
+    /// Performs a chain transition and returns the next chain state and the
+    /// list of argument (evaluated+quoted) used to perform the call.
+    ///
+    /// Note: the call expression is evaluated with the empty env.
     fn transition_call(
         repl: &mut Repl<F, C1, C2>,
         current_state_expr: &ZPtr<F>,
         call_args: ZPtr<F>,
-    ) -> Result<ZPtr<F>> {
+    ) -> Result<(ZPtr<F>, ZPtr<F>)> {
         let (current_state, _) = repl.reduce_aux(current_state_expr)?;
         if current_state.tag != Tag::Cons {
             bail!("Current state must reduce to a pair");
@@ -581,7 +598,8 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         repl.memoize_dag(&current_state);
         let (_, &callable) = repl.zstore.fetch_tuple11(&current_state);
         let call_expr = repl.zstore.intern_cons(callable, call_args);
-        Self::call(repl, &call_expr)
+        let env = repl.zstore.intern_empty_env();
+        Self::call(repl, &call_expr, &env)
     }
 
     const TRANSITION: Self = Self {
@@ -593,7 +611,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         returns: "The chained result",
         run: |repl, args, _dir| {
             let (&current_state_expr, &call_args) = repl.car_cdr(args);
-            let cons = Self::transition_call(repl, &current_state_expr, call_args)?;
+            let (cons, _) = Self::transition_call(repl, &current_state_expr, call_args)?;
             Self::persist_chain_comm(repl, &cons)?;
             Ok(cons)
         },
@@ -1165,9 +1183,9 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         let callable_preimg = inv_hashes3
             .get(digest)
             .expect("Missing commitment preimage");
-        let secret = ZPtr::from_flat_digest(Tag::BigNum, &callable_preimg[..DIGEST_SIZE]);
+        let mut secret = [F::zero(); DIGEST_SIZE];
+        secret.copy_from_slice(&callable_preimg[..DIGEST_SIZE]);
         let payload = ZPtr::from_flat_data(&callable_preimg[DIGEST_SIZE..]);
-        repl.memoize_dag(&secret);
         repl.memoize_dag(&payload);
         CommData::new(secret, payload, &repl.zstore)
     }
@@ -1306,7 +1324,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             }
             let (id, _) = repl.reduce_aux(&id_expr)?;
             let (&current_state_expr, &call_args) = repl.car_cdr(&rest);
-            let state = Self::transition_call(repl, &current_state_expr, call_args)?;
+            let (state, call_args) = Self::transition_call(repl, &current_state_expr, call_args)?;
             if state.tag != Tag::Cons {
                 bail!("New state is not a pair");
             }

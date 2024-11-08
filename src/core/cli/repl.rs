@@ -484,11 +484,14 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         result_data.map(|data| ZPtr::from_flat_data(&data))
     }
 
-    /// Evaluates an expression with the current REPL env and prints the number
-    /// of iterations and the result. The computation is cached for proving.
-    pub(crate) fn handle_non_meta(&mut self, expr: &ZPtr<F>) -> Result<ZPtr<F>> {
-        let env = self.env;
-        let result = self.reduce_with_env(expr, &env)?;
+    /// Evaluates an expression with a custom env and prints the number of
+    /// iterations and the result. The computation is cached for proving.
+    pub(crate) fn handle_non_meta_with_env(
+        &mut self,
+        expr: &ZPtr<F>,
+        env: &ZPtr<F>,
+    ) -> Result<ZPtr<F>> {
+        let result = self.reduce_with_env(expr, env)?;
         self.memoize_dag(&result);
         let iterations = self.queries.func_queries[self.func_indices.eval].len();
         println!(
@@ -497,6 +500,11 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
             self.fmt(&result)
         );
         Ok(result)
+    }
+
+    pub(crate) fn handle_non_meta(&mut self, expr: &ZPtr<F>) -> Result<ZPtr<F>> {
+        let env = self.env;
+        self.handle_non_meta_with_env(expr, &env)
     }
 
     fn intern_syntax_slice(
