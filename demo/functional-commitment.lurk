@@ -18,8 +18,8 @@
 
 ;; We can inspect the input/output expressions of the proof.
 
-!(inspect "3863a71b55ec6f53d1547e503bc69491e87e57063143e7dc62b1a91de4ef7")
+!(inspect "22871b51b8749ed2ed139627d7cb36d029090b1dea265e42715d9ab09be783")
 
 ;; Finally, and most importantly, we can verify the proof.
 
-!(verify "3863a71b55ec6f53d1547e503bc69491e87e57063143e7dc62b1a91de4ef7")
+!(verify "22871b51b8749ed2ed139627d7cb36d029090b1dea265e42715d9ab09be783")

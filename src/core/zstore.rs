@@ -263,6 +263,7 @@ pub struct ZStore<F, C: Chipset<F>> {
     syn_cache: FxHashMap<Syntax<F>, ZPtr<F>>,
     nil: ZPtr<F>,
     t: ZPtr<F>,
+    quote: ZPtr<F>,
 }
 
 impl Default for ZStore<BabyBear, LurkChip> {
@@ -281,15 +282,17 @@ impl Default for ZStore<BabyBear, LurkChip> {
             syn_cache: Default::default(),
             nil: ZPtr::null(Tag::Sym),
             t: ZPtr::null(Tag::Sym),
+            quote: ZPtr::null(Tag::Builtin),
         };
         zstore.nil = zstore.intern_symbol_no_lang(&lurk_sym("nil"));
         zstore.t = zstore.intern_symbol_no_lang(&lurk_sym("t"));
+        zstore.quote = zstore.intern_symbol_no_lang(quote());
         zstore
     }
 }
 
 static QUOTE: OnceCell<Symbol> = OnceCell::new();
-pub(crate) fn quote() -> &'static Symbol {
+fn quote() -> &'static Symbol {
     QUOTE.get_or_init(|| builtin_sym("quote"))
 }
 
@@ -456,6 +459,11 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
     }
 
     #[inline]
+    pub fn quote(&self) -> &ZPtr<F> {
+        &self.quote
+    }
+
+    #[inline]
     pub fn intern_list_full<I: IntoIterator<Item = ZPtr<F>>>(
         &mut self,
         xs: I,
@@ -497,6 +505,11 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
         self.intern_tuple110(Tag::Env, sym, val, env)
     }
 
+    #[inline]
+    pub fn intern_quoted(&mut self, zptr: ZPtr<F>) -> ZPtr<F> {
+        self.intern_list([self.quote, zptr])
+    }
+
     fn intern_syntax(&mut self, syn: &Syntax<F>, lang_symbols: &FxHashSet<Symbol>) -> ZPtr<F> {
         if let Some(zptr) = self.syn_cache.get(syn) {
             return *zptr;
@@ -525,9 +538,8 @@ impl<F: Field, C: Chipset<F>> ZStore<F, C> {
                 self.intern_list_full(xs, y)
             }
             Syntax::Quote(_, x) => {
-                let quote = self.intern_symbol(quote(), lang_symbols);
                 let x = self.intern_syntax(x, lang_symbols);
-                self.intern_list([quote, x])
+                self.intern_list([self.quote, x])
             }
             Syntax::I64(..) | Syntax::Meta(..) => panic!("not supported"),
         };
