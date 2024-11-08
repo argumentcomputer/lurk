@@ -994,6 +994,9 @@ impl<F: Field + Ord> Ctrl<F> {
                         Some(branch)
                     })
                     .collect();
+                if branches.is_empty() {
+                    return None;
+                }
                 let cases_branches = Map::from_vec(
                     cases
                         .branches
@@ -1004,7 +1007,7 @@ impl<F: Field + Ord> Ctrl<F> {
                         })
                         .collect(),
                 );
-                let default: Option<_> = cases.default.as_ref().and_then(|i| {
+                let default = cases.default.as_ref().and_then(|i| {
                     let idx = map.get(i)?;
                     Some((*idx).into())
                 });
@@ -1017,24 +1020,25 @@ impl<F: Field + Ord> Ctrl<F> {
             }
             Ctrl::ChooseMany(vars, cases) => {
                 let mut return_idents = vec![];
-                let cases_branches = Map::from_vec(
-                    cases
-                        .branches
-                        .iter()
-                        .filter_map(|(fs, branch)| {
-                            let branch = branch.split(group, return_ident)?;
-                            return_idents.extend(&branch.return_idents);
-                            Some((fs.clone(), branch))
-                        })
-                        .collect(),
-                );
-                let default: Option<_> = cases.default.as_ref().and_then(|branch| {
+                let cases_branches = cases
+                    .branches
+                    .iter()
+                    .filter_map(|(fs, branch)| {
+                        let branch = branch.split(group, return_ident)?;
+                        return_idents.extend(&branch.return_idents);
+                        Some((fs.clone(), branch))
+                    })
+                    .collect::<Vec<_>>();
+                let default = cases.default.as_ref().and_then(|branch| {
                     let branch = branch.split(group, return_ident)?;
                     return_idents.extend(&branch.return_idents);
                     Some(branch.into())
                 });
+                if cases_branches.is_empty() && default.is_none() {
+                    return None;
+                }
                 let cases = Cases {
-                    branches: cases_branches,
+                    branches: Map::from_vec(cases_branches),
                     default,
                 };
                 let ctrl = Ctrl::ChooseMany(vars.clone(), cases);
