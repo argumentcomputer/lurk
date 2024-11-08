@@ -198,11 +198,11 @@ ledger2
 
 ;; Let's prove it.
 
-!(prove)
+!(defq proof-key !(prove))
 
 ;; We can verify the proof..
 
-!(verify "3ec2be088404f2c65da6a7f8d9c48d7acadf902462fe55d8c0683a9bfc88be")
+!(verify proof-key)
 
 ;; Unfortunately, this functional commitment doesn't let us maintain state.
 ;; Let's turn our single-transaction function into a chained function.
@@ -219,24 +219,24 @@ ledger2
 
 ;; Now we can transfer one unit from Church to Satoshi like before.
 
-!(chain #0x55e9e42540b3915fcd357bac7fb5ad5e6f299cd9619e11d44a95a26fa41aa '(1 0 2))
+!(chain #c0x4614f15d0b541b70d7975d5004526b7f824579c4f80c24e95796b9fe22837b '(1 0 2))
 
-!(prove)
+!(defq proof-key !(prove))
 
-!(verify "45e9ae74bd1c72778da7985f55a096b4f2c772eec3d00a78b051e69c0b351d")
+!(verify proof-key)
 
 ;; Then we can transfer 5 more, proceeding from the new head of the chain.
 
-!(chain #0x6018ec368c1130fa5ed4777a33de94e21b0ab4964ea8d3718bfff44b51eb3e '(5 0 2))
+!(chain #c0x76a11678f6ae8a9126175ce8d793188a09f43d03cfa93c8b760f9eda283567 '(5 0 2))
 
-!(prove)
+!(defq proof-key !(prove))
 
-!(verify "49ecca3674d380af21c617e714866e334acc144989632a7ccd244295a64628")
+!(verify proof-key)
 
 ;; And once more, this time we'll transfer 20 from Turing to Church.
 
-!(chain #0x8a0964dc644afdecdee4fa6687e55744290a591e6d1c0468f1fffba4c5059c '(20 1 0))
+!(chain #c0x300f43e37bfc756d852a94fcdbf02cc18e1b009f75e3cd3379c93bdfa5cf6a '(20 1 0))
 
-!(prove)
+!(defq proof-key !(prove))
 
-!(verify "79bc2aa3e3fcc71ee28a1e0b05c507a4ccb72a4e7158194b80ec96522bc63f")
+!(verify proof-key)

@@ -38,7 +38,7 @@ use crate::{
         symbol::Symbol,
         syntax::Syntax,
         tag::Tag,
-        zstore::{quote, ZPtr, ZStore, DIGEST_SIZE},
+        zstore::{ZPtr, ZStore, DIGEST_SIZE},
     },
     lair::{
         chipset::{Chipset, NoChip},
@@ -484,12 +484,10 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         result_data.map(|data| ZPtr::from_flat_data(&data))
     }
 
-    pub(crate) fn handle_non_meta(
-        &mut self,
-        expr: &ZPtr<F>,
-        env: Option<ZPtr<F>>,
-    ) -> Result<ZPtr<F>> {
-        let env = env.unwrap_or(self.env);
+    /// Evaluates an expression with the current REPL env and prints the number
+    /// of iterations and the result. The computation is cached for proving.
+    pub(crate) fn handle_non_meta(&mut self, expr: &ZPtr<F>) -> Result<ZPtr<F>> {
+        let env = self.env;
         let result = self.reduce_with_env(expr, &env)?;
         self.memoize_dag(result.tag, &result.digest);
         let iterations = self.queries.func_queries[self.func_indices.eval].len();
@@ -541,9 +539,8 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
                 self.zstore.intern_list_full(zptrs, y)
             }
             Syntax::Quote(_, x) => {
-                let quote = self.zstore.intern_symbol(quote(), &self.lang_symbols);
                 let x = self.intern_syntax(x, file_dir)?;
-                self.zstore.intern_list([quote, x])
+                self.zstore.intern_list([*self.zstore.quote(), x])
             }
         };
         Ok(zptr)
@@ -602,7 +599,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         if meta {
             println!("{}", self.fmt(&zptr));
         } else {
-            let result = self.handle_non_meta(&zptr, None)?;
+            let result = self.handle_non_meta(&zptr)?;
             if result.tag == Tag::Err {
                 // error out when loading a file
                 bail!("Reduction error: {}", self.fmt(&result));
@@ -658,7 +655,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
                             Ok(Some((_, rest, zptr, meta))) => {
                                 if meta {
                                     println!("{}", self.fmt(&zptr));
-                                } else if let Err(e) = self.handle_non_meta(&zptr, None) {
+                                } else if let Err(e) = self.handle_non_meta(&zptr) {
                                     eprintln!("Error: {e}");
                                 }
                                 line = rest.to_string();

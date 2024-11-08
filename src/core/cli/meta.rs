@@ -180,7 +180,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         run: |repl, args, _dir| {
             if args != repl.zstore.nil() {
                 let [&expr] = repl.take(args)?;
-                let result = repl.handle_non_meta(&expr, None);
+                let result = repl.handle_non_meta(&expr);
                 debug_mode(&repl.format_debug_data())?;
                 result.map(|_| ())?;
             } else {
@@ -493,15 +493,25 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         },
     };
 
-    fn call(
-        repl: &mut Repl<F, C1, C2>,
-        call_expr: &ZPtr<F>,
-        env: Option<ZPtr<F>>,
-    ) -> Result<ZPtr<F>> {
+    fn eval_then_quote(repl: &mut Repl<F, C1, C2>, args: &ZPtr<F>) -> Result<ZPtr<F>> {
+        let (args_vec, _) = repl.zstore.fetch_list(args);
+        let args_vec = copy_inner(args_vec);
+        let mut args_vec_reduced_quoted = Vec::with_capacity(args_vec.len());
+        for arg in &args_vec {
+            let (arg_reduced, _) = repl.reduce_aux(arg)?;
+            if arg_reduced.tag == Tag::Err {
+                bail!("Error when evaluating argument {}", repl.fmt(arg));
+            }
+            args_vec_reduced_quoted.push(repl.zstore.intern_quoted(arg_reduced));
+        }
+        Ok(repl.zstore.intern_list(args_vec_reduced_quoted))
+    }
+
+    fn call(repl: &mut Repl<F, C1, C2>, call_expr: &ZPtr<F>) -> Result<ZPtr<F>> {
         if call_expr == repl.zstore.nil() {
             bail!("Missing callable object");
         }
-        let (&callable, _) = repl.zstore.fetch_tuple11(call_expr);
+        let (&callable, &call_args) = repl.zstore.fetch_tuple11(call_expr);
         match callable.tag {
             Tag::BigNum | Tag::Comm => {
                 let inv_hashes3 = repl.queries.get_inv_queries("hash3", &repl.toplevel);
@@ -512,20 +522,22 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             }
             _ => (),
         }
-        repl.handle_non_meta(call_expr, env)
+        let call_args = Self::eval_then_quote(repl, &call_args)?;
+        let call_expr = repl.zstore.intern_cons(callable, call_args);
+        repl.handle_non_meta(&call_expr)
     }
 
     const CALL: Self = Self {
         name: "call",
-        summary: "Applies arguments to a callable object",
+        summary: "Evaluates arguments and applies them, quoted, to a callable object",
         info: &["It's also capable of opening persisted commitments."],
-        format: "!(call <callable> <call_args>)",
+        format: "!(call <callable> <arg1_expr> <arg2_expr> ...)",
         example: &[
             "(commit (lambda (x) x))",
             "!(call #c0x275439f3606672312cd1fd9caf95cfd5bc05c6b8d224819e2e8ea1a6c5808 0)",
         ],
         returns: "The call result",
-        run: |repl, args, _dir| Self::call(repl, args, None),
+        run: |repl, args, _dir| Self::call(repl, args),
     };
 
     fn persist_chain_comm(repl: &mut Repl<F, C1, C2>, cons: &ZPtr<F>) -> Result<()> {
@@ -548,12 +560,12 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
 
     const CHAIN: Self = Self {
         name: "chain",
-        summary: "Chains a callable object",
+        summary: "Evaluates arguments and applies them, quoted, to a chainable callable object",
         info: &[
             "It's also capable of opening persisted commitments.",
-            "If the next callable is a commitment, it's persisted.",
+            "Persists the next callable if it is a commitment.",
         ],
-        format: "!(chain <callable> <call_args>)",
+        format: "!(chain <callable> <arg1_expr> <arg2_expr> ...)",
         example: &[
             "(commit (letrec ((add (lambda (counter x)
                        (let ((counter (+ counter x)))
@@ -563,7 +575,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         ],
         returns: "The chained result",
         run: |repl, args, _dir| {
-            let cons = Self::call(repl, args, None)?;
+            let cons = Self::call(repl, args)?;
             Self::persist_chain_comm(repl, &cons)?;
             Ok(cons)
         },
@@ -573,7 +585,6 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         repl: &mut Repl<F, C1, C2>,
         current_state_expr: &ZPtr<F>,
         call_args: ZPtr<F>,
-        env: Option<ZPtr<F>>,
     ) -> Result<ZPtr<F>> {
         let (current_state, _) = repl.reduce_aux(current_state_expr)?;
         if current_state.tag != Tag::Cons {
@@ -582,7 +593,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         repl.memoize_dag(current_state.tag, &current_state.digest);
         let (_, &callable) = repl.zstore.fetch_tuple11(&current_state);
         let call_expr = repl.zstore.intern_cons(callable, call_args);
-        Self::call(repl, &call_expr, env)
+        Self::call(repl, &call_expr)
     }
 
     const TRANSITION: Self = Self {
@@ -594,7 +605,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         returns: "The chained result",
         run: |repl, args, _dir| {
             let (&current_state_expr, &call_args) = repl.car_cdr(args);
-            let cons = Self::transition_call(repl, &current_state_expr, call_args, None)?;
+            let cons = Self::transition_call(repl, &current_state_expr, call_args)?;
             Self::persist_chain_comm(repl, &cons)?;
             Ok(cons)
         },
@@ -861,7 +872,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         run: |repl, args, _dir| {
             if args != repl.zstore.nil() {
                 let [&expr] = repl.take(args)?;
-                repl.handle_non_meta(&expr, None)?;
+                repl.handle_non_meta(&expr)?;
             }
             let proof_key = repl.prove_last_reduction()?;
             Ok(repl.zstore.intern_string(&proof_key))
@@ -1037,9 +1048,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let (vars_vec, &body) = Self::get_vars_vec_and_body(repl, &protocol)?;
             let vars_vec = copy_inner(vars_vec);
 
-            let (args_vec, None) = repl.zstore.fetch_list(&args) else {
-                bail!("Arguments must be a list");
-            };
+            let (args_vec, _) = repl.zstore.fetch_list(&args);
             if args_vec.len() != vars_vec.len() {
                 bail!(
                     "Mismatching arity. Protocol requires {} arguments but {} were provided",
@@ -1296,12 +1305,8 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         name: "microchain-transition",
         summary:
             "Proves a state transition via chaining and sends the proof to a microchain server",
-        info: &[
-            "The transition is successful iff the proof is accepted by the server.",
-            "Unlike in the `transition` meta command, the call arguments will be",
-            "evaluated w.r.t. the empty environment.",
-        ],
-        format: "!(microchain-transition <addr_expr> <id_expr> <state_expr> <call_args>)",
+        info: &["The transition is successful iff the proof is accepted by the server."],
+        format: "!(microchain-transition <addr_expr> <id_expr> <state_expr> <arg1_expr> ...)",
         example: &["!(microchain-transition \"127.0.0.1:1234\" #c0x123 state arg0 arg1)"],
         returns: "The new state",
         run: |repl, args, _dir| {
@@ -1313,9 +1318,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             }
             let (id, _) = repl.reduce_aux(&id_expr)?;
             let (&current_state_expr, &call_args) = repl.car_cdr(&rest);
-            let empty_env = repl.zstore.intern_empty_env();
-            let state =
-                Self::transition_call(repl, &current_state_expr, call_args, Some(empty_env))?;
+            let state = Self::transition_call(repl, &current_state_expr, call_args)?;
             if state.tag != Tag::Cons {
                 bail!("New state is not a pair");
             }
@@ -1436,7 +1439,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
 
             let zptr = compile_and_transform_single_file(&mut repl.zstore, &repl.state, &path.join(file_name))?;
 
-            let result = repl.handle_non_meta(&zptr, None)?;
+            let result = repl.handle_non_meta(&zptr)?;
             if result.tag == Tag::Err {
                 // error out when loading a file
                 bail!("Reduction error: {}", repl.fmt(&result));
