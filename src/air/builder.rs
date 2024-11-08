@@ -136,6 +136,7 @@ impl<AB: AirBuilder + MessageBuilder<AirInteraction<AB::Expr>>> LookupBuilder fo
 pub struct Record {
     pub nonce: u32,
     pub count: u32,
+    pub query_index: u32,
 }
 
 impl Record {
