@@ -3,10 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 
 use crate::{
-    core::{
-        tag::Tag,
-        zstore::{ZPtr, ZStore, DIGEST_SIZE, HASH3_SIZE},
-    },
+    core::zstore::{ZPtr, ZStore, DIGEST_SIZE, HASH3_SIZE},
     lair::chipset::Chipset,
 };
 
@@ -35,15 +32,14 @@ impl<F: Field> CommData<F> {
 impl<F: Hash + Eq + Default + Copy> CommData<F> {
     #[inline]
     pub(crate) fn new<C: Chipset<F>>(
-        secret: ZPtr<F>,
+        secret: [F; DIGEST_SIZE],
         payload: ZPtr<F>,
         zstore: &ZStore<F, C>,
     ) -> Self {
-        assert_eq!(secret.tag, Tag::BigNum);
         let mut zdag = ZDag::default();
-        zdag.populate_with_many([&secret, &payload], zstore);
+        zdag.populate_with(&payload, zstore, &mut Default::default());
         Self {
-            secret: secret.digest,
+            secret,
             payload,
             zdag,
         }
