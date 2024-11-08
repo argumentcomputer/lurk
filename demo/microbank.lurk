@@ -151,7 +151,8 @@
 ;; Tests
 
 !(def bank-id !(rand))
-!(def owner (make-pub-key "Owner" !(rand)))
+!(def owner-secret !(rand))
+!(def owner (make-pub-key "Owner" owner-secret))
 !(def about "This is my bank. There are many like it, but this one is mine.")
 !(def options (list :initial-supply 10000 :owner owner :id bank-id :about about))
 

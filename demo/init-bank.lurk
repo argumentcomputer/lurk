@@ -1,0 +1,36 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Config
+!(def server "127.0.0.1:1234")
+!(def my-name "porcuquine")
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+!(load "microbank.lurk")
+
+
+!(def bankchain-id !(microchain-start server s0))
+
+!(defq bank-state !(microchain-get-state server bankchain-id))
+
+!(def bank-id !(rand))
+!(def owner-secret !(rand))
+!(def owner (make-pub-key "Owner" owner-secret))
+!(def about "This is my bank. There are many like it, but this one is mine.")
+!(def options (list :initial-supply 10000 :owner owner :id bank-id :about about))
+
+!(def s0 (genesis options))
+
+!(def my-secret !(rand))
+!(def my-key (make-pub-key my-name my-secret))
+
+!(defq bankchain-id !(microchain-start server s0))
+
+!(defq bank-state !(microchain-get-state server bankchain-id))
+
+bank-state
+
+!(defq bank-state !(microchain-transition server bankchain-id bank-state (list :create-account my-key)))
+
+!(defq my-account (car bank-state))
+
+my-account
