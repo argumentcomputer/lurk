@@ -239,6 +239,9 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let [&sym, &expr] = repl.take(args)?;
             Self::validate_binding_symbol(repl, &sym)?;
             let (val, _) = repl.reduce_aux(&expr)?;
+            if val.tag == Tag::Err {
+                bail!(repl.fmt(&val));
+            }
             repl.memoize_dag(&val);
             repl.bind(sym, val);
             Ok(sym)
@@ -1535,4 +1538,35 @@ pub(crate) fn meta_cmds<C1: Chipset<F>, C2: Chipset<F>>() -> MetaCmdsMap<F, C1, 
     }
     assert_eq!(meta_cmds.len(), META_SYMBOLS.len());
     meta_cmds
+}
+
+#[cfg(test)]
+mod test {
+    use camino::{Utf8Path, Utf8PathBuf};
+    use once_cell::sync::OnceCell;
+
+    use crate::core::state::user_sym;
+
+    use super::{MetaCmd, Repl};
+
+    static DUMMY_PATH: OnceCell<Utf8PathBuf> = OnceCell::new();
+    fn dummy_path() -> &'static Utf8Path {
+        DUMMY_PATH.get_or_init(Utf8PathBuf::default)
+    }
+
+    #[test]
+    fn test_def() {
+        let mut repl = Repl::new_native();
+        let foo = repl.zstore.intern_symbol_no_lang(&user_sym("foo"));
+        let a = repl.zstore.intern_symbol_no_lang(&user_sym("a"));
+        let args = repl.zstore.intern_list([foo, a]);
+        assert!((MetaCmd::DEF.run)(&mut repl, &args, dummy_path()).is_err());
+
+        let a = repl.zstore.intern_char('a');
+        let args = repl.zstore.intern_list([foo, a]);
+        assert_eq!(
+            (MetaCmd::DEF.run)(&mut repl, &args, dummy_path()).unwrap(),
+            foo
+        );
+    }
 }
