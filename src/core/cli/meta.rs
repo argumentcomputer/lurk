@@ -607,7 +607,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
 
     const TRANSITION: Self = Self {
         name: "transition",
-        summary: "Chains a callable object and binds the next state to a variable",
+        summary: "Chains a callable object and returns the next state",
         info: &["It has the same side effects of the `chain` meta command."],
         format: "!(transition <state_expr> <call_args>)",
         example: &["!(defq new-state !(transition old-state input))"],
@@ -1195,7 +1195,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
 
     const MICROCHAIN_START: Self = Self {
         name: "microchain-start",
-        summary: "Starts a new microchain and binds the resulting ID to a symbol",
+        summary: "Starts a new microchain and returns the resulting ID",
         info: &[
             "A microchain ID is a hiding commitment to the genesis state, using",
             "a timestamp-based secret generated in the server.",
@@ -1268,7 +1268,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
 
     const MICROCHAIN_GET_GENESIS: Self = Self {
         name: "microchain-get-genesis",
-        summary: "Binds the genesis state of a microchain to a symbol",
+        summary: "Returns the genesis state of a microchain",
         info: &[
             "Similarly to `microchain-start`, the preimage of the ID becomes",
             "available so opening the ID returns the genesis state.",
@@ -1295,7 +1295,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
 
     const MICROCHAIN_GET_STATE: Self = Self {
         name: "microchain-get-state",
-        summary: "Binds the current state of a microchain to a symbol",
+        summary: "Returns the current state of a microchain",
         info: &[],
         format: "!(microchain-get-state <addr_expr> <id_expr>)",
         example: &["!(microchain-get-state \"127.0.0.1:1234\" #c0x123)"],
