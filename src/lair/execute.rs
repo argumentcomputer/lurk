@@ -404,37 +404,29 @@ impl<F: PrimeField32> QueryRecord<F> {
     }
 
     pub fn fix_nonces(&mut self, map: &NonceMap) {
-        fn update_nonce(lookup: &mut Record, map: &NonceMap) {
+        let update_nonce = |lookup: &mut Record| {
             if let Some(index) = lookup.query_index {
                 lookup.nonce = *map.get(&(index, lookup.nonce)).unwrap();
             }
-        }
+        };
 
         for queries in self.func_queries.iter_mut() {
             for result in queries.values_mut() {
-                update_nonce(&mut result.provide, map);
-                for require in result.requires.iter_mut() {
-                    update_nonce(require, map);
-                }
-                for require in result.depth_requires.iter_mut() {
-                    update_nonce(require, map);
-                }
+                update_nonce(&mut result.provide);
+                result.requires.iter_mut().for_each(update_nonce);
+                result.depth_requires.iter_mut().for_each(update_nonce);
             }
         }
         for queries in self.mem_queries.iter_mut() {
             for result in queries.values_mut() {
-                update_nonce(&mut result.provide, map);
-                for require in result.requires.iter_mut() {
-                    update_nonce(require, map);
-                }
-                for require in result.depth_requires.iter_mut() {
-                    update_nonce(require, map);
-                }
+                update_nonce(&mut result.provide);
+                result.requires.iter_mut().for_each(update_nonce);
+                result.depth_requires.iter_mut().for_each(update_nonce);
             }
         }
         for queries in self.bytes.records.values_mut() {
             for lookup in queries.iter_mut_records() {
-                update_nonce(lookup, map);
+                update_nonce(lookup);
             }
         }
     }
