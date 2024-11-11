@@ -12,7 +12,7 @@ use crate::{
     func,
     lair::{
         chipset::{Chipset, NoChip},
-        expr::FuncE,
+        expr::{FuncE, ReturnGroup},
         toplevel::Toplevel,
         FxIndexMap,
     },
@@ -38,7 +38,7 @@ use super::{
 fn native_lurk_funcs<F: PrimeField32>(
     digests: &SymbolsDigests<F>,
     _coroutines: &FxIndexMap<Symbol, Coroutine<F>>,
-) -> [FuncE<F>; 35] {
+) -> [FuncE<F>; 31] {
     [
         // Entrypoint
         lurk_main(),
@@ -71,12 +71,8 @@ fn native_lurk_funcs<F: PrimeField32>(
         convert_data(digests),
         deconvert_data(digests),
         // Evaluator
-        eval(),
+        eval(digests),
         apply(),
-        eval_unop(digests),
-        eval_binop(digests),
-        eval_binop_num(digests),
-        eval_op_misc(),
         extend_env_with_mutuals(),
         eval_mutual_bindings(),
         env_lookup(),
@@ -156,7 +152,13 @@ pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-pub fn eval<F: AbstractField>() -> FuncE<F> {
+const UNOP_GROUP: ReturnGroup = 1;
+const BINOP_GROUP: ReturnGroup = 2;
+const BINOP_NUM_GROUP: ReturnGroup = 3;
+const MISC_GROUP: ReturnGroup = 4;
+const ERR_GROUP: ReturnGroup = 5;
+
+pub fn eval<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
         partial fn eval(expr_tag, expr, env): [2] {
             match expr_tag {
@@ -169,6 +171,7 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                     let (res_tag, res) = call(env_lookup, expr_tag, expr_digest, env);
                     match res_tag {
                         Val::Fix => {
+                            #[group=MISC_GROUP]
                             // Fixed points are closed expressions, so we can choose an empty environment
                             let null_env = 0;
                             let (res_tag, res) = call(eval, res_tag, res, null_env);
@@ -210,106 +213,12 @@ pub fn eval<F: AbstractField>() -> FuncE<F> {
                     return (val_tag, val)
                 }
                 Op::Car, Op::Cdr, Op::Atom, Op::Open, Op::Secret, Op::U64, Op::Char, Op::Comm, Op::Bignum, Op::Emit => {
-                    // The reason this is unconstrained is because `eval_unop` fully constrains the tag
-                    #[unconstrained]
-                    let (val_tag, val) = call(eval_unop, expr_tag, expr, env);
-                    return (val_tag, val)
-                }
-                Op::MkCons, Op::MkStrcons, Op::Eq, Op::TypeEq, Op::Begin, Op::Hide => {
-                    // The reason this is unconstrained is because `eval_binop` fully constrains the tag
-                    #[unconstrained]
-                    let (val_tag, val) = call(eval_binop, expr_tag, expr, env);
-                    return (val_tag, val)
-                }
-                Op::Add, Op::Sub, Op::Mul, Op::Div, Op::Mod, Op::Less, Op::LessEq, Op::Great, Op::GreatEq, Op::NumEq => {
-                    // The reason this is unconstrained is because `eval_binop` fully constrains the tag
-                    #[unconstrained]
-                    let (val_tag, val) = call(eval_binop_num, expr_tag, expr, env);
-                    return (val_tag, val)
-                }
-            };
-            // The reason this is unconstrained is because `eval_op_misc` fully constrains the tag
-            #[unconstrained]
-            let (val_tag, val) = call(eval_op_misc, expr_tag, expr, env);
-            return (val_tag, val)
-        }
-    )
-}
-
-pub fn apply<F: AbstractField>() -> FuncE<F> {
-    func!(
-        partial fn apply(fun_tag, fun, args_tag, args, env): [2] {
-            match fun_tag {
-                Val::Fun => {
-                    let (param_tag, param, body_tag, body, fun_env) = load(fun);
-                    // `args` can only be a nil or a make-cons
-                    match args_tag {
-                        InternalTag::Nil => {
-                            return (fun_tag, fun)
-                        }
-                        Op::MkCons => {
-                            let (arg_tag, arg, rest_args_tag, rest_args) = load(args);
-                            let (arg_tag, arg) = call(eval, arg_tag, arg, env);
-                            match arg_tag {
-                                Tag::Err => {
-                                    return (arg_tag, arg)
-                                }
-                            };
-                            let ext_env = store(param_tag, param, arg_tag, arg, fun_env);
-                            let (head_tag, head) = call(eval, body_tag, body, ext_env);
-                            match rest_args_tag {
-                                InternalTag::Nil => {
-                                    return (head_tag, head)
-                                }
-                            };
-                            let (res_tag, res) = call(apply, head_tag, head, rest_args_tag, rest_args, env);
-                            return (res_tag, res)
-                        }
-                    }
-                }
-                Val::RestFun => {
-                    let (param_tag, param, body_tag, body, fun_env) = load(fun);
-                    let (args_list_tag, args_list) = call(eval, args_tag, args, env);
-                    match args_list_tag {
-                        Tag::Err => {
-                            return (args_list_tag, args_list)
-                        }
-                    };
-                    let ext_env = store(param_tag, param, args_list_tag, args_list, fun_env);
-                    let (res_tag, res) = call(eval, body_tag, body, ext_env);
-                    return (res_tag, res)
-                }
-                Val::Thunk => {
-                    let (body_tag, body, thunk_env) = load(fun);
-                    let (val_tag, val) = call(eval, body_tag, body, thunk_env);
-                    match args_tag {
-                        InternalTag::Nil => {
-                            return (val_tag, val)
-                        }
-                    };
-                    let (res_tag, res) = call(apply, val_tag, val, args_tag, args, env);
-                    return (res_tag, res)
-                }
-                Tag::Err => {
-                    return (fun_tag, fun)
-                }
-            };
-            let err_tag = Tag::Err;
-            let err = EvalErr::ApplyNonFunc;
-            return (err_tag, err)
-        }
-    )
-}
-
-pub fn eval_unop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
-    func!(
-        partial fn eval_unop(expr_tag, expr, env): [2] {
-            match expr_tag {
-                Op::Car, Op::Cdr, Op::Atom, Op::Open, Op::Secret, Op::U64, Op::Char, Op::Comm, Op::Bignum, Op::Emit => {
+                    #[group=UNOP_GROUP]
                     let (arg_tag, arg) = load(expr);
                     let (arg_tag, arg) = call(eval, arg_tag, arg, env);
                     match arg_tag {
                         Tag::Err => {
+                            #[group=ERR_GROUP]
                             return (arg_tag, arg)
                         }
                     };
@@ -337,6 +246,7 @@ pub fn eval_unop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                 }
                             };
                             let not_cons = EvalErr::NotCons;
+                            #[group=ERR_GROUP]
                             return (err_tag, not_cons)
                         }
                         Op::Cdr => {
@@ -359,6 +269,7 @@ pub fn eval_unop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                 }
                             };
                             let not_cons = EvalErr::NotCons;
+                            #[group=ERR_GROUP]
                             return (err_tag, not_cons)
                         }
                         Op::Atom => {
@@ -394,6 +305,7 @@ pub fn eval_unop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                 }
                             };
                             let cant_open = EvalErr::CantOpen;
+                            #[group=ERR_GROUP]
                             return (err_tag, cant_open)
                         }
                         Op::U64 => {
@@ -410,6 +322,7 @@ pub fn eval_unop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                 }
                             };
                             let err = EvalErr::CantCastToU64;
+                            #[group=ERR_GROUP]
                             return(err_tag, err)
                         }
                         Op::Emit => {
@@ -427,6 +340,7 @@ pub fn eval_unop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                 }
                             };
                             let err = EvalErr::CantCastToComm;
+                            #[group=ERR_GROUP]
                             return(err_tag, err)
                         }
                         Op::Char => {
@@ -442,30 +356,25 @@ pub fn eval_unop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                 }
                             };
                             let err = EvalErr::CantCastToChar;
+                            #[group=ERR_GROUP]
                             return(err_tag, err)
                         }
                     }
                 }
-            }
-        }
-    )
-}
-
-pub fn eval_binop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
-    func!(
-        partial fn eval_binop(expr_tag, expr, env): [2] {
-            match expr_tag {
                 Op::MkCons, Op::MkStrcons, Op::Eq, Op::TypeEq, Op::Begin, Op::Hide => {
+                    #[group=BINOP_GROUP]
                     let (exp1_tag, exp1, exp2_tag, exp2) = load(expr);
                     let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
                     match val1_tag {
                         Tag::Err => {
+                            #[group=ERR_GROUP]
                             return (val1_tag, val1)
                         }
                     };
                     let (val2_tag, val2) = call(eval, exp2_tag, exp2, env);
                     match val2_tag {
                         Tag::Err => {
+                            #[group=ERR_GROUP]
                             return (val2_tag, val2)
                         }
                     };
@@ -483,10 +392,12 @@ pub fn eval_binop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                             let not_char = sub(val1_tag, char_tag);
                             let not_str = sub(val2_tag, str_tag);
                             if not_char {
+                                #[group=ERR_GROUP]
                                 let err = EvalErr::NotChar;
                                 return (err_tag, err)
                             }
                             if not_str {
+                                #[group=ERR_GROUP]
                                 let err = EvalErr::NotString;
                                 return (err_tag, err)
                             }
@@ -508,6 +419,7 @@ pub fn eval_binop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                     return (comm_tag, comm_ptr)
                                 }
                             };
+                            #[group=ERR_GROUP]
                             let not_comm = EvalErr::NotBigNum;
                             return (err_tag, not_comm)
                         }
@@ -535,16 +447,8 @@ pub fn eval_binop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                         }
                     }
                 }
-            }
-        }
-    )
-}
-
-pub fn eval_binop_num<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
-    func!(
-        partial fn eval_binop_num(expr_tag, expr, env): [2] {
-            match expr_tag {
                 Op::Add, Op::Sub, Op::Mul, Op::Div, Op::Mod, Op::Less, Op::LessEq, Op::Great, Op::GreatEq, Op::NumEq => {
+                    #[group=BINOP_NUM_GROUP]
                     let err_tag = Tag::Err;
                     let num_tag = Tag::Num;
                     let u64_tag = Tag::U64;
@@ -558,12 +462,14 @@ pub fn eval_binop_num<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> 
                     let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
                     match val1_tag {
                         Tag::Err => {
+                            #[group=ERR_GROUP]
                             return (val1_tag, val1)
                         }
                     };
                     let (val2_tag, val2) = call(eval, exp2_tag, exp2, env);
                     match val2_tag {
                         Tag::Err => {
+                            #[group=ERR_GROUP]
                             return (val2_tag, val2)
                         }
                     };
@@ -587,6 +493,7 @@ pub fn eval_binop_num<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> 
                                 Op::Div, Op::Mod => {
                                     let is_zero = call(u64_iszero, val2);
                                     if is_zero {
+                                        #[group=ERR_GROUP]
                                         return (err_tag, err_div_zero)
                                     }
                                     let (quot, rem) = call(u64_divrem, val1, val2);
@@ -653,6 +560,7 @@ pub fn eval_binop_num<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> 
                                 }
                                 Op::Div => {
                                     if !val2 {
+                                        #[group=ERR_GROUP]
                                         return (err_tag, err_div_zero)
                                     }
                                     let res = div(val1, val2);
@@ -666,6 +574,7 @@ pub fn eval_binop_num<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> 
                                     return (t_tag, t)
                                 }
                                 Op::Mod, Op::Less, Op::Great, Op::LessEq, Op::GreatEq => {
+                                    #[group=ERR_GROUP]
                                     let err = EvalErr::NotU64;
                                     return (err_tag, err)
                                 }
@@ -710,39 +619,36 @@ pub fn eval_binop_num<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> 
                                     return (nil_tag, nil)
                                 }
                                 Op::Add, Op::Sub, Op::Mul, Op::Div, Op::Mod => {
+                                    #[group=ERR_GROUP]
                                     let err = EvalErr::InvalidArg;
                                     return (err_tag, err)
                                 }
                             }
                         }
                     };
+                    #[group=ERR_GROUP]
                     let err = EvalErr::InvalidArg;
                     return (err_tag, err)
                 }
-            }
-        }
-    )
-}
-
-pub fn eval_op_misc<F: PrimeField32>() -> FuncE<F> {
-    func!(
-        partial fn eval_op_misc(expr_tag, expr, env): [2] {
-            match expr_tag {
                 // immediate operations
                 Op::EmptyEnv => {
+                    #[group=MISC_GROUP]
                     let env_tag = Tag::Env;
                     let env = 0;
                     return (env_tag, env)
                 }
                 Op::CurrentEnv => {
+                    #[group=MISC_GROUP]
                     let env_tag = Tag::Env;
                     return (env_tag, env)
                 }
                 Op::Quote => {
+                    #[group=MISC_GROUP]
                     let (res_tag, res) = load(expr);
                     return (res_tag, res)
                 }
                 Op::Fail => {
+                    #[group=MISC_GROUP]
                     let zero = 0;
                     let one = 1;
                     assert_eq!(zero, one, |_, _| "Explicit fail encountered".to_string());
@@ -750,10 +656,12 @@ pub fn eval_op_misc<F: PrimeField32>() -> FuncE<F> {
                 }
                 // other operations
                 Op::Let => {
+                    #[group=MISC_GROUP]
                     let (param_tag, param, val_tag, val, body_tag, body) = load(expr);
                     let (val_tag, val) = call(eval, val_tag, val, env);
                     match val_tag {
                         Tag::Err => {
+                            #[group=ERR_GROUP]
                             return (val_tag, val)
                         }
                     };
@@ -762,6 +670,7 @@ pub fn eval_op_misc<F: PrimeField32>() -> FuncE<F> {
                     return (res_tag, res)
                 }
                 Op::Letrec => {
+                    #[group=MISC_GROUP]
                     // extend `env` with the bindings from the mutual env
                     let (binds, body_tag, body) = load(expr);
                     let ext_env = call(extend_env_with_mutuals, binds, binds, env);
@@ -769,6 +678,7 @@ pub fn eval_op_misc<F: PrimeField32>() -> FuncE<F> {
                     let (res_tag, res) = call(eval_mutual_bindings, env, ext_env);
                     match res_tag {
                         Tag::Err => {
+                            #[group=ERR_GROUP]
                             return (res_tag, res)
                         }
                     };
@@ -776,6 +686,7 @@ pub fn eval_op_misc<F: PrimeField32>() -> FuncE<F> {
                     return (res_tag, res)
                 }
                 Op::If => {
+                    #[group=MISC_GROUP]
                     let (b_tag, b, t_tag, t, f_tag, f) = load(expr);
                     let (b_tag, b) = call(eval, b_tag, b, env);
                     match b_tag {
@@ -784,25 +695,92 @@ pub fn eval_op_misc<F: PrimeField32>() -> FuncE<F> {
                             return (res_tag, res)
                         }
                         Tag::Err => {
+                            #[group=ERR_GROUP]
                             return (b_tag, b)
                         }
                     };
                     let (res_tag, res) = call(eval, t_tag, t, env);
                     return (res_tag, res)
                 }
-                Op::App, Op::Apply,
-                Op::And, Op::Or, Op::Not, Op::Eval, Op::Breakpoint => {
+                Op::Apply, Op::And, Op::Or, Op::Not, Op::Eval, Op::Breakpoint => {
+                    #[group=MISC_GROUP]
                     let err_tag = Tag::Err;
                     let err = EvalErr::Todo;
                     return (err_tag, err)
                 }
                 Op::Eqq, Op::TypeEqq => {
+                    #[group=MISC_GROUP]
                     // (might be compiled away)
                     let err_tag = Tag::Err;
                     let err = EvalErr::Todo;
                     return (err_tag, err)
                 }
             }
+        }
+    )
+}
+
+pub fn apply<F: AbstractField>() -> FuncE<F> {
+    func!(
+        partial fn apply(fun_tag, fun, args_tag, args, env): [2] {
+            match fun_tag {
+                Val::Fun => {
+                    let (param_tag, param, body_tag, body, fun_env) = load(fun);
+                    // `args` can only be a nil or a make-cons
+                    match args_tag {
+                        InternalTag::Nil => {
+                            return (fun_tag, fun)
+                        }
+                        Op::MkCons => {
+                            let (arg_tag, arg, rest_args_tag, rest_args) = load(args);
+                            let (arg_tag, arg) = call(eval, arg_tag, arg, env);
+                            match arg_tag {
+                                Tag::Err => {
+                                    return (arg_tag, arg)
+                                }
+                            };
+                            let ext_env = store(param_tag, param, arg_tag, arg, fun_env);
+                            let (head_tag, head) = call(eval, body_tag, body, ext_env);
+                            match rest_args_tag {
+                                InternalTag::Nil => {
+                                    return (head_tag, head)
+                                }
+                            };
+                            let (res_tag, res) = call(apply, head_tag, head, rest_args_tag, rest_args, env);
+                            return (res_tag, res)
+                        }
+                    }
+                }
+                Val::RestFun => {
+                    let (param_tag, param, body_tag, body, fun_env) = load(fun);
+                    let (args_list_tag, args_list) = call(eval, args_tag, args, env);
+                    match args_list_tag {
+                        Tag::Err => {
+                            return (args_list_tag, args_list)
+                        }
+                    };
+                    let ext_env = store(param_tag, param, args_list_tag, args_list, fun_env);
+                    let (res_tag, res) = call(eval, body_tag, body, ext_env);
+                    return (res_tag, res)
+                }
+                Val::Thunk => {
+                    let (body_tag, body, thunk_env) = load(fun);
+                    let (val_tag, val) = call(eval, body_tag, body, thunk_env);
+                    match args_tag {
+                        InternalTag::Nil => {
+                            return (val_tag, val)
+                        }
+                    };
+                    let (res_tag, res) = call(apply, val_tag, val, args_tag, args, env);
+                    return (res_tag, res)
+                }
+                Tag::Err => {
+                    return (fun_tag, fun)
+                }
+            };
+            let err_tag = Tag::Err;
+            let err = EvalErr::ApplyNonFunc;
+            return (err_tag, err)
         }
     )
 }
@@ -956,7 +934,7 @@ mod test {
 
     use crate::lair::func_chip::FuncChip;
 
-    use super::build_lurk_toplevel_native;
+    use super::*;
 
     #[test]
     fn test_eval_widths() {
@@ -965,10 +943,11 @@ mod test {
         let lurk_main = FuncChip::from_name_main("lurk_main", toplevel);
         let eval = FuncChip::from_name_main("eval", toplevel);
         let apply = FuncChip::from_name_main("apply", toplevel);
-        let eval_unop = FuncChip::from_name_main("eval_unop", toplevel);
-        let eval_binop = FuncChip::from_name_main("eval_binop", toplevel);
-        let eval_binop_num = FuncChip::from_name_main("eval_binop_num", toplevel);
-        let eval_op_misc = FuncChip::from_name_main("eval_op_misc", toplevel);
+        let eval_unop = FuncChip::from_name("eval", UNOP_GROUP, toplevel);
+        let eval_binop = FuncChip::from_name("eval", BINOP_GROUP, toplevel);
+        let eval_binop_num = FuncChip::from_name("eval", BINOP_NUM_GROUP, toplevel);
+        let eval_misc = FuncChip::from_name("eval", MISC_GROUP, toplevel);
+        let eval_err = FuncChip::from_name("eval", ERR_GROUP, toplevel);
         let extend_env_with_mutuals = FuncChip::from_name_main("extend_env_with_mutuals", toplevel);
         let eval_mutual_bindings = FuncChip::from_name_main("eval_mutual_bindings", toplevel);
         let equal_inner = FuncChip::from_name_main("equal_inner", toplevel);
@@ -977,12 +956,13 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["114"]);
-        expect_eq(eval.width(), expect!["73"]);
+        expect_eq(eval.width(), expect!["68"]);
         expect_eq(apply.width(), expect!["105"]);
-        expect_eq(eval_op_misc.width(), expect!["81"]);
-        expect_eq(eval_unop.width(), expect!["122"]);
-        expect_eq(eval_binop.width(), expect!["119"]);
-        expect_eq(eval_binop_num.width(), expect!["120"]);
+        expect_eq(eval_misc.width(), expect!["79"]);
+        expect_eq(eval_unop.width(), expect!["115"]);
+        expect_eq(eval_binop.width(), expect!["114"]);
+        expect_eq(eval_binop_num.width(), expect!["113"]);
+        expect_eq(eval_err.width(), expect!["100"]);
         expect_eq(extend_env_with_mutuals.width(), expect!["30"]);
         expect_eq(eval_mutual_bindings.width(), expect!["66"]);
         expect_eq(equal_inner.width(), expect!["58"]);
