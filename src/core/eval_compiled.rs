@@ -26,10 +26,7 @@ use super::{
     },
     ingress::{egress, ingress, preallocate_symbols, SymbolsDigests},
     lang::{Coroutine, Lang},
-    misc::{
-        big_num_lessthan, digest_equal, hash3, hash4, hash5, u64_add, u64_divrem, u64_iszero,
-        u64_lessthan, u64_mul, u64_sub,
-    },
+    misc::{hash3, hash4, hash5},
     symbol::Symbol,
     tag::Tag,
     zstore::{lurk_zstore, ZStore},
@@ -38,7 +35,7 @@ use super::{
 fn native_lurk_funcs<F: PrimeField32>(
     digests: &SymbolsDigests<F>,
     _coroutines: &FxIndexMap<Symbol, Coroutine<F>>,
-) -> [FuncE<F>; 31] {
+) -> [FuncE<F>; 23] {
     [
         // Entrypoint
         lurk_main(),
@@ -48,14 +45,6 @@ fn native_lurk_funcs<F: PrimeField32>(
         hash3(),
         hash4(),
         hash5(),
-        u64_add(),
-        u64_sub(),
-        u64_mul(),
-        u64_divrem(),
-        u64_lessthan(),
-        u64_iszero(),
-        digest_equal(),
-        big_num_lessthan(),
         // Ingress/Egress
         ingress(digests),
         egress(digests),
@@ -152,11 +141,15 @@ pub fn lurk_main<F: AbstractField>() -> FuncE<F> {
     )
 }
 
-const UNOP_GROUP: ReturnGroup = 1;
-const BINOP_GROUP: ReturnGroup = 2;
-const BINOP_NUM_GROUP: ReturnGroup = 3;
-const MISC_GROUP: ReturnGroup = 4;
-const ERR_GROUP: ReturnGroup = 5;
+const ERR_GROUP: ReturnGroup = 1;
+const IMMEDIATE_GROUP: ReturnGroup = 2;
+const UNOP_GROUP: ReturnGroup = 3;
+const BINOP_MISC_GROUP: ReturnGroup = 4;
+const BINOP_U64_GROUP: ReturnGroup = 5;
+const BINOP_NUM_GROUP: ReturnGroup = 6;
+const BINOP_BIG_GROUP: ReturnGroup = 7;
+const MISC_GROUP: ReturnGroup = 8;
+const U64_DIV_GROUP: ReturnGroup = 9;
 
 pub fn eval<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
     func!(
@@ -164,6 +157,7 @@ pub fn eval<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
             match expr_tag {
                 Val::Fun, Val::Thunk, Val::RestFun, Tag::U64, Tag::Num, Tag::BigNum, Tag::Comm, Tag::Char, Tag::Str,
                 Tag::Key, Tag::Fun, Tag::Cons, Tag::Env, Tag::Err, InternalTag::T, InternalTag::Nil => {
+                    #[group=IMMEDIATE_GROUP]
                     return (expr_tag, expr)
                 }
                 Tag::Builtin, Tag::Sym, Tag::Coroutine => {
@@ -187,7 +181,6 @@ pub fn eval<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     let (res_tag, res) = call(eval, body_tag, body, ext_env);
                     return (res_tag, res)
                 }
-                // immediate operations
                 Op::MkThunk => {
                     let (cbody_tag, cbody) = load(expr);
                     let tag = Val::Thunk;
@@ -362,7 +355,7 @@ pub fn eval<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     }
                 }
                 Op::MkCons, Op::MkStrcons, Op::Eq, Op::TypeEq, Op::Begin, Op::Hide => {
-                    #[group=BINOP_GROUP]
+                    #[group=BINOP_MISC_GROUP]
                     let (exp1_tag, exp1, exp2_tag, exp2) = load(expr);
                     let (val1_tag, val1) = call(eval, exp1_tag, exp1, env);
                     match val1_tag {
@@ -448,7 +441,6 @@ pub fn eval<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     }
                 }
                 Op::Add, Op::Sub, Op::Mul, Op::Div, Op::Mod, Op::Less, Op::LessEq, Op::Great, Op::GreatEq, Op::NumEq => {
-                    #[group=BINOP_NUM_GROUP]
                     let err_tag = Tag::Err;
                     let num_tag = Tag::Num;
                     let u64_tag = Tag::U64;
@@ -477,26 +469,35 @@ pub fn eval<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                     let tags: [2] = (val1_tag, val2_tag);
                     match tags {
                         [Tag::U64, Tag::U64] => {
+                            #[group=BINOP_U64_GROUP]
+                            let a: [8] = load(val1);
+                            let b: [8] = load(val2);
                             match expr_tag {
                                 Op::Add => {
-                                    let res = call(u64_add, val1, val2);
+                                    let c: [8] = extern_call(u64_add, a, b);
+                                    let res = store(c);
                                     return (u64_tag, res)
                                 }
                                 Op::Sub => {
-                                    let res = call(u64_sub, val1, val2);
+                                    let c: [8] = extern_call(u64_sub, a, b);
+                                    let res = store(c);
                                     return (u64_tag, res)
                                 }
                                 Op::Mul => {
-                                    let res = call(u64_mul, val1, val2);
+                                    let c: [8] = extern_call(u64_mul, a, b);
+                                    let res = store(c);
                                     return (u64_tag, res)
                                 }
                                 Op::Div, Op::Mod => {
-                                    let is_zero = call(u64_iszero, val2);
+                                    #[group=U64_DIV_GROUP]
+                                    let is_zero = extern_call(u64_iszero, b);
                                     if is_zero {
                                         #[group=ERR_GROUP]
                                         return (err_tag, err_div_zero)
                                     }
-                                    let (quot, rem) = call(u64_divrem, val1, val2);
+                                    let (q: [8], r: [8]) = extern_call(u64_divrem, a, b);
+                                    let quot = store(q);
+                                    let rem = store(r);
                                     match expr_tag {
                                         Op::Div => {
                                             return (u64_tag, quot)
@@ -507,14 +508,14 @@ pub fn eval<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                     }
                                 }
                                 Op::Less => {
-                                    let res = call(u64_lessthan, val1, val2);
+                                    let res = extern_call(u64_lessthan, a, b);
                                     if res {
                                         return (t_tag, t)
                                     }
                                     return (nil_tag, nil)
                                 }
                                 Op::GreatEq => {
-                                    let res = call(u64_lessthan, val1, val2);
+                                    let res = extern_call(u64_lessthan, a, b);
                                     if res {
                                         return (nil_tag, nil)
                                     }
@@ -522,29 +523,30 @@ pub fn eval<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
 
                                 }
                                 Op::Great => {
-                                    let res = call(u64_lessthan, val2, val1);
+                                    let res = extern_call(u64_lessthan, b, a);
                                     if res {
                                         return (t_tag, t)
                                     }
                                     return (nil_tag, nil)
                                 }
                                 Op::LessEq => {
-                                    let res = call(u64_lessthan, val2, val1);
+                                    let res = extern_call(u64_lessthan, b, a);
                                     if res {
                                         return (nil_tag, nil)
                                     }
                                     return (t_tag, t)
                                 }
                                 Op::NumEq => {
-                                    let res = call(digest_equal, val1, val2);
-                                    if res {
-                                        return (t_tag, t)
+                                    let diff = sub(a, b);
+                                    if diff {
+                                        return (nil_tag, nil)
                                     }
-                                    return (nil_tag, nil)
+                                    return (t_tag, t)
                                 }
                             }
                         }
                         [Tag::Num, Tag::Num] => {
+                            #[group=BINOP_NUM_GROUP]
                             match expr_tag {
                                 Op::Add => {
                                     let res = add(val1, val2);
@@ -581,16 +583,19 @@ pub fn eval<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                             }
                         }
                         [Tag::BigNum, Tag::BigNum] => {
+                            #[group=BINOP_BIG_GROUP]
+                            let a: [8] = load(val1);
+                            let b: [8] = load(val2);
                             match expr_tag {
                                 Op::Less => {
-                                    let res = call(big_num_lessthan, val1, val2);
+                                    let res = extern_call(big_num_lessthan, a, b);
                                     if res {
                                         return (t_tag, t)
                                     }
                                     return (nil_tag, nil)
                                 }
                                 Op::GreatEq => {
-                                    let res = call(big_num_lessthan, val1, val2);
+                                    let res = extern_call(big_num_lessthan, a, b);
                                     if res {
                                         return (nil_tag, nil)
                                     }
@@ -598,25 +603,25 @@ pub fn eval<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
 
                                 }
                                 Op::Great => {
-                                    let res = call(big_num_lessthan, val2, val1);
+                                    let res = extern_call(big_num_lessthan, b, a);
                                     if res {
                                         return (t_tag, t)
                                     }
                                     return (nil_tag, nil)
                                 }
                                 Op::LessEq => {
-                                    let res = call(big_num_lessthan, val2, val1);
+                                    let res = extern_call(big_num_lessthan, b, a);
                                     if res {
                                         return (nil_tag, nil)
                                     }
                                     return (t_tag, t)
                                 }
                                 Op::NumEq => {
-                                    let res = call(digest_equal, val2, val1);
-                                    if res {
-                                        return (t_tag, t)
+                                    let diff = sub(a, b);
+                                    if diff {
+                                        return (nil_tag, nil)
                                     }
-                                    return (nil_tag, nil)
+                                    return (t_tag, t)
                                 }
                                 Op::Add, Op::Sub, Op::Mul, Op::Div, Op::Mod => {
                                     #[group=ERR_GROUP]
@@ -944,10 +949,14 @@ mod test {
         let eval = FuncChip::from_name_main("eval", toplevel);
         let apply = FuncChip::from_name_main("apply", toplevel);
         let eval_unop = FuncChip::from_name("eval", UNOP_GROUP, toplevel);
-        let eval_binop = FuncChip::from_name("eval", BINOP_GROUP, toplevel);
+        let eval_binop_misc = FuncChip::from_name("eval", BINOP_MISC_GROUP, toplevel);
+        let eval_binop_u64 = FuncChip::from_name("eval", BINOP_U64_GROUP, toplevel);
         let eval_binop_num = FuncChip::from_name("eval", BINOP_NUM_GROUP, toplevel);
+        let eval_binop_big = FuncChip::from_name("eval", BINOP_BIG_GROUP, toplevel);
+        let eval_u64_div = FuncChip::from_name("eval", U64_DIV_GROUP, toplevel);
         let eval_misc = FuncChip::from_name("eval", MISC_GROUP, toplevel);
         let eval_err = FuncChip::from_name("eval", ERR_GROUP, toplevel);
+        let eval_immediate = FuncChip::from_name("eval", IMMEDIATE_GROUP, toplevel);
         let extend_env_with_mutuals = FuncChip::from_name_main("extend_env_with_mutuals", toplevel);
         let eval_mutual_bindings = FuncChip::from_name_main("eval_mutual_bindings", toplevel);
         let equal_inner = FuncChip::from_name_main("equal_inner", toplevel);
@@ -956,13 +965,17 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["114"]);
-        expect_eq(eval.width(), expect!["68"]);
+        expect_eq(eval.width(), expect!["67"]);
         expect_eq(apply.width(), expect!["105"]);
         expect_eq(eval_misc.width(), expect!["79"]);
         expect_eq(eval_unop.width(), expect!["115"]);
-        expect_eq(eval_binop.width(), expect!["114"]);
-        expect_eq(eval_binop_num.width(), expect!["113"]);
-        expect_eq(eval_err.width(), expect!["100"]);
+        expect_eq(eval_binop_misc.width(), expect!["114"]);
+        expect_eq(eval_binop_u64.width(), expect!["163"]);
+        expect_eq(eval_binop_num.width(), expect!["81"]);
+        expect_eq(eval_binop_big.width(), expect!["154"]);
+        expect_eq(eval_u64_div.width(), expect!["242"]);
+        expect_eq(eval_err.width(), expect!["127"]);
+        expect_eq(eval_immediate.width(), expect!["34"]);
         expect_eq(extend_env_with_mutuals.width(), expect!["30"]);
         expect_eq(eval_mutual_bindings.width(), expect!["66"]);
         expect_eq(equal_inner.width(), expect!["58"]);
