@@ -324,6 +324,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
             bytes: Default::default(),
             emitted: Default::default(),
             debug_data: Default::default(),
+            provable: false,
         }
     }
 

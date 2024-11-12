@@ -82,6 +82,7 @@ pub struct QueryRecord<F: PrimeField32> {
     pub(crate) bytes: BytesRecord,
     pub(crate) emitted: Vec<List<F>>,
     pub(crate) debug_data: DebugData,
+    pub(crate) provable: bool,
 }
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
@@ -287,6 +288,7 @@ impl<F: PrimeField32> QueryRecord<F> {
             bytes: BytesRecord::default(),
             emitted: vec![],
             debug_data: DebugData::default(),
+            provable: true,
         }
     }
 
@@ -463,8 +465,10 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
             public_values.extend(depth.to_le_bytes().map(F::from_canonical_u8));
         }
         queries.public_values = Some(public_values);
-        let map = queries.nonce_map(self);
-        queries.fix_nonces(&map);
+        if queries.provable {
+            let map = queries.nonce_map(self);
+            queries.fix_nonces(&map);
+        }
         Ok(out)
     }
 
