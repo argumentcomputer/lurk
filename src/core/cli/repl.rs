@@ -6,6 +6,7 @@ use p3_baby_bear::BabyBear;
 use p3_field::{Field, PrimeField32};
 use rustc_hash::{FxHashMap, FxHashSet};
 use rustyline::{
+    config::{Config, EditMode},
     error::ReadlineError,
     history::DefaultHistory,
     validate::{ValidationContext, ValidationResult, Validator},
@@ -213,6 +214,8 @@ fn pretty_iterations_display(iterations: usize) -> String {
         "1 iteration".into()
     }
 }
+
+const VI_EDITORS: [&str; 3] = ["vi", "vim", "nvim"];
 
 impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
     /// Deconstructs the arguments of a cons list expected to have a known number
@@ -636,10 +639,21 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         }
     }
 
+    pub(crate) fn init_config() -> Config {
+        let var = std::env::var("EDITOR");
+        let is_vi = |var: String| VI_EDITORS.iter().any(|&x| x == var.as_str());
+        if let Ok(true) = var.map(is_vi) {
+            Config::builder().edit_mode(EditMode::Vi).build()
+        } else {
+            Config::default()
+        }
+    }
+
     pub(crate) fn run(&mut self) -> Result<()> {
         println!("Lurk REPL welcomes you.");
 
-        let mut editor: Editor<InputValidator<F>, DefaultHistory> = Editor::new()?;
+        let config = Self::init_config();
+        let mut editor: Editor<InputValidator<F>, DefaultHistory> = Editor::with_config(config)?;
 
         editor.set_helper(Some(InputValidator::<F> {
             state: self.state.clone(),
