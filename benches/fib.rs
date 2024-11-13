@@ -103,6 +103,36 @@ fn trace_generation(c: &mut Criterion) {
     });
 }
 
+fn verification(c: &mut Criterion) {
+    let arg = get_fib_arg();
+    c.bench_function(&format!("fib-verification-{arg}"), |b| {
+        let (toplevel, ..) = build_lurk_toplevel_native();
+        let (args, lurk_main, mut record) = setup(arg, &toplevel);
+        toplevel
+            .execute(lurk_main.func(), &args, &mut record, None)
+            .unwrap();
+        let config = BabyBearPoseidon2::new();
+        let machine = StarkMachine::new(
+            config,
+            build_chip_vector(&lurk_main),
+            record.expect_public_values().len(),
+        );
+        let (pk, vk) = machine.setup(&LairMachineProgram);
+        let mut challenger_p = machine.config().challenger();
+        let opts = SphinxCoreOpts::default();
+        let shard = Shard::new(&record);
+        let proof = machine.prove::<LocalProver<_, _>>(&pk, shard, &mut challenger_p, opts);
+
+        b.iter_batched(
+            || machine.config().challenger(),
+            |mut challenger| {
+                machine.verify(&vk, &proof, &mut challenger).unwrap();
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
 fn e2e(c: &mut Criterion) {
     let arg = get_fib_arg();
     c.bench_function(&format!("fib-e2e-{arg}"), |b| {
@@ -140,6 +170,7 @@ criterion_group! {
     targets =
         evaluation,
         trace_generation,
+        verification,
         e2e,
 }
 
