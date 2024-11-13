@@ -1381,26 +1381,32 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         example: &["!(microchain-verify \"127.0.0.1:1234\" #c0x123 genesis current)"],
         returns: "t",
         run: |repl, args, _dir| {
-            let [&addr_expr, &id_expr, &genesis_state_expr, &current_state_expr] =
-                repl.take(args)?;
+            let [&addr_expr, &id_expr, &initial_state_expr, &final_state_expr] = repl.take(args)?;
             let (addr, _) = repl.reduce_aux(&addr_expr)?;
             if addr.tag != Tag::Str {
                 bail!("Address must be a string");
             }
             let (id, _) = repl.reduce_aux(&id_expr)?;
-            let (genesis_state, _) = repl.reduce_aux(&genesis_state_expr)?;
-            if genesis_state.tag != Tag::Cons {
+            let (initial_state, _) = repl.reduce_aux(&initial_state_expr)?;
+            if initial_state.tag != Tag::Cons {
                 bail!("Initial state must be a pair");
+            }
+            let (final_state, _) = repl.reduce_aux(&final_state_expr)?;
+            if final_state.tag != Tag::Cons {
+                bail!("Final state must be a pair");
             }
             let addr_str = repl.zstore.fetch_string(&addr);
             let stream = &mut TcpStream::connect(addr_str)?;
-            write_data(stream, Request::GetProofs(id.digest))?;
+            write_data(
+                stream,
+                Request::GetProofs(id.digest, initial_state.digest, final_state.digest),
+            )?;
             let Response::Proofs(proofs) = read_data(stream)? else {
                 bail!("Could not read proofs from server");
             };
-            repl.memoize_dag(&genesis_state);
-            let (_, &(mut callable)) = repl.zstore.fetch_tuple11(&genesis_state);
-            let mut state = genesis_state;
+            repl.memoize_dag(&initial_state);
+            let (_, &(mut callable)) = repl.zstore.fetch_tuple11(&initial_state);
+            let mut state = initial_state;
             let empty_env = repl.zstore.intern_empty_env();
             for (i, proof) in proofs.into_iter().enumerate() {
                 let OpaqueChainProof {
@@ -1421,8 +1427,7 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 callable = next_callable;
                 state = result;
             }
-            let (current_state, _) = repl.reduce_aux(&current_state_expr)?;
-            if state != current_state {
+            if state != final_state {
                 bail!("Chain final state doesn't match target final state");
             }
             println!("Microchain verification succeeded");
