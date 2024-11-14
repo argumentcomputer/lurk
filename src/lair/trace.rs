@@ -8,8 +8,7 @@ use rayon::{
 };
 
 use crate::{
-    air::builder::{Record, RequireRecord},
-    gadgets::bytes::record::DummyBytesRecord,
+    air::builder::Record, gadgets::bytes::record::DummyBytesRecord,
     lair::execute::mem_index_from_len,
 };
 
@@ -61,8 +60,17 @@ impl<'a, T> ColumnMutSlice<'a, T> {
         self.output[index.output] = t;
         index.output += 1;
     }
+}
 
-    pub fn push_require(&mut self, index: &mut ColumnIndex, require: RequireRecord<T>) {
+impl<F: PrimeField32> ColumnMutSlice<'_, F> {
+    pub fn push_provide(&mut self, index: &mut ColumnIndex, lookup: Record) {
+        let provide = lookup.into_provide();
+        self.push_aux(index, provide.last_nonce);
+        self.push_aux(index, provide.last_count);
+    }
+
+    pub fn push_require(&mut self, index: &mut ColumnIndex, lookup: Record) {
+        let require = lookup.into_require();
         self.push_aux(index, require.prev_nonce);
         self.push_aux(index, require.prev_count);
         self.push_aux(index, require.count_inv);
@@ -92,15 +100,15 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'_, F, C1, C2> {
                 let slice = &mut ColumnMutSlice::from_slice(row, self.layout_sizes);
                 let requires = result.requires.iter();
                 let mut depth_requires = result.depth_requires.iter();
-                let provide = result.provide.into_provide();
+                let provide = result.provide;
+                let queries = shard.queries();
                 result
                     .output
                     .as_ref()
                     .unwrap()
                     .iter()
                     .for_each(|&o| slice.push_output(index, o));
-                slice.push_aux(index, provide.last_nonce);
-                slice.push_aux(index, provide.last_count);
+                slice.push_provide(index, provide);
                 // provenance and range check
                 if self.func.partial {
                     let num_requires = (DEPTH_W / 2) + (DEPTH_W % 2);
@@ -109,15 +117,15 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'_, F, C1, C2> {
                         slice.push_aux(index, F::from_canonical_u8(b));
                     }
                     for _ in 0..num_requires {
-                        let lookup = depth_requires.next().expect("Not enough require hints");
-                        slice.push_require(index, lookup.into_require());
+                        let lookup = *depth_requires.next().expect("Not enough require hints");
+                        slice.push_require(index, lookup);
                     }
                 }
                 self.func.populate_row(
                     args,
                     index,
                     slice,
-                    shard.queries(),
+                    queries,
                     requires,
                     self.toplevel,
                     result.depth,
@@ -243,8 +251,8 @@ fn push_depth<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>>(
     less_than.populate(&depth, &ctx.depth, bytes);
     witness.iter().for_each(|w| slice.push_aux(index, *w));
     for _ in 0..DepthLessThan::<F>::num_requires() {
-        let lookup = ctx.depth_requires.next().expect("Not enough require hints");
-        slice.push_require(index, lookup.into_require());
+        let lookup = *ctx.depth_requires.next().expect("Not enough require hints");
+        slice.push_require(index, lookup);
     }
 }
 
@@ -326,8 +334,8 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let lookup = ctx.requires.next().expect("Not enough require hints");
-                slice.push_require(index, lookup.into_require());
+                let lookup = *ctx.requires.next().expect("Not enough require hints");
+                slice.push_require(index, lookup);
                 // dependency provenance and constraints
                 if func.partial {
                     push_depth(index, slice, ctx, result.depth);
@@ -345,8 +353,8 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let lookup = ctx.requires.next().expect("Not enough require hints");
-                slice.push_require(index, lookup.into_require());
+                let lookup = *ctx.requires.next().expect("Not enough require hints");
+                slice.push_require(index, lookup);
                 if func.partial {
                     let query_map = &ctx.queries.func_queries()[*idx];
                     let result = query_map.get(inp).expect("Cannot find query result");
@@ -363,8 +371,8 @@ impl<F: PrimeField32> Op<F> {
                 let f = F::from_canonical_usize(i + 1);
                 map.push((f, 1));
                 slice.push_aux(index, f);
-                let lookup = ctx.requires.next().expect("Not enough require hints");
-                slice.push_require(index, lookup.into_require());
+                let lookup = *ctx.requires.next().expect("Not enough require hints");
+                slice.push_require(index, lookup);
             }
             Op::Load(len, ptr) => {
                 let mem_idx = mem_index_from_len(*len);
@@ -377,8 +385,8 @@ impl<F: PrimeField32> Op<F> {
                     map.push((*f, 1));
                     slice.push_aux(index, *f);
                 }
-                let lookup = ctx.requires.next().expect("Not enough require hints");
-                slice.push_require(index, lookup.into_require());
+                let lookup = *ctx.requires.next().expect("Not enough require hints");
+                slice.push_require(index, lookup);
             }
             Op::ExternCall(chip_idx, input) => {
                 let chip = ctx.toplevel.chip_by_index(*chip_idx);
@@ -396,15 +404,15 @@ impl<F: PrimeField32> Op<F> {
                     slice.push_aux(index, f);
                 }
                 for _ in 0..chip.require_size() {
-                    let lookup = ctx.requires.next().expect("Not enough require hints");
-                    slice.push_require(index, lookup.into_require());
+                    let lookup = *ctx.requires.next().expect("Not enough require hints");
+                    slice.push_require(index, lookup);
                 }
             }
             Op::RangeU8(xs) => {
                 let num_requires = (xs.len() / 2) + (xs.len() % 2);
                 for _ in 0..num_requires {
-                    let lookup = ctx.requires.next().expect("Not enough require hints");
-                    slice.push_require(index, lookup.into_require());
+                    let lookup = *ctx.requires.next().expect("Not enough require hints");
+                    slice.push_require(index, lookup);
                 }
             }
             Op::Emit(_) | Op::Breakpoint | Op::Debug(_) => (),

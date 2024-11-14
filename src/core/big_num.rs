@@ -45,12 +45,13 @@ impl<F: PrimeField32> Chipset<F> for BigNum {
         &self,
         input: &[F],
         nonce: u32,
+        query_index: usize,
         queries: &mut QueryRecord<F>,
         requires: &mut Vec<Record>,
     ) -> Vec<F> {
         let in1: [F; 8] = input[0..8].try_into().unwrap();
         let in2: [F; 8] = input[8..16].try_into().unwrap();
-        let bytes = &mut queries.bytes.context(nonce, requires);
+        let bytes = &mut queries.bytes.context(nonce, query_index, requires);
         match self {
             BigNum::LessThan => {
                 let mut witness = BigNumCompareWitness::<F>::default();

@@ -85,6 +85,7 @@ impl<F: PrimeField32> Chipset<F> for U64 {
         &self,
         input: &[F],
         nonce: u32,
+        query_index: usize,
         queries: &mut QueryRecord<F>,
         requires: &mut Vec<Record>,
     ) -> Vec<F> {
@@ -93,7 +94,7 @@ impl<F: PrimeField32> Chipset<F> for U64 {
             U64::IsZero => 0, // unused
             _ => into_u64(&input[8..16]),
         };
-        let bytes = &mut queries.bytes.context(nonce, requires);
+        let bytes = &mut queries.bytes.context(nonce, query_index, requires);
         match self {
             U64::Add => {
                 let mut witness = Sum64::<F>::default();

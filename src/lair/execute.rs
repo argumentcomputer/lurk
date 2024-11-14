@@ -44,8 +44,7 @@ impl<F: PrimeField32> QueryResult<F> {
         nonce: usize,
         caller_requires: &mut Vec<Record>,
     ) {
-        let old_lookup = self.provide.new_lookup(nonce as u32);
-        self.provide.query_index = index as u32;
+        let old_lookup = self.provide.new_lookup(nonce as u32, index);
         caller_requires.push(old_lookup);
     }
 }
@@ -671,13 +670,21 @@ impl<F: PrimeField32> Func<F> {
                 ExecEntry::Op(Op::ExternCall(chip_idx, input)) => {
                     let input: List<_> = input.iter().map(|a| map[*a]).collect();
                     let chip = toplevel.chip_by_index(*chip_idx);
-                    map.extend(chip.execute(&input, nonce as u32, queries, &mut requires));
+                    map.extend(chip.execute(
+                        &input,
+                        nonce as u32,
+                        func_index,
+                        queries,
+                        &mut requires,
+                    ));
                 }
                 ExecEntry::Op(Op::Emit(xs)) => {
                     queries.emitted.push(xs.iter().map(|a| map[*a]).collect())
                 }
                 ExecEntry::Op(Op::RangeU8(xs)) => {
-                    let mut bytes = queries.bytes.context(nonce as u32, &mut requires);
+                    let mut bytes = queries
+                        .bytes
+                        .context(nonce as u32, func_index, &mut requires);
                     let xs = xs.iter().map(|x| {
                         map[*x]
                             .as_canonical_u32()
@@ -706,7 +713,10 @@ impl<F: PrimeField32> Func<F> {
                         inv_map.insert(out_list.clone(), inp.clone());
                     }
                     if partial {
-                        let mut bytes = queries.bytes.context(nonce as u32, &mut depth_requires);
+                        let mut bytes =
+                            queries
+                                .bytes
+                                .context(nonce as u32, func_index, &mut depth_requires);
                         let depth = depths.iter().map(|&a| a + 1).max().unwrap_or(0);
                         bytes.range_check_u8_iter(depth.to_le_bytes());
                         for dep_depth in depths.iter() {
