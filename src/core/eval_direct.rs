@@ -29,12 +29,14 @@ use super::{
 fn native_lurk_funcs<F: PrimeField32>(
     digests: &SymbolsDigests<F>,
     coroutines: &FxIndexMap<Symbol, Coroutine<F>>,
-) -> [FuncE<F>; 37] {
+) -> [FuncE<F>; 39] {
     [
         lurk_main(),
         preallocate_symbols(digests),
         eval(),
         eval_builtin_expr(digests),
+        eval_bind_builtin(),
+        eval_env_builtin(),
         eval_apply_builtin(),
         eval_coroutine_expr(digests, coroutines),
         eval_opening_unop(digests),
@@ -657,6 +659,14 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
                         }
                     }
                 }
+                "bind" => {
+                    let (res_tag, res) = call(eval_bind_builtin, rest_tag, rest, env);
+                    return (res_tag, res)
+                }
+                "env" => {
+                    let (res_tag, res) = call(eval_env_builtin, rest_tag, rest, env);
+                    return (res_tag, res)
+                }
                 "breakpoint" => {
                     breakpoint;
                     match rest_tag {
@@ -753,8 +763,118 @@ pub fn eval_builtin_expr<F: AbstractField>(digests: &SymbolsDigests<F>) -> FuncE
                     let (res_tag, res) = call(eval_opening_unop, head, rest_tag, rest, env);
                     return (res_tag, res)
                 }
-                // TODO: other built-ins
             }
+        }
+    )
+}
+
+/// If `rest` is of form `(sym val env)`, evaluate those to `sym'`, `val'` and `env'`
+/// respectively, early returning errors if found. Then return an environment with
+/// `(sym' . val')` as the head binding and `env'` as the tail.
+pub fn eval_bind_builtin<F: AbstractField>() -> FuncE<F> {
+    func!(
+        partial fn eval_bind_builtin(rest_tag, rest, env): [2] {
+            let nil_tag = InternalTag::Nil;
+            let cons_tag = Tag::Cons;
+            let err_tag = Tag::Err;
+            let invalid_form = EvalErr::InvalidForm;
+            let rest_not_cons = sub(rest_tag, cons_tag);
+            if rest_not_cons {
+                return (err_tag, invalid_form)
+            }
+            let (fst_tag, fst, rest_tag, rest) = load(rest);
+            let rest_not_cons = sub(rest_tag, cons_tag);
+            if rest_not_cons {
+                return (err_tag, invalid_form)
+            }
+            let (snd_tag, snd, rest_tag, rest) = load(rest);
+            let rest_not_cons = sub(rest_tag, cons_tag);
+            if rest_not_cons {
+                return (err_tag, invalid_form)
+            }
+            let (trd_tag, trd, rest_tag, _rest) = load(rest);
+            let rest_not_nil = sub(rest_tag, nil_tag);
+            if rest_not_nil {
+                return (err_tag, invalid_form)
+            }
+            let (fst_tag, fst) = call(eval, fst_tag, fst, env);
+            match fst_tag {
+                Tag::Sym, Tag::Builtin, Tag::Coroutine => {
+                    let (snd_tag, snd) = call(eval, snd_tag, snd, env);
+                    let not_err = sub(snd_tag, err_tag);
+                    if !not_err {
+                        return (snd_tag, snd)
+                    }
+                    let (trd_tag, trd) = call(eval, trd_tag, trd, env);
+                    match trd_tag {
+                        Tag::Env => {
+                            let env = store(fst_tag, fst, snd_tag, snd, trd);
+                            return (trd_tag, env) // trd_tag is Tag::Env
+                        }
+                        Tag::Err => {
+                            return (trd_tag, trd)
+                        }
+                    };
+                    let err = EvalErr::NotEnv;
+                    return (err_tag, err)
+                }
+                Tag::Err => {
+                    return (fst_tag, fst)
+                }
+            };
+            let err = EvalErr::IllegalBindingVar;
+            return (err_tag, err)
+        }
+    )
+}
+
+/// If `rest` is of form `(b1 b2 ... bn)`, evaluate those, early returning errors
+/// if found. Then expect each evaluated term `i` to be of form `(symi . vali)`
+/// and return an environment with bindings `(sym1 . val1)`, `(sym2 . val2)`, ...,
+/// `(symn . valn)`.
+pub fn eval_env_builtin<F: AbstractField>() -> FuncE<F> {
+    func!(
+        partial fn eval_env_builtin(rest_tag, rest, env): [2] {
+            let env_tag = Tag::Env;
+            let err_tag = Tag::Err;
+            match rest_tag {
+                InternalTag::Nil => {
+                    let env = 0;
+                    return (env_tag, env)
+                }
+                Tag::Cons => {
+                    let (head_tag, head, rest_tag, rest) = load(rest);
+                    let (head_tag, head) = call(eval, head_tag, head, env);
+                    match head_tag {
+                        Tag::Cons => {
+                            let (sym_tag, sym, val_tag, val) = load(head);
+                            match sym_tag {
+                                Tag::Sym, Tag::Builtin, Tag::Coroutine => {
+                                    let (tail_env_tag, tail_env) = call(eval_env_builtin, rest_tag, rest, env);
+                                    match tail_env_tag {
+                                        Tag::Env => {
+                                            let env = store(sym_tag, sym, val_tag, val, tail_env);
+                                            return (env_tag, env)
+                                        }
+                                        Tag::Err => {
+                                            return (tail_env_tag, tail_env)
+                                        }
+                                    }
+                                }
+                            };
+                            let err = EvalErr::IllegalBindingVar;
+                            return (err_tag, err)
+                        }
+                        Tag::Err => {
+                            return (head_tag, head)
+                        }
+                    };
+                    let err = EvalErr::NotCons;
+                    return (err_tag, err)
+                }
+            };
+            let err = EvalErr::InvalidForm;
+            return (err_tag, err)
         }
     )
 }
@@ -1864,6 +1984,8 @@ mod test {
         let eval_coroutine_expr = FuncChip::from_name("eval_coroutine_expr", toplevel);
         let eval = FuncChip::from_name("eval", toplevel);
         let eval_builtin_expr = FuncChip::from_name("eval_builtin_expr", toplevel);
+        let eval_bind_builtin = FuncChip::from_name("eval_bind_builtin", toplevel);
+        let eval_env_builtin = FuncChip::from_name("eval_env_builtin", toplevel);
         let eval_apply_builtin = FuncChip::from_name("eval_apply_builtin", toplevel);
         let eval_opening_unop = FuncChip::from_name("eval_opening_unop", toplevel);
         let eval_hide = FuncChip::from_name("eval_hide", toplevel);
@@ -1901,10 +2023,12 @@ mod test {
             expected.assert_eq(&computed.to_string());
         };
         expect_eq(lurk_main.width(), expect!["97"]);
-        expect_eq(preallocate_symbols.width(), expect!["180"]);
+        expect_eq(preallocate_symbols.width(), expect!["188"]);
         expect_eq(eval_coroutine_expr.width(), expect!["10"]);
         expect_eq(eval.width(), expect!["78"]);
-        expect_eq(eval_builtin_expr.width(), expect!["146"]);
+        expect_eq(eval_builtin_expr.width(), expect!["148"]);
+        expect_eq(eval_bind_builtin.width(), expect!["110"]);
+        expect_eq(eval_env_builtin.width(), expect!["81"]);
         expect_eq(eval_apply_builtin.width(), expect!["79"]);
         expect_eq(eval_opening_unop.width(), expect!["97"]);
         expect_eq(eval_hide.width(), expect!["115"]);

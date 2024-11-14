@@ -359,6 +359,33 @@ test!(
 );
 // TODO FIXME
 // test_env!(test_manual_env, "a", trivial_a_1_env, |_| uint(1));
+// test!(test_env_builtin, "(env (cons 'a 1) (cons 'b 2))", |z| {
+//     let empty_env = z.intern_empty_env();
+//     let b = z.intern_symbol_no_lang(&user_sym("b"));
+//     let two = z.intern_u64(2);
+//     let b_2 = z.intern_env(b, two, empty_env);
+//     let a = z.intern_symbol_no_lang(&user_sym("a"));
+//     let one = z.intern_u64(1);
+//     z.intern_env(a, one, b_2)
+// });
+// test!(test_env_builtin2, "(env)", |z| z.intern_empty_env());
+// test!(
+//     test_env_builtin3,
+//     "(env (list 'a 1 2))",
+//     |z| {
+//         let empty_env = z.intern_empty_env();
+//         let a = z.intern_symbol_no_lang(&user_sym("a"));
+//         let one = z.intern_u64(1);
+//         let two = z.intern_u64(2);
+//         let val = z.intern_list([one, two]);
+//         z.intern_env(a, val, empty_env)
+//     }
+// );
+// test!(
+//     test_bind_builtin,
+//     "(bind 'a (- 2 1) (current-env))",
+//     trivial_a_1_env
+// );
 
 // heavier computations
 test!(

@@ -1,9 +1,11 @@
 use anyhow::Result;
 use clap::Args;
 use p3_baby_bear::BabyBear;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use sphinx_core::stark::StarkGenericConfig;
 use std::{
+    hash::Hash,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
 };
@@ -93,7 +95,7 @@ pub(crate) enum Request {
     GetGenesis([F; DIGEST_SIZE]),
     GetState([F; DIGEST_SIZE]),
     Transition([F; DIGEST_SIZE], ChainProof),
-    GetProofs([F; DIGEST_SIZE]),
+    GetProofs([F; DIGEST_SIZE], [F; DIGEST_SIZE], [F; DIGEST_SIZE]),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -107,6 +109,8 @@ pub(crate) enum Response {
     NextCallableIsFlawed,
     ProofVerificationFailed(String),
     ProofAccepted,
+    NoProofForInitialState,
+    NoProofForFinalState,
     Proofs(Vec<OpaqueChainProof>),
 }
 
@@ -207,15 +211,15 @@ impl MicrochainArgs {
                             let callable_zptr = state.callable_data.zptr(&mut zstore);
                             let expr = zstore.intern_cons(callable_zptr, call_args);
 
-                            // the result is a pair composed by the chain result and next callable
+                            // the next state is a pair composed by the chain result and next callable
                             // provided by the client
-                            let result =
+                            let next_state =
                                 zstore.intern_cons(next_chain_result_zptr, next_callable_zptr);
 
                             // and now the proof must verify, meaning that the user must have
                             // used the correct callable from the server state
                             let machine_proof =
-                                crypto_proof.into_machine_proof(&expr, &empty_env, &result);
+                                crypto_proof.into_machine_proof(&expr, &empty_env, &next_state);
                             let machine = new_machine(&toplevel);
                             let (_, vk) = machine.setup(&LairMachineProgram);
                             let challenger = &mut machine.config().challenger();
@@ -244,12 +248,95 @@ impl MicrochainArgs {
                                 },
                             )?;
 
+                            // update the proof index
+                            let mut proof_index = load_proof_index(&id).unwrap_or_default();
+                            let prev_chain_result_zptr = state.chain_result.zptr;
+                            let prev_state =
+                                zstore.intern_cons(prev_chain_result_zptr, callable_zptr);
+                            proof_index.insert(
+                                prev_state.digest,
+                                next_state.digest,
+                                proofs.len() - 1,
+                            );
+                            dump_proof_index(&id, &proof_index)?;
+
                             return_msg!(Response::ProofAccepted);
                         }
-                        Request::GetProofs(id) => {
-                            let Ok(proofs) = load_proofs(&id) else {
+                        Request::GetProofs(id, initial_digest, final_digest) => {
+                            let Ok(mut proofs) = load_proofs(&id) else {
                                 return_msg!(Response::NoDataForId);
                             };
+                            // let proof_index = load_proof_index(&id)?;
+                            // let Some(initial_index) = proof_index.index_by_prev(&initial_digest) else {
+                            //     return_msg!(Response::NoProofForInitialState);
+                            // };
+                            // let Some(final_index) = proof_index.index_by_next(&final_digest) else {
+                            //     return_msg!(Response::NoProofForFinalState);
+                            // };
+
+                            // the following code snippet is only meant to support version transitioning
+                            // and should be eliminated (in favor of the code above) once legacy microchains
+                            // are dropped
+                            let proof_index = load_proof_index(&id).unwrap_or_default();
+                            let initial_index =
+                                if let Some(index) = proof_index.index_by_prev(&initial_digest) {
+                                    index
+                                } else {
+                                    let (_, genesis_state) = load_genesis(&id)?;
+                                    let genesis_result_zptr = genesis_state.chain_result.zptr;
+                                    let genesis_callable_zptr =
+                                        genesis_state.callable_data.zptr(&mut zstore);
+                                    let genesis_zptr = zstore
+                                        .intern_cons(genesis_result_zptr, genesis_callable_zptr);
+                                    if genesis_zptr.digest == initial_digest {
+                                        0
+                                    } else {
+                                        let mut index = None;
+                                        for (i, proof) in proofs.iter().enumerate() {
+                                            let OpaqueChainProof {
+                                                next_chain_result,
+                                                next_callable,
+                                                ..
+                                            } = proof;
+                                            let next_state = zstore
+                                                .intern_cons(*next_chain_result, *next_callable);
+                                            if next_state.digest == initial_digest {
+                                                index = Some(i + 1);
+                                                break;
+                                            }
+                                        }
+                                        let Some(index) = index else {
+                                            return_msg!(Response::NoProofForInitialState);
+                                        };
+                                        index
+                                    }
+                                };
+                            let final_index =
+                                if let Some(index) = proof_index.index_by_next(&final_digest) {
+                                    index
+                                } else {
+                                    let mut index = None;
+                                    for (i, proof) in proofs.iter().enumerate() {
+                                        let OpaqueChainProof {
+                                            next_chain_result,
+                                            next_callable,
+                                            ..
+                                        } = proof;
+                                        let next_state =
+                                            zstore.intern_cons(*next_chain_result, *next_callable);
+                                        if next_state.digest == final_digest {
+                                            index = Some(i);
+                                            break;
+                                        }
+                                    }
+                                    let Some(index) = index else {
+                                        return_msg!(Response::NoProofForFinalState);
+                                    };
+                                    index
+                                };
+
+                            proofs.truncate(final_index + 1);
+                            proofs.drain(..initial_index);
                             return_msg!(Response::Proofs(proofs));
                         }
                     }
@@ -259,6 +346,35 @@ impl MicrochainArgs {
         }
 
         Ok(())
+    }
+}
+
+/// Holds indices of proofs in a sequence of state transitions. The index of a
+/// proof can be looked up by the digest of the previous state or by the digest
+/// of the next state.
+#[derive(Serialize, Deserialize, Default)]
+struct ProofIndex<F: Hash + Eq> {
+    prev_map: FxHashMap<[F; DIGEST_SIZE], usize>,
+    next_map: FxHashMap<[F; DIGEST_SIZE], usize>,
+}
+
+impl<F: Hash + Eq> ProofIndex<F> {
+    fn insert(
+        &mut self,
+        prev_digest: [F; DIGEST_SIZE],
+        next_digest: [F; DIGEST_SIZE],
+        index: usize,
+    ) {
+        self.prev_map.insert(prev_digest, index);
+        self.next_map.insert(next_digest, index);
+    }
+
+    fn index_by_prev(&self, digest: &[F]) -> Option<usize> {
+        self.prev_map.get(digest).copied()
+    }
+
+    fn index_by_next(&self, digest: &[F]) -> Option<usize> {
+        self.next_map.get(digest).copied()
     }
 }
 
@@ -282,6 +398,10 @@ fn dump_state(id: &[F], state: &ChainState) -> Result<()> {
     dump_microchain_data(id, "state", state)
 }
 
+fn dump_proof_index(id: &[F], proof_index: &ProofIndex<F>) -> Result<()> {
+    dump_microchain_data(id, "proof_index", proof_index)
+}
+
 fn load_microchain_data<T: for<'a> Deserialize<'a>>(id: &[F], name: &str) -> Result<T> {
     let hash = format!("{:x}", field_elts_to_biguint(id));
     let bytes = std::fs::read(microchains_dir()?.join(hash).join(name))?;
@@ -299,6 +419,10 @@ fn load_proofs(id: &[F]) -> Result<Vec<OpaqueChainProof>> {
 
 fn load_state(id: &[F]) -> Result<ChainState> {
     load_microchain_data(id, "state")
+}
+
+fn load_proof_index(id: &[F]) -> Result<ProofIndex<F>> {
+    load_microchain_data(id, "proof_index")
 }
 
 pub(crate) fn read_data<T: for<'a> Deserialize<'a>>(stream: &mut TcpStream) -> Result<T> {
