@@ -140,7 +140,7 @@ mod tests {
             return (ptr2, y)
         });
         let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[func_e]);
-        let test_chip = FuncChip::from_name("test", &toplevel);
+        let test_chip = FuncChip::from_name_main("test", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         toplevel
             .execute_by_name("test", &[], &mut queries, None)

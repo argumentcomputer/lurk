@@ -67,7 +67,7 @@ fn setup<'a, C: Chipset<BabyBear>>(
     full_input[8..16].copy_from_slice(&digest);
 
     let args: List<_> = full_input.into();
-    let lurk_main = FuncChip::from_name("lurk_main", toplevel);
+    let lurk_main = FuncChip::from_name_main("lurk_main", toplevel);
 
     (args, lurk_main, record)
 }
@@ -80,9 +80,7 @@ fn evaluation(c: &mut Criterion) {
         b.iter_batched(
             || (args.clone(), record.clone()),
             |(args, mut queries)| {
-                toplevel
-                    .execute(lurk_main.func(), &args, &mut queries, None)
-                    .unwrap();
+                lurk_main.execute(&args, &mut queries, None).unwrap();
             },
             BatchSize::SmallInput,
         )
@@ -94,9 +92,7 @@ fn trace_generation(c: &mut Criterion) {
     c.bench_function("lcs-trace-generation", |b| {
         let (toplevel, ..) = build_lurk_toplevel_native();
         let (args, lurk_main, mut record) = setup(args.0, args.1, &toplevel);
-        toplevel
-            .execute(lurk_main.func(), &args, &mut record, None)
-            .unwrap();
+        lurk_main.execute(&args, &mut record, None).unwrap();
         let lair_chips = build_lair_chip_vector(&lurk_main);
         b.iter(|| {
             lair_chips.par_iter().for_each(|func_chip| {
@@ -147,9 +143,7 @@ fn e2e(c: &mut Criterion) {
         b.iter_batched(
             || (record.clone(), args.clone()),
             |(mut record, args)| {
-                toplevel
-                    .execute(lurk_main.func(), &args, &mut record, None)
-                    .unwrap();
+                lurk_main.execute(&args, &mut record, None).unwrap();
                 let config = BabyBearPoseidon2::new();
                 let machine = StarkMachine::new(
                     config,

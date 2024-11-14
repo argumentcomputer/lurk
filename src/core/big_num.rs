@@ -45,12 +45,13 @@ impl<F: PrimeField32> Chipset<F> for BigNum {
         &self,
         input: &[F],
         nonce: u32,
+        query_index: usize,
         queries: &mut QueryRecord<F>,
         requires: &mut Vec<Record>,
     ) -> Vec<F> {
         let in1: [F; 8] = input[0..8].try_into().unwrap();
         let in2: [F; 8] = input[8..16].try_into().unwrap();
-        let bytes = &mut queries.bytes.context(nonce, requires);
+        let bytes = &mut queries.bytes.context(nonce, query_index, requires);
         match self {
             BigNum::LessThan => {
                 let mut witness = BigNumCompareWitness::<F>::default();
@@ -137,7 +138,7 @@ mod test {
         let lurk_chip_map = lurk_chip_map_native();
         let toplevel = Toplevel::new(&[lessthan_func], lurk_chip_map);
 
-        let lessthan_chip = FuncChip::from_name("lessthan", &toplevel);
+        let lessthan_chip = FuncChip::from_name_main("lessthan", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
         let f = F::from_canonical_usize;
         // Little endian

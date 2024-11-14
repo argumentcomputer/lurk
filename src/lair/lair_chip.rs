@@ -84,7 +84,9 @@ impl<'a, F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MachineAir<F>
 
     fn name(&self) -> String {
         match self {
-            Self::Func(func_chip) => format!("Func[{}]", func_chip.func.name),
+            Self::Func(func_chip) => {
+                format!("Func[{}.{}]", func_chip.func.name, func_chip.return_group)
+            }
             Self::Mem(mem_chip) => format!("Mem[{}-wide]", mem_chip.len),
             Self::Entrypoint { func_idx, .. } => format!("Entrypoint[{func_idx}]"),
             // the following is required by sphinx
@@ -124,7 +126,12 @@ impl<'a, F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MachineAir<F>
     fn included(&self, shard: &Self::Record) -> bool {
         match self {
             Self::Func(func_chip) => {
-                let range = shard.get_func_range(func_chip.func.index);
+                let len = shard.queries().func_queries[func_chip.func.index]
+                    .values()
+                    .filter(|result| result.return_group == func_chip.return_group)
+                    .map(|_| 1)
+                    .sum();
+                let range = shard.get_func_range(len);
                 !range.is_empty()
             }
             Self::Mem(_mem_chip) => {
@@ -248,7 +255,7 @@ mod tests {
         sphinx_core::utils::setup_logger();
         type F = BabyBear;
         let toplevel = demo_toplevel::<F>();
-        let chip = FuncChip::from_name("factorial", &toplevel);
+        let chip = FuncChip::from_name_main("factorial", &toplevel);
         let mut queries = QueryRecord::new(&toplevel);
 
         toplevel

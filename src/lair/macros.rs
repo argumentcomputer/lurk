@@ -8,7 +8,7 @@ macro_rules! func {
             partial: false,
             input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
             output_size: $size,
-            body: $crate::block_init!($lair),
+            body: $crate::block_init!($lair, 0),
         }
     }};
     (partial fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
@@ -19,7 +19,7 @@ macro_rules! func {
             partial: true,
             input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
             output_size: $size,
-            body: $crate::block_init!($lair),
+            body: $crate::block_init!($lair, 0),
         }
     }};
     (invertible fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
@@ -30,7 +30,7 @@ macro_rules! func {
             partial: false,
             input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
             output_size: $size,
-            body: $crate::block_init!($lair),
+            body: $crate::block_init!($lair, 0),
         }
     }};
     (invertible partial fn $name:ident($( $in:ident $(: [$in_size:expr])? ),*): [$size:expr] $lair:tt) => {{
@@ -41,7 +41,7 @@ macro_rules! func {
             partial: true,
             input_params: [$($crate::var!($in $(, $in_size)?)),*].into(),
             output_size: $size,
-            body: $crate::block_init!($lair),
+            body: $crate::block_init!($lair, 0),
         }
     }};
 }
@@ -60,246 +60,249 @@ macro_rules! var {
 
 #[macro_export]
 macro_rules! block_init {
-    ({ #[unconstrained] $($body:tt)+ }) => {{
+    ({ #[unconstrained] $($body:tt)+ }, $group:expr) => {{
         #[allow(unused_mut)]
         let mut ops = vec![];
-        $crate::block!({ $($body)+ }, ops)
+        $crate::block!({ $($body)+ }, ops, $group)
     }};
-    ({ $($body:tt)+ }) => {{
+    ({ $($body:tt)+ }, $group:expr) => {{
         #[allow(unused_mut)]
         let mut ops = vec![];
-        $crate::block!({ $($body)+ }, ops)
+        $crate::block!({ $($body)+ }, ops, $group)
     }}
 }
 
 #[macro_export]
 macro_rules! block {
     // Operations
-    ({ range_u8!($($a:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ range_u8!($($a:ident),*); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         $ops.push($crate::lair::expr::OpE::RangeU8([$($a),*].into()));
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ assert_eq!($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
+    ({ assert_eq!($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         $ops.push($crate::lair::expr::OpE::AssertEq($a, $b, None));
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ assert_eq!($a:ident, $b:ident, $fmt:expr); $($tail:tt)+ }, $ops:expr) => {{
+    ({ assert_eq!($a:ident, $b:ident, $fmt:expr); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         $ops.push($crate::lair::expr::OpE::AssertEq($a, $b, Some($fmt)));
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ assert_ne!($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
+    ({ assert_ne!($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         $ops.push($crate::lair::expr::OpE::AssertNe($a, $b));
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ contains!($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
+    ({ contains!($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         $ops.push($crate::lair::expr::OpE::Contains($a, $b));
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident = $a:literal; $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident = $a:literal; $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         $ops.push($crate::lair::expr::OpE::Const($crate::var!($tgt), $crate::lair::field_from_i32($a)));
         let $tgt = $crate::var!($tgt);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident = Array($arr:expr); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident = Array($arr:expr); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let size = $arr.len();
         $ops.push($crate::lair::expr::OpE::Array($crate::var!($tgt, size), $arr));
         let $tgt = $crate::var!($tgt, size);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident = [$($a:literal),*]; $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident = [$($a:literal),*]; $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let arr: $crate::lair::List<_> = [$($crate::lair::field_from_i32($a)),*].into();
         let size = arr.len();
         $ops.push($crate::lair::expr::OpE::Array($crate::var!($tgt, size), arr));
         let $tgt = $crate::var!($tgt, size);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident = [$f:literal; $size:literal]; $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident = [$f:literal; $size:literal]; $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let arr: $crate::lair::List<_> = [$f; $size].into_iter().map($crate::lair::field_from_i32).collect();
         let size = arr.len();
         $ops.push($crate::lair::expr::OpE::Array($crate::var!($tgt, size), arr));
         let $tgt = $crate::var!($tgt, size);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident = add($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident = add($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let tgt_size = $a.size;
         $ops.push($crate::lair::expr::OpE::Add($crate::var!($tgt, tgt_size), $a, $b));
         let $tgt = $crate::var!($tgt, tgt_size);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident = sub($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident = sub($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let tgt_size = $a.size;
         $ops.push($crate::lair::expr::OpE::Sub($crate::var!($tgt, tgt_size), $a, $b));
         let $tgt = $crate::var!($tgt, tgt_size);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident = mul($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident = mul($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let tgt_size = $a.size;
         $ops.push($crate::lair::expr::OpE::Mul($crate::var!($tgt, tgt_size), $a, $b));
         let $tgt = $crate::var!($tgt, tgt_size);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident = div($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident = div($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let tgt_size = $a.size;
         $ops.push($crate::lair::expr::OpE::Div($crate::var!($tgt, tgt_size), $a, $b));
         let $tgt = $crate::var!($tgt, tgt_size);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident = inv($a:ident); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident = inv($a:ident); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let tgt_size = $a.size;
         $ops.push($crate::lair::expr::OpE::Inv($crate::var!($tgt, tgt_size), $a));
         let $tgt = $crate::var!($tgt, tgt_size);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident = eq($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident = eq($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         $ops.push($crate::lair::expr::OpE::Eq($crate::var!($tgt), $a, $b));
         let $tgt = $crate::var!($tgt);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident = not($a:ident); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident = not($a:ident); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         $ops.push($crate::lair::expr::OpE::Not($crate::var!($tgt), $a));
         let $tgt = $crate::var!($tgt);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident = store($($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident = store($($arg:ident),*); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::Store($crate::var!($tgt), inp));
         let $tgt = $crate::var!($tgt);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident $(: [$size:expr])? = load($arg:ident); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident $(: [$size:expr])? = load($arg:ident); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let out = [$crate::var!($tgt $(, $size)?)].into();
         $ops.push($crate::lair::expr::OpE::Load(out, $arg));
         let $tgt = $crate::var!($tgt $(, $size)?);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let ($($tgt:ident $(: [$size:expr])?),*) = load($arg:ident); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = load($arg:ident); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         $ops.push($crate::lair::expr::OpE::Load(out, $arg));
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let ($($tgt:ident $(: [$size:expr])?),*) = call($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = call($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let func = $crate::lair::Name(stringify!($name));
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::Call(out, func, inp));
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident $(: [$size:expr])? = call($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident $(: [$size:expr])? = call($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let func = $crate::lair::Name(stringify!($name));
         let out = [$crate::var!($tgt $(, $size)?)].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::Call(out, func, inp));
         let $tgt = $crate::var!($tgt $(, $size)?);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let ($($tgt:ident $(: [$size:expr])?),*) = extern_call($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = extern_call($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let func = $crate::lair::Name(stringify!($name));
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::ExternCall(out, func, inp));
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident $(: [$size:expr])? = extern_call($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident $(: [$size:expr])? = extern_call($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let func = $crate::lair::Name(stringify!($name));
         let out = [$crate::var!($tgt $(, $size)?)].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::ExternCall(out, func, inp));
         let $tgt = $crate::var!($tgt $(, $size)?);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ emit($($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ emit($($arg:ident),*); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::Emit(inp));
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let ($($tgt:ident $(: [$size:expr])?),*) = preimg($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = preimg($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let func = $crate::lair::Name(stringify!($name));
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::PreImg(out, func, inp, None));
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let ($($tgt:ident $(: [$size:expr])?),*) = preimg($name:ident, $($arg:ident),*, $fmt:expr); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = preimg($name:ident, $($arg:ident),*, $fmt:expr); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let func = $crate::lair::Name(stringify!($name));
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::PreImg(out, func, inp, Some($fmt)));
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident $(: [$size:expr])? = preimg($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident $(: [$size:expr])? = preimg($name:ident, $($arg:ident),*); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let func = $crate::lair::Name(stringify!($name));
         let out = [$crate::var!($tgt $(, $size)?)].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::PreImg(out, func, inp, None));
         let $tgt = $crate::var!($tgt $(, $size)?);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ debug!($s:literal); $($tail:tt)+ }, $ops:expr) => {{
+    ({ debug!($s:literal); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         $ops.push($crate::lair::expr::OpE::Debug($s));
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
     // Pseudo-operations
-    ({ let $tgt:ident $(: [$size:expr])? = ($($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ #[group=$num:expr] $($tail:tt)+ }, $ops:expr, $group:expr) => {{
+        $crate::block!({ $($tail)* }, $ops, $num)
+    }};
+    ({ let $tgt:ident $(: [$size:expr])? = ($($arg:ident),*); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let out = [$crate::var!($tgt $(, $size)?)].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::Slice(out, inp));
         let $tgt = $crate::var!($tgt $(, $size)?);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let ($($tgt:ident $(: [$size:expr])?),*) = ($($arg:ident),*); $($tail:tt)+ }, $ops:expr) => {{
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = ($($arg:ident),*); $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         let inp = [$($arg),*].into();
         $ops.push($crate::lair::expr::OpE::Slice(out, inp));
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let ($($tgt:ident $(: [$size:expr])?),*) = $arg:ident; $($tail:tt)+ }, $ops:expr) => {{
+    ({ let ($($tgt:ident $(: [$size:expr])?),*) = $arg:ident; $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         let out = [$($crate::var!($tgt $(, $size)?)),*].into();
         let inp = [$arg].into();
         $ops.push($crate::lair::expr::OpE::Slice(out, inp));
         $(let $tgt = $crate::var!($tgt $(, $size)?);)*
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ let $tgt:ident = $e:expr; $($tail:tt)+ }, $ops:expr) => {{
+    ({ let $tgt:ident = $e:expr; $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         $ops.push($crate::lair::expr::OpE::Const($crate::var!($tgt), $e.to_field()));
         let $tgt = $crate::var!($tgt);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
-    ({ breakpoint; $($tail:tt)+ }, $ops:expr) => {{
+    ({ breakpoint; $($tail:tt)+ }, $ops:expr, $group:expr) => {{
         $ops.push($crate::lair::expr::OpE::Breakpoint);
-        $crate::block!({ $($tail)* }, $ops)
+        $crate::block!({ $($tail)* }, $ops, $group)
     }};
     // Control statements
-    ({ return ($($src:ident),*) }, $ops:expr) => {{
+    ({ return ($($src:ident),*) }, $ops:expr, $group:expr) => {{
         let ops = $ops.into();
-        let ctrl = $crate::lair::expr::CtrlE::Return([$($src),*].into());
+        let ctrl = $crate::lair::expr::CtrlE::Return([$($src),*].into(), $group);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
-    ({ return $src:ident }, $ops:expr) => {{
+    ({ return $src:ident }, $ops:expr, $group:expr) => {{
         let ops = $ops.into();
-        let ctrl = $crate::lair::expr::CtrlE::Return([$src].into());
+        let ctrl = $crate::lair::expr::CtrlE::Return([$src].into(), $group);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
-    ({ if $x:ident { $($true_block:tt)+ } $($false_block:tt)+ }, $ops:expr) => {{
+    ({ if $x:ident { $($true_block:tt)+ } $($false_block:tt)+ }, $ops:expr, $group:expr) => {{
         let ops = $ops.into();
-        let true_block = Box::new($crate::block_init!({ $($true_block)+ }));
-        let false_block = Box::new($crate::block_init!({ $($false_block)+ }));
+        let true_block = Box::new($crate::block_init!({ $($true_block)+ }, $group));
+        let false_block = Box::new($crate::block_init!({ $($false_block)+ }, $group));
         let ctrl = $crate::lair::expr::CtrlE::If($x, true_block, false_block);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
-    ({ if !$x:ident { $($true_block:tt)+ } $($false_block:tt)+ }, $ops:expr) => {{
+    ({ if !$x:ident { $($true_block:tt)+ } $($false_block:tt)+ }, $ops:expr, $group:expr) => {{
         let ops = $ops.into();
-        let true_block = Box::new($crate::block_init!({ $($true_block)+ }));
-        let false_block = Box::new($crate::block_init!({ $($false_block)+ }));
+        let true_block = Box::new($crate::block_init!({ $($true_block)+ }, $group));
+        let false_block = Box::new($crate::block_init!({ $($false_block)+ }, $group));
         let ctrl = $crate::lair::expr::CtrlE::If($x, false_block, true_block);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
-    ({ match $var:ident { $( $num:literal $(, $other_num:literal)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
+    ({ match $var:ident { $( $num:literal $(, $other_num:literal)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr, $group:expr) => {{
         let ops = $ops.into();
         let mut branches = Vec::new();
         {
@@ -308,19 +311,19 @@ macro_rules! block {
                 let f = $crate::lair::field_from_i32;
                 branches.push((
                     [f($num), $(f($other_num), )*].into(),
-                    ($crate::block_init!( $branch ), constrained)
+                    ($crate::block_init!( $branch, $group ), constrained)
                 ));
             )*
         }
         let default = None $( .or ({
             let constrained = $crate::constrained!({ $($def)* });
-            Some(Box::new(($crate::block_init!({ $($def)* }), constrained)))
+            Some(Box::new(($crate::block_init!({ $($def)* }, $group), constrained)))
         }) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
-    ({ match $var:ident { $( $arr:tt $(, $other_arr:tt)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
+    ({ match $var:ident { $( $arr:tt $(, $other_arr:tt)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr, $group:expr) => {{
         let ops = $ops.into();
         let mut branches = Vec::new();
         {
@@ -329,13 +332,13 @@ macro_rules! block {
                 let arr = $arr.map(|x| $crate::lair::field_from_i32(x.into())).into_iter().collect();
                 branches.push((
                     arr,
-                    ($crate::block_init!( $branch ), constrained)
+                    ($crate::block_init!( $branch, $group ), constrained)
                 ));
                 $({
                     let other_arr = $other_arr.map($crate::lair::field_from_i32).into_iter().collect();
                     branches.push((
                         other_arr,
-                        $crate::block_init!( $branch ),
+                        $crate::block_init!( $branch, $group ),
                         constrained,
                     ));
                 })*
@@ -343,13 +346,13 @@ macro_rules! block {
         }
         let default = None $( .or ({
             let constrained = $crate::constrained!({ $($def)* });
-            Some(Box::new(($crate::block_init!({ $($def)* }), constrained)))
+            Some(Box::new(($crate::block_init!({ $($def)* }, $group), constrained)))
         }) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::MatchMany($var, cases);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
-    ({ match $var:ident { $( $raw:expr $(, $other_raw:expr)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
+    ({ match $var:ident { $( $raw:expr $(, $other_raw:expr)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr, $group:expr) => {{
         let ops = $ops.into();
         let mut branches = Vec::new();
         #[allow(clippy::redundant_closure_call)]
@@ -358,19 +361,19 @@ macro_rules! block {
                 let constrained = $crate::constrained!($branch);
                 branches.push((
                     [$raw.to_field(), $($other_raw.to_field(),)*].into(),
-                    ($crate::block_init!( $branch ), constrained)
+                    ($crate::block_init!( $branch, $group ), constrained)
                 ));
             )*
         }
         let default = None $( .or ({
             let constrained = $crate::constrained!({ $($def)* });
-            Some(Box::new(($crate::block_init!({ $($def)* }), constrained)))
+            Some(Box::new(($crate::block_init!({ $($def)* }, $group), constrained)))
         }) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);
         $crate::lair::expr::BlockE { ops, ctrl }
     }};
-    ({ match $var:ident [$cloj:expr] { $( $raw:expr $(, $other_raw:expr)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr) => {{
+    ({ match $var:ident [$cloj:expr] { $( $raw:expr $(, $other_raw:expr)* => $branch:tt )* } $(; $($def:tt)*)? }, $ops:expr, $group:expr) => {{
         let ops = $ops.into();
         let mut branches = Vec::new();
         #[allow(clippy::redundant_closure_call)]
@@ -379,13 +382,13 @@ macro_rules! block {
                 let constrained = $crate::constrained!($branch);
                 branches.push((
                     [$cloj($raw), $($cloj($other_raw),)*].into(),
-                    ($crate::block_init!( $branch ), constrained)
+                    ($crate::block_init!( $branch, $group ), constrained)
                 ));
             )*
         }
         let default = None $( .or ({
             let constrained = $crate::constrained!({ $($def)* });
-            Some(Box::new(($crate::block_init!({ $($def)* }), constrained)))
+            Some(Box::new(($crate::block_init!({ $($def)* }, $group), constrained)))
         }) )?;
         let cases = $crate::lair::expr::CasesE { branches, default };
         let ctrl = $crate::lair::expr::CtrlE::Match($var, cases);

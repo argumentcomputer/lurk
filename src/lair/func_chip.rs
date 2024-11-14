@@ -3,6 +3,7 @@ use p3_air::BaseAir;
 use super::{
     bytecode::{Block, Ctrl, Func, Op},
     chipset::Chipset,
+    expr::ReturnGroup,
     provenance::{DepthLessThan, DEPTH_LESS_THAN_SIZE, DEPTH_W},
     toplevel::Toplevel,
 };
@@ -29,28 +30,50 @@ pub struct FuncChip<'a, F, C1: Chipset<F>, C2: Chipset<F>> {
     pub(crate) func: &'a Func<F>,
     pub(crate) toplevel: &'a Toplevel<F, C1, C2>,
     pub(crate) layout_sizes: LayoutSizes,
+    pub(crate) return_group: ReturnGroup,
 }
 
 impl<'a, F, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
     #[inline]
-    pub fn from_name(name: &'static str, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
-        let func = toplevel.func_by_name(name);
-        Self::from_func(func, toplevel)
+    pub fn from_name(
+        name: &'static str,
+        group: ReturnGroup,
+        toplevel: &'a Toplevel<F, C1, C2>,
+    ) -> Self {
+        let func = toplevel.split_func_by_name(name, group);
+        Self::from_func(func, group, toplevel)
     }
 
     #[inline]
-    pub fn from_index(idx: usize, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
-        let func = toplevel.func_by_index(idx);
-        Self::from_func(func, toplevel)
+    pub fn from_name_main(name: &'static str, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
+        let main_group = 0;
+        Self::from_name(name, main_group, toplevel)
     }
 
     #[inline]
-    pub fn from_func(func: &'a Func<F>, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
+    pub fn from_index(idx: usize, group: ReturnGroup, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
+        let func = toplevel.split_func_by_index(idx, group);
+        Self::from_func(func, group, toplevel)
+    }
+
+    #[inline]
+    pub fn from_index_main(idx: usize, toplevel: &'a Toplevel<F, C1, C2>) -> Self {
+        let main_group = 0;
+        Self::from_index(idx, main_group, toplevel)
+    }
+
+    #[inline]
+    pub fn from_func(
+        func: &'a Func<F>,
+        return_group: ReturnGroup,
+        toplevel: &'a Toplevel<F, C1, C2>,
+    ) -> Self {
         let layout_sizes = func.compute_layout_sizes(toplevel);
         Self {
             func,
             toplevel,
             layout_sizes,
+            return_group,
         }
     }
 
@@ -59,7 +82,12 @@ impl<'a, F, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'a, F, C1, C2> {
         toplevel
             .func_map
             .values()
-            .map(|func| FuncChip::from_func(func, toplevel))
+            .flat_map(|funcs| {
+                funcs
+                    .split_funcs
+                    .iter()
+                    .map(|(group, func)| FuncChip::from_func(func, *group, toplevel))
+            })
             .collect()
     }
 
@@ -92,6 +120,7 @@ impl<F> Func<F> {
         &self,
         toplevel: &Toplevel<F, C1, C2>,
     ) -> LayoutSizes {
+        assert!(self.split);
         let input = self.input_size;
         // last nonce, last count
         let mut aux = 2;
@@ -143,19 +172,15 @@ impl<F> Ctrl<F> {
                 // exactly one selector per return
                 *sel += 1;
             }
-            Ctrl::Choose(_, cases, branches) => {
+            Ctrl::Choose(_, _, branches) => {
                 let degrees_len = degrees.len();
                 let mut max_aux = *aux;
-                let mut process = |block: &Block<_>| {
+                branches.iter().for_each(|block| {
                     let block_aux = &mut aux.clone();
                     block.compute_layout_sizes(degrees, toplevel, block_aux, sel);
                     degrees.truncate(degrees_len);
                     max_aux = max_aux.max(*block_aux);
-                };
-                branches.iter().for_each(&mut process);
-                if let Some(block) = cases.default.as_ref() {
-                    process(block)
-                };
+                });
                 *aux = max_aux;
             }
             Ctrl::ChooseMany(_, cases) => {

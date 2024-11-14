@@ -65,7 +65,7 @@ fn setup<C: Chipset<BabyBear>>(
     full_input[8..16].copy_from_slice(&digest);
 
     let args: List<_> = full_input.into();
-    let lurk_main = FuncChip::from_name("lurk_main", toplevel);
+    let lurk_main = FuncChip::from_name_main("lurk_main", toplevel);
 
     (args, lurk_main, record)
 }
@@ -78,9 +78,7 @@ fn fib_e2e() {
     let (args, lurk_main, mut record) = setup(arg, &toplevel);
     let start_time = Instant::now();
 
-    toplevel
-        .execute(lurk_main.func(), &args, &mut record, None)
-        .unwrap();
+    lurk_main.execute(&args, &mut record, None).unwrap();
     let config = BabyBearPoseidon2::new();
     let machine = StarkMachine::new(
         config,

@@ -15,13 +15,16 @@ use crate::{
 use super::{
     bytecode::{Ctrl, Func, Op},
     chipset::Chipset,
-    toplevel::Toplevel,
+    expr::ReturnGroup,
+    func_chip::FuncChip,
+    toplevel::{FuncStruct, Toplevel},
     FxIndexMap, List,
 };
 
 type QueryMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
 type InvQueryMap<F> = FxHashMap<List<F>, List<F>>;
 pub(crate) type MemMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
+type NonceMap = FxHashMap<(usize, u32), u32>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct QueryResult<F> {
@@ -30,6 +33,7 @@ pub struct QueryResult<F> {
     pub(crate) requires: Vec<Record>,
     pub(crate) depth: u32,
     pub(crate) depth_requires: Vec<Record>,
+    pub(crate) return_group: ReturnGroup,
 }
 
 impl<F: PrimeField32> QueryResult<F> {
@@ -38,8 +42,14 @@ impl<F: PrimeField32> QueryResult<F> {
         self.output.as_ref().expect("Result not computed").as_ref()
     }
 
-    pub(crate) fn new_lookup(&mut self, nonce: usize, caller_requires: &mut Vec<Record>) {
-        caller_requires.push(self.provide.new_lookup(nonce as u32));
+    pub(crate) fn new_lookup(
+        &mut self,
+        index: usize,
+        nonce: usize,
+        caller_requires: &mut Vec<Record>,
+    ) {
+        let old_lookup = self.provide.new_lookup(nonce as u32, index);
+        caller_requires.push(old_lookup);
     }
 }
 
@@ -72,6 +82,7 @@ pub struct QueryRecord<F: PrimeField32> {
     pub(crate) bytes: BytesRecord,
     pub(crate) emitted: Vec<List<F>>,
     pub(crate) debug_data: DebugData,
+    pub(crate) provable: bool,
 }
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
@@ -103,8 +114,7 @@ impl<'a, F: PrimeField32> Shard<'a, F> {
         self.queries.expect("Missing query record reference")
     }
 
-    pub fn get_func_range(&self, func_index: usize) -> Range<usize> {
-        let num_func_queries = self.queries().func_queries[func_index].len();
+    pub fn get_func_range(&self, num_func_queries: usize) -> Range<usize> {
         let shard_idx = self.index as usize;
         let max_shard_size = self.shard_config.max_shard_size as usize;
         shard_idx * max_shard_size..((shard_idx + 1) * max_shard_size).min(num_func_queries)
@@ -262,8 +272,8 @@ impl<F: PrimeField32> QueryRecord<F> {
         let inv_func_queries = toplevel
             .func_map
             .iter()
-            .map(|(_, func)| {
-                if func.invertible {
+            .map(|(_, funcs)| {
+                if funcs.full_func.invertible {
                     Some(FxHashMap::default())
                 } else {
                     None
@@ -278,6 +288,7 @@ impl<F: PrimeField32> QueryRecord<F> {
             bytes: BytesRecord::default(),
             emitted: vec![],
             debug_data: DebugData::default(),
+            provable: true,
         }
     }
 
@@ -370,6 +381,71 @@ impl<F: PrimeField32> QueryRecord<F> {
     pub fn expect_public_values(&self) -> &[F] {
         self.public_values.as_ref().expect("Public values not set")
     }
+
+    fn nonce_map<C1: Chipset<F>, C2: Chipset<F>>(
+        &self,
+        toplevel: &Toplevel<F, C1, C2>,
+    ) -> NonceMap {
+        let mut map = NonceMap::default();
+        for FuncStruct {
+            full_func,
+            split_funcs,
+        } in toplevel.func_map.values()
+        {
+            let index = full_func.index;
+            let max = *split_funcs.keys().max().unwrap() + 1;
+            let mut nonces = vec![0; max as usize];
+            let queries = &self.func_queries[index];
+            for (i, result) in queries.values().enumerate() {
+                let nonce = nonces[result.return_group as usize];
+                map.insert((index, i as u32), nonce);
+                nonces[result.return_group as usize] += 1
+            }
+        }
+        map
+    }
+
+    pub fn fix_nonces(&mut self, map: &NonceMap) {
+        let update_nonce = |lookup: &mut Record| {
+            if let Some(index) = lookup.query_index {
+                lookup.nonce = *map.get(&(index, lookup.nonce)).unwrap();
+            }
+        };
+
+        for queries in self.func_queries.iter_mut() {
+            for result in queries.values_mut() {
+                update_nonce(&mut result.provide);
+                result.requires.iter_mut().for_each(update_nonce);
+                result.depth_requires.iter_mut().for_each(update_nonce);
+            }
+        }
+        for queries in self.mem_queries.iter_mut() {
+            for result in queries.values_mut() {
+                update_nonce(&mut result.provide);
+                result.requires.iter_mut().for_each(update_nonce);
+                result.depth_requires.iter_mut().for_each(update_nonce);
+            }
+        }
+        for queries in self.bytes.records.values_mut() {
+            for lookup in queries.iter_mut_records() {
+                update_nonce(lookup);
+            }
+        }
+    }
+}
+
+impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'_, F, C1, C2> {
+    #[inline]
+    pub fn execute(
+        &self,
+        args: &[F],
+        queries: &mut QueryRecord<F>,
+        dbg_func_idx: Option<usize>,
+    ) -> Result<List<F>> {
+        let toplevel = self.toplevel;
+        let func = toplevel.func_by_index(self.func.index);
+        toplevel.execute(func, args, queries, dbg_func_idx)
+    }
 }
 
 impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
@@ -380,6 +456,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
         queries: &mut QueryRecord<F>,
         dbg_func_idx: Option<usize>,
     ) -> Result<List<F>> {
+        assert!(!func.split);
         let (out, depth) = func.execute(args, self, queries, dbg_func_idx)?;
         let mut public_values = Vec::with_capacity(args.len() + out.len());
         public_values.extend(args);
@@ -388,6 +465,10 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
             public_values.extend(depth.to_le_bytes().map(F::from_canonical_u8));
         }
         queries.public_values = Some(public_values);
+        if queries.provable {
+            let map = queries.nonce_map(self);
+            queries.fix_nonces(&map);
+        }
         Ok(out)
     }
 
@@ -506,7 +587,7 @@ impl<F: PrimeField32> Func<F> {
                             bail!("Loop detected");
                         };
                         map.extend(out);
-                        result.new_lookup(nonce, &mut requires);
+                        result.new_lookup(func_index, nonce, &mut requires);
                         if partial && toplevel.func_by_index(*callee_index).partial {
                             depths.push(result.depth);
                         }
@@ -581,7 +662,7 @@ impl<F: PrimeField32> Func<F> {
                         };
                         assert_eq!(out_memoized, &out);
                         map.extend(inp);
-                        result.new_lookup(nonce, &mut requires);
+                        result.new_lookup(func_index, nonce, &mut requires);
                         if partial && toplevel.func_by_index(*callee_index).partial {
                             depths.push(result.depth);
                         }
@@ -650,7 +731,7 @@ impl<F: PrimeField32> Func<F> {
                         (i, result)
                     };
                     map.push(F::from_canonical_usize(i + 1));
-                    result.new_lookup(nonce, &mut requires);
+                    result.new_lookup(func_index, nonce, &mut requires);
                 }
                 ExecEntry::Op(Op::Load(len, ptr)) => {
                     let ptr = map[*ptr];
@@ -660,18 +741,26 @@ impl<F: PrimeField32> Func<F> {
                         .get_index_mut(ptr_f - 1)
                         .expect("Unbound pointer");
                     map.extend(args);
-                    result.new_lookup(nonce, &mut requires);
+                    result.new_lookup(func_index, nonce, &mut requires);
                 }
                 ExecEntry::Op(Op::ExternCall(chip_idx, input)) => {
                     let input: List<_> = input.iter().map(|a| map[*a]).collect();
                     let chip = toplevel.chip_by_index(*chip_idx);
-                    map.extend(chip.execute(&input, nonce as u32, queries, &mut requires));
+                    map.extend(chip.execute(
+                        &input,
+                        nonce as u32,
+                        func_index,
+                        queries,
+                        &mut requires,
+                    ));
                 }
                 ExecEntry::Op(Op::Emit(xs)) => {
                     queries.emitted.push(xs.iter().map(|a| map[*a]).collect())
                 }
                 ExecEntry::Op(Op::RangeU8(xs)) => {
-                    let mut bytes = queries.bytes.context(nonce as u32, &mut requires);
+                    let mut bytes = queries
+                        .bytes
+                        .context(nonce as u32, func_index, &mut requires);
                     let xs = xs.iter().map(|x| {
                         map[*x]
                             .as_canonical_u32()
@@ -689,7 +778,7 @@ impl<F: PrimeField32> Func<F> {
                     }
                 }
                 ExecEntry::Op(Op::Debug(s)) => println!("{}", s),
-                ExecEntry::Ctrl(Ctrl::Return(_, out)) => {
+                ExecEntry::Ctrl(Ctrl::Return(_, out, group)) => {
                     let out = out.iter().map(|v| map[*v]).collect::<Vec<_>>();
                     let (inp, result) = queries.func_queries[func_index]
                         .get_index_mut(nonce)
@@ -700,7 +789,10 @@ impl<F: PrimeField32> Func<F> {
                         inv_map.insert(out_list.clone(), inp.clone());
                     }
                     if partial {
-                        let mut bytes = queries.bytes.context(nonce as u32, &mut depth_requires);
+                        let mut bytes =
+                            queries
+                                .bytes
+                                .context(nonce as u32, func_index, &mut depth_requires);
                         let depth = depths.iter().map(|&a| a + 1).max().unwrap_or(0);
                         bytes.range_check_u8_iter(depth.to_le_bytes());
                         for dep_depth in depths.iter() {
@@ -712,6 +804,7 @@ impl<F: PrimeField32> Func<F> {
                     result.output = Some(out_list);
                     result.requires = requires;
                     result.depth_requires = depth_requires;
+                    result.return_group = *group;
                     if let Some(CallerState {
                         preimg,
                         func_index: caller_func_index,
@@ -746,7 +839,7 @@ impl<F: PrimeField32> Func<F> {
                         } else {
                             map.extend(out);
                         }
-                        result.new_lookup(nonce, &mut requires);
+                        result.new_lookup(func_index, nonce, &mut requires);
 
                         if partial && callee_partial {
                             depths.push(result.depth);
@@ -766,9 +859,10 @@ impl<F: PrimeField32> Func<F> {
                         break;
                     }
                 }
-                ExecEntry::Ctrl(Ctrl::Choose(v, cases, _)) => {
+                ExecEntry::Ctrl(Ctrl::Choose(v, cases, branches)) => {
                     let v = map[*v];
-                    let block = cases.match_case(&v).expect("No match");
+                    let i = cases.match_case(&v).expect("No match");
+                    let block = &branches[*i];
                     push_block_exec_entries!(block);
                 }
                 ExecEntry::Ctrl(Ctrl::ChooseMany(vs, cases)) => {
@@ -964,8 +1058,8 @@ mod tests {
 
         let toplevel = Toplevel::<F, NoChip, NoChip>::new_pure(&[half_e, double_e]);
         let half = toplevel.func_by_name("half");
-        let half_chip = FuncChip::from_name("half", &toplevel);
-        let double_chip = FuncChip::from_name("double", &toplevel);
+        let half_chip = FuncChip::from_name_main("half", &toplevel);
+        let double_chip = FuncChip::from_name_main("double", &toplevel);
 
         let mut queries = QueryRecord::new(&toplevel);
         let f = F::from_canonical_u32;

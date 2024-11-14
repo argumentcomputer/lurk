@@ -4,7 +4,7 @@
 //! References are index-based, thought of as positions in a stack from a stack
 //! machine.
 
-use super::{map::Map, List, Name};
+use super::{expr::ReturnGroup, map::Map, List, Name};
 
 /// The type for Lair operations
 #[allow(clippy::type_complexity)]
@@ -71,35 +71,35 @@ pub struct Block<F> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Ctrl<F> {
     /// `Choose(x, cases)` non-deterministically chooses which case to execute based on a value `x`
-    /// The third item is the list of unique branches, needed for `eval`
-    Choose(usize, Cases<F, F>, List<Block<F>>), // TODO use Arc or indices so that blocks are not duplicated
+    /// It works by mapping field elements into indices of the list of unique branches.
+    Choose(usize, Cases<F, usize>, List<Block<F>>),
     /// `ChooseMany(x, cases)` non-deterministically chooses which case to execute based on an array `x`
-    ChooseMany(List<usize>, Cases<List<F>, F>),
+    ChooseMany(List<usize>, Cases<List<F>, Block<F>>),
     /// Contains the variables whose bindings will construct the output of the
     /// block. The first `usize` is an unique identifier, representing the
     /// selector used for arithmetization
-    Return(usize, List<usize>),
+    Return(usize, List<usize>, ReturnGroup),
 }
 
 /// Represents the cases for `Ctrl::Match`, containing the branches for successful
 /// matches and an optional default case in case there's no match. Each code path
 /// is encoded as its own block
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Cases<K, F> {
-    pub(crate) branches: Map<K, Block<F>>,
-    pub(crate) default: Option<Box<Block<F>>>,
+pub struct Cases<K, B> {
+    pub(crate) branches: Map<K, B>,
+    pub(crate) default: Option<Box<B>>,
 }
 
-impl<K: Ord, F> Cases<K, F> {
+impl<K: Ord, B> Cases<K, B> {
     /// Returns the block mapped from key `f`
     #[inline]
-    pub fn match_case(&self, k: &K) -> Option<&Block<F>> {
+    pub fn match_case(&self, k: &K) -> Option<&B> {
         self.branches.get(k).or(self.default.as_deref())
     }
 
     /// Returns the block at a given index
     #[inline]
-    pub fn get_index(&self, idx: usize) -> Option<&Block<F>> {
+    pub fn get_index(&self, idx: usize) -> Option<&B> {
         self.branches
             .get_index(idx)
             .map(|(_, b)| b)
@@ -117,7 +117,7 @@ impl<K: Ord, F> Cases<K, F> {
     }
 }
 
-impl<K, F> Cases<K, F> {
+impl<K, B> Cases<K, B> {
     /// Returns the size of `branches`, assuming that's the index of the default
     /// block
     #[inline]
@@ -143,6 +143,8 @@ pub struct Func<F> {
     pub(crate) input_size: usize,
     pub(crate) output_size: usize,
     pub(crate) body: Block<F>,
+    // This last field is purely to catch potential bugs
+    pub(crate) split: bool,
 }
 
 impl<F> Func<F> {
