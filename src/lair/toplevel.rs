@@ -3,20 +3,20 @@
 
 use either::Either;
 use p3_field::Field;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
-use super::{bytecode::*, chipset::Chipset, expr::*, map::Map, FxIndexMap, List, Name};
+use super::{bytecode::*, chipset::Chipset, expr::*, map::Map, FxIndexMap, FxIndexSet, List, Name};
 
 /// This struct holds the full Lair function and the split functions, which contains
 /// only the paths belonging to the same group
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FuncStruct<F> {
     pub(crate) full_func: Func<F>,
-    pub(crate) split_funcs: FxHashMap<ReturnGroup, Func<F>>,
+    pub(crate) split_funcs: FxIndexMap<ReturnGroup, Func<F>>,
 }
 
 impl<F: Field + Ord> FuncStruct<F> {
-    pub fn from_func(full_func: Func<F>, groups: &FxHashSet<ReturnGroup>) -> Self {
+    pub fn from_func(full_func: Func<F>, groups: &FxIndexSet<ReturnGroup>) -> Self {
         let split_funcs = full_func.split(groups);
         Self {
             full_func,
@@ -217,7 +217,7 @@ struct LinkCtx<'a, C1, C2> {
     var_index: usize,
     return_ident: usize,
     return_idents: Vec<usize>,
-    return_groups: FxHashSet<ReturnGroup>,
+    return_groups: FxIndexSet<ReturnGroup>,
     link_map: LinkMap,
     info_map: &'a FxIndexMap<Name, FuncInfo>,
     chip_map: &'a FxIndexMap<Name, Either<C1, C2>>,
@@ -303,12 +303,12 @@ impl<F: Field + Ord> FuncE<F> {
         func_index: usize,
         info_map: &FxIndexMap<Name, FuncInfo>,
         chip_map: &FxIndexMap<Name, Either<C1, C2>>,
-    ) -> (Func<F>, FxHashSet<ReturnGroup>) {
+    ) -> (Func<F>, FxIndexSet<ReturnGroup>) {
         let mut ctx = LinkCtx {
             var_index: 0,
             return_ident: 0,
             return_idents: vec![],
-            return_groups: FxHashSet::default(),
+            return_groups: FxIndexSet::default(),
             link_map: FxHashMap::default(),
             info_map,
             chip_map,
@@ -934,9 +934,9 @@ impl<F: Field + Ord> OpE<F> {
 }
 
 impl<F: Field + Ord> Func<F> {
-    fn split(&self, groups: &FxHashSet<ReturnGroup>) -> FxHashMap<ReturnGroup, Func<F>> {
+    fn split(&self, groups: &FxIndexSet<ReturnGroup>) -> FxIndexMap<ReturnGroup, Func<F>> {
         assert!(!self.split);
-        let mut map = FxHashMap::default();
+        let mut map = FxIndexMap::default();
         for group in groups.iter() {
             let body = self
                 .body
@@ -981,7 +981,7 @@ impl<F: Field + Ord> Ctrl<F> {
                 let mut return_idents = vec![];
                 // This map is used to convert indices from the `branches` vector into
                 // the new, potentially smaller, `branches` vector
-                let mut map = FxHashMap::default();
+                let mut map = FxIndexMap::default();
                 let mut i = 0;
                 let branches: Vec<_> = branches
                     .iter()
@@ -1008,7 +1008,7 @@ impl<F: Field + Ord> Ctrl<F> {
                         .collect(),
                 );
                 let default = cases.default.as_ref().and_then(|i| {
-                    let idx = map.get(i)?;
+                    let idx = map.get(&**i)?;
                     Some((*idx).into())
                 });
                 let cases = Cases {

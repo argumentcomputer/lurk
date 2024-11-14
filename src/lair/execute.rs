@@ -17,13 +17,14 @@ use super::{
     chipset::Chipset,
     expr::ReturnGroup,
     func_chip::FuncChip,
-    toplevel::Toplevel,
+    toplevel::{FuncStruct, Toplevel},
     FxIndexMap, List,
 };
 
 type QueryMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
 type InvQueryMap<F> = FxHashMap<List<F>, List<F>>;
 pub(crate) type MemMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
+type NonceMap = FxHashMap<(usize, u32), u32>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct QueryResult<F> {
@@ -378,6 +379,65 @@ impl<F: PrimeField32> QueryRecord<F> {
     pub fn expect_public_values(&self) -> &[F] {
         self.public_values.as_ref().expect("Public values not set")
     }
+
+    fn nonce_map<C1: Chipset<F>, C2: Chipset<F>>(
+        &self,
+        toplevel: &Toplevel<F, C1, C2>,
+    ) -> NonceMap {
+        let mut map = NonceMap::default();
+        for FuncStruct {
+            full_func,
+            split_funcs,
+        } in toplevel.func_map.values()
+        {
+            let index = full_func.index;
+            let max = *split_funcs.keys().max().unwrap() + 1;
+            let mut nonces = vec![0; max as usize];
+            let queries = &self.func_queries[index];
+            for (i, result) in queries.values().enumerate() {
+                let nonce = nonces[result.return_group as usize];
+                map.insert((index, i as u32), nonce);
+                nonces[result.return_group as usize] += 1
+            }
+        }
+        map
+    }
+
+    pub fn fix_nonces(&mut self, map: &NonceMap) {
+        fn update_nonce(lookup: &mut Record, map: &NonceMap) {
+            if let Some(index) = lookup.query_index {
+                lookup.nonce = *map.get(&(index, lookup.nonce)).unwrap();
+            }
+        }
+
+        for queries in self.func_queries.iter_mut() {
+            for result in queries.values_mut() {
+                update_nonce(&mut result.provide, map);
+                for require in result.requires.iter_mut() {
+                    update_nonce(require, map);
+                }
+                for require in result.depth_requires.iter_mut() {
+                    update_nonce(require, map);
+                }
+            }
+        }
+        for queries in self.mem_queries.iter_mut() {
+            for result in queries.values_mut() {
+                update_nonce(&mut result.provide, map);
+                for require in result.requires.iter_mut() {
+                    update_nonce(require, map);
+                }
+                for require in result.depth_requires.iter_mut() {
+                    update_nonce(require, map);
+                }
+            }
+        }
+        for queries in self.bytes.records.values_mut() {
+            for lookup in queries.iter_mut_records() {
+                update_nonce(lookup, map);
+            }
+        }
+    }
 }
 
 impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> FuncChip<'_, F, C1, C2> {
@@ -411,6 +471,8 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Toplevel<F, C1, C2> {
             public_values.extend(depth.to_le_bytes().map(F::from_canonical_u8));
         }
         queries.public_values = Some(public_values);
+        let map = queries.nonce_map(self);
+        queries.fix_nonces(&map);
         Ok(out)
     }
 
