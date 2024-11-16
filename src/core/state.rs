@@ -315,7 +315,7 @@ pub(crate) const BUILTIN_SYMBOLS: [&str; 43] = [
     "fail",
 ];
 
-pub(crate) const META_SYMBOLS: [&str; 39] = [
+pub(crate) const META_SYMBOLS: [&str; 44] = [
     "def",
     "defq",
     "defrec",
@@ -348,11 +348,16 @@ pub(crate) const META_SYMBOLS: [&str; 39] = [
     "defprotocol",
     "prove-protocol",
     "verify-protocol",
+    "microchain-set-info",
+    "microchain-get-info",
     "microchain-start",
     "microchain-get-genesis",
     "microchain-get-state",
     "microchain-transition",
     "microchain-verify",
+    "scope",
+    "scope-pop",
+    "scope-store",
     "load-ocaml",
     "load-ocaml-expr",
 ];

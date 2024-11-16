@@ -34,10 +34,8 @@ fn run_tests<C2: Chipset<F>>(
     config: BabyBearPoseidon2,
 ) {
     let mut record = QueryRecord::new(toplevel);
-    let hashes3 = std::mem::take(&mut zstore.hashes3_diff);
     let hashes4 = std::mem::take(&mut zstore.hashes4_diff);
     let hashes5 = std::mem::take(&mut zstore.hashes5_diff);
-    record.inject_inv_queries_owned("hash3", toplevel, hashes3);
     record.inject_inv_queries_owned("hash4", toplevel, hashes4);
     record.inject_inv_queries_owned("hash5", toplevel, hashes5);
 

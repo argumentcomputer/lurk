@@ -1,13 +1,17 @@
-use p3_field::Field;
+use anyhow::Result;
+use p3_field::{Field, PrimeField32};
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 
 use crate::{
-    core::zstore::{ZPtr, ZStore, DIGEST_SIZE, HASH3_SIZE},
+    core::{
+        big_num::field_elts_to_biguint,
+        zstore::{ZPtr, ZStore, DIGEST_SIZE, HASH3_SIZE},
+    },
     lair::chipset::Chipset,
 };
 
-use super::zdag::ZDag;
+use super::{paths::commits_dir, zdag::ZDag};
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct CommData<F: Hash + Eq> {
@@ -25,7 +29,7 @@ impl<F: Field> CommData<F> {
         let mut preimg = [F::default(); HASH3_SIZE];
         preimg[..DIGEST_SIZE].copy_from_slice(secret);
         preimg[DIGEST_SIZE..].copy_from_slice(&payload.flatten());
-        zstore.hash3(preimg)
+        zstore.commit(preimg)
     }
 }
 
@@ -59,21 +63,21 @@ impl<F: Hash + Eq + Default + Copy> CommData<F> {
     {
         ZPtr::comm(self.compute_digest(zstore))
     }
-
-    #[inline]
-    pub(crate) fn populate_zstore<C: Chipset<F>>(self, zstore: &mut ZStore<F, C>)
-    where
-        F: Field,
-    {
-        let digest = self.compute_digest(zstore);
-        zstore.intern_comm(digest);
-        self.zdag.populate_zstore(zstore);
-    }
 }
 
 impl<F: Field> CommData<F> {
     #[inline]
     pub(crate) fn payload_is_flawed<C: Chipset<F>>(&self, zstore: &mut ZStore<F, C>) -> bool {
         self.zdag.is_flawed(&self.payload, zstore)
+    }
+}
+
+impl<F: PrimeField32> CommData<F> {
+    #[inline]
+    pub(crate) fn dump<C: Chipset<F>>(&self, zstore: &mut ZStore<F, C>) -> Result<ZPtr<F>> {
+        let comm = self.commit(zstore);
+        let hash = format!("{:x}", field_elts_to_biguint(&comm.digest));
+        std::fs::write(commits_dir()?.join(hash), bincode::serialize(self)?)?;
+        Ok(comm)
     }
 }

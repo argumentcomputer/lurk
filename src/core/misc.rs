@@ -2,9 +2,14 @@ use p3_field::AbstractField;
 
 use crate::{func, lair::expr::FuncE};
 
-pub fn hash3<F>() -> FuncE<F> {
+// This coroutine is used specifically to create commitments. If we ever need
+// the `hasher3` gadget to ingress/egress data, we should define a new `hash3`
+// coroutine so the data doesn't get mixed up. We need this separation so API
+// consumers (such as the REPL) can have precise information about what's been
+// committed to so far.
+pub fn commit<F>() -> FuncE<F> {
     func!(
-        invertible fn hash3(preimg: [24]): [8] {
+        invertible fn commit(preimg: [24]): [8] {
             let img: [8] = extern_call(hasher3, preimg);
             return img
         }

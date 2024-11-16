@@ -250,12 +250,17 @@ impl<F, C: Chipset<F>> Hasher<F, C> {
 
 #[derive(Clone)]
 pub struct ZStore<F, C: Chipset<F>> {
-    hasher: Hasher<F, C>,
+    pub(crate) hasher: Hasher<F, C>,
     pub(crate) dag: FxHashMap<ZPtr<F>, ZPtrType<F>>,
-    pub hashes3: FxHashMap<[F; HASH3_SIZE], [F; DIGEST_SIZE]>,
+
+    // This map is used specifically to store commitments. Analogously to the
+    // `commit` coroutine, if we ever need the `hash3` hasher to intern data, we
+    // should define new `hashes3` and `hashes3_diff` maps so the data doesn't
+    // get mixed up.
+    pub comms: FxHashMap<[F; HASH3_SIZE], [F; DIGEST_SIZE]>,
+
     pub hashes4: FxHashMap<[F; HASH4_SIZE], [F; DIGEST_SIZE]>,
     pub hashes5: FxHashMap<[F; HASH5_SIZE], [F; DIGEST_SIZE]>,
-    pub hashes3_diff: FxHashMap<[F; HASH3_SIZE], [F; DIGEST_SIZE]>,
     pub hashes4_diff: FxHashMap<[F; HASH4_SIZE], [F; DIGEST_SIZE]>,
     pub hashes5_diff: FxHashMap<[F; HASH5_SIZE], [F; DIGEST_SIZE]>,
     str_cache: FxHashMap<String, ZPtr<F>>,
@@ -271,10 +276,9 @@ impl Default for ZStore<BabyBear, LurkChip> {
         let mut zstore = Self {
             hasher: lurk_hasher(),
             dag: Default::default(),
-            hashes3: Default::default(),
+            comms: Default::default(),
             hashes4: Default::default(),
             hashes5: Default::default(),
-            hashes3_diff: Default::default(),
             hashes4_diff: Default::default(),
             hashes5_diff: Default::default(),
             str_cache: Default::default(),
@@ -302,13 +306,12 @@ pub(crate) fn builtin_set() -> &'static IndexSet<Symbol, FxBuildHasher> {
 }
 
 impl<F: Field, C: Chipset<F>> ZStore<F, C> {
-    pub(crate) fn hash3(&mut self, preimg: [F; HASH3_SIZE]) -> [F; DIGEST_SIZE] {
-        if let Some(img) = self.hashes3.get(&preimg) {
+    pub(crate) fn commit(&mut self, preimg: [F; HASH3_SIZE]) -> [F; DIGEST_SIZE] {
+        if let Some(img) = self.comms.get(&preimg) {
             return *img;
         }
         let digest = into_sized(&self.hasher.hash3.execute_simple(&preimg));
-        self.hashes3.insert(preimg, digest);
-        self.hashes3_diff.insert(preimg, digest);
+        self.comms.insert(preimg, digest);
         digest
     }
 

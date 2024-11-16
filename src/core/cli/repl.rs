@@ -23,6 +23,7 @@ use crate::{
         big_num::field_elts_to_biguint,
         chipset::LurkChip,
         cli::{
+            comm_data::CommData,
             debug::{FormattedDebugData, FormattedDebugEntry},
             meta::{meta_cmds, MetaCmdsMap},
             paths::{current_dir, proofs_dir, repl_history},
@@ -43,11 +44,14 @@ use crate::{
     },
     lair::{
         chipset::{Chipset, NoChip},
-        execute::{DebugEntry, DebugEntryKind, QueryRecord, QueryResult, Shard},
+        execute::{DebugEntry, DebugEntryKind, QueryMap, QueryRecord, QueryResult, Shard},
         lair_chip::LairMachineProgram,
         toplevel::Toplevel,
+        FxIndexMap, List,
     },
 };
+
+use super::scope::update_scope_comms;
 
 #[derive(Helper, Highlighter, Hinter, Completer)]
 struct InputValidator<F: Field> {
@@ -105,9 +109,10 @@ struct ProcessedDebugEntry<F> {
 }
 
 /// Holds the indices of some functions in the Lurk toplevel
-struct FuncIndices {
+pub(crate) struct FuncIndices {
     lurk_main: usize,
     eval: usize,
+    pub(crate) commit: usize,
     egress: usize,
 }
 
@@ -116,20 +121,36 @@ impl FuncIndices {
         Self {
             lurk_main: toplevel.func_by_name("lurk_main").index,
             eval: toplevel.func_by_name("eval").index,
+            commit: toplevel.func_by_name("commit").index,
             egress: toplevel.func_by_name("egress").index,
         }
     }
+}
+
+/// Address and ID of a microchain
+pub(crate) type MicrochainInfo<F> = (String, [F; DIGEST_SIZE]);
+
+/// Holds data for the outer scope, needed when a scope is popped.
+pub(crate) struct OuterScope<F> {
+    pub(crate) env: ZPtr<F>,
+    pub(crate) comms: FxHashSet<List<F>>,
+    pub(crate) microchain: Option<MicrochainInfo<F>>,
 }
 
 pub(crate) struct Repl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> {
     pub(crate) zstore: ZStore<F, C1>,
     pub(crate) queries: QueryRecord<F>,
     pub(crate) toplevel: Toplevel<F, C1, C2>,
-    func_indices: FuncIndices,
+    pub(crate) func_indices: FuncIndices,
     pub(crate) env: ZPtr<F>,
     pub(crate) state: StateRcCell,
     pub(crate) meta_cmds: MetaCmdsMap<F, C1, C2>,
     pub(crate) lang_symbols: FxHashSet<Symbol>,
+    pub(crate) microchain: Option<MicrochainInfo<F>>,
+    /// A sequenced map from scope names (symbols) to their immediate outer scopes.
+    /// This could arguably be a `Vec`, but an `IndexMap` provides a fast way to
+    /// detect potential scoping cycles.
+    pub(crate) scopes: FxIndexMap<ZPtr<F>, OuterScope<F>>,
 }
 
 impl<C2: Chipset<BabyBear>> Repl<BabyBear, LurkChip, C2> {
@@ -146,6 +167,8 @@ impl<C2: Chipset<BabyBear>> Repl<BabyBear, LurkChip, C2> {
             state: State::init_lurk_state().rccell(),
             meta_cmds: meta_cmds(),
             lang_symbols,
+            microchain: None,
+            scopes: FxIndexMap::default(),
         }
     }
 }
@@ -167,10 +190,8 @@ impl<C1: Chipset<BabyBear>, C2: Chipset<BabyBear>> Repl<BabyBear, C1, C2> {
         let Some(public_values) = self.queries.public_values.as_ref() else {
             bail!("No data found for latest computation");
         };
-        let proof_key_img: &[BabyBear; DIGEST_SIZE] = &self
-            .zstore
-            .hash3(public_values[..INPUT_SIZE].try_into().unwrap());
-        let proof_key = format!("{:x}", field_elts_to_biguint(proof_key_img));
+        let proof_key_img = self.zstore.hasher.hash(&public_values[..INPUT_SIZE]);
+        let proof_key = format!("{:x}", field_elts_to_biguint(&proof_key_img));
         let proof_path = proofs_dir()?.join(&proof_key);
         let machine = new_machine(&self.toplevel);
         let (pk, vk) = machine.setup(&LairMachineProgram);
@@ -263,13 +284,12 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         self.zstore.fmt_with_state(&self.state, zptr)
     }
 
+    /// Feeds the `QueryRecord` with new preimages that might be necessary for
+    /// the ingress phase of an incoming Lair execution.
     fn prepare_queries(&mut self) {
         self.queries.clean();
-        let hashes3 = std::mem::take(&mut self.zstore.hashes3_diff);
         let hashes4 = std::mem::take(&mut self.zstore.hashes4_diff);
         let hashes5 = std::mem::take(&mut self.zstore.hashes5_diff);
-        self.queries
-            .inject_inv_queries_owned("hash3", &self.toplevel, hashes3);
         self.queries
             .inject_inv_queries_owned("hash4", &self.toplevel, hashes4);
         self.queries
@@ -310,11 +330,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
     fn tmp_queries_for_egression(&self) -> QueryRecord<F> {
         let mut inv_func_queries = Vec::with_capacity(self.queries.inv_func_queries.len());
         for inv_query_map in &self.queries.inv_func_queries {
-            if inv_query_map.is_some() {
-                inv_func_queries.push(Some(Default::default()));
-            } else {
-                inv_func_queries.push(None);
-            }
+            inv_func_queries.push(inv_query_map.as_ref().map(|_| Default::default()));
         }
         QueryRecord {
             public_values: None,
@@ -429,6 +445,47 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         }
     }
 
+    /// Persists commitment data and returns the corresponding commitment
+    pub(crate) fn persist_comm_data(
+        &mut self,
+        secret: [F; DIGEST_SIZE],
+        payload: ZPtr<F>,
+    ) -> Result<ZPtr<F>> {
+        self.memoize_dag(&payload);
+        let comm_data = CommData::new(secret, payload, &self.zstore);
+        comm_data.dump(&mut self.zstore)
+    }
+
+    #[inline]
+    pub(crate) fn current_scope(&self) -> Option<&ZPtr<F>> {
+        self.scopes.last().map(|(scope, _)| scope)
+    }
+
+    /// Retrieve commitment data from calls to `commit` or `hide`. As a side-effect,
+    /// persist the updated set of commitments for the scope at hand.
+    fn collect_scopped_commitments(
+        scope_digest: &[F],
+        comms_queries: &QueryMap<F>,
+    ) -> Result<Vec<([F; DIGEST_SIZE], ZPtr<F>)>> {
+        let mut collected = Vec::with_capacity(comms_queries.len());
+        update_scope_comms(scope_digest, |mut scope_comms| {
+            for (preimg, result) in comms_queries {
+                if !result.direct_call {
+                    // Skip queries that weren't computed via `commit` or `hide`.
+                    // That is, `open` and `secret` don't count.
+                    continue;
+                }
+                scope_comms.insert(result.expect_output().into());
+                let mut secret = [F::zero(); DIGEST_SIZE];
+                secret.copy_from_slice(&preimg[..DIGEST_SIZE]);
+                let payload = ZPtr::from_flat_data(&preimg[DIGEST_SIZE..]);
+                collected.push((secret, payload));
+            }
+            Ok(scope_comms)
+        })?;
+        Ok(collected)
+    }
+
     /// Reduces a Lurk expression with a clone of the REPL's queries so the latest
     /// provable computation isn't affected. After the reduction is over, retrieve
     /// the (potentially enriched) inverse query maps so commitments aren't lost.
@@ -445,6 +502,15 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
             &mut queries_tmp,
             None,
         );
+
+        if let Some(&scope) = self.current_scope() {
+            let comms_queries = queries_tmp.get_queries("commit", &self.toplevel);
+            let commitments = Self::collect_scopped_commitments(&scope.digest, comms_queries)?;
+            for (secret, payload) in commitments {
+                self.persist_comm_data(secret, payload)?;
+            }
+        }
+
         let emitted_raw_vec = std::mem::take(&mut queries_tmp.emitted);
         let mut emitted = Vec::with_capacity(emitted_raw_vec.len());
         for emitted_raw in &emitted_raw_vec {
@@ -472,6 +538,15 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
             &mut self.queries,
             Some(self.func_indices.eval),
         );
+
+        if let Some(&scope) = self.current_scope() {
+            let comms_queries = self.queries.get_queries("commit", &self.toplevel);
+            let commitments = Self::collect_scopped_commitments(&scope.digest, comms_queries)?;
+            for (secret, payload) in commitments {
+                self.persist_comm_data(secret, payload)?;
+            }
+        }
+
         if !self.queries.emitted.is_empty() {
             let mut queries_tmp = self.tmp_queries_for_egression();
             let mut emitted = Vec::with_capacity(self.queries.emitted.len());
@@ -639,10 +714,9 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> Repl<F, C1, C2> {
         }
     }
 
-    pub(crate) fn init_config() -> Config {
+    fn init_config() -> Config {
         let var = std::env::var("EDITOR");
-        let is_vi = |var: String| VI_EDITORS.iter().any(|&x| x == var.as_str());
-        if let Ok(true) = var.map(is_vi) {
+        if let Ok(true) = var.map(|val| VI_EDITORS.contains(&val.as_str())) {
             Config::builder().edit_mode(EditMode::Vi).build()
         } else {
             Config::default()

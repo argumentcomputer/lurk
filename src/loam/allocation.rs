@@ -102,7 +102,7 @@ impl Allocator {
     }
 
     pub fn import_zstore(&mut self, zstore: &ZStore<LE, LurkChip>) {
-        self.import_hashes3(&zstore.hashes3);
+        self.import_hashes3(&zstore.comms);
         self.import_hashes4(&zstore.hashes4);
         self.import_hashes5(&zstore.hashes5);
     }
