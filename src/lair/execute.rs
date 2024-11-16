@@ -38,8 +38,14 @@ impl<F: PrimeField32> QueryResult<F> {
         self.output.as_ref().expect("Result not computed").as_ref()
     }
 
-    pub(crate) fn new_lookup(&mut self, nonce: usize, caller_requires: &mut Vec<Record>) {
-        caller_requires.push(self.provide.new_lookup(nonce as u32));
+    pub(crate) fn new_lookup(
+        &mut self,
+        index: usize,
+        nonce: usize,
+        caller_requires: &mut Vec<Record>,
+    ) {
+        let old_lookup = self.provide.new_lookup(nonce as u32, index);
+        caller_requires.push(old_lookup);
     }
 }
 
@@ -103,8 +109,7 @@ impl<'a, F: PrimeField32> Shard<'a, F> {
         self.queries.expect("Missing query record reference")
     }
 
-    pub fn get_func_range(&self, func_index: usize) -> Range<usize> {
-        let num_func_queries = self.queries().func_queries[func_index].len();
+    pub fn get_func_range(&self, num_func_queries: usize) -> Range<usize> {
         let shard_idx = self.index as usize;
         let max_shard_size = self.shard_config.max_shard_size as usize;
         shard_idx * max_shard_size..((shard_idx + 1) * max_shard_size).min(num_func_queries)
@@ -506,7 +511,7 @@ impl<F: PrimeField32> Func<F> {
                             bail!("Loop detected");
                         };
                         map.extend(out);
-                        result.new_lookup(nonce, &mut requires);
+                        result.new_lookup(func_index, nonce, &mut requires);
                         if partial && toplevel.func_by_index(*callee_index).partial {
                             depths.push(result.depth);
                         }
@@ -581,7 +586,7 @@ impl<F: PrimeField32> Func<F> {
                         };
                         assert_eq!(out_memoized, &out);
                         map.extend(inp);
-                        result.new_lookup(nonce, &mut requires);
+                        result.new_lookup(func_index, nonce, &mut requires);
                         if partial && toplevel.func_by_index(*callee_index).partial {
                             depths.push(result.depth);
                         }
@@ -650,7 +655,7 @@ impl<F: PrimeField32> Func<F> {
                         (i, result)
                     };
                     map.push(F::from_canonical_usize(i + 1));
-                    result.new_lookup(nonce, &mut requires);
+                    result.new_lookup(func_index, nonce, &mut requires);
                 }
                 ExecEntry::Op(Op::Load(len, ptr)) => {
                     let ptr = map[*ptr];
@@ -660,18 +665,26 @@ impl<F: PrimeField32> Func<F> {
                         .get_index_mut(ptr_f - 1)
                         .expect("Unbound pointer");
                     map.extend(args);
-                    result.new_lookup(nonce, &mut requires);
+                    result.new_lookup(func_index, nonce, &mut requires);
                 }
                 ExecEntry::Op(Op::ExternCall(chip_idx, input)) => {
                     let input: List<_> = input.iter().map(|a| map[*a]).collect();
                     let chip = toplevel.chip_by_index(*chip_idx);
-                    map.extend(chip.execute(&input, nonce as u32, queries, &mut requires));
+                    map.extend(chip.execute(
+                        &input,
+                        nonce as u32,
+                        func_index,
+                        queries,
+                        &mut requires,
+                    ));
                 }
                 ExecEntry::Op(Op::Emit(xs)) => {
                     queries.emitted.push(xs.iter().map(|a| map[*a]).collect())
                 }
                 ExecEntry::Op(Op::RangeU8(xs)) => {
-                    let mut bytes = queries.bytes.context(nonce as u32, &mut requires);
+                    let mut bytes = queries
+                        .bytes
+                        .context(nonce as u32, func_index, &mut requires);
                     let xs = xs.iter().map(|x| {
                         map[*x]
                             .as_canonical_u32()
@@ -700,7 +713,10 @@ impl<F: PrimeField32> Func<F> {
                         inv_map.insert(out_list.clone(), inp.clone());
                     }
                     if partial {
-                        let mut bytes = queries.bytes.context(nonce as u32, &mut depth_requires);
+                        let mut bytes =
+                            queries
+                                .bytes
+                                .context(nonce as u32, func_index, &mut depth_requires);
                         let depth = depths.iter().map(|&a| a + 1).max().unwrap_or(0);
                         bytes.range_check_u8_iter(depth.to_le_bytes());
                         for dep_depth in depths.iter() {
@@ -746,7 +762,7 @@ impl<F: PrimeField32> Func<F> {
                         } else {
                             map.extend(out);
                         }
-                        result.new_lookup(nonce, &mut requires);
+                        result.new_lookup(func_index, nonce, &mut requires);
 
                         if partial && callee_partial {
                             depths.push(result.depth);
@@ -766,9 +782,10 @@ impl<F: PrimeField32> Func<F> {
                         break;
                     }
                 }
-                ExecEntry::Ctrl(Ctrl::Choose(v, cases, _)) => {
+                ExecEntry::Ctrl(Ctrl::Choose(v, cases, branches)) => {
                     let v = map[*v];
-                    let block = cases.match_case(&v).expect("No match");
+                    let i = cases.match_case(&v).expect("No match");
+                    let block = &branches[*i];
                     push_block_exec_entries!(block);
                 }
                 ExecEntry::Ctrl(Ctrl::ChooseMany(vs, cases)) => {

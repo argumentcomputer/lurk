@@ -124,7 +124,8 @@ impl<'a, F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MachineAir<F>
     fn included(&self, shard: &Self::Record) -> bool {
         match self {
             Self::Func(func_chip) => {
-                let range = shard.get_func_range(func_chip.func.index);
+                let len = shard.queries().func_queries[func_chip.func.index].len();
+                let range = shard.get_func_range(len);
                 !range.is_empty()
             }
             Self::Mem(_mem_chip) => {

@@ -542,15 +542,19 @@ impl<F: Field + Ord> CtrlE<F> {
                 let var = get_var(v, ctx)[0];
                 let mut vec = Vec::with_capacity(cases.branches.len());
                 let mut unique_branches = Vec::new();
-                for (fs, block) in cases.branches.iter() {
+                for (i, (fs, block)) in cases.branches.iter().enumerate() {
                     let state = ctx.save_state();
                     let block = block.compile(ctx);
                     ctx.restore_state(state);
-                    fs.iter().for_each(|f| vec.push((*f, block.clone())));
+                    fs.iter().for_each(|f| vec.push((*f, i)));
                     unique_branches.push(block);
                 }
                 let branches = Map::from_vec(vec);
-                let default = cases.default.as_ref().map(|def| def.compile(ctx).into());
+                let default = cases.default.as_ref().map(|def| {
+                    let block = def.compile(ctx);
+                    unique_branches.push(block);
+                    (unique_branches.len() - 1).into()
+                });
                 let cases = Cases { branches, default };
                 Ctrl::Choose(var, cases, unique_branches.into())
             }

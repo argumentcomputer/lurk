@@ -123,15 +123,22 @@ impl Chipset<BabyBear> for LurkChip {
         &self,
         input: &[BabyBear],
         nonce: u32,
+        query_index: usize,
         queries: &mut QueryRecord<BabyBear>,
         requires: &mut Vec<Record>,
     ) -> Vec<BabyBear> {
         match self {
-            LurkChip::Hasher3(hasher) => hasher.execute(input, nonce, queries, requires),
-            LurkChip::Hasher4(hasher) => hasher.execute(input, nonce, queries, requires),
-            LurkChip::Hasher5(hasher) => hasher.execute(input, nonce, queries, requires),
-            LurkChip::U64(op) => op.execute(input, nonce, queries, requires),
-            LurkChip::BigNum(op) => op.execute(input, nonce, queries, requires),
+            LurkChip::Hasher3(hasher) => {
+                hasher.execute(input, nonce, query_index, queries, requires)
+            }
+            LurkChip::Hasher4(hasher) => {
+                hasher.execute(input, nonce, query_index, queries, requires)
+            }
+            LurkChip::Hasher5(hasher) => {
+                hasher.execute(input, nonce, query_index, queries, requires)
+            }
+            LurkChip::U64(op) => op.execute(input, nonce, query_index, queries, requires),
+            LurkChip::BigNum(op) => op.execute(input, nonce, query_index, queries, requires),
         }
     }
 

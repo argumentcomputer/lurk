@@ -143,19 +143,15 @@ impl<F> Ctrl<F> {
                 // exactly one selector per return
                 *sel += 1;
             }
-            Ctrl::Choose(_, cases, branches) => {
+            Ctrl::Choose(_, _, branches) => {
                 let degrees_len = degrees.len();
                 let mut max_aux = *aux;
-                let mut process = |block: &Block<_>| {
+                branches.iter().for_each(|block| {
                     let block_aux = &mut aux.clone();
                     block.compute_layout_sizes(degrees, toplevel, block_aux, sel);
                     degrees.truncate(degrees_len);
                     max_aux = max_aux.max(*block_aux);
-                };
-                branches.iter().for_each(&mut process);
-                if let Some(block) = cases.default.as_ref() {
-                    process(block)
-                };
+                });
                 *aux = max_aux;
             }
             Ctrl::ChooseMany(_, cases) => {

@@ -136,14 +136,17 @@ impl<AB: AirBuilder + MessageBuilder<AirInteraction<AB::Expr>>> LookupBuilder fo
 pub struct Record {
     pub nonce: u32,
     pub count: u32,
+    // Original query that did the lookup. `None` is for the root lookup
+    pub query_index: Option<usize>,
 }
 
 impl Record {
     /// Updates the provide record and returns the require record
-    pub fn new_lookup(&mut self, nonce: u32) -> Record {
+    pub fn new_lookup(&mut self, nonce: u32, query_index: usize) -> Record {
         let require = *self;
         self.nonce = nonce;
         self.count += 1;
+        self.query_index = Some(query_index);
         require
     }
 

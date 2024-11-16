@@ -23,6 +23,7 @@ pub trait Chipset<F>: Sync {
         &self,
         input: &[F],
         _nonce: u32,
+        _query_index: usize,
         _queries: &mut QueryRecord<F>,
         _requires: &mut Vec<Record>,
     ) -> Vec<F>
@@ -65,6 +66,7 @@ impl<F, C1: Chipset<F>, C2: Chipset<F>> Chipset<F> for &Either<C1, C2> {
         &self,
         input: &[F],
         nonce: u32,
+        query_index: usize,
         queries: &mut QueryRecord<F>,
         requires: &mut Vec<Record>,
     ) -> Vec<F>
@@ -72,8 +74,8 @@ impl<F, C1: Chipset<F>, C2: Chipset<F>> Chipset<F> for &Either<C1, C2> {
         F: PrimeField32,
     {
         match self {
-            Either::Left(c) => c.execute(input, nonce, queries, requires),
-            Either::Right(c) => c.execute(input, nonce, queries, requires),
+            Either::Left(c) => c.execute(input, nonce, query_index, queries, requires),
+            Either::Right(c) => c.execute(input, nonce, query_index, queries, requires),
         }
     }
 

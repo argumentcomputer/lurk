@@ -509,20 +509,16 @@ impl<F: Field> Ctrl<F> {
         <AB as AirBuilder>::Var: Debug,
     {
         match self {
-            Ctrl::Choose(_, cases, branches) => {
+            Ctrl::Choose(_, _, branches) => {
                 let map_len = map.len();
                 let init_state = index.save();
 
-                let mut process = |block: &Block<F>| {
+                branches.iter().for_each(|block| {
                     let sel = block.return_sel::<AB>(local);
                     block.eval(builder, local, &sel, index, map, toplevel, depth);
                     map.truncate(map_len);
                     index.restore(init_state);
-                };
-                branches.iter().for_each(&mut process);
-                if let Some(block) = cases.default.as_ref() {
-                    process(block)
-                };
+                });
             }
             Ctrl::ChooseMany(_, cases) => {
                 let map_len = map.len();
