@@ -27,7 +27,7 @@ use super::{
     ingress::{egress, ingress, preallocate_symbols, SymbolsDigests},
     lang::{Coroutine, Lang},
     misc::{
-        big_num_lessthan, digest_equal, hash3, hash4, hash5, u64_add, u64_divrem, u64_iszero,
+        big_num_lessthan, commit, digest_equal, hash4, hash5, u64_add, u64_divrem, u64_iszero,
         u64_lessthan, u64_mul, u64_sub,
     },
     symbol::Symbol,
@@ -45,7 +45,7 @@ fn native_lurk_funcs<F: PrimeField32>(
         // Builtins
         preallocate_symbols(digests),
         // External chip wrappers
-        hash3(),
+        commit(),
         hash4(),
         hash5(),
         u64_add(),
@@ -376,7 +376,7 @@ pub fn eval_unop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                 Tag::Comm, Tag::BigNum => {
                                     let comm_hash: [8] = load(arg);
                                     let (secret: [8], tag, padding: [7], arg_digest: [8]) = preimg(
-                                        hash3,
+                                        commit,
                                         comm_hash,
                                         |fs| format!("Preimage not found for #{:#x}", field_elts_to_biguint(fs))
                                     );
@@ -502,7 +502,7 @@ pub fn eval_binop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<F> {
                                     let secret: [8] = load(val1);
                                     let (val2_tag, val2_digest: [8]) = call(egress, val2_tag, val2);
                                     let padding = [0; 7];
-                                    let comm_hash: [8] = call(hash3, secret, val2_tag, padding, val2_digest);
+                                    let comm_hash: [8] = call(commit, secret, val2_tag, padding, val2_digest);
                                     let comm_ptr = store(comm_hash);
                                     let comm_tag = Tag::Comm;
                                     return (comm_tag, comm_ptr)

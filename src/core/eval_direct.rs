@@ -18,7 +18,7 @@ use super::{
     ingress::{egress, ingress, preallocate_symbols, InternalTag, SymbolsDigests},
     lang::{Coroutine, Lang},
     misc::{
-        big_num_lessthan, digest_equal, hash3, hash4, hash5, u64_add, u64_divrem, u64_iszero,
+        big_num_lessthan, commit, digest_equal, hash4, hash5, u64_add, u64_divrem, u64_iszero,
         u64_lessthan, u64_mul, u64_sub,
     },
     symbol::Symbol,
@@ -59,7 +59,7 @@ fn native_lurk_funcs<F: PrimeField32>(
         env_lookup(),
         ingress(digests),
         egress(digests),
-        hash3(),
+        commit(),
         hash4(),
         hash5(),
         u64_add(),
@@ -919,7 +919,7 @@ pub fn open_comm<F: PrimeField32>() -> FuncE<F> {
         fn open_comm(hash_ptr): [2] {
             let comm_hash: [8] = load(hash_ptr);
             let (_secret: [8], payload_tag, padding: [7], val_digest: [8]) = preimg(
-                hash3,
+                commit,
                 comm_hash,
                 |fs| format!("Preimage not found for #{:#x}", field_elts_to_biguint(fs))
             );
@@ -1527,7 +1527,7 @@ pub fn eval_opening_unop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<
                     let (val_tag, val_digest: [8]) = call(egress, val_tag, val);
                     let padding = [0; 7];
                     let zero = 0;
-                    let comm_hash: [8] = call(hash3, zero, padding, val_tag, padding, val_digest);
+                    let comm_hash: [8] = call(commit, zero, padding, val_tag, padding, val_digest);
                     let comm_tag = Tag::Comm;
                     let comm_ptr = store(comm_hash);
                     return (comm_tag, comm_ptr)
@@ -1538,7 +1538,7 @@ pub fn eval_opening_unop<F: PrimeField32>(digests: &SymbolsDigests<F>) -> FuncE<
                 Tag::Comm, Tag::BigNum => {
                     let comm_hash: [8] = load(val);
                     let (secret: [8], tag, padding: [7], val_digest: [8]) = preimg(
-                        hash3,
+                        commit,
                         comm_hash,
                         |fs| format!("Preimage not found for #{:#x}", field_elts_to_biguint(fs))
                     );
@@ -1599,7 +1599,7 @@ pub fn eval_hide<F: AbstractField>() -> FuncE<F> {
                     let secret: [8] = load(val1);
                     let (val2_tag, val2_digest: [8]) = call(egress, val2_tag, val2);
                     let padding = [0; 7];
-                    let comm_hash: [8] = call(hash3, secret, val2_tag, padding, val2_digest);
+                    let comm_hash: [8] = call(commit, secret, val2_tag, padding, val2_digest);
                     let comm_ptr = store(comm_hash);
                     let comm_tag = Tag::Comm;
                     return (comm_tag, comm_ptr)
@@ -2007,7 +2007,7 @@ mod test {
         let env_lookup = FuncChip::from_name("env_lookup", toplevel);
         let ingress = FuncChip::from_name("ingress", toplevel);
         let egress = FuncChip::from_name("egress", toplevel);
-        let hash3 = FuncChip::from_name("hash3", toplevel);
+        let commit = FuncChip::from_name("commit", toplevel);
         let hash4 = FuncChip::from_name("hash4", toplevel);
         let hash5 = FuncChip::from_name("hash5", toplevel);
         let u64_add = FuncChip::from_name("u64_add", toplevel);
@@ -2050,7 +2050,7 @@ mod test {
         expect_eq(env_lookup.width(), expect!["52"]);
         expect_eq(ingress.width(), expect!["104"]);
         expect_eq(egress.width(), expect!["81"]);
-        expect_eq(hash3.width(), expect!["493"]);
+        expect_eq(commit.width(), expect!["493"]);
         expect_eq(hash4.width(), expect!["655"]);
         expect_eq(hash5.width(), expect!["815"]);
         expect_eq(u64_add.width(), expect!["53"]);

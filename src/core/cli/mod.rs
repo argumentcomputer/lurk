@@ -8,6 +8,7 @@ mod paths;
 mod proofs;
 mod rdg;
 pub mod repl;
+mod scope;
 #[cfg(test)]
 mod tests;
 mod zdag;

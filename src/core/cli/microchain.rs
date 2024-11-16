@@ -12,7 +12,6 @@ use std::{
 
 use crate::{
     core::{
-        big_num::field_elts_to_biguint,
         chipset::LurkChip,
         cli::{paths::microchains_dir, rdg::rand_digest},
         eval_direct::build_lurk_toplevel,
@@ -26,8 +25,8 @@ use crate::{
 use super::{
     comm_data::CommData,
     lurk_data::LurkData,
-    proofs::get_verifier_version,
-    proofs::{ChainProof, OpaqueChainProof},
+    paths::{dump_to_hash_dir, load_from_hash_dir},
+    proofs::{get_verifier_version, ChainProof, OpaqueChainProof},
 };
 
 #[derive(Args, Debug)]
@@ -80,7 +79,7 @@ impl ChainState {
         let callable_zptr = match callable_data {
             CallableData::Comm(comm_data) => {
                 let zptr = comm_data.commit(zstore);
-                comm_data.populate_zstore(zstore);
+                comm_data.zdag.populate_zstore(zstore);
                 zptr
             }
             CallableData::Fun(lurk_data) => lurk_data.populate_zstore(zstore),
@@ -91,11 +90,24 @@ impl ChainState {
 
 #[derive(Serialize, Deserialize)]
 pub(crate) enum Request {
+    /// Spawn a new microchain with a given genesis state
     Start(ChainState),
+    /// Request the genesis state of a microchain by ID
     GetGenesis([F; DIGEST_SIZE]),
+    /// Request the current state of a microchain by ID
     GetState([F; DIGEST_SIZE]),
-    Transition([F; DIGEST_SIZE], ChainProof),
-    GetProofs([F; DIGEST_SIZE], [F; DIGEST_SIZE], [F; DIGEST_SIZE]),
+    /// Provide a proof of state transition for a microchain
+    Transition {
+        id: [F; DIGEST_SIZE],
+        proof: ChainProof,
+    },
+    /// Request the sequence of proofs from a microchain that can prove the transition
+    /// from an initial state to a final state. States are referenced by their digests
+    GetProofs {
+        id: [F; DIGEST_SIZE],
+        initial_state_digest: [F; DIGEST_SIZE],
+        final_state_digest: [F; DIGEST_SIZE],
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -171,7 +183,7 @@ impl MicrochainArgs {
                             };
                             return_msg!(Response::State(state));
                         }
-                        Request::Transition(id, chain_proof) => {
+                        Request::Transition { id, proof } => {
                             let (Ok(mut proofs), Ok(state)) = (load_proofs(&id), load_state(&id))
                             else {
                                 return_msg!(Response::NoDataForId);
@@ -182,7 +194,7 @@ impl MicrochainArgs {
                                 call_args,
                                 next_chain_result,
                                 next_callable,
-                            } = chain_proof;
+                            } = proof;
 
                             let next_chain_result_zptr = {
                                 if next_chain_result.is_flawed(&mut zstore) {
@@ -262,78 +274,22 @@ impl MicrochainArgs {
 
                             return_msg!(Response::ProofAccepted);
                         }
-                        Request::GetProofs(id, initial_digest, final_digest) => {
+                        Request::GetProofs {
+                            id,
+                            initial_state_digest: initial_digest,
+                            final_state_digest: final_digest,
+                        } => {
                             let Ok(mut proofs) = load_proofs(&id) else {
                                 return_msg!(Response::NoDataForId);
                             };
-                            // let proof_index = load_proof_index(&id)?;
-                            // let Some(initial_index) = proof_index.index_by_prev(&initial_digest) else {
-                            //     return_msg!(Response::NoProofForInitialState);
-                            // };
-                            // let Some(final_index) = proof_index.index_by_next(&final_digest) else {
-                            //     return_msg!(Response::NoProofForFinalState);
-                            // };
-
-                            // the following code snippet is only meant to support version transitioning
-                            // and should be eliminated (in favor of the code above) once legacy microchains
-                            // are dropped
-                            let proof_index = load_proof_index(&id).unwrap_or_default();
-                            let initial_index =
-                                if let Some(index) = proof_index.index_by_prev(&initial_digest) {
-                                    index
-                                } else {
-                                    let (_, genesis_state) = load_genesis(&id)?;
-                                    let genesis_result_zptr = genesis_state.chain_result.zptr;
-                                    let genesis_callable_zptr =
-                                        genesis_state.callable_data.zptr(&mut zstore);
-                                    let genesis_zptr = zstore
-                                        .intern_cons(genesis_result_zptr, genesis_callable_zptr);
-                                    if genesis_zptr.digest == initial_digest {
-                                        0
-                                    } else {
-                                        let mut index = None;
-                                        for (i, proof) in proofs.iter().enumerate() {
-                                            let OpaqueChainProof {
-                                                next_chain_result,
-                                                next_callable,
-                                                ..
-                                            } = proof;
-                                            let next_state = zstore
-                                                .intern_cons(*next_chain_result, *next_callable);
-                                            if next_state.digest == initial_digest {
-                                                index = Some(i + 1);
-                                                break;
-                                            }
-                                        }
-                                        let Some(index) = index else {
-                                            return_msg!(Response::NoProofForInitialState);
-                                        };
-                                        index
-                                    }
-                                };
-                            let final_index =
-                                if let Some(index) = proof_index.index_by_next(&final_digest) {
-                                    index
-                                } else {
-                                    let mut index = None;
-                                    for (i, proof) in proofs.iter().enumerate() {
-                                        let OpaqueChainProof {
-                                            next_chain_result,
-                                            next_callable,
-                                            ..
-                                        } = proof;
-                                        let next_state =
-                                            zstore.intern_cons(*next_chain_result, *next_callable);
-                                        if next_state.digest == final_digest {
-                                            index = Some(i);
-                                            break;
-                                        }
-                                    }
-                                    let Some(index) = index else {
-                                        return_msg!(Response::NoProofForFinalState);
-                                    };
-                                    index
-                                };
+                            let proof_index = load_proof_index(&id)?;
+                            let Some(initial_index) = proof_index.index_by_prev(&initial_digest)
+                            else {
+                                return_msg!(Response::NoProofForInitialState);
+                            };
+                            let Some(final_index) = proof_index.index_by_next(&final_digest) else {
+                                return_msg!(Response::NoProofForFinalState);
+                            };
 
                             proofs.truncate(final_index + 1);
                             proofs.drain(..initial_index);
@@ -347,6 +303,24 @@ impl MicrochainArgs {
 
         Ok(())
     }
+}
+
+pub(crate) fn read_data<T: for<'a> Deserialize<'a>>(stream: &mut TcpStream) -> Result<T> {
+    let mut size_bytes = [0; 8];
+    stream.read_exact(&mut size_bytes)?;
+    let size = usize::from_le_bytes(size_bytes);
+    let mut data_buffer = vec![0; size];
+    stream.read_exact(&mut data_buffer)?;
+    let data = bincode::deserialize(&data_buffer)?;
+    Ok(data)
+}
+
+pub(crate) fn write_data<T: Serialize>(stream: &mut TcpStream, data: T) -> Result<()> {
+    let data_bytes = bincode::serialize(&data)?;
+    stream.write_all(&data_bytes.len().to_le_bytes())?;
+    stream.write_all(&data_bytes)?;
+    stream.flush()?;
+    Ok(())
 }
 
 /// Holds indices of proofs in a sequence of state transitions. The index of a
@@ -378,67 +352,39 @@ impl<F: Hash + Eq> ProofIndex<F> {
     }
 }
 
-fn dump_microchain_data<T: Serialize + ?Sized>(id: &[F], name: &str, data: &T) -> Result<()> {
-    let hash = format!("{:x}", field_elts_to_biguint(id));
-    let dir = microchains_dir()?.join(hash);
-    std::fs::create_dir_all(&dir)?;
-    std::fs::write(dir.join(name), bincode::serialize(data)?)?;
-    Ok(())
-}
+const GENESIS_FILE: &str = "genesis";
+const PROOFS_FILE: &str = "proofs";
+const STATE_FILE: &str = "state";
+const PROOF_INDEX_FILE: &str = "proof_index";
 
 fn dump_genesis(id: &[F], genesis: &Genesis) -> Result<()> {
-    dump_microchain_data(id, "genesis", genesis)
+    dump_to_hash_dir(&microchains_dir(), id, GENESIS_FILE, genesis)
 }
 
 fn dump_proofs(id: &[F], proofs: &[OpaqueChainProof]) -> Result<()> {
-    dump_microchain_data(id, "proofs", proofs)
+    dump_to_hash_dir(&microchains_dir(), id, PROOFS_FILE, proofs)
 }
 
 fn dump_state(id: &[F], state: &ChainState) -> Result<()> {
-    dump_microchain_data(id, "state", state)
+    dump_to_hash_dir(&microchains_dir(), id, STATE_FILE, state)
 }
 
 fn dump_proof_index(id: &[F], proof_index: &ProofIndex<F>) -> Result<()> {
-    dump_microchain_data(id, "proof_index", proof_index)
-}
-
-fn load_microchain_data<T: for<'a> Deserialize<'a>>(id: &[F], name: &str) -> Result<T> {
-    let hash = format!("{:x}", field_elts_to_biguint(id));
-    let bytes = std::fs::read(microchains_dir()?.join(hash).join(name))?;
-    let data = bincode::deserialize(&bytes)?;
-    Ok(data)
+    dump_to_hash_dir(&microchains_dir(), id, PROOF_INDEX_FILE, proof_index)
 }
 
 fn load_genesis(id: &[F]) -> Result<Genesis> {
-    load_microchain_data(id, "genesis")
+    load_from_hash_dir(&microchains_dir(), id, GENESIS_FILE)
 }
 
 fn load_proofs(id: &[F]) -> Result<Vec<OpaqueChainProof>> {
-    load_microchain_data(id, "proofs")
+    load_from_hash_dir(&microchains_dir(), id, PROOFS_FILE)
 }
 
 fn load_state(id: &[F]) -> Result<ChainState> {
-    load_microchain_data(id, "state")
+    load_from_hash_dir(&microchains_dir(), id, STATE_FILE)
 }
 
 fn load_proof_index(id: &[F]) -> Result<ProofIndex<F>> {
-    load_microchain_data(id, "proof_index")
-}
-
-pub(crate) fn read_data<T: for<'a> Deserialize<'a>>(stream: &mut TcpStream) -> Result<T> {
-    let mut size_bytes = [0; 8];
-    stream.read_exact(&mut size_bytes)?;
-    let size = usize::from_le_bytes(size_bytes);
-    let mut data_buffer = vec![0; size];
-    stream.read_exact(&mut data_buffer)?;
-    let data = bincode::deserialize(&data_buffer)?;
-    Ok(data)
-}
-
-pub(crate) fn write_data<T: Serialize>(stream: &mut TcpStream, data: T) -> Result<()> {
-    let data_bytes = bincode::serialize(&data)?;
-    stream.write_all(&data_bytes.len().to_le_bytes())?;
-    stream.write_all(&data_bytes)?;
-    stream.flush()?;
-    Ok(())
+    load_from_hash_dir(&microchains_dir(), id, PROOF_INDEX_FILE)
 }

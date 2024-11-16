@@ -2,10 +2,10 @@ use anyhow::{bail, Result};
 use camino::Utf8Path;
 use itertools::Itertools;
 use p3_baby_bear::BabyBear;
-use p3_field::{AbstractField, PrimeField32};
+use p3_field::PrimeField32;
 use rustc_hash::FxHashMap;
 use sphinx_core::stark::StarkGenericConfig;
-use std::net::TcpStream;
+use std::{io::Write, net::TcpStream};
 
 use crate::{
     core::{
@@ -15,9 +15,9 @@ use crate::{
         state::{builtin_sym, meta_sym, META_SYMBOLS},
         symbol::Symbol,
         tag::Tag,
-        zstore::{ZPtr, DIGEST_SIZE},
+        zstore::{ZPtr, DIGEST_SIZE, HASH3_SIZE},
     },
-    lair::{chipset::Chipset, lair_chip::LairMachineProgram},
+    lair::{chipset::Chipset, lair_chip::LairMachineProgram, List},
     ocaml::compile::compile_and_transform_single_file,
 };
 
@@ -29,7 +29,11 @@ use super::{
     paths::{commits_dir, proofs_dir},
     proofs::{get_verifier_version, CachedProof, ChainProof, OpaqueChainProof, ProtocolProof},
     rdg::rand_digest,
-    repl::Repl,
+    repl::{OuterScope, Repl},
+    scope::{
+        dump_scope_microchain, load_scope_bindings, load_scope_comms, load_scope_microchain,
+        update_scope_bindings, update_scope_comms, ScopeBindings,
+    },
 };
 
 #[allow(clippy::type_complexity)]
@@ -274,11 +278,11 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             let expr = repl
                 .zstore
                 .intern_list([letrec, bindings, current_env_call]);
-            let (output, _) = repl.reduce_aux(&expr)?;
-            if output.tag != Tag::Env {
-                bail!("Reduction resulted in {}", repl.fmt(&output));
+            let (env, _) = repl.reduce_aux(&expr)?;
+            if env.tag != Tag::Env {
+                bail!("Reduction resulted in {}", repl.fmt(&env));
             }
-            repl.env = output;
+            repl.env = env;
             Ok(sym)
         },
     };
@@ -374,20 +378,6 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         },
     };
 
-    /// Persists commitment data and returns the corresponding commitment
-    fn persist_comm_data(
-        secret: [F; DIGEST_SIZE],
-        payload: ZPtr<F>,
-        repl: &mut Repl<F, C1, C2>,
-    ) -> Result<ZPtr<F>> {
-        repl.memoize_dag(&payload);
-        let comm_data = CommData::new(secret, payload, &repl.zstore);
-        let comm = comm_data.commit(&mut repl.zstore);
-        let hash = format!("{:x}", field_elts_to_biguint(&comm.digest));
-        std::fs::write(commits_dir()?.join(&hash), bincode::serialize(&comm_data)?)?;
-        Ok(comm)
-    }
-
     fn hide(
         secret: [F; DIGEST_SIZE],
         payload_expr: &ZPtr<F>,
@@ -397,7 +387,14 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         if payload.tag == Tag::Err {
             bail!("Payload reduction error: {}", repl.fmt(&payload));
         }
-        Self::persist_comm_data(secret, payload, repl)
+        let comm = repl.persist_comm_data(secret, payload)?;
+        if let Some(scope) = repl.current_scope() {
+            update_scope_comms(&scope.digest, |mut scope_comms| {
+                scope_comms.insert(comm.digest.into());
+                Ok(scope_comms)
+            })?;
+        }
+        Ok(comm)
     }
 
     const HIDE: Self = Self {
@@ -439,9 +436,8 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         name: "commit",
         summary: "Persists a commitment.",
         info: &[
-            "The secret is an opaque commitment whose digest amounts to zeros",
-            "and the payload is the reduction of <payload_expr>. Equivalent to",
-            "!(hide #0x0 <payload_expr>).",
+            "The secret is zero big num and the payload is the reduction of",
+            "<payload_expr>. Equivalent to !(hide #0x0 <payload_expr>).",
         ],
         format: "!(commit <payload_expr>)",
         example: &["!(commit 42)"],
@@ -452,18 +448,36 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         },
     };
 
-    fn fetch_comm_data(repl: &mut Repl<F, C1, C2>, digest: &[F]) -> Result<ZPtr<F>> {
-        let hash = format!("{:x}", field_elts_to_biguint(digest));
+    fn fetch_persisted_comm_data(repl: &mut Repl<F, C1, C2>, digest: List<F>) -> Result<ZPtr<F>> {
+        let hash = format!("{:x}", field_elts_to_biguint(&digest));
         let comm_data_bytes = std::fs::read(commits_dir()?.join(&hash))?;
-        let comm_data: CommData<F> = bincode::deserialize(&comm_data_bytes)?;
-        let payload = comm_data.payload;
-        comm_data.populate_zstore(&mut repl.zstore);
+        let CommData {
+            secret,
+            payload,
+            zdag,
+        } = bincode::deserialize(&comm_data_bytes)?;
+        let mut preimg = Vec::with_capacity(HASH3_SIZE);
+        preimg.extend(secret);
+        preimg.extend(payload.flatten());
+        repl.queries
+            .inject_inv_queries_owned("commit", &repl.toplevel, [(preimg, digest)]);
+        zdag.populate_zstore(&mut repl.zstore);
         Ok(payload)
+    }
+
+    /// Tries to fetch persisted commitment data if it's not already available
+    /// in the REPL's `QueryRecord`
+    fn fetch_comm_data(repl: &mut Repl<F, C1, C2>, digest: List<F>) -> Result<()> {
+        let inv_comms = repl.queries.get_inv_queries("commit", &repl.toplevel);
+        if !inv_comms.contains_key(&digest) {
+            Self::fetch_persisted_comm_data(repl, digest)?;
+        }
+        Ok(())
     }
 
     const OPEN: Self = Self {
         name: "open",
-        summary: "Fetches a persisted commitment and prints the payload.",
+        summary: "Fetches a persisted commitment.",
         info: &[],
         format: "!(open <comm>)",
         example: &[
@@ -473,9 +487,9 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         returns: "The commitment payload",
         run: |repl, args, _dir| {
             let [&expr] = repl.take(args)?;
-            let (result, _) = repl.reduce_aux(&expr)?;
-            match result.tag {
-                Tag::BigNum | Tag::Comm => Self::fetch_comm_data(repl, &result.digest),
+            let (ZPtr { tag, digest }, _) = repl.reduce_aux(&expr)?;
+            match tag {
+                Tag::BigNum | Tag::Comm => Self::fetch_persisted_comm_data(repl, digest.into()),
                 _ => bail!("Expected a commitment or a BigNum"),
             }
         },
@@ -511,15 +525,8 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         }
         let (&callable, &call_args) = repl.zstore.fetch_tuple11(call_expr);
         let (callable, _) = repl.reduce_aux(&callable)?;
-        match callable.tag {
-            Tag::BigNum | Tag::Comm => {
-                let inv_hashes3 = repl.queries.get_inv_queries("hash3", &repl.toplevel);
-                if !inv_hashes3.contains_key(callable.digest.as_slice()) {
-                    // Try to fetch a persisted commitment.
-                    Self::fetch_comm_data(repl, &callable.digest)?;
-                }
-            }
-            _ => (),
+        if matches!(callable.tag, Tag::BigNum | Tag::Comm) {
+            Self::fetch_comm_data(repl, callable.digest.into())?;
         }
         let call_args = Self::eval_then_quote(repl, &call_args)?;
         let call_expr = repl.zstore.intern_cons(callable, call_args);
@@ -537,26 +544,38 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         ],
         returns: "The call result",
         run: |repl, args, _dir| {
-            let env = repl.env;
-            let (res, _) = Self::call(repl, args, &env)?;
+            let (res, _) = Self::call(repl, args, &repl.env.clone())?;
             Ok(res)
         },
     };
 
-    fn persist_chain_comm(repl: &mut Repl<F, C1, C2>, cons: &ZPtr<F>) -> Result<()> {
+    /// Splits a commitment preimage into the corresponding secret digest and
+    /// payload `ZPtr`.
+    fn split_comm_data_preimg(preimg: &[F]) -> ([F; DIGEST_SIZE], ZPtr<F>) {
+        let mut secret = [F::default(); DIGEST_SIZE];
+        secret.copy_from_slice(&preimg[..DIGEST_SIZE]);
+        let payload = ZPtr::from_flat_data(&preimg[DIGEST_SIZE..]);
+        (secret, payload)
+    }
+
+    /// If the callable of a chain result is a commitment, persist its corresponding
+    /// `CommData`.
+    fn persist_chain_callable_if_comm(repl: &mut Repl<F, C1, C2>, cons: &ZPtr<F>) -> Result<()> {
         if cons.tag != Tag::Cons {
             bail!("Chain result must be a pair");
         }
+        if repl.current_scope().is_some() {
+            // When in a scope, all commitments are persisted automatically.
+            return Ok(());
+        }
         let (_, next_callable) = repl.zstore.fetch_tuple11(cons);
         if matches!(next_callable.tag, Tag::Comm | Tag::BigNum) {
-            let inv_hashes3 = repl.queries.get_inv_queries("hash3", &repl.toplevel);
-            let preimg = inv_hashes3
+            let inv_comms = repl.queries.get_inv_queries("commit", &repl.toplevel);
+            let preimg = inv_comms
                 .get(next_callable.digest.as_slice())
                 .expect("Preimage must be known");
-            let mut secret = [F::zero(); DIGEST_SIZE];
-            secret.copy_from_slice(&preimg[..DIGEST_SIZE]);
-            let payload = ZPtr::from_flat_data(&preimg[DIGEST_SIZE..]);
-            Self::persist_comm_data(secret, payload, repl)?;
+            let (secret, payload) = Self::split_comm_data_preimg(preimg);
+            repl.persist_comm_data(secret, payload)?;
         }
         Ok(())
     }
@@ -580,7 +599,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         run: |repl, args, _dir| {
             let env = repl.zstore.intern_empty_env();
             let (cons, _) = Self::call(repl, args, &env)?;
-            Self::persist_chain_comm(repl, &cons)?;
+            Self::persist_chain_callable_if_comm(repl, &cons)?;
             Ok(cons)
         },
     };
@@ -615,7 +634,7 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         run: |repl, args, _dir| {
             let (&current_state_expr, &call_args) = repl.car_cdr(args);
             let (cons, _) = Self::transition_call(repl, &current_state_expr, call_args)?;
-            Self::persist_chain_comm(repl, &cons)?;
+            Self::persist_chain_callable_if_comm(repl, &cons)?;
             Ok(cons)
         },
     };
@@ -863,6 +882,143 @@ impl<F: PrimeField32, C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                     println!("  {} - {}", i.name, i.summary);
                 }
             }
+            Ok(*repl.zstore.t())
+        },
+    };
+
+    fn scope_stack(repl: &mut Repl<F, C1, C2>) -> ZPtr<F> {
+        let scope_stack = repl.scopes.iter().rev().map(|(s, _)| *s);
+        repl.zstore.intern_list(scope_stack)
+    }
+
+    const SCOPE: Self = Self {
+        name: "scope",
+        summary: "Enters a new or existing scope",
+        info: &[
+            "Scopes are symbol-named contexts in which:",
+            "* Commitments created are persisted and become automatically available",
+            "  when entering the same scope again;",
+            "* It's possible to store (see `scope-store`) variables, which become",
+            "  automatically available when entering the same scope again;",
+            "* Setting a microchain (see `microchain-set-info`) persists the microchain",
+            "  information within that scope so that it's not necessary to set it",
+            "  again.",
+            "When entering a scope, commitments and definitions from the outer scope",
+            "are available for read purposes. The microchain info, however, is not",
+            "inherited as a security measure and must be set again if intended.",
+        ],
+        format: "!(scope <sym>)",
+        example: &["!(scope my-scope)"],
+        returns: "The resulting stack of scopes",
+        run: |repl, args, _dir| {
+            let [&scope] = repl.take(args)?;
+            Self::validate_binding_symbol(repl, &scope)?;
+            if repl.scopes.contains_key(&scope) {
+                bail!("Scope already stacked")
+            }
+
+            // Save the data for the current environment.
+            let outer_env = repl.env;
+            let outer_comms = repl
+                .queries
+                .get_inv_queries("commit", &repl.toplevel)
+                .keys()
+                .map(Box::clone)
+                .collect();
+            // Note: `Option::take` makes new scopes start with no microchain set.
+            let outer_microchain = repl.microchain.take();
+
+            // Attempt to load potentially persisted bindings.
+            if let Ok(scope_bindings) = load_scope_bindings(&scope.digest) {
+                let ScopeBindings { binds, zdag } = scope_bindings;
+                zdag.populate_zstore(&mut repl.zstore);
+                binds.into_iter().for_each(|(sym, val)| repl.bind(sym, val));
+            }
+
+            // Attempt to load potentially persisted commitments.
+            if let Ok(comms) = load_scope_comms(&scope.digest) {
+                for digest in comms {
+                    Self::fetch_comm_data(repl, digest)?;
+                }
+            }
+
+            // Attempt to load potentially persisted microchain info.
+            if let Ok(microchain) = load_scope_microchain(&scope.digest) {
+                repl.microchain = microchain;
+            }
+
+            let outer_scope = OuterScope {
+                env: outer_env,
+                comms: outer_comms,
+                microchain: outer_microchain,
+            };
+            repl.scopes.insert(scope, outer_scope);
+            Ok(Self::scope_stack(repl))
+        },
+    };
+
+    const SCOPE_POP: Self = Self {
+        name: "scope-pop",
+        summary: "Go to the outer scope",
+        info: &[
+            "When a scope is popped, the context from the outer scope is recovered.",
+            "That is, commitments available, definitions and microchain information.",
+        ],
+        format: "!(scope-pop)",
+        example: &["!(scope-pop)"],
+        returns: "A pair with the resulting scope stack and the popped scope",
+        run: |repl, args, _dir| {
+            if args != repl.zstore.nil() {
+                bail!("Arguments aren't supported")
+            }
+            let Some((sym, outer_scope)) = repl.scopes.pop() else {
+                bail!("Not in a scope")
+            };
+            let OuterScope {
+                env,
+                comms,
+                microchain,
+            } = outer_scope;
+            repl.env = env;
+            let inv_comms_ref = &mut repl.queries.inv_func_queries[repl.func_indices.commit];
+            let inv_comms = std::mem::take(inv_comms_ref).expect("commit coroutine is invertible");
+            let filtered = inv_comms
+                .into_iter()
+                .filter(|(k, _)| comms.contains(k))
+                .collect();
+            repl.queries.inv_func_queries[repl.func_indices.commit] = Some(filtered);
+            repl.microchain = microchain;
+            let scope_stack = Self::scope_stack(repl);
+            Ok(repl.zstore.intern_cons(scope_stack, sym))
+        },
+    };
+
+    const SCOPE_STORE: Self = Self {
+        name: "scope-store",
+        summary: "Stores a symbol binding for availability when re-entering the scope",
+        info: &[],
+        format: "!(scope-store <sym1> <sym2> ...)",
+        example: &["!(scope-store var1 var2 var3)"],
+        returns: "t",
+        run: |repl, args, _dir| {
+            let Some(&scope) = repl.current_scope() else {
+                bail!("Not in a scope");
+            };
+            repl.memoize_env_dag();
+            let (syms, _) = repl.zstore.fetch_list(args);
+            let env_vec = repl.zstore.fetch_env(&repl.env);
+            // `env_vec` needs to be consumed in reverse order so bindings can
+            // be shadowed properly.
+            let env_map = env_vec.into_iter().rev().collect::<FxHashMap<_, _>>();
+            update_scope_bindings(&scope.digest, |mut scope_bindings| {
+                for sym in &syms {
+                    let Some(val) = env_map.get(sym) else {
+                        bail!("Unbound symbol: {}", repl.fmt(sym));
+                    };
+                    scope_bindings.bind(**sym, **val, &repl.zstore);
+                }
+                Ok(scope_bindings)
+            })?;
             Ok(*repl.zstore.t())
         },
     };
@@ -1181,16 +1337,93 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         },
     };
 
+    fn set_microchain(
+        repl: &mut Repl<F, C1, C2>,
+        addr: String,
+        id: [F; DIGEST_SIZE],
+    ) -> Result<()> {
+        if repl.microchain.is_some() {
+            print!("A microchain is already set. Overwrite it? (y/*) ");
+            std::io::stdout().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if input != "y\n" {
+                bail!("Microchain set operation was canceled")
+            }
+        }
+        repl.microchain = Some((addr, id));
+        if let Some(scope) = repl.current_scope() {
+            dump_scope_microchain(&scope.digest, &repl.microchain)?;
+        }
+        Ok(())
+    }
+
+    const MICROCHAIN_SET_INFO: Self = Self {
+        name: "microchain-set-info",
+        summary: "Sets the REPL to point to a particular microchain address and ID",
+        info: &["When in a scope, this information is persisted across REPL instantiations"],
+        format: "!(microchain-set-info <addr_expr> <id_expr>)",
+        example: &["!(microchain-set-info \"127.0.0.1:1234\" #c0x123)"],
+        returns: "t",
+        run: |repl, args, _dir| {
+            let [&addr_expr, &id_expr] = repl.take(args)?;
+            let (addr, _) = repl.reduce_aux(&addr_expr)?;
+            if addr.tag != Tag::Str {
+                bail!("Address must be a string");
+            }
+            let (id, _) = repl.reduce_aux(&id_expr)?;
+            if !matches!(id.tag, Tag::Comm | Tag::BigNum) {
+                bail!("ID must be a commitment or a big num");
+            }
+            let addr_str = repl.zstore.fetch_string(&addr);
+            Self::set_microchain(repl, addr_str, id.digest)?;
+            Ok(*repl.zstore.t())
+        },
+    };
+
+    const MICROCHAIN_GET_INFO: Self = Self {
+        name: "microchain-get-info",
+        summary: "Retrieves the REPL microchain address and ID",
+        info: &[],
+        format: "!(microchain-get-info)",
+        example: &["!(microchain-get-info)"],
+        returns: "The address/ID pair for the REPL microchain",
+        run: |repl, args, _dir| {
+            if args != repl.zstore.nil() {
+                bail!("Arguments aren't supported");
+            }
+            let Some((addr, id)) = &repl.microchain else {
+                bail!("No microchain info set");
+            };
+            let addr = repl.zstore.intern_string(addr);
+            let id = repl.zstore.intern_comm(*id);
+            Ok(repl.zstore.intern_cons(addr, id))
+        },
+    };
+
     fn build_comm_data(repl: &mut Repl<F, C1, C2>, digest: &[F]) -> CommData<F> {
-        let inv_hashes3 = repl.queries.get_inv_queries("hash3", &repl.toplevel);
-        let callable_preimg = inv_hashes3
-            .get(digest)
-            .expect("Missing commitment preimage");
-        let mut secret = [F::zero(); DIGEST_SIZE];
-        secret.copy_from_slice(&callable_preimg[..DIGEST_SIZE]);
-        let payload = ZPtr::from_flat_data(&callable_preimg[DIGEST_SIZE..]);
+        let inv_comms = repl.queries.get_inv_queries("commit", &repl.toplevel);
+        let callable_preimg = inv_comms.get(digest).expect("Missing commitment preimage");
+        let (secret, payload) = Self::split_comm_data_preimg(callable_preimg);
         repl.memoize_dag(&payload);
         CommData::new(secret, payload, &repl.zstore)
+    }
+
+    /// Computes a microchain ID by delegating the hashing to the REPL's reduction
+    /// so the commitment is persisted automatically when in a scope.
+    fn compute_microchain_id(
+        repl: &mut Repl<F, C1, C2>,
+        id_secret: [F; DIGEST_SIZE],
+        genesis: ZPtr<F>,
+    ) -> Result<ZPtr<F>> {
+        let hide = repl
+            .zstore
+            .intern_symbol(&builtin_sym("hide"), &repl.lang_symbols);
+        let secret = repl.zstore.intern_big_num(id_secret);
+        let genesis_quoted = repl.zstore.intern_quoted(genesis);
+        let expr = repl.zstore.intern_list([hide, secret, genesis_quoted]);
+        let (id, _) = repl.reduce_aux(&expr)?;
+        Ok(id)
     }
 
     const MICROCHAIN_START: Self = Self {
@@ -1198,9 +1431,11 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         summary: "Starts a new microchain and returns the resulting ID",
         info: &[
             "A microchain ID is a hiding commitment to the genesis state, using",
-            "a timestamp-based secret generated in the server.",
+            "a secret generated in the server.",
             "Upon success, it becomes possible to open the ID and retrieve genesis",
             "state associated with the microchain.",
+            "Starting a microchain attempts to set the REPL microchain with the",
+            "corresponding info.",
         ],
         format: "!(microchain-start <addr_expr> <state_expr>)",
         example: &[
@@ -1236,58 +1471,56 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             };
 
             let addr_str = repl.zstore.fetch_string(&addr);
-            let stream = &mut TcpStream::connect(addr_str)?;
+            let stream = &mut TcpStream::connect(&addr_str)?;
             write_data(stream, Request::Start(genesis))?;
             let Response::IdSecret(id_secret) = read_data(stream)? else {
                 bail!("Could not read ID secret from server");
             };
 
-            let id_digest = CommData::hash(&id_secret, &state, &mut repl.zstore);
+            let id = Self::compute_microchain_id(repl, id_secret, state)?;
 
-            let id = repl.zstore.intern_comm(id_digest);
+            // Failing to set the microchain should not bail.
+            let _ = Self::set_microchain(repl, addr_str, id.digest);
+
             Ok(id)
         },
     };
 
+    /// Sends a generic "get state" request to the REPL microchain.
     fn send_get_state_request(
         repl: &mut Repl<F, C1, C2>,
-        args: &ZPtr<F>,
         mk_request: fn([F; DIGEST_SIZE]) -> Request,
     ) -> Result<TcpStream> {
-        let [&addr_expr, &id_expr] = repl.take(args)?;
-        let (addr, _) = repl.reduce_aux(&addr_expr)?;
-        if addr.tag != Tag::Str {
-            bail!("Address must be a string");
-        }
-        let (id, _) = repl.reduce_aux(&id_expr)?;
-        let addr_str = repl.zstore.fetch_string(&addr);
-        let mut stream = TcpStream::connect(addr_str)?;
-        write_data(&mut stream, mk_request(id.digest))?;
+        let Some((addr, id)) = &repl.microchain else {
+            bail!("No microchain info set");
+        };
+        let mut stream = TcpStream::connect(addr)?;
+        write_data(&mut stream, mk_request(*id))?;
         Ok(stream)
     }
 
     const MICROCHAIN_GET_GENESIS: Self = Self {
         name: "microchain-get-genesis",
-        summary: "Returns the genesis state of a microchain",
+        summary: "Returns the genesis state of the REPL microchain",
         info: &[
             "Similarly to `microchain-start`, the preimage of the ID becomes",
             "available so opening the ID returns the genesis state.",
         ],
-        format: "!(microchain-get-genesis <addr_expr> <id_expr>)",
-        example: &[
-            "!(defq state0 !(microchain-get-genesis \"127.0.0.1:1234\" #c0x123))",
-            "!(assert-eq state0 (open #c0x123))",
-        ],
+        format: "!(microchain-get-genesis)",
+        example: &["!(defq state0 !(microchain-get-genesis))"],
         returns: "The microchain's genesis state",
         run: |repl, args, _dir| {
-            let mut stream = Self::send_get_state_request(repl, args, Request::GetGenesis)?;
+            if args != repl.zstore.nil() {
+                bail!("Arguments aren't supported");
+            }
+            let mut stream = Self::send_get_state_request(repl, Request::GetGenesis)?;
             let Response::Genesis(id_secret, chain_state) = read_data(&mut stream)? else {
                 bail!("Could not read state from server");
             };
             let state = chain_state.into_zptr(&mut repl.zstore);
 
-            // memoize preimg so it's possible to open the ID
-            CommData::hash(&id_secret, &state, &mut repl.zstore);
+            // Memoize preimg so it's possible to open the ID.
+            Self::compute_microchain_id(repl, id_secret, state)?;
 
             Ok(state)
         },
@@ -1295,13 +1528,16 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
 
     const MICROCHAIN_GET_STATE: Self = Self {
         name: "microchain-get-state",
-        summary: "Returns the current state of a microchain",
+        summary: "Returns the current state of the REPL microchain",
         info: &[],
-        format: "!(microchain-get-state <addr_expr> <id_expr>)",
-        example: &["!(microchain-get-state \"127.0.0.1:1234\" #c0x123)"],
+        format: "!(microchain-get-state)",
+        example: &["!(microchain-get-state)"],
         returns: "The microchain's latest state",
         run: |repl, args, _dir| {
-            let mut stream = Self::send_get_state_request(repl, args, Request::GetState)?;
+            if args != repl.zstore.nil() {
+                bail!("Arguments aren't supported");
+            }
+            let mut stream = Self::send_get_state_request(repl, Request::GetState)?;
             let Response::State(chain_state) = read_data(&mut stream)? else {
                 bail!("Could not read state from server");
             };
@@ -1315,18 +1551,14 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         summary:
             "Proves a state transition via chaining and sends the proof to a microchain server",
         info: &["The transition is successful iff the proof is accepted by the server."],
-        format: "!(microchain-transition <addr_expr> <id_expr> <state_expr> <arg1_expr> ...)",
-        example: &["!(microchain-transition \"127.0.0.1:1234\" #c0x123 state arg0 arg1)"],
+        format: "!(microchain-transition <state_expr> <arg1_expr> ...)",
+        example: &["!(microchain-transition state arg0 arg1)"],
         returns: "The new state",
         run: |repl, args, _dir| {
-            let (&addr_expr, rest) = repl.car_cdr(args);
-            let (&id_expr, &rest) = repl.car_cdr(rest);
-            let (addr, _) = repl.reduce_aux(&addr_expr)?;
-            if addr.tag != Tag::Str {
-                bail!("Address must be a string");
-            }
-            let (id, _) = repl.reduce_aux(&id_expr)?;
-            let (&current_state_expr, &call_args) = repl.car_cdr(&rest);
+            let Some((addr, id)) = repl.microchain.clone() else {
+                bail!("No microchain info set");
+            };
+            let (&current_state_expr, &call_args) = repl.car_cdr(args);
             let (state, call_args) = Self::transition_call(repl, &current_state_expr, call_args)?;
             if state.tag != Tag::Cons {
                 bail!("New state is not a pair");
@@ -1345,15 +1577,14 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
                 CallableData::Fun(LurkData::new(state_callable, &repl.zstore))
             };
 
-            let chain_proof = ChainProof {
+            let proof = ChainProof {
                 crypto_proof,
                 call_args,
                 next_chain_result,
                 next_callable,
             };
-            let addr_str = repl.zstore.fetch_string(&addr);
-            let stream = &mut TcpStream::connect(addr_str)?;
-            write_data(stream, Request::Transition(id.digest, chain_proof))?;
+            let stream = &mut TcpStream::connect(addr)?;
+            write_data(stream, Request::Transition { id, proof })?;
             match read_data::<Response>(stream)? {
                 Response::ProofAccepted => {
                     println!("Proof accepted by the server");
@@ -1377,16 +1608,14 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
         name: "microchain-verify",
         summary: "Checks if a series of microchain transition proofs takes state A to B",
         info: &["The state arguments are meant to be the genesis and the current state."],
-        format: "!(microchain-verify <addr_expr> <id_expr> <state_a_expr> <state_b_expr>)",
-        example: &["!(microchain-verify \"127.0.0.1:1234\" #c0x123 genesis current)"],
+        format: "!(microchain-verify <state_a_expr> <state_b_expr>)",
+        example: &["!(microchain-verify genesis current)"],
         returns: "t",
         run: |repl, args, _dir| {
-            let [&addr_expr, &id_expr, &initial_state_expr, &final_state_expr] = repl.take(args)?;
-            let (addr, _) = repl.reduce_aux(&addr_expr)?;
-            if addr.tag != Tag::Str {
-                bail!("Address must be a string");
-            }
-            let (id, _) = repl.reduce_aux(&id_expr)?;
+            let Some((addr, id)) = repl.microchain.clone() else {
+                bail!("No microchain info set");
+            };
+            let [&initial_state_expr, &final_state_expr] = repl.take(args)?;
             let (initial_state, _) = repl.reduce_aux(&initial_state_expr)?;
             if initial_state.tag != Tag::Cons {
                 bail!("Initial state must be a pair");
@@ -1395,11 +1624,14 @@ impl<C1: Chipset<F>, C2: Chipset<F>> MetaCmd<F, C1, C2> {
             if final_state.tag != Tag::Cons {
                 bail!("Final state must be a pair");
             }
-            let addr_str = repl.zstore.fetch_string(&addr);
-            let stream = &mut TcpStream::connect(addr_str)?;
+            let stream = &mut TcpStream::connect(addr)?;
             write_data(
                 stream,
-                Request::GetProofs(id.digest, initial_state.digest, final_state.digest),
+                Request::GetProofs {
+                    id,
+                    initial_state_digest: initial_state.digest,
+                    final_state_digest: final_state.digest,
+                },
             )?;
             let Response::Proofs(proofs) = read_data(stream)? else {
                 bail!("Could not read proofs from server");
@@ -1530,6 +1762,11 @@ pub(crate) fn meta_cmds<C1: Chipset<F>, C2: Chipset<F>>() -> MetaCmdsMap<F, C1, 
         MetaCmd::DEFPROTOCOL,
         MetaCmd::PROVE_PROTOCOL,
         MetaCmd::VERIFY_PROTOCOL,
+        MetaCmd::SCOPE,
+        MetaCmd::SCOPE_POP,
+        MetaCmd::SCOPE_STORE,
+        MetaCmd::MICROCHAIN_SET_INFO,
+        MetaCmd::MICROCHAIN_GET_INFO,
         MetaCmd::MICROCHAIN_START,
         MetaCmd::MICROCHAIN_GET_GENESIS,
         MetaCmd::MICROCHAIN_GET_STATE,

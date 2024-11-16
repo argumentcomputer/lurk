@@ -19,7 +19,7 @@ use super::{
     FxIndexMap, List,
 };
 
-type QueryMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
+pub(crate) type QueryMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
 type InvQueryMap<F> = FxHashMap<List<F>, List<F>>;
 pub(crate) type MemMap<F> = FxIndexMap<List<F>, QueryResult<F>>;
 
@@ -30,6 +30,9 @@ pub struct QueryResult<F> {
     pub(crate) requires: Vec<Record>,
     pub(crate) depth: u32,
     pub(crate) depth_requires: Vec<Record>,
+    /// Whether this result was computed directly (rather than via an inverse
+    /// query) at least once
+    pub(crate) direct_call: bool,
 }
 
 impl<F: PrimeField32> QueryResult<F> {
@@ -40,6 +43,16 @@ impl<F: PrimeField32> QueryResult<F> {
 
     pub(crate) fn new_lookup(&mut self, nonce: usize, caller_requires: &mut Vec<Record>) {
         caller_requires.push(self.provide.new_lookup(nonce as u32));
+    }
+
+    fn set_as_direct_call(&mut self) {
+        self.direct_call = true;
+    }
+
+    fn dummy_direct_call() -> Self {
+        let mut res = Self::default();
+        res.set_as_direct_call();
+        res
     }
 }
 
@@ -352,6 +365,15 @@ impl<F: PrimeField32> QueryRecord<F> {
             .expect("Inverse query map not found")
     }
 
+    pub fn get_queries<C1: Chipset<F>, C2: Chipset<F>>(
+        &self,
+        name: &'static str,
+        toplevel: &Toplevel<F, C1, C2>,
+    ) -> &QueryMap<F> {
+        let func = toplevel.func_by_name(name);
+        &self.func_queries[func.index]
+    }
+
     /// Erases the records of func, memory and bytes queries, but leaves the history
     /// of invertible queries untouched
     pub fn clean(&mut self) {
@@ -441,7 +463,7 @@ impl<F: PrimeField32> Func<F> {
         dbg_func_idx: Option<usize>,
     ) -> Result<(List<F>, u32)> {
         let mut func_index = self.index;
-        let mut query_result = QueryResult::default();
+        let mut query_result = QueryResult::dummy_direct_call();
         query_result.provide.count = 1;
         let (mut nonce, _) =
             queries.func_queries[func_index].insert_full(args.into(), query_result);
@@ -502,6 +524,7 @@ impl<F: PrimeField32> Func<F> {
                     if let Some((query_idx, _, result)) =
                         queries.func_queries[*callee_index].get_full_mut(inp.as_slice())
                     {
+                        result.set_as_direct_call();
                         let Some(out) = result.output.as_ref() else {
                             bail!("Loop detected");
                         };
@@ -520,7 +543,7 @@ impl<F: PrimeField32> Func<F> {
                     } else {
                         // insert dummy entry
                         let (callee_nonce, _) = queries.func_queries[*callee_index]
-                            .insert_full(inp.clone().into(), QueryResult::default());
+                            .insert_full(inp.clone().into(), QueryResult::dummy_direct_call());
                         // `map_buffer` will become the map for the called function
                         let mut map_buffer = inp;
                         let mut requires_buffer = Vec::new();
