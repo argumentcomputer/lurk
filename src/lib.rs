@@ -7,6 +7,7 @@ pub mod lair;
 
 pub mod core;
 pub mod gadgets;
+pub mod light_data;
 pub mod loam;
 pub mod ocaml;
 pub mod poseidon;
