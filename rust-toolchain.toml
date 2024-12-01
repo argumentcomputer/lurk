@@ -1,4 +1,4 @@
 [toolchain]
 # The default profile includes rustc, rust-std, cargo, rust-docs, rustfmt and clippy.
 profile = "default"
-channel = "nightly-2024-11-13"
+channel = "nightly-2024-11-29"
